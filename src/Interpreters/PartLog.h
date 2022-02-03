@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
 
 
 namespace DB
@@ -50,6 +48,7 @@ struct PartLogElement
     /// Was the operation successful?
     UInt16 error = 0;
     String exception;
+
 
     static std::string name() { return "PartLog"; }
 

@@ -36,7 +36,6 @@ private:
     StorageMetadataPtr metadata_snapshot;
     size_t max_parts_per_block;
     ContextPtr context;
-    uint64_t chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 };
 
 }

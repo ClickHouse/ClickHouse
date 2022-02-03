@@ -3,14 +3,13 @@
 #include "Common/hex.h"
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-
-#include <base/sort.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -21,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -33,26 +33,23 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/LeaderElection.h>
-#include <Storages/MergeTree/ZeroCopyLock.h>
 
 
+#include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -64,11 +61,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 
+#include <base/range.h>
 #include <base/scope_guard.h>
 #include <base/scope_guard_safe.h>
 
@@ -194,6 +190,56 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
     return res;
 }
 
+static std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr)
+{
+    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+    {
+        /// Do not allow this for new tables, print warning for tables created in old versions
+        if (check_starts_with_slash)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
+        if (log)
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases");
+        zookeeper_path = "/" + zookeeper_path;
+    }
+
+    return zookeeper_path;
+}
+
+static String extractZooKeeperName(const String & path)
+{
+    static constexpr auto default_zookeeper_name = "default";
+    if (path.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return default_zookeeper_name;
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        auto zookeeper_name = path.substr(0, pos);
+        if (zookeeper_name.empty())
+            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::BAD_ARGUMENTS);
+        return zookeeper_name;
+    }
+    return default_zookeeper_name;
+}
+
+static String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr)
+{
+    if (path.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
+    }
+    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+}
+
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
 {
     /// NOTE We don't have special log entry type for MOVE PARTITION/ATTACH PARTITION FROM,
@@ -237,8 +283,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_name(zkutil::extractZooKeeperName(zookeeper_path_))
-    , zookeeper_path(zkutil::extractZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ !attach, log))
+    , zookeeper_name(extractZooKeeperName(zookeeper_path_))
+    , zookeeper_path(extractZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ !attach, log))
     , replica_name(replica_name_)
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
@@ -447,8 +493,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     createNewZooKeeperNodes();
     syncPinnedPartUUIDs();
-
-    createTableSharedID();
 }
 
 
@@ -776,8 +820,7 @@ void StorageReplicatedMergeTree::drop()
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
-    if (maybe_has_metadata_in_zookeeper)
+    if (has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
@@ -1128,8 +1171,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
-    /// There are no PreActive parts at startup.
-    auto parts = getDataParts({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    /// There are no PreCommitted parts at startup.
+    auto parts = getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
     /** Local parts that are not in ZK.
       * In very rare cases they may cover missing parts
@@ -1211,7 +1254,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     if (unexpected_parts_nonnew_rows > 0)
     {
-        LOG_WARNING(log, fmt::runtime(sanity_report_fmt), getStorageID().getNameForLogs(),
+        LOG_WARNING(log, sanity_report_fmt, getStorageID().getNameForLogs(),
                     formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
                     unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
                     parts_to_fetch.size(), parts_to_fetch_blocks);
@@ -1468,9 +1511,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
-        /// The part may be still in the PreActive -> Active transition so we first search
-        /// among PreActive parts to definitely find the desired part if it exists.
-        DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
+        /// The part may be still in the PreCommitted -> Committed transition so we first search
+        /// among PreCommitted parts to definitely find the desired part if it exists.
+        DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
 
         if (!existing_part)
             existing_part = getActiveContainingPart(entry.new_part_name);
@@ -1911,7 +1954,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         for (const PartDescriptionPtr & part_desc : all_parts)
         {
-            if (!getActiveContainingPart(part_desc->new_part_info, MergeTreeDataPartState::Active, data_parts_lock))
+            if (!getActiveContainingPart(part_desc->new_part_info, MergeTreeDataPartState::Committed, data_parts_lock))
                 parts_to_add.emplace_back(part_desc);
         }
 
@@ -1969,7 +2012,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         DataPartStates valid_states{
-            MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated};
+            MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated};
 
         size_t num_clonable_parts = 0;
         for (PartDescriptionPtr & part_desc : parts_to_add)
@@ -2203,7 +2246,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     if (replica.empty())
         throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Not found active replica on shard {} to clone part {}", entry.source_shard, entry.new_part_name);
 
-    LOG_INFO(log, "Will clone part from shard {} and replica {}", entry.source_shard, replica);
+    LOG_INFO(log, "Will clone part from shard " + entry.source_shard + " and replica " + replica);
 
     MutableDataPartPtr part;
 
@@ -2306,7 +2349,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         }
     }
 
-    ::sort(source_queue_names.begin(), source_queue_names.end());
+    std::sort(source_queue_names.begin(), source_queue_names.end());
 
     struct QueueEntryInfo
     {
@@ -2861,17 +2904,17 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, e.displayText());
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, fmt::runtime(e.message()));
+                LOG_INFO(log, e.message());
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, e.displayText());
                 cleanup_thread.wakeup();
             }
             else
@@ -3295,7 +3338,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
@@ -4070,19 +4113,9 @@ void StorageReplicatedMergeTree::startup()
     }
 }
 
-void StorageReplicatedMergeTree::flush()
-{
-    if (flush_called.exchange(true))
-        return;
-
-    flushAllInMemoryPartsIfNeeded();
-}
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    if (shutdown_called.exchange(true))
-        return;
-
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
@@ -4190,9 +4223,6 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    /// If true, then we will ask initiator if we can read chosen ranges
-    const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
@@ -4202,18 +4232,13 @@ void StorageReplicatedMergeTree::read(
     {
         auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context,
-                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), enable_parallel_reading))
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, std::move(max_added_blocks)))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(
-        column_names, metadata_snapshot, query_info, local_context,
-        max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
-    {
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
         query_plan = std::move(*plan);
-    }
 }
 
 Pipe StorageReplicatedMergeTree::read(
@@ -4234,7 +4259,7 @@ Pipe StorageReplicatedMergeTree::read(
 
 
 template <class Func>
-void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_sequential_consistency) const
+void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select_sequential_consistency) const
 {
     std::optional<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock> max_added_blocks = {};
 
@@ -4245,7 +4270,7 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
         max_added_blocks = getMaxAddedBlocks();
 
     auto lock = lockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->isEmpty())
             continue;
@@ -4264,21 +4289,21 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
 std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachActiveParts([&res](auto & part) { res += part->rows_count; }, settings.select_sequential_consistency);
+    foreachCommittedParts([&res](auto & part) { res += part->rows_count; }, settings.select_sequential_consistency);
     return res;
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
     DataPartsVector parts;
-    foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
+    foreachCommittedParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachActiveParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings.select_sequential_consistency);
+    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings.select_sequential_consistency);
     return res;
 }
 
@@ -4383,7 +4408,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!partition_id.empty())
                     disable_reason += fmt::format(" (in partition {})", partition_id);
                 String message = fmt::format(message_fmt, disable_reason);
-                LOG_INFO(log, fmt::runtime(message));
+                LOG_INFO(log, message);
                 return handle_noop(message);
             }
 
@@ -4397,7 +4422,7 @@ bool StorageReplicatedMergeTree::optimize(
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
                 String message = "Can't create merge queue node in ZooKeeper, because some parts are missing";
-                LOG_TRACE(log, fmt::runtime(message));
+                LOG_TRACE(log, message);
                 return handle_noop(message);
             }
 
@@ -4410,7 +4435,7 @@ bool StorageReplicatedMergeTree::optimize(
 
         assert(try_no == max_retries);
         String message = fmt::format("Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries", try_no);
-        LOG_TRACE(log, fmt::runtime(message));
+        LOG_TRACE(log, message);
         return handle_noop(message);
     };
 
@@ -4811,34 +4836,24 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
-    if (!is_readonly)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
 
-    if (getZooKeeper()->exists(replica_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Replica path is present at {} - nothing to restore. "
-                        "If you are sure that metadata is lost and that replica path contains some garbage, "
-                        "then use SYSTEM DROP REPLICA query first.", replica_path);
-
-    if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica has metadata in ZooKeeper: "
-                                                   "it's either a bug or it's a result of manual intervention to ZooKeeper");
+    if (!is_readonly || has_metadata_in_zookeeper)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: replica is not readonly");
 
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
-    SCOPE_EXIT({ are_restoring_replica.store(false); });
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
-    /// Why all parts (not only Active) are moved to detached/:
+    /// Why all parts (not only Committed) are moved to detached/:
     /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
     /// potentially encounter a situation that a part we want to attach already exists.
     for (const auto & part : all_parts)
     {
-        if (part->getState() == DataPartState::Active)
+        if (part->getState() == DataPartState::Committed)
             active_parts_names.push_back(part->name);
 
         forgetPartAndMoveToDetached(part);
@@ -4867,6 +4882,8 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     LOG_INFO(log, "Attached all partitions, starting table");
 
     startup();
+
+    are_restoring_replica.store(false);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -5529,8 +5546,8 @@ void StorageReplicatedMergeTree::fetchPartition(
     info.table_id = getStorageID();
     info.table_id.uuid = UUIDHelpers::Nil;
     auto expand_from = query_context->getMacros()->expand(from_, info);
-    String auxiliary_zookeeper_name = zkutil::extractZooKeeperName(expand_from);
-    String from = zkutil::extractZooKeeperPath(expand_from, /* check_starts_with_slash */ true);
+    String auxiliary_zookeeper_name = extractZooKeeperName(expand_from);
+    String from = extractZooKeeperPath(expand_from, /* check_starts_with_slash */ true);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -5569,7 +5586,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                 && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                 throw;
 
-            LOG_INFO(log, fmt::runtime(e.displayText()));
+            LOG_INFO(log, e.displayText());
         }
         return;
     }
@@ -5706,7 +5723,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                     && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, e.displayText());
             }
 
             if (!fetched)
@@ -6184,7 +6201,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -6606,7 +6623,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (!move_part)
         throw Exception("MOVE PARTITION TO SHARD is not supported, use MOVE PART instead", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (zkutil::normalizeZooKeeperPath(zookeeper_path, /* check_starts_with_slash */ true) == zkutil::normalizeZooKeeperPath(to, /* check_starts_with_slash */ true))
+    if (normalizeZooKeeperPath(zookeeper_path, /* check_starts_with_slash */ true) == normalizeZooKeeperPath(to, /* check_starts_with_slash */ true))
         throw Exception("Source and destination are the same", ErrorCodes::BAD_ARGUMENTS);
 
     auto zookeeper = getZooKeeper();
@@ -6614,7 +6631,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
+    auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
 
@@ -6685,7 +6702,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     zkutil::KeeperMultiException::check(rc, ops, responses);
 
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-    LOG_DEBUG(log, "Created task for part movement between shards at {}", task_znode_path);
+    LOG_DEBUG(log, "Created task for part movement between shards at " + task_znode_path);
 
     /// TODO(nv): Nice to have support for `replication_alter_partitions_sync`.
     ///     For now use the system.part_moves_between_shards table for status.
@@ -6824,7 +6841,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 bool StorageReplicatedMergeTree::dropPartImpl(
     zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop)
 {
-    LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part {}", part_name);
+    LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part: " + part_name);
 
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
@@ -6832,7 +6849,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
     {
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
 
-        auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
+        auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
 
         if (!part)
         {
@@ -7007,7 +7024,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
     }
     else
         data_parts = getDataPartsVector();
@@ -7024,50 +7041,6 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
         }
     }
     return results;
-}
-
-
-void StorageReplicatedMergeTree::checkBrokenDisks()
-{
-    auto disks = getStoragePolicy()->getDisks();
-    std::unique_ptr<DataPartsVector> parts;
-
-    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
-    {
-        auto disk_ptr = *disk_it;
-        if (disk_ptr->isBroken())
-        {
-            {
-                std::unique_lock lock(last_broken_disks_mutex);
-                if (!last_broken_disks.insert(disk_ptr->getName()).second)
-                    continue;
-            }
-
-            LOG_INFO(log, "Scanning parts to recover on broken disk {} with path {}", disk_ptr->getName(), disk_ptr->getPath());
-
-            if (!parts)
-                parts = std::make_unique<DataPartsVector>(getDataPartsVector());
-
-            for (auto & part : *parts)
-            {
-                if (part->volume && part->volume->getDisk()->getName() == disk_ptr->getName())
-                    broken_part_callback(part->name);
-            }
-            continue;
-        }
-        else
-        {
-            {
-                std::unique_lock lock(last_broken_disks_mutex);
-                if (last_broken_disks.erase(disk_ptr->getName()) > 0)
-                    LOG_INFO(
-                        log,
-                        "Disk {} with path {} is recovered. Exclude it from last_broken_disks",
-                        disk_ptr->getName(),
-                        disk_ptr->getPath());
-            }
-        }
-    }
 }
 
 
@@ -7092,50 +7065,9 @@ void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
         background_moves_assignee.start();
 }
 
-
 std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const
 {
     return std::make_unique<MergeTreeSettings>(getContext()->getReplicatedMergeTreeSettings());
-}
-
-
-String StorageReplicatedMergeTree::getTableSharedID() const
-{
-    return toString(table_shared_id);
-}
-
-
-void StorageReplicatedMergeTree::createTableSharedID()
-{
-    if (table_shared_id != UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
-
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-    String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
-    String id;
-    if (!zookeeper->tryGet(zookeeper_table_id_path, id))
-    {
-        UUID table_id_candidate;
-        auto storage_id = getStorageID();
-        if (storage_id.uuid != UUIDHelpers::Nil)
-            table_id_candidate = storage_id.uuid;
-        else
-            table_id_candidate = UUIDHelpers::generateV4();
-
-        id = toString(table_id_candidate);
-
-        auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
-        if (code == Coordination::Error::ZNODEEXISTS)
-        { /// Other replica create node early
-            id = zookeeper->get(zookeeper_table_id_path);
-        }
-        else if (code != Coordination::Error::ZOK)
-        {
-            throw zkutil::KeeperException(code, zookeeper_table_id_path);
-        }
-    }
-
-    table_shared_id = parseFromString<UUID>(id);
 }
 
 
@@ -7146,6 +7078,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return;
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -7154,103 +7087,73 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
-        part.name, zookeeper_path);
-    for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
-    {
-        String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+    String zookeeper_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name / id / replica_name;
 
-        LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
-        createZeroCopyLockNode(zookeeper, zookeeper_node);
+    LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
+
+    /// In rare case other replica can remove path between createAncestors and createIfNotExists
+    /// So we make up to 5 attempts
+    for (int attempts = 5; attempts > 0; --attempts)
+    {
+        try
+        {
+            zookeeper->createAncestors(zookeeper_node);
+            zookeeper->createIfNotExists(zookeeper_node, "lock");
+            break;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (e.code == Coordination::Error::ZNONODE)
+                continue;
+            throw;
+        }
     }
 }
 
 
 bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
-    return unlockSharedData(part, part.name);
-}
-
-
-bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, const String & name) const
-{
     if (!part.volume)
         return true;
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return true;
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
         return true;
 
-    auto ref_count = part.getNumberOfRefereneces();
-    if (ref_count > 0) /// Keep part shard info for frozen backups
-        return false;
+    String id = part.getUniqueId();
+    boost::replace_all(id, "/", "_");
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
-        zookeeper_path);
-}
+    String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
+    String zookeeper_part_uniq_node = fs::path(zookeeper_part_node) / id;
+    String zookeeper_node = fs::path(zookeeper_part_uniq_node) / replica_name;
 
+    LOG_TRACE(log, "Remove zookeeper lock {}", zookeeper_node);
 
-bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name,
-        const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
-        Poco::Logger * logger, const String & zookeeper_path_old)
-{
-    boost::replace_all(part_id, "/", "_");
+    zookeeper->tryRemove(zookeeper_node);
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
+    Strings children;
+    zookeeper->tryGetChildren(zookeeper_part_uniq_node, children);
 
-    bool res = true;
-
-    for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
+    if (!children.empty())
     {
-        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
-
-        /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
-        String zookeeper_part_replica_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
-
-        LOG_TRACE(logger, "Remove zookeeper lock {}", zookeeper_part_replica_node);
-
-        zookeeper_ptr->tryRemove(zookeeper_part_replica_node);
-
-        /// Check, maybe we were the last replica and can remove part forever
-        Strings children;
-        zookeeper_ptr->tryGetChildren(zookeeper_part_uniq_node, children);
-
-        if (!children.empty())
-        {
-            LOG_TRACE(logger, "Found zookeper locks for {}", zookeeper_part_uniq_node);
-            res = false;
-            continue;
-        }
-
-        auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
-
-        LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_uniq_node, error_code != Coordination::Error::ZNOTEMPTY);
-
-        /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
-        children.clear();
-        String zookeeper_part_node = fs::path(zookeeper_part_uniq_node).parent_path();
-        zookeeper_ptr->tryGetChildren(zookeeper_part_node, children);
-        if (children.empty())
-        {
-            /// Cleanup after last uniq removing
-            error_code = zookeeper_ptr->tryRemove(zookeeper_part_node);
-
-            LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_node, error_code != Coordination::Error::ZNOTEMPTY);
-        }
-        else
-        {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} : {}", zookeeper_part_node, children.size());
-            for (auto & c : children)
-            {
-                LOG_TRACE(logger, "Child node {}", c);
-            }
-        }
+        LOG_TRACE(log, "Found zookeper locks for {}", zookeeper_part_uniq_node);
+        return false;
     }
 
-    return res;
+    zookeeper->tryRemove(zookeeper_part_uniq_node);
+
+    /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
+    children.clear();
+    zookeeper->tryGetChildren(zookeeper_part_node, children);
+    if (children.empty())
+        /// Cleanup after last uniq removing
+        zookeeper->tryRemove(zookeeper_part_node);
+
+    return true;
 }
 
 
@@ -7281,26 +7184,22 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
-        return "";
+        return best_replica;
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk_type, getTableSharedID(), part.name,
-            zookeeper_path);
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+    String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
 
-    std::set<String> replicas;
+    Strings ids;
+    zookeeper->tryGetChildren(zookeeper_part_node, ids);
 
-    for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
+    Strings replicas;
+    for (const auto & id : ids)
     {
-        Strings ids;
-        zookeeper->tryGetChildren(zc_zookeeper_path, ids);
-
-        for (const auto & id : ids)
-        {
-            String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / id;
-            Strings id_replicas;
-            zookeeper->tryGetChildren(zookeeper_part_uniq_node, id_replicas);
-            LOG_TRACE(log, "Found zookeper replicas for {}: {}", zookeeper_part_uniq_node, id_replicas.size());
-            replicas.insert(id_replicas.begin(), id_replicas.end());
-        }
+        String zookeeper_part_uniq_node = fs::path(zookeeper_part_node) / id;
+        Strings id_replicas;
+        zookeeper->tryGetChildren(zookeeper_part_uniq_node, id_replicas);
+        LOG_TRACE(log, "Found zookeper replicas for {}: {}", zookeeper_part_uniq_node, id_replicas.size());
+        replicas.insert(replicas.end(), id_replicas.begin(), id_replicas.end());
     }
 
     LOG_TRACE(log, "Found zookeper replicas for part {}: {}", part.name, replicas.size());
@@ -7319,7 +7218,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     LOG_TRACE(log, "Found zookeper active replicas for part {}: {}", part.name, active_replicas.size());
 
     if (active_replicas.empty())
-        return "";
+        return best_replica;
 
     /** You must select the best (most relevant) replica.
     * This is a replica with the maximum `log_pointer`, then with the minimum `queue` size.
@@ -7353,68 +7252,23 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
-
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
-    const String & part_name, const String & zookeeper_path_old)
-{
-    Strings res;
-
-    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
-
-    String new_path = fs::path(settings.remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy / table_uuid / part_name;
-    res.push_back(new_path);
-    if (settings.remote_fs_zero_copy_path_compatible_mode && !zookeeper_path_old.empty())
-    { /// Compatibility mode for cluster with old and new versions
-        String old_path = fs::path(zookeeper_path_old) / zero_copy / "shared" / part_name;
-        res.push_back(old_path);
-    }
-
-    return res;
-}
-
-
-std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk)
-{
-    if (!disk || !disk->supportZeroCopyReplication())
-        return std::nullopt;
-
-    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
-    if (!zookeeper)
-        return std::nullopt;
-
-    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
-        part->name, zookeeper_path)[0];
-
-    /// Just recursively create ancestors for lock
-    zookeeper->createAncestors(zc_zookeeper_path);
-    zookeeper->createIfNotExists(zc_zookeeper_path, "");
-
-    /// Create actual lock
-    ZeroCopyLock lock(zookeeper, zc_zookeeper_path);
-    if (lock.lock->tryLock())
-        return lock;
-    else
-        return std::nullopt;
-}
-
 String StorageReplicatedMergeTree::findReplicaHavingPart(
-    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_ptr)
+    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_)
 {
-    Strings replicas = zookeeper_ptr->getChildren(fs::path(zookeeper_path_) / "replicas");
+    Strings replicas = zookeeper_->getChildren(fs::path(zookeeper_path_) / "replicas");
 
     /// Select replicas in uniformly random order.
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
     for (const String & replica : replicas)
     {
-        if (zookeeper_ptr->exists(fs::path(zookeeper_path_) / "replicas" / replica / "parts" / part_name)
-            && zookeeper_ptr->exists(fs::path(zookeeper_path_) / "replicas" / replica / "is_active"))
+        if (zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica / "parts" / part_name)
+            && zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica / "is_active"))
             return fs::path(zookeeper_path_) / "replicas" / replica;
     }
 
     return {};
 }
-
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
@@ -7425,7 +7279,6 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_n
                 return true;
     return false;
 }
-
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
@@ -7504,6 +7357,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
+
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
@@ -7528,9 +7382,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
     bool sync_on_insert = settings->fsync_after_insert;
 
     out.write(block);
@@ -7616,181 +7468,5 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     return true;
 }
-
-
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node)
-{
-    /// In rare case other replica can remove path between createAncestors and createIfNotExists
-    /// So we make up to 5 attempts
-
-    for (int attempts = 5; attempts > 0; --attempts)
-    {
-        try
-        {
-            zookeeper->createAncestors(zookeeper_node);
-            zookeeper->createIfNotExists(zookeeper_node, "lock");
-            break;
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code == Coordination::Error::ZNONODE)
-                continue;
-            throw;
-        }
-    }
-}
-
-
-namespace
-{
-
-/// Special metadata used during freeze table. Required for zero-copy
-/// replication.
-struct FreezeMetaData
-{
-public:
-    void fill(const StorageReplicatedMergeTree & storage)
-    {
-        is_replicated = storage.supportsReplication();
-        is_remote = storage.isRemote();
-        replica_name = storage.getReplicaName();
-        zookeeper_name = storage.getZooKeeperName();
-        table_shared_id = storage.getTableSharedID();
-    }
-
-    void save(DiskPtr disk, const String & path) const
-    {
-        auto file_path = getFileName(path);
-        auto buffer = disk->writeMetaFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeIntText(version, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_replicated, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_remote, *buffer);
-        buffer->write("\n", 1);
-        writeString(replica_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(zookeeper_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(table_shared_id, *buffer);
-        buffer->write("\n", 1);
-    }
-
-    bool load(DiskPtr disk, const String & path)
-    {
-        auto file_path = getFileName(path);
-        if (!disk->exists(file_path))
-            return false;
-        auto buffer = disk->readMetaFile(file_path, ReadSettings(), {});
-        readIntText(version, *buffer);
-        if (version != 1)
-        {
-            LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
-            return false;
-        }
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_replicated, *buffer);
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_remote, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(replica_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(zookeeper_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(table_shared_id, *buffer);
-        DB::assertChar('\n', *buffer);
-        return true;
-    }
-
-    static void clean(DiskPtr disk, const String & path)
-    {
-        disk->removeMetaFileIfExists(getFileName(path));
-    }
-
-private:
-    static String getFileName(const String & path)
-    {
-        return fs::path(path) / "frozen_metadata.txt";
-    }
-
-public:
-    int version = 1;
-    bool is_replicated;
-    bool is_remote;
-    String replica_name;
-    String zookeeper_name;
-    String table_shared_id;
-};
-
-}
-
-bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
-{
-    if (disk->supportZeroCopyReplication())
-    {
-        if (is_freezed)
-        {
-            FreezeMetaData meta;
-            if (meta.load(disk, path))
-            {
-                FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "");
-            }
-        }
-        else
-        {
-            String table_id = getTableSharedID();
-
-            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path);
-        }
-    }
-
-    disk->removeRecursive(path);
-
-    return false;
-}
-
-
-bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path)
-{
-    bool keep_shared = false;
-
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-
-    if (zookeeper)
-    {
-        fs::path checksums = fs::path(path) / "checksums.txt";
-        if (disk->exists(checksums))
-        {
-            auto ref_count = disk->getRefCount(checksums);
-            if (ref_count == 0)
-            {
-                String id = disk->getUniqueId(checksums);
-                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                    detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
-                    detached_zookeeper_path);
-            }
-            else
-                keep_shared = true;
-        }
-    }
-
-    disk->removeSharedRecursive(path, keep_shared);
-
-    return keep_shared;
-}
-
-
-void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr, String backup_part_path) const
-{
-    if (disk->supportZeroCopyReplication())
-    {
-        FreezeMetaData meta;
-        meta.fill(*this);
-        meta.save(disk, backup_part_path);
-    }
-}
-
 
 }

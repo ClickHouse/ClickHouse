@@ -239,8 +239,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     }
     else
     {
-        if (offset)
-            req.SetRange(fmt::format("bytes={}-", offset));
+        req.SetRange(fmt::format("bytes={}-", offset));
         LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
     }
 

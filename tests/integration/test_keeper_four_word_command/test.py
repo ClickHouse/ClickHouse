@@ -286,7 +286,6 @@ def test_cmd_conf(started_cluster):
         assert result["snapshot_storage_path"] == "/var/lib/clickhouse/coordination/snapshots"
 
         assert result["session_timeout_ms"] == "30000"
-        assert result["min_session_timeout_ms"] == "10000"
         assert result["operation_timeout_ms"] == "5000"
         assert result["dead_session_check_period_ms"] == "500"
         assert result["heart_beat_interval_ms"] == "500"
@@ -475,17 +474,12 @@ def test_cmd_crst(started_cluster):
         print(data)
 
         data = send_4lw_cmd(cmd='cons')
-        print("cons output(after crst) -------------------------------------")
-        print(data)
 
         # 2 connections, 1 for 'cons' command, 1 for zk
         cons = [n for n in data.split('\n') if len(n) > 0]
         assert len(cons) == 2
 
-        # connection for zk
-        zk_conn = [n for n in cons if not n.__contains__('sid=0xffffffffffffffff')][0]
-
-        conn_stat = re.match(r'(.*?)[:].*[(](.*?)[)].*', zk_conn.strip(), re.S).group(2)
+        conn_stat = re.match(r'(.*?)[:].*[(](.*?)[)].*', cons[0].strip(), re.S).group(2)
         assert conn_stat is not None
 
         result = {}

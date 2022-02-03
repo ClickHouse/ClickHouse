@@ -18,7 +18,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binar
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for ClickHouse
- ClickHouse is a column-oriented database management system
+ Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
@@ -30,7 +30,7 @@ Suggests: clickhouse-common-static-dbg
 Replaces: clickhouse-common, clickhouse-server-base
 Provides: clickhouse-common, clickhouse-server-base
 Description: Common files for ClickHouse
- ClickHouse is a column-oriented database management system
+ Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides common files for both clickhouse server and client
@@ -42,7 +42,7 @@ Recommends: libcap2-bin
 Replaces: clickhouse-server-common, clickhouse-server-base
 Provides: clickhouse-server-common
 Description: Server binary for ClickHouse
- ClickHouse is a column-oriented database management system
+ Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides clickhouse common configuration files

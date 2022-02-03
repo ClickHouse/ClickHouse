@@ -1,10 +1,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 
@@ -15,22 +13,21 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, const Block & header_)
-        : IInputFormat(header_, buf)
-        , reader(std::make_unique<NativeReader>(buf, header_, 0))
-        , header(header_) {}
+    NativeInputFormat(ReadBuffer & buf, const Block & header)
+        : IInputFormat(header, buf)
+        , reader(buf, header, 0) {}
 
     String getName() const override { return "Native"; }
 
     void resetParser() override
     {
         IInputFormat::resetParser();
-        reader->resetParser();
+        reader.resetParser();
     }
 
     Chunk generate() override
     {
-        auto block = reader->read();
+        auto block = reader.read();
         if (!block)
             return {};
 
@@ -41,15 +38,8 @@ public:
         return Chunk(block.getColumns(), num_rows);
     }
 
-    void setReadBuffer(ReadBuffer & in_) override
-    {
-        reader = std::make_unique<NativeReader>(in_, header, 0);
-        IInputFormat::setReadBuffer(in_);
-    }
-
 private:
-    std::unique_ptr<NativeReader> reader;
-    Block header;
+    NativeReader reader;
 };
 
 class NativeOutputFormat final : public IOutputFormat
@@ -92,20 +82,6 @@ private:
     NativeWriter writer;
 };
 
-class NativeSchemaReader : public ISchemaReader
-{
-public:
-    explicit NativeSchemaReader(ReadBuffer & in_) : ISchemaReader(in_) {}
-
-    NamesAndTypesList readSchema() override
-    {
-        auto reader = NativeReader(in, 0);
-        auto block = reader.read();
-        return block.getNamesAndTypesList();
-    }
-};
-
-
 void registerInputFormatNative(FormatFactory & factory)
 {
     factory.registerInputFormat("Native", [](
@@ -129,15 +105,5 @@ void registerOutputFormatNative(FormatFactory & factory)
         return std::make_shared<NativeOutputFormat>(buf, sample);
     });
 }
-
-
-void registerNativeSchemaReader(FormatFactory & factory)
-{
-    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings &, ContextPtr)
-    {
-        return std::make_shared<NativeSchemaReader>(buf);
-    });
-}
-
 
 }

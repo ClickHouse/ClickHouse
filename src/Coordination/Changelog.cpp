@@ -252,7 +252,7 @@ public:
         catch (const Exception & ex)
         {
             if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
-                throw;
+                throw ex;
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());

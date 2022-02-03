@@ -37,12 +37,6 @@ public:
         disks.emplace(name, disk);
     }
 
-    void shutdown()
-    {
-        for (auto & e : disks)
-            e.second->shutdown();
-    }
-
 private:
     DisksMap disks;
 };

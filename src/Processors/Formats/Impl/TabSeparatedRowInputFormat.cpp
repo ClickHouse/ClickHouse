@@ -1,15 +1,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/BufferWithOwnMemory.h>
 
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
-#include <Formats/verbosePrintString.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Formats/verbosePrintString.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -40,50 +38,40 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_), is_raw(is_raw_)
 {
 }
 
-TabSeparatedFormatReader::TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
-    : FormatWithNamesAndTypesReader(in_, format_settings_), is_raw(is_raw_)
-{
-}
-
-void TabSeparatedFormatReader::skipFieldDelimiter()
+void TabSeparatedRowInputFormat::skipFieldDelimiter()
 {
     assertChar('\t', *in);
 }
 
-void TabSeparatedFormatReader::skipRowEndDelimiter()
+void TabSeparatedRowInputFormat::skipRowEndDelimiter()
 {
     if (in->eof())
         return;
 
-    if (unlikely(first_row))
-    {
+    if (unlikely(row_num <= 1))
         checkForCarriageReturn(*in);
-        first_row = false;
-    }
 
     assertChar('\n', *in);
 }
 
-String TabSeparatedFormatReader::readFieldIntoString()
+String TabSeparatedRowInputFormat::readFieldIntoString()
 {
     String field;
-    if (is_raw)
-        readString(field, *in);
-    else
-        readEscapedString(field, *in);
+    readEscapedString(field, *in);
     return field;
 }
 
-void TabSeparatedFormatReader::skipField()
+void TabSeparatedRowInputFormat::skipField()
 {
-    readFieldIntoString();
+    NullOutput null_sink;
+    readEscapedStringInto(null_sink, *in);
 }
 
-void TabSeparatedFormatReader::skipHeaderRow()
+void TabSeparatedRowInputFormat::skipHeaderRow()
 {
     do
     {
@@ -94,7 +82,7 @@ void TabSeparatedFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
-std::vector<String> TabSeparatedFormatReader::readRow()
+std::vector<String> TabSeparatedRowInputFormat::readHeaderRow()
 {
     std::vector<String> fields;
     do
@@ -107,7 +95,7 @@ std::vector<String> TabSeparatedFormatReader::readRow()
     return fields;
 }
 
-bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
+bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
     const bool at_delimiter = !is_last_file_column && !in->eof() && *in->position() == '\t';
@@ -130,7 +118,6 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
         return true;
     }
 
-
     if (as_nullable)
         return SerializationNullable::deserializeTextEscapedImpl(column, *in, format_settings, serialization);
 
@@ -138,7 +125,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     return true;
 }
 
-bool TabSeparatedFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
+bool TabSeparatedRowInputFormat::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 {
     try
     {
@@ -169,7 +156,7 @@ bool TabSeparatedFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer
     return true;
 }
 
-bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
+bool TabSeparatedRowInputFormat::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 {
     if (in->eof())
         return true;
@@ -203,7 +190,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
+void TabSeparatedRowInputFormat::checkNullValueForNonNullable(DataTypePtr type)
 {
     bool can_be_parsed_as_null = type->isNullable() || type->isLowCardinalityNullable() || format_settings.null_as_default;
 
@@ -231,28 +218,6 @@ void TabSeparatedRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(*in);
 }
 
-TabSeparatedSchemaReader::TabSeparatedSchemaReader(
-    ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesSchemaReader(
-        in_,
-        format_settings_.max_rows_to_read_for_schema_inference,
-        with_names_,
-        with_types_,
-        &reader,
-        getDefaultDataTypeForEscapingRule(is_raw_ ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped))
-    , reader(in_, format_settings_, is_raw_)
-{
-}
-
-DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypes()
-{
-    if (in.eof())
-        return {};
-
-    auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
-}
-
 void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -266,23 +231,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
-            });
-        };
-
-        registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
-        registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
-    }
-}
-
-void registerTSVSchemaReader(FormatFactory & factory)
-{
-    for (bool is_raw : {false, true})
-    {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
-        {
-            factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
-            {
-                return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
         };
 

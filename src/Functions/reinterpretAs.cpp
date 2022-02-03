@@ -24,7 +24,6 @@
 
 #include <base/unaligned.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -175,14 +174,16 @@ public:
                     const auto & offsets_from = col_from->getOffsets();
                     size_t size = offsets_from.size();
                     auto & vec_res = col_res->getData();
-                    vec_res.resize_fill(size);
+                    vec_res.resize(size);
 
                     size_t offset = 0;
                     for (size_t i = 0; i < size; ++i)
                     {
-                        memcpy(&vec_res[i],
+                        ToFieldType value{};
+                        memcpy(&value,
                             &data_from[offset],
                             std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                        vec_res[i] = value;
                         offset = offsets_from[i];
                     }
 
@@ -200,18 +201,15 @@ public:
                     size_t step = col_from_fixed->getN();
                     size_t size = data_from.size() / step;
                     auto & vec_res = col_res->getData();
+                    vec_res.resize(size);
 
                     size_t offset = 0;
                     size_t copy_size = std::min(step, sizeof(ToFieldType));
-
-                    if (sizeof(ToFieldType) <= step)
-                        vec_res.resize(size);
-                    else
-                        vec_res.resize_fill(size);
-
                     for (size_t i = 0; i < size; ++i)
                     {
-                        memcpy(&vec_res[i], &data_from[offset], copy_size);
+                        ToFieldType value{};
+                        memcpy(&value, &data_from[offset], copy_size);
+                        vec_res[i] = value;
                         offset += step;
                     }
 
@@ -290,7 +288,7 @@ private:
         {
             StringRef data = src.getDataAt(i);
 
-            memcpy(&data_to[offset], data.data, std::min(n, data.size));
+            std::memcpy(&data_to[offset], data.data, std::min(n, data.size));
             offset += n;
         }
     }
@@ -349,12 +347,9 @@ private:
         using To = typename ToContainer::value_type;
 
         size_t size = from.size();
-        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+        to.resize_fill(size);
 
-        if (sizeof(To) <= sizeof(From))
-            to.resize(size);
-        else
-            to.resize_fill(size);
+        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
 
         for (size_t i = 0; i < size; ++i)
             memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);

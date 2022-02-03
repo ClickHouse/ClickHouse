@@ -1,5 +1,4 @@
 #include <Core/Defines.h>
-#include <Core/ProtocolDefines.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -11,7 +10,6 @@
 
 #include <Formats/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -65,7 +63,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint, size_t revision)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -75,12 +73,21 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
-    serialization.deserializeBinaryBulkStatePrefix(settings, state);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(&type);
+    if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+    {
+        auto version = aggregate_function_data_type->getVersionFromRevision(revision);
+        aggregate_function_data_type->setVersion(version, /* if_empty */true);
+    }
+
+    auto serialization = type.getDefaultSerialization();
+
+    serialization->deserializeBinaryBulkStatePrefix(settings, state);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data in NativeBlockInputStream. Rows read: {}. Rows expected: {}", column->size(), rows);
+        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
+            ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
@@ -144,30 +151,6 @@ Block NativeReader::read()
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
 
-        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-        {
-            auto version = aggregate_function_data_type->getVersionFromRevision(server_revision);
-            aggregate_function_data_type->setVersion(version, /*if_empty=*/ true);
-        }
-
-        SerializationPtr serialization;
-        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-        {
-            auto info = column.type->createSerializationInfo({});
-
-            UInt8 has_custom;
-            readBinary(has_custom, istr);
-            if (has_custom)
-                info->deserializeFromKindsBinary(istr);
-
-            serialization = column.type->getSerialization(*info);
-        }
-        else
-        {
-            serialization = column.type->getDefaultSerialization();
-        }
-
         if (use_index)
         {
             /// Index allows to do more checks.
@@ -178,11 +161,11 @@ Block NativeReader::read()
         }
 
         /// Data
-        ColumnPtr read_column = column.type->createColumn(*serialization);
+        ColumnPtr read_column = column.type->createColumn();
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*serialization, read_column, istr, rows, avg_value_size_hint);
+            readData(*column.type, read_column, istr, rows, avg_value_size_hint, server_revision);
 
         column.column = std::move(read_column);
 

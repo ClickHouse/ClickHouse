@@ -30,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -75,7 +74,6 @@ public:
             cache.remove(params);
         }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
-        res->initialize();
         cache.add(params, res);
         return res;
     }
@@ -403,20 +401,9 @@ void AccessControl::addStoragesFromMainConfig(
 }
 
 
-UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+UUID AccessControl::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
-    try
-    {
-        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
-
-        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-        /// only the log will show the exact reason.
-        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
-    }
+    return MultipleAccessStorage::login(credentials, address, *external_authenticators);
 }
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)

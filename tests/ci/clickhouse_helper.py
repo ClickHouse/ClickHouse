@@ -3,7 +3,7 @@ import time
 import logging
 import json
 
-import requests  # type: ignore
+import requests
 from get_robot_token import get_parameter_from_ssm
 
 class ClickHouseHelper:

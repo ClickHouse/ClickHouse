@@ -6,7 +6,6 @@
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -120,7 +119,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->disk = global_ctx->space_reservation->getDisk();
 
     String local_part_path = global_ctx->data->relative_data_path;
-    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + (global_ctx->parent_part ? ".proj" : "");
     String local_new_part_tmp_path = local_part_path + local_tmp_part_basename + "/";
 
     if (ctx->disk->exists(local_new_part_tmp_path))
@@ -159,20 +158,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns);
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
-
-    SerializationInfo::Settings info_settings =
-    {
-        .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
-        .choose_kind = true,
-    };
-
-    SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
-
     for (const auto & part : global_ctx->future_part->parts)
     {
         global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
@@ -182,12 +173,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             ctx->need_remove_expired_values = true;
             ctx->force_ttl = true;
         }
-
-        infos.add(part->getSerializationInfos());
     }
-
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns);
-    global_ctx->new_data_part->setSerializationInfos(infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -262,7 +248,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
-        /*reset_columns=*/ true,
         ctx->blocks_are_granules_size);
 
     global_ctx->rows_written = 0;
@@ -410,7 +395,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
-    const auto & [column_name, column_type] = *ctx->it_name_and_type;
+    const String & column_name = ctx->it_name_and_type->name;
     Names column_names{column_name};
 
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
@@ -516,14 +501,7 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
 {
     for (const auto & part : global_ctx->future_part->parts)
-    {
-        /// Skip empty parts,
-        /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
-        /// since they can incorrectly set min,
-        /// that will be changed after one more merge/OPTIMIZE.
-        if (!part->isEmpty())
-            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
-    }
+        global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {

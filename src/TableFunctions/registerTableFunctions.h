@@ -26,7 +26,6 @@ void registerTableFunctionCOS(TableFunctionFactory & factory);
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
-void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);

@@ -7,10 +7,8 @@ import json
 import logging
 import sys
 from github import Github
-
-from env_helper import REPO_COPY, TEMP_PATH, GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
@@ -23,7 +21,6 @@ NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
 HTML_REPORT_FOLDER = 'pvs-studio-html-report'
 TXT_REPORT_NAME = 'pvs-studio-task-report.txt'
-
 
 def _process_txt_report(path):
     warnings = []
@@ -40,16 +37,15 @@ def _process_txt_report(path):
 
     return warnings, errors
 
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
-    repo_path = REPO_COPY
-    temp_path = TEMP_PATH
+    repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
+    temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
@@ -87,8 +83,7 @@ if __name__ == "__main__":
             logging.info("Run Ok")
 
     if retcode != 0:
-        commit.create_status(context=NAME, description='PVS report failed to build', state='error',
-                             target_url=f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}")
+        commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
         sys.exit(1)
 
     try:
@@ -102,8 +97,8 @@ if __name__ == "__main__":
                 break
 
         if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='error',
-                                 target_url=f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}")
+            commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+                                 target_url=f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
             sys.exit(1)
 
         txt_report = os.path.join(temp_path, TXT_REPORT_NAME)

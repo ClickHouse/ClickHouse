@@ -107,7 +107,7 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
+    const char * getQueryKindString() const override { return "System"; }
 
 protected:
 

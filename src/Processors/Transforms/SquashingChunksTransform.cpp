@@ -11,20 +11,12 @@ SquashingChunksTransform::SquashingChunksTransform(
 {
 }
 
-void SquashingChunksTransform::onConsume(Chunk chunk)
+void SquashingChunksTransform::transform(Chunk & chunk)
 {
     if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
     {
-        cur_chunk.setColumns(block.getColumns(), block.rows());
+        chunk.setColumns(block.getColumns(), block.rows());
     }
-}
-
-SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
-{
-    GenerateResult res;
-    res.chunk = std::move(cur_chunk);
-    res.is_done = true;
-    return res;
 }
 
 void SquashingChunksTransform::onFinish()
@@ -35,7 +27,7 @@ void SquashingChunksTransform::onFinish()
 
 void SquashingChunksTransform::work()
 {
-    if (stage == Stage::Exception)
+    if (has_exception)
     {
         data.chunk.clear();
         ready_input = false;

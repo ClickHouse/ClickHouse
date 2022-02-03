@@ -13,7 +13,6 @@ enum class DiskType
     HDFS,
     Encrypted,
     WebServer,
-    AzureBlobStorage,
 };
 
 inline String toString(DiskType disk_type)
@@ -32,8 +31,6 @@ inline String toString(DiskType disk_type)
             return "encrypted";
         case DiskType::WebServer:
             return "web";
-        case DiskType::AzureBlobStorage:
-            return "azure_blob_storage";
     }
     __builtin_unreachable();
 }

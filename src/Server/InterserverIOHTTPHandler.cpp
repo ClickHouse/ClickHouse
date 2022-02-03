@@ -138,9 +138,9 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         write_response(message);
 
         if (is_real_error)
-            LOG_ERROR(log, fmt::runtime(message));
+            LOG_ERROR(log, message);
         else
-            LOG_INFO(log, fmt::runtime(message));
+            LOG_INFO(log, message);
     }
     catch (...)
     {
@@ -148,7 +148,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         std::string message = getCurrentExceptionMessage(false);
         write_response(message);
 
-        LOG_ERROR(log, fmt::runtime(message));
+        LOG_ERROR(log, message);
     }
 }
 

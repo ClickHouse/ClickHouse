@@ -332,7 +332,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= double(std::numeric_limits<uint64_t>::max()))
+        if (d >= std::numeric_limits<uint64_t>::max())
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }

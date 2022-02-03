@@ -254,7 +254,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     for (const auto & part_name : failed_parts)
     {
         auto part = storage.getPartIfExists(
-            part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+            part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
         if (part)
         {

@@ -42,7 +42,7 @@ Bzip2ReadBuffer::Bzip2ReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_siz
         : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
         , in(std::move(in_))
         , bz(std::make_unique<Bzip2StateWrapper>())
-        , eof_flag(false)
+        , eof(false)
 {
 }
 
@@ -50,7 +50,7 @@ Bzip2ReadBuffer::~Bzip2ReadBuffer() = default;
 
 bool Bzip2ReadBuffer::nextImpl()
 {
-    if (eof_flag)
+    if (eof)
         return false;
 
     if (!bz->stream.avail_in)
@@ -72,7 +72,7 @@ bool Bzip2ReadBuffer::nextImpl()
     {
         if (in->eof())
         {
-            eof_flag = true;
+            eof = true;
             return !working_buffer.empty();
         }
         else
@@ -91,7 +91,7 @@ bool Bzip2ReadBuffer::nextImpl()
 
     if (in->eof())
     {
-        eof_flag = true;
+        eof = true;
         throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of bzip2 archive");
     }
 

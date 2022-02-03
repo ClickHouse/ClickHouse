@@ -6,7 +6,7 @@
             <host>mongo1</host>
             <port>27017</port>
             <database>test</database>
-            <collection>simple_table</collection>
+            <table>simple_table</table>
         </mongo1>
     </named_collections>
 </clickhouse>

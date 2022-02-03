@@ -16,23 +16,22 @@ namespace ProfileEvents
 namespace DB
 {
 
-void CountingTransform::onConsume(Chunk chunk)
+void CountingTransform::transform(Chunk & chunk)
 {
-    Progress local_progress{WriteProgress(chunk.getNumRows(), chunk.bytes())};
+    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
 
     //std::cerr << "============ counting adding progress for " << static_cast<const void *>(thread_status) << ' ' << chunk.getNumRows() << " rows\n";
 
     if (thread_status)
     {
-        thread_status->performance_counters.increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-        thread_status->performance_counters.increment(ProfileEvents::InsertedBytes, local_progress.written_bytes);
-        thread_status->progress_out.incrementPiecewiseAtomically(local_progress);
+        thread_status->performance_counters.increment(ProfileEvents::InsertedRows, local_progress.read_rows);
+        thread_status->performance_counters.increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-        ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.written_bytes);
+        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);
+        ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
     }
 
     if (process_elem)
@@ -40,8 +39,6 @@ void CountingTransform::onConsume(Chunk chunk)
 
     if (progress_callback)
         progress_callback(local_progress);
-
-    cur_chunk = std::move(chunk);
 }
 
 }

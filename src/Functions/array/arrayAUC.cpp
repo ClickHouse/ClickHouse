@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <vector>
-#include <base/sort.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include "arrayScalarProduct.h"
@@ -113,7 +112,7 @@ public:
             sorted_labels[i].label = label;
         }
 
-        ::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
+        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
         /// We will first calculate non-normalized area.
 

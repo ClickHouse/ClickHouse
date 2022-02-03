@@ -5,11 +5,6 @@
 namespace DB
 {
 
-/// Serialization wrapper that acts like nested serialization,
-/// but adds a passed name to the substream path like the
-/// read column was the tuple element with this name.
-/// It's used while reading subcolumns of complex types.
-/// In particular while reading components of named tuples.
 class SerializationNamed final : public SerializationWrapper
 {
 private:
@@ -28,7 +23,8 @@ public:
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        const SubstreamData & data) const override;
+        DataTypePtr type,
+        ColumnPtr column) const override;
 
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,

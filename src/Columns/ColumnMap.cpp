@@ -4,6 +4,8 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -62,9 +64,8 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 
 Field ColumnMap::operator[](size_t n) const
 {
-    Field res;
-    get(n, res);
-    return res;
+    auto array = DB::get<Array>((*nested)[n]);
+    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
 }
 
 void ColumnMap::get(size_t n, Field & res) const
@@ -73,17 +74,11 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    res = Map();
+    res = Map(size);
     auto & map = DB::get<Map &>(res);
-    map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        map.push_back(getNestedData()[offset + i]);
-}
-
-bool ColumnMap::isDefaultAt(size_t n) const
-{
-    return nested->isDefaultAt(n);
+        getNestedData().get(offset + i, map[i]);
 }
 
 StringRef ColumnMap::getDataAt(size_t) const
@@ -276,16 +271,6 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
-}
-
-double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
-}
-
-void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
 }
 
 ColumnPtr ColumnMap::compress() const

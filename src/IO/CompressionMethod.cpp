@@ -14,7 +14,6 @@
 #include <IO/Lz4InflatingReadBuffer.h>
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
-#include <IO/HadoopSnappyReadBuffer.h>
 
 #include <Common/config.h>
 
@@ -47,8 +46,6 @@ std::string toContentEncodingName(CompressionMethod method)
             return "lz4";
         case CompressionMethod::Bzip2:
             return "bz2";
-        case CompressionMethod::Snappy:
-            return "snappy";
         case CompressionMethod::None:
             return "";
     }
@@ -82,13 +79,11 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Lz4;
     if (method_str == "bz2")
         return CompressionMethod::Bzip2;
-    if (method_str == "snappy")
-        return CompressionMethod::Snappy;
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
     throw Exception(
-        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods",
+        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
 }
 
@@ -112,11 +107,6 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
-#if USE_SNAPPY
-    if (method == CompressionMethod::Snappy)
-        return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
-#endif
-
     if (method == CompressionMethod::None)
         return nested;
 
@@ -146,10 +136,6 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2WriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
-#endif
-#if USE_SNAPPY
-    if (method == CompressionMethod::Snappy)
-        throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     if (method == CompressionMethod::None)
         return nested;

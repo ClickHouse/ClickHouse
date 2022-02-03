@@ -72,13 +72,4 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
 }
-
-void registerLineAsStringSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("LineAsString", [](
-            const FormatSettings &)
-    {
-        return std::make_shared<LinaAsStringSchemaReader>();
-    });
-}
 }

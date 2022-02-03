@@ -46,7 +46,6 @@ public:
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    bool isDefaultAt(size_t) const override { throw Exception("isDefaultAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     StringRef getDataAt(size_t) const override
     {
@@ -160,16 +159,6 @@ public:
             res[i] = cloneResized(counts[i]);
 
         return res;
-    }
-
-    double getRatioOfDefaultRows(double) const override
-    {
-        throw Exception("Method getRatioOfDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
-    {
-        throw Exception("Method getIndicesOfNonDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void gather(ColumnGathererStream &) override

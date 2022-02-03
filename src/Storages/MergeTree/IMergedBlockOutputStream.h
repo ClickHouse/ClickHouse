@@ -13,9 +13,7 @@ class IMergedBlockOutputStream
 public:
     IMergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list,
-        bool reset_columns_);
+        const StorageMetadataPtr & metadata_snapshot_);
 
     virtual ~IMergedBlockOutputStream() = default;
 
@@ -38,7 +36,6 @@ protected:
     static NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
-        SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
     const MergeTreeData & storage;
@@ -48,9 +45,6 @@ protected:
     String part_path;
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
-
-    bool reset_columns = false;
-    SerializationInfoByName new_serialization_infos;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

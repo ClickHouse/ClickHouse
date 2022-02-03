@@ -1,6 +1,7 @@
 import json
 
 from testflows.core import *
+from testflows.core import threading
 from testflows.asserts import error
 
 from rbac.requirements import *
@@ -281,9 +282,11 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
     (key,) for key in table_types.keys()
 ])
 @Name("alter constraint")
-def feature(self, stress=None, node="clickhouse1"):
+def feature(self, node="clickhouse1", parallel=None, stress=None):
     self.context.node = self.context.cluster.node(node)
 
+    if parallel is not None:
+        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
@@ -293,12 +296,11 @@ def feature(self, stress=None, node="clickhouse1"):
         if table_type != "MergeTree" and not self.context.stress:
             continue
 
-        args = {"table_type" : table_type}
-
         with Example(str(example)):
             with Pool(5) as pool:
+                tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
+                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
                 finally:
-                    join()
+                    join(tasks)

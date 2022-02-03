@@ -9,7 +9,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -412,7 +411,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
+            key_columns[0] = key_columns[0]->convertToFullColumnIfConst();
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -575,8 +574,6 @@ void mergeBlockWithPipe(
 
     while (executor.pull(block))
     {
-        convertToFullIfSparse(block);
-
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
 
@@ -623,17 +620,6 @@ void mergeBlockWithPipe(
     }
 }
 
-template <typename Arena>
-static StringRef copyStringInArena(Arena & arena, StringRef value)
-{
-    size_t key_size = value.size;
-    char * place_for_key = arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value.data), key_size);
-    StringRef result{place_for_key, key_size};
-
-    return result;
-}
-
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
@@ -647,7 +633,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+    auto full_column = column->convertToFullColumnIfConst();
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
@@ -678,15 +664,6 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
     auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     column_vector->getData().insert(array.begin(), array.end());
-
-    return column_vector;
-}
-
-template <typename T>
-static ColumnPtr getColumnFromPODArray(PaddedPODArray<T> && array)
-{
-    auto column_vector = ColumnVector<T>::create();
-    column_vector->getData() = std::move(array);
 
     return column_vector;
 }

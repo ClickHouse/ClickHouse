@@ -7,12 +7,12 @@
 #include <pqxx/pqxx>
 #include <Core/Types.h>
 #include <base/BorrowedObjectPool.h>
-#include "Connection.h"
 
 
 namespace postgres
 {
 
+using ConnectionPtr = std::unique_ptr<pqxx::connection>;
 using Pool = BorrowedObjectPool<ConnectionPtr>;
 using PoolPtr = std::shared_ptr<Pool>;
 
@@ -28,12 +28,8 @@ public:
 
     pqxx::connection & get()
     {
-        return connection->getRef();
-    }
-
-    void update()
-    {
-        connection->updateConnection();
+        assert(connection != nullptr);
+        return *connection;
     }
 
 private:

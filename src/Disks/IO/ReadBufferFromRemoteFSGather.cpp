@@ -8,10 +8,6 @@
 #include <IO/ReadBufferFromS3.h>
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
-#include <IO/ReadBufferFromAzureBlobStorage.h>
-#endif
-
 #if USE_HDFS
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
@@ -30,15 +26,6 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 {
     return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
         fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, read_until_position_);
-}
-#endif
-
-
-#if USE_AZURE_BLOB_STORAGE
-SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
-{
-    return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, threadpool_read, read_until_position_);
 }
 #endif
 

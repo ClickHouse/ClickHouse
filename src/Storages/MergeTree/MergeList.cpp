@@ -2,9 +2,8 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <base/getThreadId.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB

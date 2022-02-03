@@ -33,8 +33,7 @@ enum class CompressionMethod
     Zstd,
     Brotli,
     Lz4,
-    Bzip2,
-    Snappy,
+    Bzip2
 };
 
 /// How the compression method is named in HTTP.

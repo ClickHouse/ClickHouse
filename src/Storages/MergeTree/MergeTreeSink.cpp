@@ -18,7 +18,6 @@ void MergeTreeSink::onStart()
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    String block_dedup_token;
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
     for (auto & current_block : part_blocks)
@@ -32,20 +31,8 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!part)
             continue;
 
-        if (storage.getDeduplicationLog())
-        {
-            const String & dedup_token = context->getSettingsRef().insert_deduplication_token;
-            if (!dedup_token.empty())
-            {
-                /// multiple blocks can be inserted within the same insert query
-                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
-                block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
-                ++chunk_dedup_seqnum;
-            }
-        }
-
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog(), block_dedup_token))
+        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
         {
             PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
 

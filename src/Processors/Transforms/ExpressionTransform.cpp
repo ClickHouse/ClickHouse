@@ -31,7 +31,7 @@ ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionAction
 {
 }
 
-void ConvertingTransform::onConsume(Chunk chunk)
+void ConvertingTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -39,7 +39,6 @@ void ConvertingTransform::onConsume(Chunk chunk)
     expression->execute(block, num_rows);
 
     chunk.setColumns(block.getColumns(), num_rows);
-    cur_chunk = std::move(chunk);
 }
 
 }

@@ -24,8 +24,6 @@ SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184', 3, 'UTC') AS a, toT
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffort('1640649600123', 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffort('1640649600123', 'UTC') AS a, toTypeName(a);
 
 SELECT 'parseDateTimeBestEffortOrNull';
 SELECT parseDateTimeBestEffortOrNull('<Empty>', 3) AS a, toTypeName(a);
@@ -39,8 +37,6 @@ SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184', 3, 'UTC') AS 
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffortOrNull('1640649600123', 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffortOrNull('1640649600123', 'UTC') AS a, toTypeName(a);
 
 SELECT 'parseDateTimeBestEffortOrZero';
 SELECT parseDateTimeBestEffortOrZero('<Empty>', 3, 'UTC') AS a, toTypeName(a);
@@ -54,8 +50,6 @@ SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184', 3, 'UTC') AS 
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffortOrZero('1640649600123', 3, 'UTC') AS a, toTypeName(a);
-SELECT parseDateTimeBestEffortOrZero('1640649600123', 'UTC') AS a, toTypeName(a);
 
 SELECT 'parseDateTime32BestEffort';
 SELECT parseDateTime32BestEffort('<Empty>') AS a, toTypeName(a); -- {serverError 41}
@@ -69,7 +63,6 @@ SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184', 'UTC') AS a, toTy
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort(materialize('2020-05-14T03:37:03.253184Z'), 'UTC') AS a, toTypeName(a);
-SELECT parseDateTime32BestEffort('1640649600123', 'UTC') AS a, toTypeName(a);
 
 SELECT 'parseDateTime32BestEffortOrNull';
 SELECT parseDateTime32BestEffortOrNull('<Empty>') AS a, toTypeName(a);
@@ -83,7 +76,6 @@ SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184', 'UTC') AS a
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull(materialize('2020-05-14T03:37:03.253184Z'), 'UTC') AS a, toTypeName(a);
-SELECT parseDateTime32BestEffortOrNull('1640649600123', 'UTC') AS a, toTypeName(a);
 
 SELECT 'parseDateTime32BestEffortOrZero';
 SELECT parseDateTime32BestEffortOrZero('<Empty>', 'UTC') AS a, toTypeName(a);
@@ -97,6 +89,6 @@ SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184', 'UTC') AS a
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero(materialize('2020-05-14T03:37:03.253184Z'), 'UTC') AS a, toTypeName(a);
-SELECT parseDateTime32BestEffortOrZero('1640649600123', 'UTC') AS a, toTypeName(a);
+
 
 DROP TABLE IF EXISTS test;

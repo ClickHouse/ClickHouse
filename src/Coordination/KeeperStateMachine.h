@@ -97,8 +97,6 @@ public:
     uint64_t getSessionWithEphemeralNodesCount() const;
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
-    uint64_t getKeyArenaSize() const;
-    uint64_t getLatestSnapshotBufSize() const;
 
 private:
 
@@ -122,7 +120,7 @@ private:
     SnapshotsQueue & snapshots_queue;
 
     /// Mutex for snapshots
-    mutable std::mutex snapshots_lock;
+    std::mutex snapshots_lock;
 
     /// Lock for storage and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise

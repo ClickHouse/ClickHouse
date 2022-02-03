@@ -32,7 +32,7 @@ Lz4InflatingReadBuffer::~Lz4InflatingReadBuffer()
 
 bool Lz4InflatingReadBuffer::nextImpl()
 {
-    if (eof_flag)
+    if (eof)
         return false;
 
     if (!in_available)
@@ -66,15 +66,9 @@ bool Lz4InflatingReadBuffer::nextImpl()
 
     if (in->eof())
     {
-        eof_flag = true;
+        eof = true;
         return !working_buffer.empty();
     }
-
-    /// It may happen that we didn't get new uncompressed data
-    /// (for example if we read the end of frame). Load new data
-    /// in this case.
-    if (working_buffer.empty())
-        return nextImpl();
 
     return true;
 }

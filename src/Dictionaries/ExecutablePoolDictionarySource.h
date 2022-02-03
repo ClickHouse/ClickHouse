@@ -28,15 +28,21 @@ public:
     struct Configuration
     {
         String command;
-        std::vector<String> command_arguments;
+        String format;
+        size_t pool_size;
+        size_t command_termination_timeout;
+        size_t max_command_execution_time;
+        /// Implicit key means that the source script will return only values,
+        /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
         bool implicit_key;
+        /// Send number_of_rows\n before sending chunk to process
+        bool send_chunk_header;
     };
 
     ExecutablePoolDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
-        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
         ContextPtr context_);
 
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
@@ -71,8 +77,8 @@ private:
     const Configuration configuration;
 
     Block sample_block;
-    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
+    std::shared_ptr<ProcessPool> process_pool;
     Poco::Logger * log;
 };
 

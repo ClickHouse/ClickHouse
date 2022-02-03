@@ -347,31 +347,18 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
     }
 }
 
-
-template <bool inverse, typename Source, typename Sink>
-static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
+template <typename Source, typename Sink>
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
-    const bool is_offset_null = !offset_column || offset_column->onlyNull();
-    const ColumnUInt8::Container * offset_null_map = nullptr;
-    const IColumn * offset_nested_column = nullptr;
+    const bool is_offset_null = offset_column.onlyNull();
+    const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
+    const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
-    if (!is_offset_null)
-    {
-        const auto * offset_nullable = typeid_cast<const ColumnNullable *>(offset_column);
-        offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
-        offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : offset_column;
-    }
-
-    const bool is_length_null = !length_column || length_column->onlyNull();
-    const ColumnUInt8::Container * length_null_map = nullptr;
-    const IColumn * length_nested_column = nullptr;
-
-    if (!is_length_null)
-    {
-        const auto * length_nullable = typeid_cast<const ColumnNullable *>(length_column);
-        length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
-        length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : length_column;
-    }
+    const bool is_length_null = length_column.onlyNull();
+    const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
+    const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
     {
@@ -389,19 +376,9 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
             typename std::decay_t<Source>::Slice slice;
 
             if (offset > 0)
-            {
-                if constexpr (inverse)
-                    slice = src.getSliceFromRight(UInt64(size) + UInt64(offset) - 1, size);
-                else
-                    slice = src.getSliceFromLeft(UInt64(offset) - 1, size);
-            }
+                slice = src.getSliceFromLeft(offset - 1, size);
             else
-            {
-                if constexpr (inverse)
-                    slice = src.getSliceFromLeft(-UInt64(offset), size);
-                else
-                    slice = src.getSliceFromRight(-UInt64(offset), size);
-            }
+                slice = src.getSliceFromRight(-UInt64(offset), size);
 
             writeSlice(slice, sink);
         }
@@ -409,26 +386,6 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         sink.next();
         src.next();
     }
-}
-
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
-{
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
-}
-
-/// Similar to above, but with no offset.
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
-{
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
-{
-    sliceDynamicOffsetBoundedImpl<true>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 
@@ -636,7 +593,6 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
-
 inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, size_t first_ind, size_t second_ind)
 {
     return first.elements->compareAt(first_ind + first.begin, second_ind + first.begin, *first.elements, -1) == 0;

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -56,7 +55,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        storage.reportBrokenPart(data_part->name);
         throw;
     }
 }
@@ -106,10 +105,7 @@ size_t MergeTreeReaderWide::readRows(
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-            {
-                auto serialization = data_part->getSerialization(column_from_part);
-                res_columns[pos] = type->createColumn(*serialization);
-            }
+                res_columns[pos] = type->createColumn();
 
             auto & column = res_columns[pos];
             try
@@ -144,7 +140,7 @@ size_t MergeTreeReaderWide::readRows(
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            storage.reportBrokenPart(data_part);
+            storage.reportBrokenPart(data_part->name);
 
         /// Better diagnostics.
         e.addMessage("(while reading from part " + data_part->getFullPath() + " "
@@ -154,7 +150,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        storage.reportBrokenPart(data_part->name);
 
         throw;
     }
@@ -188,7 +184,9 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    data_part->getSerialization(name_and_type)->enumerateStreams(callback);
+    auto serialization = data_part->getSerializationForColumn(name_and_type);
+    serialization->enumerateStreams(callback);
+    serializations.emplace(name_and_type.name, std::move(serialization));
 }
 
 
@@ -248,7 +246,8 @@ void MergeTreeReaderWide::prefetch(
     ISerialization::SubstreamsCache & cache,
     std::unordered_set<std::string> & prefetched_streams)
 {
-    auto serialization = data_part->getSerialization(name_and_type);
+    const auto & name = name_and_type.name;
+    auto & serialization = serializations[name];
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -277,7 +276,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
     const auto & name = name_and_type.name;
-    auto serialization = data_part->getSerialization(name_and_type);
+    auto & serialization = serializations[name];
 
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 

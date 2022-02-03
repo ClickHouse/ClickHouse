@@ -48,7 +48,7 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         parsed_table = parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
 
     if (!parsed_table && require_table)
-        return false;
+            return false;
 
     if (!parsed_on_cluster && ParserKeyword{"ON"}.ignore(pos, expected))
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
@@ -60,20 +60,6 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         res->children.push_back(res->database);
     if (res->table)
         res->children.push_back(res->table);
-
-    return true;
-}
-
-static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
-                                    Expected & expected)
-{
-    String cluster_str;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-            return false;
-    }
-    res->cluster = cluster_str;
 
     return true;
 }
@@ -112,8 +98,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RELOAD_MODEL:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
             ASTPtr ast;
             if (ParserStringLiteral{}.parse(pos, ast, expected))
             {
@@ -136,8 +127,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RELOAD_FUNCTION:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
             ASTPtr ast;
             if (ParserStringLiteral{}.parse(pos, ast, expected))
             {
@@ -160,8 +156,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
@@ -202,17 +196,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
-        {
-            parseQueryWithOnCluster(res, pos, expected);
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
-        }
 
         case Type::RESTART_DISK:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))
                 res->disk = ast->as<ASTIdentifier &>().name();
@@ -246,7 +235,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             String storage_policy_str;
             String volume_str;
 
-            auto parse_on_volume = [&]() -> bool
+            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
             {
                 ASTPtr ast;
                 if (ParserIdentifier{}.parse(pos, ast, expected))
@@ -261,25 +250,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     volume_str = ast->as<ASTIdentifier &>().name();
                 else
                     return false;
-
-                return true;
-            };
-
-            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
-            {
-                if (!parse_on_volume())
-                    return false;
             }
-            else
-            {
-                parseQueryWithOnCluster(res, pos, expected);
-                if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
-                {
-                    if (!parse_on_volume())
-                        return false;
-                }
-            }
-
             res->storage_policy = storage_policy_str;
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
@@ -297,14 +268,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseQueryWithOnCluster(res, pos, expected);
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
             ASTPtr seconds;
             if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
                 && ParserUnsignedInteger().parse(pos, seconds, expected)
@@ -318,10 +286,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         default:
-        {
-            parseQueryWithOnCluster(res, pos, expected);
+            /// There are no [db.table] after COMMAND NAME
             break;
-        }
     }
 
     if (res->database)

@@ -188,19 +188,8 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
-    if (primary_key_keyword.ignore(pos))
-    {
-        bool was_open = false;
-
-        if (open.ignore(pos, expected))
-            was_open = true;
-
-        if (!expression_list_p.parse(pos, primary_key, expected))
-            return false;
-
-        if (was_open && !close.ignore(pos, expected))
-            return false;
-    }
+    if (primary_key_keyword.ignore(pos) && !expression_list_p.parse(pos, primary_key, expected))
+        return false;
 
     /// Loop is used to avoid strict order of dictionary properties
     while (true)

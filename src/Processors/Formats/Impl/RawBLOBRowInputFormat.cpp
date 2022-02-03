@@ -51,14 +51,5 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
     });
 }
 
-void registerRawBLOBSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("RawBLOB", [](
-            const FormatSettings &)
-    {
-        return std::make_shared<RawBLOBSchemaReader>();
-    });
-}
-
 }
 

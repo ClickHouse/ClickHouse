@@ -2,7 +2,6 @@
 set -euo pipefail
 
 cd $REPO_PATH/docs/tools
-rm -rf venv
 mkdir venv
 virtualenv -p $(which python3) venv
 source venv/bin/activate

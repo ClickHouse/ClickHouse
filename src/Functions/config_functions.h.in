@@ -8,5 +8,3 @@
 #cmakedefine01 USE_H3
 #cmakedefine01 USE_S2_GEOMETRY
 #cmakedefine01 USE_FASTOPS
-#cmakedefine01 USE_NLP
-#cmakedefine01 USE_HYPERSCAN

@@ -2,7 +2,7 @@
 title: 'ClickHouse Moscow Meetup October 19, 2021'
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-october-moscow-meetup/featured.jpg'
 date: '2021-11-11'
-author: 'Rich Raposa'
+author: '[Rich Raposa](https://github.com/rfraposa)'
 tags: ['company', 'community']
 ---
 

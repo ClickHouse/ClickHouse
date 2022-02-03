@@ -53,9 +53,9 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
-if (NOT ENABLE_NURAFT)
+if (NOT USE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
-    # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
+    # since USE_NURAFT is set to OFF for FreeBSD and Darwin.
     message (STATUS "clickhouse-keeper and clickhouse-keeper-converter will not be built (lack of NuRaft)")
     set(ENABLE_CLICKHOUSE_KEEPER OFF)
     set(ENABLE_CLICKHOUSE_KEEPER_CONVERTER OFF)
@@ -160,7 +160,7 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
@@ -468,7 +468,7 @@ else ()
     endif()
 endif ()
 
-if (ENABLE_TESTS)
+if (ENABLE_TESTS AND USE_GTEST)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)

@@ -12,8 +12,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 
-#include <Storages/MergeTree/RequestResponse.h>
-
 
 #include <boost/noncopyable.hpp>
 
@@ -34,12 +32,9 @@ struct Packet
     Progress progress;
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    PartitionReadRequest request;
-    PartitionReadResponse response;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
-
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData
@@ -100,8 +95,6 @@ public:
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
-
-    virtual void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

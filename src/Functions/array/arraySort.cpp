@@ -1,5 +1,4 @@
 #include "FunctionArrayMapped.h"
-#include <base/sort.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -50,7 +49,7 @@ struct ArraySortImpl
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
-            ::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
+            std::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
             current_offset = next_offset;
         }
 

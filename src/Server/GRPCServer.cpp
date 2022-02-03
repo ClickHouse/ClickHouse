@@ -16,7 +16,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -64,7 +63,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int BAD_REQUEST_PARAMETER;
 }
 
 namespace
@@ -296,8 +294,6 @@ namespace
             setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
         }
 
-        grpc::ServerContext grpc_context;
-
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
@@ -319,6 +315,8 @@ namespace
             };
             return &callback_in_map;
         }
+
+        grpc::ServerContext grpc_context;
 
     private:
         grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> reader_writer{&grpc_context};
@@ -620,11 +618,7 @@ namespace
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
-        PODArray<char> output;
         String output_format;
-        CompressionMethod compression_method = CompressionMethod::None;
-        int compression_level = 0;
-
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
         bool input_function_is_used = false;
@@ -641,10 +635,8 @@ namespace
         bool responder_finished = false;
         bool cancelled = false;
 
-        std::unique_ptr<ReadBuffer> read_buffer;
-        std::unique_ptr<WriteBuffer> write_buffer;
-        WriteBufferFromVector<PODArray<char>> * nested_write_buffer = nullptr;
-        WriteBuffer * compressing_write_buffer = nullptr;
+        std::optional<ReadBufferFromCallback> read_buffer;
+        std::optional<WriteBufferFromString> write_buffer;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         std::shared_ptr<IOutputFormat> output_format_processor;
@@ -752,35 +744,6 @@ namespace
         session->authenticate(user, password, user_address);
         session->getClientInfo().quota_key = quota_key;
 
-        // Parse the OpenTelemetry traceparent header.
-        ClientInfo client_info = session->getClientInfo();
-        const auto & client_metadata = responder->grpc_context.client_metadata();
-        auto traceparent = client_metadata.find("traceparent");
-        if (traceparent != client_metadata.end())
-        {
-            grpc::string_ref parent_ref = traceparent->second;
-            std::string opentelemetry_traceparent(parent_ref.data(), parent_ref.length());
-            std::string error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(
-                opentelemetry_traceparent, error))
-            {
-                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                    "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                    opentelemetry_traceparent, error);
-            }
-            auto tracestate = client_metadata.find("tracestate");
-            if (tracestate != client_metadata.end())
-            {
-                grpc::string_ref state_ref = tracestate->second;
-                client_info.client_trace_context.tracestate =
-                    std::string(state_ref.data(), state_ref.length());
-            }
-            else
-            {
-                client_info.client_trace_context.tracestate = "";
-            }
-        }
-
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
@@ -789,7 +752,7 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
-        query_context = session->makeQueryContext(std::move(client_info));
+        query_context = session->makeQueryContext();
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -854,10 +817,6 @@ namespace
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
-
-        /// Choose compression.
-        compression_method = chooseCompressionMethod("", query_info.compression_type());
-        compression_level = query_info.compression_level();
 
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -932,7 +891,7 @@ namespace
     void Call::initializeBlockInputStream(const Block & header)
     {
         assert(!read_buffer);
-        read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
+        read_buffer.emplace([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
             {
@@ -987,8 +946,6 @@ namespace
 
             return {nullptr, 0}; /// no more input data
         });
-
-        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), compression_method);
 
         assert(!pipeline);
         auto source = query_context->getInputFormat(
@@ -1073,10 +1030,7 @@ namespace
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
-
-                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
-                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
-
+                    ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
@@ -1093,7 +1047,7 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(),
+                        format, data, metadata_snapshot->getSampleBlock(),
                         external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
@@ -1147,18 +1101,7 @@ namespace
         if (io.pipeline.pulling())
             header = io.pipeline.getHeader();
 
-        if (compression_method != CompressionMethod::None)
-            output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
-        write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
-        nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
-        if (compression_method != CompressionMethod::None)
-        {
-            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), compression_method, compression_level);
-            compressing_write_buffer = write_buffer.get();
-        }
-
-        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
-
+        write_buffer.emplace(*result.mutable_output());
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
         Stopwatch after_send_progress;
 
@@ -1200,7 +1143,8 @@ namespace
 
                 addLogsToResult();
 
-                if (has_output() || result.has_progress() || result.logs_size())
+                bool has_output = write_buffer->offset();
+                if (has_output || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1220,11 +1164,13 @@ namespace
             auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
             auto callback = [&]() -> bool
             {
+
                 throwIfFailedToSendResult();
                 addProgressToResult();
                 addLogsToResult();
 
-                if (has_output() || result.has_progress() || result.logs_size())
+                bool has_output = write_buffer->offset();
+                if (has_output || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1262,7 +1208,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, fmt::runtime(getExceptionMessage(exception, true)));
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {
@@ -1314,8 +1260,6 @@ namespace
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
         io.process_list_entry.reset();
-        if (query_context)
-            query_context->setProcessListElement(nullptr);
         if (session)
             session->releaseSessionID();
     }
@@ -1328,8 +1272,6 @@ namespace
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
-        nested_write_buffer = nullptr;
-        compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
         query_context.reset();
@@ -1448,17 +1390,10 @@ namespace
         if (!totals)
             return;
 
-        PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
-            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
-        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
-        auto format = query_context->getOutputFormat(output_format, *buf, totals);
+        WriteBufferFromString buf{*result.mutable_totals()};
+        auto format = query_context->getOutputFormat(output_format, buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
-        buf->finalize();
-
-        result.mutable_totals()->assign(memory.data(), memory.size());
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1466,17 +1401,10 @@ namespace
         if (!extremes)
             return;
 
-        PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
-            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
-        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
-        auto format = query_context->getOutputFormat(output_format, *buf, extremes);
+        WriteBufferFromString buf{*result.mutable_extremes()};
+        auto format = query_context->getOutputFormat(output_format, buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
-        buf->finalize();
-
-        result.mutable_extremes()->assign(memory.data(), memory.size());
     }
 
     void Call::addProfileInfoToResult(const ProfileInfo & info)
@@ -1547,38 +1475,6 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
-        /// Copy output to `result.output`, with optional compressing.
-        if (write_buffer)
-        {
-            size_t output_size;
-            if (send_final_message)
-            {
-                if (compressing_write_buffer)
-                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
-                write_buffer->finalize();
-                output_size = output.size();
-            }
-            else
-            {
-                if (compressing_write_buffer && compressing_write_buffer->offset())
-                {
-                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
-                    compressing_write_buffer->sync();
-                }
-                output_size = nested_write_buffer->position() - output.data();
-            }
-
-            if (output_size)
-            {
-                result.mutable_output()->assign(output.data(), output_size);
-                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
-            }
-        }
-
-        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !result.logs_size()
-            && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
-            return; /// Nothing to send.
-
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
         if (sending_result.get())
@@ -1591,6 +1487,9 @@ namespace
 
         /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
+
+        if (write_buffer)
+            write_buffer->finalize();
 
         sending_result.set(true);
         auto callback = [this](bool ok)
@@ -1612,6 +1511,8 @@ namespace
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
+        if (write_buffer)
+            write_buffer->restart();
 
         if (send_final_message)
         {

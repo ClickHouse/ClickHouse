@@ -39,6 +39,11 @@ def build_entity(path: str, entity: Entity, line_comment: Tuple[int, str]) -> No
     if name in entities:
         return
 
+    # cannot escape the { in macro option description -> invalid AMP html
+    # Skipping "USE_INTERNAL_${LIB_NAME_UC}_LIBRARY"
+    if "LIB_NAME_UC" in name:
+        return
+
     if len(default) == 0:
         formatted_default: str = "`OFF`"
     elif default[0] == "$":
@@ -132,6 +137,13 @@ def generate_cmake_flags_files() -> None:
 
         for k in sorted_keys:
             if k.startswith("ENABLE_") and ".cmake" in entities[k][0]:
+                f.write(entities[k][1] + "\n")
+                ignored_keys.append(k)
+
+        f.write("\n\n### External libraries system/bundled mode\n" + table_header)
+
+        for k in sorted_keys:
+            if k.startswith("USE_INTERNAL_"):
                 f.write(entities[k][1] + "\n")
                 ignored_keys.append(k)
 

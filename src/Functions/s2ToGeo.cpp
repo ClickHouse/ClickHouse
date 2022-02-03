@@ -78,7 +78,7 @@ public:
         auto & latitude = col_latitude->getData();
         latitude.reserve(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const auto id = S2CellId(col_id->getUInt(row));
 

@@ -82,14 +82,13 @@ private:
 
     bool is_attach = false;
     bool quorum_parallel = false;
-    const bool deduplicate = true;
+    bool deduplicate = true;
     bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
 
     ContextPtr context;
-    UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 };
 
 }

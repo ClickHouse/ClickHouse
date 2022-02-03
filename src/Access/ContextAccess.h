@@ -63,7 +63,7 @@ struct ContextAccessParams
 };
 
 
-class ContextAccess : public std::enable_shared_from_this<ContextAccess>
+class ContextAccess
 {
 public:
     using Params = ContextAccessParams;
@@ -161,7 +161,6 @@ private:
     ContextAccess() {}
     ContextAccess(const AccessControl & access_control_, const Params & params_);
 
-    void initialize();
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
     void setSettingsAndConstraints() const;

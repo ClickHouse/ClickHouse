@@ -65,7 +65,7 @@ public:
         return query_ptr;
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Rename; }
+    const char * getQueryKindString() const override { return "Rename"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override

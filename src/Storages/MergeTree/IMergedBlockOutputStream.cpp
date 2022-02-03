@@ -4,34 +4,19 @@
 
 namespace DB
 {
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const NamesAndTypesList & columns_list,
-    bool reset_columns_)
+    const StorageMetadataPtr & metadata_snapshot_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
-    , reset_columns(reset_columns_)
 {
-    if (reset_columns)
-    {
-        SerializationInfo::Settings info_settings =
-        {
-            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
-            .choose_kind = false,
-        };
-
-        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
-    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
-    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     const NameSet & empty_columns = data_part->expired_columns;
@@ -43,9 +28,10 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const auto & column : columns)
+    for (const NameAndTypePair & column : columns)
     {
-        data_part->getSerialization(column)->enumerateStreams(
+        auto serialization = data_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -71,8 +57,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
-        serialization_infos.erase(column_name);
+        auto serialization = data_part->getSerializationForColumn(*column_with_type);
+        serialization->enumerateStreams(callback);
     }
 
     /// Remove files on disk and checksums

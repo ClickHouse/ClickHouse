@@ -23,19 +23,12 @@ public:
 
     String getName() const override { return "CheckConstraintsTransform"; }
 
-    void onConsume(Chunk chunk) override;
-    GenerateResult onGenerate() override
-    {
-        GenerateResult res;
-        res.chunk = std::move(cur_chunk);
-        return res;
-    }
+    void transform(Chunk & chunk) override;
 
 private:
     StorageID table_id;
     const ASTs constraints_to_check;
     const ConstraintsExpressions expressions;
     size_t rows_written = 0;
-    Chunk cur_chunk;
 };
 }

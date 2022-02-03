@@ -4,7 +4,9 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
+
 #include <Common/setThreadName.h>
+#include <base/scope_guard_safe.h>
 
 namespace DB
 {
@@ -74,6 +76,11 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
 
         data.executor->execute(num_threads);
     }

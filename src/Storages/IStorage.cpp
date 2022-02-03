@@ -139,6 +139,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     setInMemoryMetadata(new_metadata);
 }
 
+
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)

@@ -44,11 +44,12 @@ public:
 private:
     struct PoolHolder
     {
-        ConnectionInfo connection_info;
+        String connection_string;
         PoolPtr pool;
+        String name_for_log;
 
-        PoolHolder(const ConnectionInfo & connection_info_, size_t pool_size)
-            : connection_info(connection_info_), pool(std::make_shared<Pool>(pool_size)) {}
+        PoolHolder(const String & connection_string_, size_t pool_size, const String & name_for_log_)
+            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)), name_for_log(name_for_log_) {}
     };
 
     /// Highest priority is 0, the bigger the number in map, the less the priority

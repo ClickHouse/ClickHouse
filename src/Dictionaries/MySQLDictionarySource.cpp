@@ -14,8 +14,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/MySQL/MySQLHelpers.h>
-#include <Storages/MySQL/MySQLSettings.h>
 
 
 namespace DB
@@ -29,18 +27,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
-
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password",
-    "db", "database", "table", "schema",
-    "update_field", "invalidate_query", "priority",
-    "update_tag", "dont_check_update_time",
-    "query", "where", "name" /* name_collection */, "socket",
-    "share_connection", "fail_on_connection_loss", "close_connection",
-    "ssl_ca", "ssl_cert", "ssl_key",
-    "enable_local_infile", "opt_reconnect",
-    "connect_timeout", "mysql_connect_timeout",
-    "mysql_rw_timeout", "rw_timeout"};
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
@@ -60,26 +46,13 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
-        MySQLSettings mysql_settings;
-        auto has_config_key = [&](const String & key)
-        {
-            return dictionary_allowed_keys.contains(key) || key.starts_with("replica") || mysql_settings.has(key);
-        };
-        StorageMySQLConfiguration configuration;
-        auto named_collection = created_from_ddl
-                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key, mysql_settings)
-                              : std::nullopt;
+        ExternalDataSourceConfiguration configuration;
+        auto named_collection = created_from_ddl ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
         if (named_collection)
         {
-            mysql_settings.applyChanges(named_collection->settings_changes);
-            configuration.set(named_collection->configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            const auto & settings = global_context->getSettingsRef();
-            if (!mysql_settings.isChanged("connect_timeout"))
-                mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-            if (!mysql_settings.isChanged("read_write_timeout"))
-                mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
+            configuration = *named_collection;
+            std::vector<std::pair<String, UInt16>> addresses{std::make_pair(configuration.host, configuration.port)};
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(configuration.database, addresses, configuration.username, configuration.password);
         }
         else
         {
@@ -122,7 +95,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <DataTypes/DataTypeString.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
-#    include <Common/LocalDateTime.h>
+#    include <base/LocalDateTime.h>
 #    include <base/logger_useful.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
@@ -193,7 +166,7 @@ Pipe MySQLDictionarySource::loadAll()
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE(log, fmt::runtime(load_all_query));
+    LOG_TRACE(log, load_all_query);
     return loadFromQuery(load_all_query);
 }
 
@@ -203,7 +176,7 @@ Pipe MySQLDictionarySource::loadUpdatedAll()
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, fmt::runtime(load_update_query));
+    LOG_TRACE(log, load_update_query);
     return loadFromQuery(load_update_query);
 }
 
@@ -252,7 +225,7 @@ bool MySQLDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr MySQLDictionarySource::clone() const
 {
-    return std::make_shared<MySQLDictionarySource>(*this);
+    return std::make_unique<MySQLDictionarySource>(*this);
 }
 
 std::string MySQLDictionarySource::toString() const
@@ -289,7 +262,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(configuration.table));
 
-        LOG_TRACE(log, fmt::runtime(query.str()));
+        LOG_TRACE(log, query.str());
 
         auto result = query.use();
 

@@ -1,14 +1,3 @@
-if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILER_CLANG))
-    option (ENABLE_SENTRY "Enable Sentry" ${ENABLE_LIBRARIES})
-else()
-    option (ENABLE_SENTRY "Enable Sentry" OFF)
-endif()
-
-if (NOT ENABLE_SENTRY)
-    message(STATUS "Not using sentry")
-    return()
-endif()
-
 set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/sentry-native")
 
 set (SRCS
@@ -49,16 +38,15 @@ else()
     list(APPEND SRCS ${SRC_DIR}/src/modulefinder/sentry_modulefinder_linux.c)
 endif()
 
-add_library(_sentry ${SRCS})
+add_library(sentry ${SRCS})
+add_library(sentry::sentry ALIAS sentry)
 
 if(BUILD_SHARED_LIBS)
-    target_compile_definitions(_sentry PRIVATE SENTRY_BUILD_SHARED)
+    target_compile_definitions(sentry PRIVATE SENTRY_BUILD_SHARED)
 else()
-    target_compile_definitions(_sentry PUBLIC SENTRY_BUILD_STATIC)
+    target_compile_definitions(sentry PUBLIC SENTRY_BUILD_STATIC)
 endif()
 
-target_link_libraries(_sentry PRIVATE ch_contrib::curl pthread)
-target_include_directories(_sentry PUBLIC "${SRC_DIR}/include" PRIVATE "${SRC_DIR}/src")
-target_compile_definitions(_sentry PRIVATE SENTRY_WITH_INPROC_BACKEND SIZEOF_LONG=8)
-
-add_library(ch_contrib::sentry ALIAS _sentry)
+target_link_libraries(sentry PRIVATE curl pthread)
+target_include_directories(sentry PUBLIC "${SRC_DIR}/include" PRIVATE "${SRC_DIR}/src")
+target_compile_definitions(sentry PRIVATE SENTRY_WITH_INPROC_BACKEND SIZEOF_LONG=8)

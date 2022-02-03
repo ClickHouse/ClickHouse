@@ -28,7 +28,6 @@ void registerTableFunctions()
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
-    registerTableFunctionHDFSCluster(factory);
 #endif
 
     registerTableFunctionODBC(factory);

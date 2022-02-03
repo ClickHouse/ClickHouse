@@ -21,6 +21,7 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
+    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -43,9 +44,10 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# download correct docker
 ENV DOCKER_CHANNEL stable
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
+RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -58,9 +60,7 @@ RUN apt-get update \
 
 RUN dockerd --version; docker --version
 
-ARG TARGETARCH
-# FIXME: psycopg2-binary is not available for aarch64, we skip it for now
-RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
+RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
@@ -74,13 +74,11 @@ RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
     grpcio-tools \
     kafka-python \
     kazoo \
-    lz4 \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
     pytest \
-    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
@@ -89,8 +87,7 @@ RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs \
-    azure-storage-blob )
+    pyhdfs
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
@@ -103,6 +100,8 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
+
+RUN echo '127.0.0.1 localhost test.com' >> /etc/hosts
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

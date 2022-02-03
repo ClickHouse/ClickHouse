@@ -71,7 +71,7 @@ public:
         return std::make_shared<HashedArrayDictionary<dictionary_key_type>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -147,7 +147,6 @@ private:
             AttributeContainerType<Decimal64>,
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
-            AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
@@ -156,6 +155,7 @@ private:
             container;
 
         std::optional<std::vector<bool>> is_index_null;
+        std::unique_ptr<Arena> string_arena;
     };
 
     struct KeyAttribute final
@@ -205,6 +205,8 @@ private:
 
     void resize(size_t added_rows);
 
+    StringRef copyKeyInArena(StringRef key);
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedArrayDictionaryStorageConfiguration configuration;
@@ -220,7 +222,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena string_arena;
+    Arena complex_key_arena;
 };
 
 extern template class HashedArrayDictionary<DictionaryKeyType::Simple>;

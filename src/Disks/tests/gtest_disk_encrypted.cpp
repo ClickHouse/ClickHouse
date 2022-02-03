@@ -57,7 +57,7 @@ protected:
 
     String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, /* file_size= */ {});
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* size= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;

@@ -6,7 +6,7 @@ SELECT
         count() AS c
     FROM numbers(10)
     GROUP BY
-        arrayMap(x -> reinterpretAsUInt8(substring(randomString(randomString(range(randomString(255), NULL)), NULL), NULL)), range(3)),
+        arrayMap(x -> reinterpretAsUInt8(substring(randomString(randomString(range(randomString(255), NULL)), NULL))), range(3)),
         randomString(range(randomString(1048577), NULL), NULL),
         byte
     ORDER BY byte ASC;

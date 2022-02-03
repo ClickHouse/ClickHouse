@@ -9,7 +9,7 @@ class ReplxxLineReader : public LineReader
 {
 public:
     ReplxxLineReader(
-        Suggest & suggest,
+        const Suggest & suggest,
         const String & history_file_path,
         bool multiline,
         Patterns extenders_,
@@ -19,9 +19,6 @@ public:
 
     void enableBracketedPaste() override;
 
-    /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
-    /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
-    static void setLastIsDelimiter(bool flag);
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;

@@ -1,9 +1,9 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
+#include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <base/logger_useful.h>
 #include <base/phdr_cache.h>

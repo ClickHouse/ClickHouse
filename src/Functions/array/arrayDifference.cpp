@@ -105,7 +105,7 @@ struct ArrayDifferenceImpl
 
         typename ColVecResult::MutablePtr res_nested;
         if constexpr (is_decimal<Element>)
-            res_nested = ColVecResult::create(0, column->getScale());
+            res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();
 

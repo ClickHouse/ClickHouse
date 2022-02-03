@@ -41,6 +41,18 @@ form {
 		appearance: none;
 		padding-right: 24px;
 		white-space: pre-wrap;
+
+		&[name=priority] {
+			height: 84px;
+
+			@media screen and (max-width: 767.98px) {
+				height: 104px;
+			}
+
+			@media screen and (max-width: 499.98px) {
+				height: 124px;
+			}
+		}
 	}
 
 	select.form-control:not([data-chosen]) {

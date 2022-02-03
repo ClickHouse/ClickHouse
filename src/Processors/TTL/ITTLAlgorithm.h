@@ -3,7 +3,7 @@
 #include <Storages/TTLDescription.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Common/DateLUT.h>
+#include <base/DateLUT.h>
 
 namespace DB
 {

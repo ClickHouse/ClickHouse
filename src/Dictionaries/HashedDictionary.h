@@ -5,7 +5,6 @@
 #include <variant>
 #include <optional>
 #include <sparsehash/sparse_hash_map>
-#include <sparsehash/sparse_hash_set>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -79,7 +78,7 @@ public:
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -121,13 +120,8 @@ private:
     template <typename Value>
     using CollectionTypeNonSparse = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Value, DefaultHash<UInt64>>,
+        HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
-
-    using NoAttributesCollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        HashSet<UInt64, DefaultHash<UInt64>>,
-        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>>>;
 
     /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
     ///
@@ -146,12 +140,8 @@ private:
         google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
         google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
 
-    using NoAttributesCollectionTypeSparse = google::sparse_hash_set<KeyType, DefaultHash<KeyType>>;
-
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
-
-    using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
 
@@ -177,13 +167,14 @@ private:
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
-            CollectionType<DateTime64>,
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
             CollectionType<StringRef>,
             CollectionType<Array>>
             container;
+
+        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -211,6 +202,8 @@ private:
 
     void resize(size_t added_rows);
 
+    StringRef copyKeyInArena(StringRef key);
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryStorageConfiguration configuration;
@@ -224,8 +217,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena string_arena;
-    NoAttributesCollectionType no_attributes_container;
+    Arena complex_key_arena;
 };
 
 extern template class HashedDictionary<DictionaryKeyType::Simple, false>;

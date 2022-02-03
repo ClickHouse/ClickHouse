@@ -8,14 +8,13 @@ import sys
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, get_commit, override_status
+from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
@@ -44,7 +43,7 @@ def get_image_name(check_name):
     else:
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
-def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
+def get_run_command(builds_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
     additional_options = ['--hung-check']
     additional_options.append('--print-time')
 
@@ -63,7 +62,6 @@ def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, 
     env_str = ' '.join(envs)
 
     return f"docker run --volume={builds_path}:/package_folder " \
-        f"--volume={repo_tests_path}:/usr/share/clickhouse-test " \
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server " \
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
 
@@ -128,9 +126,9 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    reports_path = REPORTS_PATH
+    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
+    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
     kill_timeout = int(sys.argv[2])
@@ -138,7 +136,7 @@ if __name__ == "__main__":
     flaky_check = 'flaky' in check_name.lower()
     gh = Github(get_best_robot_token())
 
-    pr_info = PRInfo(need_changed_files=flaky_check)
+    pr_info = PRInfo(get_event(), need_changed_files=flaky_check)
 
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
@@ -168,8 +166,6 @@ if __name__ == "__main__":
     image_name = get_image_name(check_name)
     docker_image = get_image_with_version(reports_path, image_name)
 
-    repo_tests_path = os.path.join(repo_path, "tests")
-
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
@@ -187,7 +183,7 @@ if __name__ == "__main__":
     run_log_path = os.path.join(result_path, "runlog.log")
 
     additional_envs = get_additional_envs(check_name, run_by_hash_num, run_by_hash_total)
-    run_command = get_run_command(packages_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
+    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
     with TeePopen(run_command, run_log_path) as process:
@@ -200,9 +196,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
-
     state, description, test_results, additional_logs = process_results(result_path, server_log_path)
-    state = override_status(state, check_name)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

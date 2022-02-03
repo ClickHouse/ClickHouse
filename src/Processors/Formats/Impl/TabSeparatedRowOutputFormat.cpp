@@ -22,10 +22,7 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {
-        if (is_raw)
-            writeString(values[i], out);
-        else
-            writeEscapedString(values[i], out);
+        writeEscapedString(values[i], out);
         if (i + 1 == values.size())
             writeRowEndDelimiter();
         else
@@ -98,8 +95,6 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
-        if (is_raw)
-            registerWithNamesAndTypes("LineAsString", register_func);
     }
 }
 

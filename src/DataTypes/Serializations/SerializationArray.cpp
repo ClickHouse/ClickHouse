@@ -37,11 +37,10 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     size_t size;
     readVarUInt(size, istr);
-    field = Array();
+    field = Array(size);
     Array & arr = get<Array &>(field);
-    arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
-        nested->deserializeBinary(arr.emplace_back(), istr);
+        nested->deserializeBinary(arr[i], istr);
 }
 
 
@@ -199,38 +198,33 @@ ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) c
 void SerializationArray::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    const SubstreamData & data) const
+    DataTypePtr type,
+    ColumnPtr column) const
 {
-    const auto * type_array = data.type ? &assert_cast<const DataTypeArray &>(*data.type) : nullptr;
-    const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
+    const auto * type_array = type ? &assert_cast<const DataTypeArray &>(*type) : nullptr;
+    const auto * column_array = column ? &assert_cast<const ColumnArray &>(*column) : nullptr;
     auto offsets_column = column_array ? column_array->getOffsetsPtr() : nullptr;
 
     path.push_back(Substream::ArraySizes);
     path.back().data =
     {
+        type ? std::make_shared<DataTypeUInt64>() : nullptr,
+        offsets_column ? arrayOffsetsToSizes(*offsets_column) : nullptr,
         std::make_shared<SerializationNamed>(
             std::make_shared<SerializationNumber<UInt64>>(),
                 "size" + std::to_string(getArrayLevel(path)), false),
-        data.type ? std::make_shared<DataTypeUInt64>() : nullptr,
-        offsets_column ? arrayOffsetsToSizes(*offsets_column) : nullptr,
-        data.serialization_info,
+        nullptr,
     };
 
     callback(path);
 
     path.back() = Substream::ArrayElements;
-    path.back().data = data;
-    path.back().creator = std::make_shared<SubcolumnCreator>(offsets_column);
+    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(offsets_column)};
 
-    SubstreamData next_data =
-    {
-        nested,
-        type_array ? type_array->getNestedType() : nullptr,
-        column_array ? column_array->getDataPtr() : nullptr,
-        data.serialization_info,
-    };
+    auto next_type = type_array ? type_array->getNestedType() : nullptr;
+    auto next_column = column_array ? column_array->getDataPtr() : nullptr;
 
-    nested->enumerateStreams(path, callback, next_data);
+    nested->enumerateStreams(path, callback, next_type, next_column);
     path.pop_back();
 }
 

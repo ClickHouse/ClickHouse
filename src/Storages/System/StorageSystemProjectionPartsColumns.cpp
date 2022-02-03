@@ -146,7 +146,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(parent_part->getTypeName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part_state == State::Active);
+                columns[res_index++]->insert(part_state == State::Committed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getMarksCount());
             if (columns_mask[src_index++])
@@ -237,7 +237,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name);
+            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
             if (columns_mask[src_index++])

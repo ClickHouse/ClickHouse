@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
 }
 
 MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
@@ -30,7 +29,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
     bool allow_automatic_update_,
-    StorageInfos storages_info_,
+    Storages storages_,
     const String & name_for_logger)
     : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
@@ -42,6 +41,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
     , allow_automatic_update(allow_automatic_update_)
+    , storages(storages_)
 {
     final_lsn = start_lsn;
     auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -49,28 +49,19 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     LOG_TRACE(log, "Starting replication. LSN: {} (last: {})", getLSNValue(current_lsn), getLSNValue(final_lsn));
     tx->commit();
 
-    for (const auto & [table_name, storage_info] : storages_info_)
-        storages.emplace(table_name, storage_info);
+    for (const auto & [table_name, storage] : storages)
+    {
+        buffers.emplace(table_name, Buffer(storage));
+    }
 }
 
 
-MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info)
-    : storage(storage_info.storage), buffer(storage_info.storage->getInMemoryMetadataPtr(), storage_info.attributes)
+void MaterializedPostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage)
 {
-    auto table_id = storage_info.storage->getStorageID();
-    LOG_TRACE(&Poco::Logger::get("StorageMaterializedPostgreSQL"),
-              "New buffer for table {}, number of attributes: {}, number if columns: {}, structure: {}",
-              table_id.getNameForLogs(), buffer.attributes.size(), buffer.getColumnsNum(), buffer.description.sample_block.dumpStructure());
-}
-
-
-MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
-    StorageMetadataPtr storage_metadata, const PostgreSQLTableStructure::Attributes & attributes_)
-    : attributes(attributes_)
-{
+    const auto storage_metadata = storage->getInMemoryMetadataPtr();
     const Block sample_block = storage_metadata->getSampleBlock();
 
-    /// Need to clear type, because in description.init() the types are appended
+    /// Need to clear type, because in description.init() the types are appended (emplace_back)
     description.types.clear();
     description.init(sample_block);
 
@@ -78,13 +69,13 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     const auto & storage_columns = storage_metadata->getColumns().getAllPhysical();
     auto insert_columns = std::make_shared<ASTExpressionList>();
 
-    auto columns_num = description.sample_block.columns();
-    assert(columns_num == storage_columns.size());
-    if (attributes.size() + 2 != columns_num) /// +2 because sign and version columns
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns number mismatch. Attributes: {}, buffer: {}",
-                        attributes.size(), columns_num);
+    auto table_id = storage->getStorageID();
+    LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLBuffer"), "New buffer for table {}.{} ({}), structure: {}",
+              table_id.database_name, table_id.table_name, toString(table_id.uuid), sample_block.dumpStructure());
 
+    assert(description.sample_block.columns() == storage_columns.size());
     size_t idx = 0;
+
     for (const auto & column : storage_columns)
     {
         if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
@@ -94,45 +85,37 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
         insert_columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
     }
 
-    columns_ast = std::move(insert_columns);
+    columnsAST = std::move(insert_columns);
 }
 
 
-void MaterializedPostgreSQLConsumer::insertValue(StorageData::Buffer & buffer, const std::string & value, size_t column_idx)
+void MaterializedPostgreSQLConsumer::insertValue(Buffer & buffer, const std::string & value, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
 
-    try
+    if (is_nullable)
     {
-        if (is_nullable)
-        {
-            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*buffer.columns[column_idx]);
-            const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*buffer.columns[column_idx]);
+        const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
 
-            insertPostgreSQLValue(
-                    column_nullable.getNestedColumn(), value,
-                    buffer.description.types[column_idx].first, data_type.getNestedType(), buffer.array_info, column_idx);
+        insertPostgreSQLValue(
+                column_nullable.getNestedColumn(), value,
+                buffer.description.types[column_idx].first, data_type.getNestedType(), buffer.array_info, column_idx);
 
-            column_nullable.getNullMapData().emplace_back(0);
-        }
-        else
-        {
-            insertPostgreSQLValue(
-                    *buffer.columns[column_idx], value,
-                    buffer.description.types[column_idx].first, sample.type,
-                    buffer.array_info, column_idx);
-        }
+        column_nullable.getNullMapData().emplace_back(0);
     }
-    catch (const pqxx::conversion_error & e)
+    else
     {
-        LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, will insert default value. Error: {}", value, e.what());
-        insertDefaultValue(buffer, column_idx);
+        insertPostgreSQLValue(
+                *buffer.columns[column_idx], value,
+                buffer.description.types[column_idx].first, sample.type,
+                buffer.array_info, column_idx);
     }
 }
 
 
-void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData::Buffer & buffer, size_t column_idx)
+void MaterializedPostgreSQLConsumer::insertDefaultValue(Buffer & buffer, size_t column_idx)
 {
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
@@ -203,15 +186,9 @@ Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos
 
 
 void MaterializedPostgreSQLConsumer::readTupleData(
-        StorageData::Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
+        Buffer & buffer, const char * message, size_t & pos, [[maybe_unused]] size_t size, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos, size);
-
-    /// Sanity check. In fact, it was already checked.
-    if (static_cast<size_t>(num_columns) + 2 != buffer.getColumnsNum()) /// +2 -- sign and version columns
-        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                        "Number of columns does not match. Got: {}, expected {}, current buffer structure: {}",
-                        num_columns, buffer.getColumnsNum(), buffer.description.sample_block.dumpStructure());
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
@@ -225,15 +202,8 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             case 't': /// Text formatted value
             {
                 Int32 col_len = readInt32(message, pos, size);
-
-                /// Sanity check for protocol misuse.
-                /// PostgreSQL uses a fixed page size (commonly 8 kB), and does not allow tuples to span multiple pages.
-                static constexpr Int32 sanity_check_max_col_len = 1024 * 8 * 2; /// *2 -- just in case.
-                if (unlikely(col_len > sanity_check_max_col_len))
-                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                                    "Column length is suspiciously long: {}", col_len);
-
                 String value;
+
                 for (Int32 i = 0; i < col_len; ++i)
                     value += readInt8(message, pos, size);
 
@@ -306,20 +276,19 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
             if (table_name.empty())
-            {
-                LOG_ERROR(log, "No table mapping for relation id: {}. It's a bug", relation_id);
-                return;
-            }
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
-            auto & buffer = storages.find(table_name)->second.buffer;
+            auto buffer = buffers.find(table_name);
+            assert(buffer != buffers.end());
 
             if (new_tuple)
-                readTupleData(buffer, replication_message, pos, size, PostgreSQLQuery::INSERT);
+                readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::INSERT);
 
             break;
         }
@@ -327,16 +296,15 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
             if (table_name.empty())
-            {
-                LOG_ERROR(log, "No table mapping for relation id: {}. It's a bug", relation_id);
-                return;
-            }
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
 
-            auto & buffer = storages.find(table_name)->second.buffer;
+            auto buffer = buffers.find(table_name);
+            assert(buffer != buffers.end());
 
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
@@ -351,13 +319,13 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     /// it is much more efficient to use replica identity index, but support all possible cases.
                     case 'O':
                     {
-                        readTupleData(buffer, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
+                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
                     case 'N':
                     {
                         /// New row.
-                        readTupleData(buffer, replication_message, pos, size, PostgreSQLQuery::UPDATE);
+                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE);
                         read_next = false;
                         break;
                     }
@@ -379,11 +347,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
             if (table_name.empty())
-            {
-                LOG_ERROR(log, "No table mapping for relation id: {}. It's a bug", relation_id);
-                return;
-            }
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -391,8 +357,10 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
              /// 0 or 1 if replica identity is set to full. For now only default replica identity is supported (with primary keys).
             readInt8(replication_message, pos, size);
 
-            auto & buffer = storages.find(table_name)->second.buffer;
-            readTupleData(buffer, replication_message, pos, size, PostgreSQLQuery::DELETE);
+            auto buffer = buffers.find(table_name);
+            assert(buffer != buffers.end());
+            readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::DELETE);
+
             break;
         }
         case 'C': // Commit
@@ -411,6 +379,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             Int32 relation_id = readInt32(replication_message, pos, size);
 
             String relation_namespace, relation_name;
+
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 
@@ -420,26 +389,22 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             else
                 table_name = relation_name;
 
-            if (!relation_id_to_name.contains(relation_id))
-                relation_id_to_name[relation_id] = table_name;
-
             if (!isSyncAllowed(relation_id, relation_name))
                 return;
 
-            auto storage_iter = storages.find(table_name);
-            if (storage_iter == storages.end())
+            if (storages.find(table_name) == storages.end())
             {
-                /// FIXME: This can happen if we created a publication with this table but then got an exception that this
+                markTableAsSkipped(relation_id, table_name);
+                /// TODO: This can happen if we created a publication with this table but then got an exception that this
                 /// table has primary key or something else.
                 LOG_ERROR(log,
-                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})"
-                          "Please manually remove this table from replication (DETACH TABLE query) to avoid redundant replication",
+                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})",
                           table_name, storages.size());
-                markTableAsSkipped(relation_id, table_name);
                 return;
             }
 
-            auto & buffer = storage_iter->second.buffer;
+            assert(buffers.contains(table_name));
+
 
             /// 'd' - default (primary key if any)
             /// 'n' - nothing
@@ -447,39 +412,35 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             /// 'i' - user defined index with indisreplident set
             /// Only 'd' and 'i' - are supported.
             char replica_identity = readInt8(replication_message, pos, size);
+
             if (replica_identity != 'd' && replica_identity != 'i')
             {
                 LOG_WARNING(log,
-                    "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index",
-                    replica_identity);
+                        "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index");
                 markTableAsSkipped(relation_id, table_name);
                 return;
             }
 
             Int16 num_columns = readInt16(replication_message, pos, size);
 
-            if (static_cast<size_t>(num_columns) + 2 != buffer.getColumnsNum()) /// +2 -- sign and version columns
-            {
-                markTableAsSkipped(relation_id, table_name);
-                return;
-            }
-
-            if (static_cast<size_t>(num_columns) != buffer.attributes.size())
-            {
-#ifndef NDEBUG
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Mismatch in attributes size. Got {}, expected {}. It's a bug. Current buffer structure: {}",
-                                num_columns, buffer.attributes.size(), buffer.description.sample_block.dumpStructure());
-#else
-                LOG_ERROR(log, "Mismatch in attributes size. Got {}, expected {}. It's a bug. Current buffer structure: {}",
-                          num_columns, buffer.attributes.size(), buffer.description.sample_block.dumpStructure());
-                markTableAsSkipped(relation_id, table_name);
-                return;
-#endif
-            }
-
             Int32 data_type_id;
             Int32 type_modifier; /// For example, n in varchar(n)
+
+            bool new_relation_definition = false;
+            if (schema_data.find(relation_id) == schema_data.end())
+            {
+                relation_id_to_name[relation_id] = table_name;
+                schema_data.emplace(relation_id, SchemaData(num_columns));
+                new_relation_definition = true;
+            }
+
+            auto & current_schema_data = schema_data.find(relation_id)->second;
+
+            if (current_schema_data.number_of_columns != num_columns)
+            {
+                markTableAsSkipped(relation_id, table_name);
+                return;
+            }
 
             for (uint16_t i = 0; i < num_columns; ++i)
             {
@@ -490,14 +451,23 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 data_type_id = readInt32(replication_message, pos, size);
                 type_modifier = readInt32(replication_message, pos, size);
 
-                if (buffer.attributes[i].atttypid != data_type_id || buffer.attributes[i].atttypmod != type_modifier)
+                if (new_relation_definition)
                 {
-                    markTableAsSkipped(relation_id, table_name);
-                    return;
+                    current_schema_data.column_identifiers.emplace_back(std::make_pair(data_type_id, type_modifier));
+                }
+                else
+                {
+                    if (current_schema_data.column_identifiers[i].first != data_type_id
+                            || current_schema_data.column_identifiers[i].second != type_modifier)
+                    {
+                        markTableAsSkipped(relation_id, table_name);
+                        return;
+                    }
                 }
             }
 
             tables_to_sync.insert(table_name);
+
             break;
         }
         case 'O': // Origin
@@ -519,19 +489,19 @@ void MaterializedPostgreSQLConsumer::syncTables()
     {
         for (const auto & table_name : tables_to_sync)
         {
-            auto & storage_data = storages.find(table_name)->second;
-            Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
+            auto & buffer = buffers.find(table_name)->second;
+            Block result_rows = buffer.description.sample_block.cloneWithColumns(std::move(buffer.columns));
 
             if (result_rows.rows())
             {
-                auto storage = storage_data.storage;
+                auto storage = storages[table_name];
 
                 auto insert_context = Context::createCopy(context);
                 insert_context->setInternalQuery(true);
 
                 auto insert = std::make_shared<ASTInsertQuery>();
                 insert->table_id = storage->getStorageID();
-                insert->columns = storage_data.buffer.columns_ast;
+                insert->columns = buffer.columnsAST;
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
                 auto io = interpreter.execute();
@@ -544,7 +514,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
 
-                storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
+                buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }
         }
 
@@ -629,21 +599,34 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
 
 void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
-    skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
-    storages.erase(relation_name);
+    /// Empty lsn string means - continue waiting for valid lsn.
+    skip_list.insert({relation_id, ""});
 
-    if (allow_automatic_update)
-        LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
-    else
-        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
+    if (storages.count(relation_name))
+    {
+        /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
+        /// and it receives first data after update.
+        schema_data.erase(relation_id);
+
+        /// Clear table buffer.
+        auto & buffer = buffers.find(relation_name)->second;
+        buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+
+        if (allow_automatic_update)
+            LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
+        else
+            LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
+    }
 }
 
 
-void MaterializedPostgreSQLConsumer::addNested(
-    const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn)
 {
-    assert(!storages.contains(postgres_table_name));
-    storages.emplace(postgres_table_name, nested_storage_info);
+    /// Cache new pointer to replacingMergeTree table.
+    storages.emplace(postgres_table_name, nested_storage);
+
+    /// Add new in-memory buffer.
+    buffers.emplace(postgres_table_name, Buffer(nested_storage));
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
@@ -651,10 +634,14 @@ void MaterializedPostgreSQLConsumer::addNested(
 }
 
 
-void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
 {
-    assert(!storages.contains(table_name));
-    storages.emplace(table_name, nested_storage_info);
+    /// Cache new pointer to replacingMergeTree table.
+    storages[table_name] = nested_storage;
+
+    /// Create a new empty buffer (with updated metadata), where data is first loaded before syncing into actual table.
+    auto & buffer = buffers.find(table_name)->second;
+    buffer.createEmptyBuffer(nested_storage);
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
     skip_list[table_id] = table_start_lsn;
@@ -664,6 +651,7 @@ void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, Sto
 void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_name)
 {
     storages.erase(postgres_table_name);
+    buffers.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
 }
 
@@ -718,17 +706,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
             current_lsn = (*row)[0];
             lsn_value = getLSNValue(current_lsn);
 
-            try
-            {
-                // LOG_DEBUG(log, "Current message: {}", (*row)[1]);
-                processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
-                    continue;
-                throw;
-            }
+            processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
     }
     catch (const Exception &)
@@ -759,6 +737,11 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
         LOG_ERROR(log, "Conversion error: {}", e.what());
         return false;
     }
+    catch (const pqxx::in_doubt_error & e)
+    {
+        LOG_ERROR(log, "PostgreSQL library has some doubts: {}", e.what());
+        return false;
+    }
     catch (const pqxx::internal_error & e)
     {
         LOG_ERROR(log, "PostgreSQL library internal error: {}", e.what());
@@ -766,8 +749,16 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        /// Since reading is done from a background task, it is important to catch any possible error
+        /// in order to understand why something does not work.
+        try
+        {
+            std::rethrow_exception(std::current_exception());
+        }
+        catch (const std::exception& e)
+        {
+            LOG_ERROR(log, "Unexpected error: {}", e.what());
+        }
     }
 
     if (!tables_to_sync.empty())
@@ -779,11 +770,6 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
 bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
-    /// Read up to max_block_size changed (approximately - in same cases might be more).
-    /// false: no data was read, reschedule.
-    /// true: some data was read, schedule as soon as possible.
-    auto read_next = readFromReplicationSlot();
-
     /// Check if there are tables, which are skipped from being updated by changes from replication stream,
     /// because schema changes were detected. Update them, if it is allowed.
     if (allow_automatic_update && !skip_list.empty())
@@ -800,6 +786,10 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
         }
     }
 
+    /// Read up to max_block_size changed (approximately - in same cases might be more).
+    /// false: no data was read, reschedule.
+    /// true: some data was read, schedule as soon as possible.
+    auto read_next = readFromReplicationSlot();
     return read_next;
 }
 

@@ -44,18 +44,6 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
-    class KeysIterator
-    {
-        public:
-            explicit KeysIterator(const std::vector<String> & keys_);
-            String next();
-
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
-    };
-
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
@@ -80,8 +68,6 @@ public:
 
     Chunk generate() override;
 
-    void onCancel() override;
-
 private:
     String name;
     String bucket;
@@ -99,8 +85,6 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    /// onCancel and generate can be called concurrently
-    std::mutex reader_mutex;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
@@ -161,19 +145,8 @@ public:
 
     static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
 
-    static ColumnsDescription getTableStructureFromData(
-        const String & format,
-        const S3::URI & uri,
-        const String & access_key_id,
-        const String & secret_access_key,
-        UInt64 max_connections,
-        UInt64 max_single_read_retries,
-        const String & compression_method,
-        bool distributed_processing,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
-
 private:
+
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
@@ -188,7 +161,6 @@ private:
     };
 
     ClientAuthentication client_auth;
-    std::vector<String> keys;
 
     String format_name;
     UInt64 max_single_read_retries;
@@ -199,21 +171,8 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-    bool is_key_with_globs = false;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
-
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
-
-    static ColumnsDescription getTableStructureFromDataImpl(
-        const String & format,
-        const ClientAuthentication & client_auth,
-        UInt64 max_single_read_retries,
-        const String & compression_method,
-        bool distributed_processing,
-        bool is_key_with_globs,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
 };
 
 }

@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
 bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expected & expected)
 {
     if (pos->type != TokenType::BareWord)
@@ -37,5 +36,4 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
 
     return true;
 }
-
 }

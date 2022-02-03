@@ -68,12 +68,11 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
-        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+        auto dict = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, getContext());
 
         if (!access_checked)
         {
-            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            getContext()->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -107,9 +106,8 @@ public:
         if (!attr_name_col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet must be a constant string");
 
-        const auto & dictionary_name = dict_name_col->getValue<String>();
-        const auto & attribute_name = attr_name_col->getValue<String>();
-
+        const auto dictionary_name = dict_name_col->getValue<String>();
+        const auto attribute_name = attr_name_col->getValue<String>();
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
@@ -145,7 +143,6 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
-
     bool isVariadic() const override { return true; }
 
     bool isDeterministic() const override { return false; }
@@ -184,17 +181,7 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        String dictionary_name;
-
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-            dictionary_name = name_col->getValue<String>();
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a const string.",
-                arguments[0].type->getName(),
-                getName());
-
-        auto dictionary = helper.getDictionary(dictionary_name);
+        auto dictionary = helper.getDictionary(arguments[0].column);
         auto dictionary_key_type = dictionary->getKeyType();
         auto dictionary_special_key_type = dictionary->getSpecialKeyType();
 
@@ -227,8 +214,15 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
+            if (!WhichDataType(key_column_type).isUInt64())
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Second argument of function {} must be UInt64 when dictionary is simple. Actual type {}.",
+                     getName(),
+                     key_column_with_type.type->getName());
+
             key_columns = {key_column};
-            key_types = {key_column_with_type.type};
+            key_types = {std::make_shared<DataTypeUInt64>()};
         }
         else if (dictionary_key_type == DictionaryKeyType::Complex)
         {
@@ -260,8 +254,6 @@ public:
                 }
             }
         }
-
-        dictionary->convertKeyColumns(key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
@@ -466,8 +458,15 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
+            if (!WhichDataType(key_col_with_type.type).isUInt64())
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Third argument of function {} must be UInt64 when dictionary is simple. Actual type {}.",
+                     getName(),
+                     key_col_with_type.type->getName());
+
             key_columns = {key_column};
-            key_types = {key_col_with_type.type};
+            key_types = {std::make_shared<DataTypeUInt64>()};
         }
         else if (dictionary_key_type == DictionaryKeyType::Complex)
         {
@@ -480,7 +479,7 @@ public:
                 key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
                 key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
             }
-            else
+            else if (!isTuple(key_column_type))
             {
                 size_t keys_size = dictionary->getStructure().getKeysSize();
 
@@ -500,8 +499,6 @@ public:
                 }
             }
         }
-
-        dictionary->convertKeyColumns(key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {

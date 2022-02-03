@@ -203,6 +203,9 @@ protected:
 /// Example: "[1, 1 + 1, 1 + 2]::Array(UInt8)"
 class ParserCastExpression : public IParserBase
 {
+private:
+    ParserExpressionElement elem_parser;
+
 protected:
     const char * getName() const override { return "CAST expression"; }
 

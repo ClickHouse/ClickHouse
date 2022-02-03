@@ -1,5 +1,4 @@
 #include <Server/HTTP/HTTPServerConnection.h>
-#include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
 
@@ -8,11 +7,10 @@ namespace DB
 
 HTTPServerConnection::HTTPServerConnection(
     ContextPtr context_,
-    TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
     HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(Context::createCopy(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
+    : TCPServerConnection(socket), context(Context::createCopy(context_)), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -22,12 +20,12 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests())
+    while (!stopped && session.hasMoreRequests())
     {
         try
         {
             std::unique_lock<std::mutex> lock(mutex);
-            if (!stopped && tcp_server.isOpen())
+            if (!stopped)
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
@@ -50,11 +48,6 @@ void HTTPServerConnection::run()
                     response.set("Server", server);
                 try
                 {
-                    if (!tcp_server.isOpen())
-                    {
-                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-                        break;
-                    }
                     std::unique_ptr<HTTPRequestHandler> handler(factory->createRequestHandler(request));
 
                     if (handler)

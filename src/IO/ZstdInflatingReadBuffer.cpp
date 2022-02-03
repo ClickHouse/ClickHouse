@@ -31,7 +31,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
     do
     {
         // If it is known that end of file was reached, return false
-        if (eof_flag)
+        if (eof)
             return false;
 
         /// If end was reached, get next part
@@ -64,7 +64,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
         /// If end of file is reached, fill eof variable and return true if there is some data in buffer, otherwise return false
         if (in->eof())
         {
-            eof_flag = true;
+            eof = true;
             return !working_buffer.empty();
         }
         /// It is possible, that input buffer is not at eof yet, but nothing was decompressed in current iteration.

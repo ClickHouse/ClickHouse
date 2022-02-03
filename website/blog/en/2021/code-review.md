@@ -2,7 +2,7 @@
 title: 'The Tests Are Passing, Why Would I Read The Diff Again?'
 image: 'https://blog-images.clickhouse.com/en/2021/code-review/two-ducks.jpg'
 date: '2021-04-14'
-author: 'Alexander Kuzmenkov'
+author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
 tags: ['code review', 'development']
 ---
 

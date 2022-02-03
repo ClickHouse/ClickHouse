@@ -27,8 +27,7 @@ TEST(Processors, PortsConnected)
     processors.emplace_back(std::move(source));
     processors.emplace_back(std::move(sink));
 
-    QueryStatus * element = nullptr;
-    PipelineExecutor executor(processors, element);
+    PipelineExecutor executor(processors);
     executor.execute(1);
 }
 
@@ -52,8 +51,7 @@ TEST(Processors, PortsNotConnected)
 
     try
     {
-        QueryStatus * element = nullptr;
-        PipelineExecutor executor(processors, element);
+        PipelineExecutor executor(processors);
         executor.execute(1);
         ASSERT_TRUE(false) << "Should have thrown.";
     }

@@ -6,13 +6,12 @@ namespace DB
 void SerializationNamed::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    const SubstreamData & data) const
+    DataTypePtr type,
+    ColumnPtr column) const
 {
     addToPath(path);
-    path.back().data = data;
-    path.back().creator = std::make_shared<SubcolumnCreator>(name, escape_delimiter);
-
-    nested_serialization->enumerateStreams(path, callback, data);
+    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(name, escape_delimiter)};
+    nested_serialization->enumerateStreams(path, callback, type, column);
     path.pop_back();
 }
 

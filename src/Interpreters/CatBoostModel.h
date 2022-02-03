@@ -61,7 +61,7 @@ public:
 
     const ExternalLoadableLifetime & getLifetime() const override;
 
-    std::string getLoadableName() const override { return name; }
+    const std::string & getLoadableName() const override { return name; }
 
     bool supportUpdates() const override { return true; }
 

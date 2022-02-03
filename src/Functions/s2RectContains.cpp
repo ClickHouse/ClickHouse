@@ -70,7 +70,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const auto lo = S2CellId(col_lo->getUInt(row));
             const auto hi = S2CellId(col_hi->getUInt(row));

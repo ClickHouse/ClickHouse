@@ -1,7 +1,6 @@
 #include <string>
 
 #include <iostream>
-#include <sstream>
 
 #include <base/types.h>
 #include <IO/WriteHelpers.h>

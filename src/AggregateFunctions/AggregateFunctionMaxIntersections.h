@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/logger_useful.h>
-#include <base/sort.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -143,7 +142,7 @@ public:
         auto & array = this->data(place).value;
 
         /// Sort by position; for equal position, sort by weight to get deterministic result.
-        ::sort(array.begin(), array.end());
+        std::sort(array.begin(), array.end());
 
         for (const auto & point_weight : array)
         {

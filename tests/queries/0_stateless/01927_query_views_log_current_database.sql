@@ -45,11 +45,7 @@ SELECT
     arraySort(tables) as tables,
     arraySort(views) as views,
     ProfileEvents['SleepFunctionCalls'] as sleep_calls,
-    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us,
-    ProfileEvents['SelectedRows'] as profile_select_rows,
-    ProfileEvents['SelectedBytes'] as profile_select_bytes,
-    ProfileEvents['InsertedRows'] as profile_insert_rows,
-    ProfileEvents['InsertedBytes'] as profile_insert_bytes
+    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us
 FROM system.query_log
 WHERE query like '-- INSERT 1%INSERT INTO table_a%'
   AND current_database = currentDatabase()
@@ -66,11 +62,7 @@ SELECT
     read_rows,
     written_rows,
     ProfileEvents['SleepFunctionCalls'] as sleep_calls,
-    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us,
-    ProfileEvents['SelectedRows'] as profile_select_rows,
-    ProfileEvents['SelectedBytes'] as profile_select_bytes,
-    ProfileEvents['InsertedRows'] as profile_insert_rows,
-    ProfileEvents['InsertedBytes'] as profile_insert_bytes
+    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us
 FROM system.query_views_log
 WHERE initial_query_id =
       (
@@ -93,11 +85,7 @@ SELECT
     arraySort(tables) as tables,
     arraySort(views) as views,
     ProfileEvents['SleepFunctionCalls'] as sleep_calls,
-    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us,
-    ProfileEvents['SelectedRows'] as profile_select_rows,
-    ProfileEvents['SelectedBytes'] as profile_select_bytes,
-    ProfileEvents['InsertedRows'] as profile_insert_rows,
-    ProfileEvents['InsertedBytes'] as profile_insert_bytes
+    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us
 FROM system.query_log
 WHERE query like '-- INSERT 2%INSERT INTO table_d%'
   AND current_database = currentDatabase()
@@ -114,11 +102,7 @@ SELECT
     read_rows,
     written_rows,
     ProfileEvents['SleepFunctionCalls'] as sleep_calls,
-    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us,
-    ProfileEvents['SelectedRows'] as profile_select_rows,
-    ProfileEvents['SelectedBytes'] as profile_select_bytes,
-    ProfileEvents['InsertedRows'] as profile_insert_rows,
-    ProfileEvents['InsertedBytes'] as profile_insert_bytes
+    ProfileEvents['SleepFunctionMicroseconds'] as sleep_us
 FROM system.query_views_log
 WHERE initial_query_id =
       (

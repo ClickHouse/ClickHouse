@@ -54,8 +54,8 @@
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/ClickHouse-Extras/arrow.git
-	branch = blessed/release-6.0.1
+	url = https://github.com/ClickHouse-Extras/arrow
+	branch = clickhouse-arrow-2.0.0
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift.git
@@ -190,8 +190,8 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
-	branch = lts_2021_11_02
+	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
+	branch = lts_2020_02_25
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse-Extras/dragonbox.git
@@ -217,9 +217,6 @@
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
-[submodule "contrib/cld2"]
-	path = contrib/cld2
-	url = https://github.com/ClickHouse-Extras/cld2.git
 [submodule "contrib/libstemmer_c"]
 	path = contrib/libstemmer_c
 	url = https://github.com/ClickHouse-Extras/libstemmer_c.git
@@ -250,12 +247,3 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
-[submodule "contrib/nlp-data"]
-	path = contrib/nlp-data
-	url = https://github.com/ClickHouse-Extras/nlp-data.git
-[submodule "contrib/hive-metastore"]
-	path = contrib/hive-metastore
-	url = https://github.com/ClickHouse-Extras/hive-metastore
-[submodule "contrib/azure"]
-	path = contrib/azure
-	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git

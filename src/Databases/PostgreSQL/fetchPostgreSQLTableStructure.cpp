@@ -15,7 +15,7 @@
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <base/FnTraits.h>
-#include <IO/ReadHelpers.h>
+
 
 namespace DB
 {
@@ -155,11 +155,10 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
 
 template<typename T>
-PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
-    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
+        T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
 {
     auto columns = NamesAndTypes();
-    PostgreSQLTableStructure::Attributes attributes;
 
     try
     {
@@ -181,22 +180,14 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string> row;
+                std::tuple<std::string, std::string, std::string, uint16_t> row;
                 while (stream >> row)
                 {
-                    auto data_type = convertPostgreSQLDataType(
-                        std::get<1>(row), recheck_array,
-                        use_nulls && (std::get<2>(row) == /* not nullable */"f"),
-                        std::get<3>(row));
-
+                    auto data_type = convertPostgreSQLDataType(std::get<1>(row),
+                                                               recheck_array,
+                                                               use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false, i.e. value is nullable
+                                                               std::get<3>(row));
                     columns.push_back(NameAndTypePair(std::get<0>(row), data_type));
-
-                    attributes.emplace_back(
-                    PostgreSQLTableStructure::PGAttribute{
-                        .atttypid = parse<int>(std::get<4>(row)),
-                        .atttypmod = parse<int>(std::get<5>(row)),
-                    });
-
                     ++i;
                 }
             }
@@ -235,9 +226,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
         throw;
     }
 
-    return !columns.empty()
-        ? std::make_shared<PostgreSQLTableStructure::ColumnsInfo>(NamesAndTypesList(columns.begin(), columns.end()), std::move(attributes))
-        : nullptr;
+    return !columns.empty() ? std::make_shared<NamesAndTypesList>(columns.begin(), columns.end()) : nullptr;
 }
 
 
@@ -255,14 +244,14 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     std::string query = fmt::format(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
-           "attnotnull AS not_null, attndims AS dims, atttypid as type_id, atttypmod as type_modifier "
+           "attnotnull AS not_null, attndims AS dims "
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
            "AND NOT attisdropped AND attnum > 0", where);
 
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
+    table.columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
 
-    if (!table.physical_columns)
+    if (!table.columns)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
 
     if (with_primary_key)

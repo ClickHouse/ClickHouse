@@ -410,17 +410,10 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
                                           const TablesWithColumns & tables_with_columns,
-                                          const TreeRewriterResult & result)
+                                          const Names & sorting_key_columns)
 {
     auto order_by = select_query->orderBy();
     if (!order_by)
-        return;
-
-    /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their undelying tables
-    /// and we can break the matching of the sorting key for `read_in_order`
-    /// optimization by removing monotonous functions from the prefix of key.
-    if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
         return;
 
     for (const auto & child : order_by->children)
@@ -444,8 +437,6 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             group_by_hashes.insert(key);
         }
     }
-
-    auto sorting_key_columns = result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
     for (size_t i = 0; i < order_by->children.size(); ++i)
@@ -809,7 +800,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
+        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
+            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

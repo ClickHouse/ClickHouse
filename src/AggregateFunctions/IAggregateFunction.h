@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
@@ -182,13 +181,6 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
-    /// The version of "addBatch", that handle sparse columns as arguments.
-    virtual void addBatchSparse(
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const = 0;
-
     virtual void mergeBatch(
         size_t batch_size,
         AggregateDataPtr * places,
@@ -200,10 +192,6 @@ public:
       */
     virtual void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
-
-    /// The version of "addBatchSinglePlace", that handle sparse columns as arguments.
-    virtual void addBatchSparseSinglePlace(
-        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -379,22 +367,6 @@ public:
         }
     }
 
-    void addBatchSparse(
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        size_t batch_size = column_sparse.size();
-        auto offset_it = column_sparse.begin();
-
-        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
-    }
-
     void mergeBatch(
         size_t batch_size,
         AggregateDataPtr * places,
@@ -424,19 +396,6 @@ public:
             for (size_t i = 0; i < batch_size; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
-    }
-
-    void addBatchSparseSinglePlace(
-        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
-    {
-        /// TODO: add values and defaults separately if order of adding isn't important.
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        size_t batch_size = column_sparse.size();
-        auto offset_it = column_sparse.begin();
-
-        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlaceNotNull(

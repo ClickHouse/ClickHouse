@@ -74,6 +74,8 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
+    void startup() override;
+
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
@@ -97,11 +99,7 @@ public:
     /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
-
-    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
-
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
 
     StoragePtr getNested() const;
 
@@ -121,6 +119,8 @@ public:
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
+
+    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
 
 protected:
     StorageMaterializedPostgreSQL(

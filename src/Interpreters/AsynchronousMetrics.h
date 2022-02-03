@@ -30,11 +30,6 @@ class ReadBuffer;
 using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
-struct ProtocolServerMetrics
-{
-    String port_name;
-    size_t current_threads;
-};
 
 /** Periodically (by default, each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
@@ -46,25 +41,24 @@ struct ProtocolServerMetrics
 class AsynchronousMetrics : WithContext
 {
 public:
-    using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_);
 
     ~AsynchronousMetrics();
 
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start();
 
-    void stop();
-
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
 private:
     const std::chrono::seconds update_period;
-    ProtocolServerMetricsFunc protocol_server_metrics_func;
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables{nullptr};
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers{nullptr};
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;

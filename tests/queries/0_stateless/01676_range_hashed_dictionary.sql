@@ -45,13 +45,13 @@ SELECT dictHas('database_for_range_dict.range_dictionary', toUInt64(2), toDate('
 SELECT dictHas('database_for_range_dict.range_dictionary', toUInt64(2), toDate('2019-05-31'));
 SELECT 'select columns from dictionary';
 SELECT 'allColumns';
-SELECT * FROM database_for_range_dict.range_dictionary ORDER BY CountryID, StartDate, EndDate;
+SELECT * FROM database_for_range_dict.range_dictionary;
 SELECT 'noColumns';
-SELECT 1 FROM database_for_range_dict.range_dictionary ORDER BY CountryID, StartDate, EndDate;
+SELECT 1 FROM database_for_range_dict.range_dictionary;
 SELECT 'onlySpecificColumns';
-SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary ORDER BY CountryID, StartDate, EndDate;
+SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary;
 SELECT 'onlySpecificColumn';
-SELECT Tax FROM database_for_range_dict.range_dictionary ORDER BY CountryID, StartDate, EndDate;
+SELECT Tax FROM database_for_range_dict.range_dictionary;
 
 DROP DICTIONARY database_for_range_dict.range_dictionary;
 DROP TABLE database_for_range_dict.date_table;
@@ -97,13 +97,13 @@ SELECT dictHas('database_for_range_dict.range_dictionary_nullable', toUInt64(2),
 SELECT dictHas('database_for_range_dict.range_dictionary_nullable', toUInt64(2), toDate('2019-05-31'));
 SELECT 'select columns from dictionary';
 SELECT 'allColumns';
-SELECT * FROM database_for_range_dict.range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
+SELECT * FROM database_for_range_dict.range_dictionary_nullable;
 SELECT 'noColumns';
-SELECT 1 FROM database_for_range_dict.range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
+SELECT 1 FROM database_for_range_dict.range_dictionary_nullable;
 SELECT 'onlySpecificColumns';
-SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
+SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary_nullable;
 SELECT 'onlySpecificColumn';
-SELECT Tax FROM database_for_range_dict.range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
+SELECT Tax FROM database_for_range_dict.range_dictionary_nullable;
 
 DROP DICTIONARY database_for_range_dict.range_dictionary_nullable;
 DROP TABLE database_for_range_dict.date_table;

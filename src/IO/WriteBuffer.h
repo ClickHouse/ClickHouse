@@ -5,10 +5,9 @@
 #include <memory>
 #include <iostream>
 #include <cassert>
-#include <string.h>
 
 #include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 #include <IO/BufferBase.h>
 
 
@@ -116,7 +115,7 @@ public:
             return;
 
         /// finalize() is often called from destructors.
-        LockMemoryExceptionInThread lock(VariableContext::Global);
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
         try
         {
             finalizeImpl();

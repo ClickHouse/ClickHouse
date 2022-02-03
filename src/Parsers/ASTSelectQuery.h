@@ -135,7 +135,7 @@ public:
 
     void setFinal();
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
+    const char * getQueryKindString() const override { return "Select"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

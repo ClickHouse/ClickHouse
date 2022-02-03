@@ -408,19 +408,20 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
     (key,) for key in table_types.keys()
 ])
 @Name("select")
-def feature(self, table_type, stress=None, node="clickhouse1"):
+def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of SELECT.
     """
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.stress = parallel
 
-    args = {"table_type" : table_type}
-
+    tasks = []
     with Pool(10) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
+                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
         finally:
-            join()
+            join(tasks)

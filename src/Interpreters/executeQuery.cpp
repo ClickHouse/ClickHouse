@@ -2,7 +2,6 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
@@ -30,7 +29,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/formatAST.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -40,7 +38,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -59,9 +56,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
-
-#include <base/EnumReflection.h>
-#include <base/demangle.h>
 
 #include <random>
 
@@ -197,7 +191,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
@@ -277,7 +271,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     // Try log query_kind if ast is valid
     if (ast)
     {
-        elem.query_kind = magic_enum::enum_name(ast->getQueryKind());
+        elem.query_kind = ast->getQueryKindString();
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
@@ -562,14 +556,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
-        /// Resolve database before trying to use async insert feature - to properly hash the query.
-        if (insert_query)
-        {
-            if (insert_query->table_id)
-                insert_query->table_id = context->resolveStorageID(insert_query->table_id);
-            else if (auto table = insert_query->getTable(); !table.empty())
-                insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
-        }
+        if (insert_query && insert_query->table_id)
+            /// Resolve database before trying to use async insert feature - to properly hash the query.
+            insert_query->table_id = context->resolveStorageID(insert_query->table_id);
 
         if (insert_query && insert_query->select)
         {
@@ -590,14 +579,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
         else
-        {
             /// reset Input callbacks if query is not INSERT SELECT
             context->resetInputCallbacks();
-        }
-
-        StreamLocalLimits limits;
-        std::shared_ptr<const EnabledQuota> quota;
-        std::unique_ptr<IInterpreter> interpreter;
 
         auto * queue = context->getAsynchronousInsertQueue();
         const bool async_insert = queue
@@ -608,71 +591,65 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             queue->push(ast, context);
 
+            BlockIO io;
             if (settings.wait_for_async_insert)
             {
                 auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
                 auto query_id = context->getCurrentQueryId();
                 auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
-                res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                io.pipeline = QueryPipeline(Pipe(std::move(source)));
             }
 
+            return std::make_tuple(ast, std::move(io));
+        }
+
+        auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+        std::shared_ptr<const EnabledQuota> quota;
+        if (!interpreter->ignoreQuota())
+        {
             quota = context->getQuota();
             if (quota)
             {
-                quota->used(QuotaType::QUERY_INSERTS, 1);
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    quota->used(QuotaType::QUERY_SELECTS, 1);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
+                }
                 quota->used(QuotaType::QUERIES, 1);
+                quota->checkExceeded(QuotaType::ERRORS);
             }
-
-            const auto & table_id = insert_query->table_id;
-            if (!table_id.empty())
-                context->setInsertionTable(table_id);
         }
-        else
+
+        StreamLocalLimits limits;
+        if (!interpreter->ignoreLimits())
         {
-            interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+            limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+            limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+        }
 
-            if (!interpreter->ignoreQuota())
+        {
+            std::unique_ptr<OpenTelemetrySpanHolder> span;
+            if (context->query_trace_context.trace_id != UUID())
             {
-                quota = context->getQuota();
-                if (quota)
-                {
-                    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-                    {
-                        quota->used(QuotaType::QUERY_SELECTS, 1);
-                    }
-                    else if (ast->as<ASTInsertQuery>())
-                    {
-                        quota->used(QuotaType::QUERY_INSERTS, 1);
-                    }
-                    quota->used(QuotaType::QUERIES, 1);
-                    quota->checkExceeded(QuotaType::ERRORS);
-                }
+                auto raw_interpreter_ptr = interpreter.get();
+                std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
             }
+            res = interpreter->execute();
+        }
 
-            if (!interpreter->ignoreLimits())
-            {
-                limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
-                limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-            }
+        QueryPipeline & pipeline = res.pipeline;
 
-            {
-                std::unique_ptr<OpenTelemetrySpanHolder> span;
-                if (context->query_trace_context.trace_id != UUID())
-                {
-                    auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
-                    span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
-                }
-                res = interpreter->execute();
-            }
-
-            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
-            {
-                /// Save insertion table (not table function). TODO: support remote() table function.
-                auto table_id = insert_interpreter->getDatabaseTable();
-                if (!table_id.empty())
-                    context->setInsertionTable(std::move(table_id));
-            }
+        if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+        {
+            /// Save insertion table (not table function). TODO: support remote() table function.
+            auto table_id = insert_interpreter->getDatabaseTable();
+            if (!table_id.empty())
+                context->setInsertionTable(std::move(table_id));
         }
 
         if (process_list_entry)
@@ -685,8 +662,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
-
-        auto & pipeline = res.pipeline;
 
         if (pipeline.pulling() || pipeline.completed())
         {
@@ -737,10 +712,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_views = info.views;
                 }
 
-                if (async_insert)
-                    InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
-                else if (interpreter)
-                    interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
+                interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
 
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
@@ -847,8 +819,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 else /// will be used only for ordinary INSERT queries
                 {
                     auto progress_out = process_list_elem->getProgressOut();
-                    elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_rows;
+                    elem.result_rows = progress_out.read_rows;
+                    elem.result_bytes = progress_out.read_bytes;
                 }
 
                 if (elem.read_rows != 0)

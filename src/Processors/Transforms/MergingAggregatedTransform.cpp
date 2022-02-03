@@ -23,11 +23,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Reading blocks of partially aggregated data.");
     }
 
-    size_t input_rows = chunk.getNumRows();
-    if (!input_rows)
-        return;
-
-    total_input_rows += input_rows;
+    total_input_rows += chunk.getNumRows();
     ++total_input_blocks;
 
     const auto & info = chunk.getChunkInfo();

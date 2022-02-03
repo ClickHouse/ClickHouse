@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
 }
 
 class FunctionH3ToGeoBoundary : public IFunction
@@ -52,16 +51,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        if (!column)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                1,
-                getName());
-
-        const auto & data = column->getData();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto latitude = ColumnFloat64::create();
         auto longitude = ColumnFloat64::create();
@@ -71,7 +61,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            H3Index h3index = data[row];
+            H3Index h3index = col_hindex->getUInt(row);
             CellBoundary boundary{};
 
             auto err = cellToBoundary(h3index, &boundary);

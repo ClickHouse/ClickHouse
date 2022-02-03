@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <utility>
 
@@ -86,6 +85,9 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 
+    for (const auto & column : columns_list)
+        serializations.emplace(column.name, column.type->getDefaultSerialization());
+
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
     initSkipIndices();
@@ -117,7 +119,7 @@ static size_t computeIndexGranularityImpl(
         }
         else
         {
-            size_t size_of_row_in_bytes = std::max(block_size_in_memory / rows_in_block, 1UL);
+            size_t size_of_row_in_bytes = block_size_in_memory / rows_in_block;
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
@@ -185,7 +187,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          * And otherwise it will look like excessively growing memory consumption in context of query.
          *  (observed in long INSERT SELECTs)
          */
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)

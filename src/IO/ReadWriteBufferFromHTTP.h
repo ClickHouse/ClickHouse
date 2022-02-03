@@ -427,7 +427,7 @@ namespace detail
                     LOG_ERROR(log,
                               "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i + 1, settings.http_max_tries,
+                              uri.toString(), i, settings.http_max_tries,
                               getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
                               e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
@@ -537,7 +537,7 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
     using Parent = UpdatableSessionBase<HTTPSessionPtr>;
 
 public:
-    UpdatableSession(
+    explicit UpdatableSession(
         const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
         const UInt64 max_redirects_)
@@ -557,7 +557,7 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
 
 public:
-        ReadWriteBufferFromHTTP(
+        explicit ReadWriteBufferFromHTTP(
         Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,

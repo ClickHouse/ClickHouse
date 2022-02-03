@@ -54,7 +54,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
 
-            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
+            auto position = data_part->getColumnPosition(column_from_part.name);
             if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
             {
                 /// If array of Nested column is missing in part,
@@ -118,7 +118,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        storage.reportBrokenPart(data_part->name);
         throw;
     }
 }
@@ -140,12 +140,8 @@ size_t MergeTreeReaderCompact::readRows(
         if (!column_positions[i])
             continue;
 
-        auto column_from_part = getColumnFromPart(*column_it);
         if (res_columns[i] == nullptr)
-        {
-            auto serialization = data_part->getSerialization(column_from_part);
-            res_columns[i] = column_from_part.type->createColumn(*serialization);
-        }
+            res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
     }
 
     while (read_rows < max_rows_to_read)
@@ -175,7 +171,7 @@ size_t MergeTreeReaderCompact::readRows(
             catch (Exception & e)
             {
                 if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-                    storage.reportBrokenPart(data_part);
+                    storage.reportBrokenPart(data_part->name);
 
                 /// Better diagnostics.
                 e.addMessage("(while reading column " + column_from_part.name + ")");
@@ -183,7 +179,7 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (...)
             {
-                storage.reportBrokenPart(data_part);
+                storage.reportBrokenPart(data_part->name);
                 throw;
             }
         }
@@ -224,11 +220,9 @@ void MergeTreeReaderCompact::readData(
     if (name_and_type.isSubcolumn())
     {
         const auto & type_in_storage = name_and_type.getTypeInStorage();
-        const auto & name_in_storage = name_and_type.getNameInStorage();
+        ColumnPtr temp_column = type_in_storage->createColumn();
 
-        auto serialization = data_part->getSerialization(NameAndTypePair{name_in_storage, type_in_storage});
-        ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
-
+        auto serialization = type_in_storage->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
@@ -242,7 +236,7 @@ void MergeTreeReaderCompact::readData(
     }
     else
     {
-        auto serialization = data_part->getSerialization(name_and_type);
+        auto serialization = type->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }

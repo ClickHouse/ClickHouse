@@ -342,9 +342,6 @@ private:
             }
         }
 
-        /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
-        interrupt_listener.unblock();
-
         pool.wait();
         total_watch.stop();
 
@@ -589,6 +586,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

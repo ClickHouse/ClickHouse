@@ -102,7 +102,7 @@ public:
     ~DebugASTLog()
     {
         if constexpr (_enable)
-            LOG_DEBUG(log, fmt::runtime(buf.str()));
+            LOG_DEBUG(log, buf.str());
     }
 
     WriteBuffer * stream() { return (_enable ? &buf : nullptr); }

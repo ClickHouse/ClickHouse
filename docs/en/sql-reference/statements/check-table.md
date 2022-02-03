@@ -46,7 +46,7 @@ CHECK TABLE test_table;
 └───────────┴───────────┴─────────┘
 ```
 
-If `check_query_single_value_result` = 1, the `CHECK TABLE` query shows the general table check status.
+If `check_query_single_value_result` = 0, the `CHECK TABLE` query shows the general table check status.
 
 ```sql
 SET check_query_single_value_result = 1;

@@ -20,7 +20,7 @@ void processSQLiteError(const String & message, bool throw_on_error)
     if (throw_on_error)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, message);
     else
-        LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
+        LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), message);
 }
 
 

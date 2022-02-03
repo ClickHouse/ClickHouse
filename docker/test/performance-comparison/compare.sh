@@ -193,7 +193,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -201,26 +201,10 @@ function run_tests
         # If only the perf tests were changed in the PR, we will run only these
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
-        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
     else
         # The default -- run all tests found in the test dir.
-        test_files=($(ls "$test_prefix"/*.xml))
-    fi
-
-    # We split perf tests into multiple checks to make them faster
-    if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
-        # filter tests array in bash https://stackoverflow.com/a/40375567
-        for index in "${!test_files[@]}"; do
-            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
-            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
-            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
-            if [ "$test_hash_result" != "1" ]; then
-                # deleting element from array
-                unset -v 'test_files[$index]'
-            fi
-        done
-        # to have sequential indexes...
-        test_files=("${test_files[@]}")
+        test_files=$(ls "$test_prefix"/*.xml)
     fi
 
     # For PRs w/o changes in test definitons, test only a subset of queries,
@@ -228,26 +212,21 @@ function run_tests
     # already set, keep those values.
     #
     # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    # NOTE: Currently we disabled complete run even for master branch
-    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    #then
-    #    CHPC_RUNS=${CHPC_RUNS:-7}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    #else
-    #    CHPC_RUNS=${CHPC_RUNS:-13}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    #fi
-
-    CHPC_RUNS=${CHPC_RUNS:-7}
-    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-
+    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
+    then
+        CHPC_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in ${test_files[@]}; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -256,8 +235,8 @@ function run_tests
         touch "$x"
     done
 
-    # Randomize test order. BTW, it's not an array no more.
-    test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
+    # Randomize test order.
+    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
@@ -282,30 +261,24 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        (
-            set +x
-            argv=(
-                --host localhost localhost
-                --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
-                --runs "$CHPC_RUNS"
-                --max-queries "$CHPC_MAX_QUERIES"
-                --profile-seconds "$profile_seconds"
-
-                "$test"
-            )
-            TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-            # one more subshell to suppress trace output for "set +x"
-            (
-                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
-            ) 2>>wall-clock-times.tsv >/dev/null \
-                || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
-        ) 2>/dev/null
+        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
+        # The grep is to filter out set -x output and keep only time output.
+        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
+        { \
+            time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
+                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
+                --profile-seconds "$profile_seconds" \
+                -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
+        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
+            || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
 
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
         current_test=$((current_test + 1))
     done
+
+    unset TIMEFORMAT
 
     wait
 }
@@ -318,7 +291,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
@@ -545,9 +518,7 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
-jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
-numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make

@@ -9,8 +9,6 @@
 
 #include <deque>
 
-#include <base/sort.h>
-
 
 namespace DB
 {
@@ -182,7 +180,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
     {
         auto & equalities = chain.second;
         auto & equality_functions = equalities.functions;
-        ::sort(equality_functions.begin(), equality_functions.end());
+        std::sort(equality_functions.begin(), equality_functions.end());
     }
 }
 
@@ -239,7 +237,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    ::sort(tuple.begin(), tuple.end());
+    std::sort(tuple.begin(), tuple.end());
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;

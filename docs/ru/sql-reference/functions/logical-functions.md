@@ -70,7 +70,7 @@ SELECT and(NULL, 1, 10, -2);
 **Синтаксис**
 
 ``` sql
-or(val1, val2...)
+and(val1, val2...)
 ```
 
 Чтобы вычислять функцию `or` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `vali` вычисляется только для строк, где условие `((NOT val1) AND (NOT val2) AND ... AND (NOT val{i-1}))` верно. Например, при выполнении запроса `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.

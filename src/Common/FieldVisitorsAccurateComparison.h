@@ -32,14 +32,6 @@ public:
                 return l == r;
             return false;
         }
-        else if constexpr (std::is_same_v<T, bool>)
-        {
-            return operator()(UInt8(l), r);
-        }
-        else if constexpr (std::is_same_v<U, bool>)
-        {
-            return operator()(l, UInt8(r));
-        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -98,14 +90,6 @@ public:
         else if constexpr (std::is_same_v<U, Null>)
         {
             return r.isPositiveInfinity();
-        }
-        else if constexpr (std::is_same_v<T, bool>)
-        {
-            return operator()(UInt8(l), r);
-        }
-        else if constexpr (std::is_same_v<U, bool>)
-        {
-            return operator()(l, UInt8(r));
         }
         else
         {

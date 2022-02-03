@@ -1,7 +1,5 @@
-# rebuild in #33610
 # docker build -t clickhouse/keeper-jepsen-test .
-ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM clickhouse/test-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CLOJURE_VERSION=1.10.3.814

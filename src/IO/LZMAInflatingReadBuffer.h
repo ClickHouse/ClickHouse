@@ -25,7 +25,7 @@ private:
     std::unique_ptr<ReadBuffer> in;
     lzma_stream lstr;
 
-    bool eof_flag;
+    bool eof;
 };
 
 }

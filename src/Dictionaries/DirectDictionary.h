@@ -3,12 +3,15 @@
 #include <atomic>
 #include <variant>
 #include <vector>
-
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
-
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Common/Arena.h>
+#include <Core/Block.h>
+#include <Common/HashTable/HashMap.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -55,7 +58,7 @@ public:
         return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 

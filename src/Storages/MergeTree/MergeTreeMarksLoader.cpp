@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <utility>
@@ -48,7 +47,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     size_t file_size = disk->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);

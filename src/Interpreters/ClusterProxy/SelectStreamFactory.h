@@ -16,7 +16,8 @@ class SelectStreamFactory final : public IStreamFactory
 public:
     SelectStreamFactory(
         const Block & header_,
-        QueryProcessingStage::Enum processed_stage_);
+        QueryProcessingStage::Enum processed_stage_,
+        bool has_virtual_shard_num_column_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -31,6 +32,8 @@ public:
 private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
+
+    bool has_virtual_shard_num_column = false;
 };
 
 }

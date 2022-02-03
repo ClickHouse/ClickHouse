@@ -29,20 +29,14 @@ namespace ErrorCodes
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size,
+    std::optional<size_t> size,
     int flags,
     char * existing_memory,
     size_t alignment)
 {
-    if (file_size.has_value() && !*file_size)
+    if (size.has_value() && !*size)
         return std::make_unique<ReadBufferFromEmptyFile>();
-
-    size_t estimated_size = 0;
-    if (read_hint.has_value())
-        estimated_size = *read_hint;
-    else if (file_size.has_value())
-        estimated_size = file_size.has_value() ? *file_size : 0;
+    size_t estimated_size = size.has_value() ? *size : 0;
 
     if (!existing_memory
         && settings.local_fs_method == LocalFSReadMethod::mmap
@@ -69,23 +63,23 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (settings.local_fs_method == LocalFSReadMethod::read)
         {
-            res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+            res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
-            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
             static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
             static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");

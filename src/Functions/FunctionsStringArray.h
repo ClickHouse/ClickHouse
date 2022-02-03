@@ -749,7 +749,7 @@ private:
         {
             ColumnsWithTypeAndName cols;
             cols.emplace_back(col_arr.getDataPtr(), nested_type, "tmp");
-            return ConvertImplGenericToString<ColumnString>::execute(cols, std::make_shared<DataTypeString>(), col_arr.size());
+            return ConvertImplGenericToString::execute(cols, std::make_shared<DataTypeString>());
         }
     }
 

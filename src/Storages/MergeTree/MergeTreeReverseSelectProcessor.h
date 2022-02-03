@@ -13,7 +13,7 @@ class MergeTreeReverseSelectProcessor final : public MergeTreeSelectProcessor
 {
 public:
     template <typename... Args>
-    explicit MergeTreeReverseSelectProcessor(Args &&... args)
+    MergeTreeReverseSelectProcessor(Args &&... args)
         : MergeTreeSelectProcessor{std::forward<Args>(args)...}
     {
         LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
@@ -24,9 +24,7 @@ public:
     String getName() const override { return "MergeTreeReverse"; }
 
 private:
-    bool getNewTaskImpl() override;
-    void finalizeNewTask() override {}
-
+    bool getNewTask() override;
     Chunk readFromPart() override;
 
     Chunks chunks;

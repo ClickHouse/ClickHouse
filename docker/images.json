@@ -46,6 +46,7 @@
         "name": "clickhouse/stateless-test",
         "dependent": [
             "docker/test/stateful",
+            "docker/test/coverage",
             "docker/test/unit"
         ]
     },
@@ -54,6 +55,10 @@
         "dependent": [
             "docker/test/stress"
         ]
+    },
+    "docker/test/coverage": {
+        "name": "clickhouse/test-coverage",
+        "dependent": []
     },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
@@ -101,10 +106,6 @@
     },
     "docker/test/integration/mysql_golang_client": {
         "name": "clickhouse/mysql-golang-client",
-        "dependent": []
-    },
-    "docker/test/integration/dotnet_client": {
-        "name": "clickhouse/dotnet-client",
         "dependent": []
     },
     "docker/test/integration/mysql_java_client": {

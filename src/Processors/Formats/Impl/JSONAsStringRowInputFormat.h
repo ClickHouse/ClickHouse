@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
-#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -22,11 +20,8 @@ public:
 
     String getName() const override { return "JSONAsStringRowInputFormat"; }
     void resetParser() override;
-    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
-    JSONAsStringRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);
-
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readPrefix() override;
@@ -34,20 +29,11 @@ private:
 
     void readJSONObject(IColumn & column);
 
-    std::unique_ptr<PeekableReadBuffer> buf;
+    PeekableReadBuffer buf;
 
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
     bool allow_new_rows = true;
-};
-
-class JSONAsStringExternalSchemaReader : public IExternalSchemaReader
-{
-public:
-    NamesAndTypesList readSchema() override
-    {
-        return {{"json", std::make_shared<DataTypeString>()}};
-    }
 };
 
 }

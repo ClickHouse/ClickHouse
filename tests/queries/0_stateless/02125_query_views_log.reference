@@ -18,7 +18,7 @@ written_bytes: 4000000
 select read_rows, read_bytes, written_rows, written_bytes from system.query_log where type = 'QueryFinish' and query_kind = 'Insert' and current_database = currentDatabase() format Vertical;
 Row 1:
 ──────
-read_rows:     3000000
-read_bytes:    16000000
+read_rows:     1000000
+read_bytes:    8000000
 written_rows:  3000000
 written_bytes: 12000000

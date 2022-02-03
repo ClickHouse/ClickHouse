@@ -15,7 +15,7 @@ limitations under the License. */
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB

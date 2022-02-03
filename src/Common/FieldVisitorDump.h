@@ -27,7 +27,6 @@ public:
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
-    String operator() (const bool & x) const;
 };
 
 }

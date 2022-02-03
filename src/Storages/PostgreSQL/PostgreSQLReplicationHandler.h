@@ -15,8 +15,6 @@ struct SettingChange;
 
 class PostgreSQLReplicationHandler
 {
-friend class TemporaryReplicationSlot;
-
 public:
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
@@ -29,7 +27,7 @@ public:
             bool is_materialized_postgresql_database_);
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
-    void startup(bool delayed);
+    void startup();
 
     /// Stop replication without cleanup.
     void shutdown();
@@ -53,8 +51,6 @@ public:
     void removeTableFromReplication(const String & postgres_table_name);
 
     void setSetting(const SettingChange & setting);
-
-    void cleanupFunc();
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
@@ -87,7 +83,7 @@ private:
 
     void consumerFunc();
 
-    StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
+    StoragePtr loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
@@ -137,9 +133,7 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
 
-    BackgroundSchedulePool::TaskHolder startup_task;
-    BackgroundSchedulePool::TaskHolder consumer_task;
-    BackgroundSchedulePool::TaskHolder cleanup_task;
+    BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
 
     std::atomic<bool> stop_synchronization = false;
 

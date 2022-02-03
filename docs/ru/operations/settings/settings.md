@@ -391,14 +391,12 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров. 
-
-Если режим включен, то во входящих данных в формате `TCV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
 
 Возможные значения:
 
--   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
--   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
 
 Значение по умолчанию: 0.
 
@@ -412,39 +410,10 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_tsv_enum_as_number`:
 
-Запрос:
-
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-SELECT * FROM table_with_enum_column_for_tsv_insert;
-```
-
-Результат:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Запрос:
-
-```sql
-SET input_format_tsv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
-```
-
-сгенерирует исключение.
-
-При отключенной настройке `input_format_tsv_enum_as_number`:
-
-Запрос:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -458,6 +427,15 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -761,20 +739,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Возможные значения:
 
--   Положительное целое число.
+-   Любое положительное целое число.
 
-Значение по умолчанию: `163840`.
-
-
-## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
-
-Минимальное количество строк для чтения из одного файла, прежде чем движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `163840`.
+Значение по умолчанию: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -784,17 +751,7 @@ ClickHouse может парсить только базовый формат `Y
 
 -   Положительное целое число.
 
-Значение по умолчанию: `251658240`.
-
-## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
-
-Минимальное количество байтов для чтения из одного файла, прежде чем движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
-
-Возможное значение:
-
--   Положительное целое число.
-
-Значение по умолчанию: `251658240`.
+Значение по умолчанию: 251658240.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
@@ -849,6 +806,26 @@ ClickHouse может парсить только базовый формат `Y
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -1554,13 +1531,12 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров. 
-Если режим включен, то во входящих данных в формате `CSV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
 
 Возможные значения:
 
--   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
--   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
 
 Значение по умолчанию: 0.
 
@@ -1574,38 +1550,9 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_csv_enum_as_number`:
 
-Запрос:
-
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-```
-
-Результат:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Запрос:
-
-```sql
-SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
-```
-
-сгенерирует исключение.
-
-При отключенной настройке `input_format_csv_enum_as_number`:
-
-Запрос:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
@@ -1615,10 +1562,16 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ┌──Id─┬─Value──┐
 │ 102 │ second │
 └─────┴────────┘
-┌──Id─┬─Value─┐
-│ 103 │ first │
-└─────┴───────┘
 ```
+
+При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+сгенерирует исключение.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -1641,19 +1594,18 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 
 `INSERT` завершается успешно только в том случае, когда ClickHouse смог без ошибки записать данные в `insert_quorum` реплик за время `insert_quorum_timeout`. Если по любой причине количество реплик с успешной записью не достигнет `insert_quorum`, то запись считается не состоявшейся и ClickHouse удалит вставленный блок из всех реплик, куда уже успел записать данные.
 
-Когда `insert_quorum_parallel` выключена, все реплики кворума консистентны, то есть содержат данные всех предыдущих запросов `INSERT` (последовательность `INSERT` линеаризуется). При чтении с диска данных, записанных с помощью `insert_quorum` и при выключенной `insert_quorum_parallel`, можно включить последовательную консистентность для запросов `SELECT` с помощью [select_sequential_consistency](#settings-select_sequential_consistency).
+Все реплики в кворуме консистентны, т.е. содержат данные всех более ранних запросов `INSERT`. Последовательность `INSERT` линеаризуется.
 
-ClickHouse генерирует исключение:
+При чтении данных, записанных с `insert_quorum` можно использовать настройку [select_sequential_consistency](#settings-select_sequential_consistency).
+
+ClickHouse генерирует исключение
 
 -   Если количество доступных реплик на момент запроса меньше `insert_quorum`.
 -   При попытке записать данные в момент, когда предыдущий блок ещё не вставлен в `insert_quorum` реплик. Эта ситуация может возникнуть, если пользователь вызвал `INSERT` прежде, чем завершился предыдущий с `insert_quorum`.
 
--   При выключенной `insert_quorum_parallel` и при попытке записать данные в момент, когда предыдущий блок еще не вставлен в `insert_quorum` реплик (несколько параллельных `INSERT`-запросов). Эта ситуация может возникнуть при попытке пользователя выполнить очередной запрос `INSERT` к той же таблице, прежде чем завершится предыдущий с `insert_quorum`.
-
 См. также:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
--   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1665,29 +1617,11 @@ ClickHouse генерирует исключение:
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
--   [insert_quorum_parallel](#settings-insert_quorum_parallel)
--   [select_sequential_consistency](#settings-select_sequential_consistency)
-
-## insert_quorum_parallel {#settings-insert_quorum_parallel}
-
-Включает и выключает параллелизм для кворумных вставок (`INSERT`-запросы). Когда опция включена, возможно выполнять несколько кворумных `INSERT`-запросов одновременно, при этом запросы не дожидаются окончания друг друга . Когда опция выключена, одновременные записи с кворумом в одну и ту же таблицу будут отклонены (будет выполнена только одна из них).
-
-Возможные значения:
-
--   0 — Выключена.
--   1 — Включена.
-
-Значение по умолчанию: 1.
-
-См. также:
-
--   [insert_quorum](#settings-insert_quorum)
--   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Включает или выключает последовательную консистентность для запросов `SELECT`. Необходимо, чтобы `insert_quorum_parallel` была выключена (по умолчанию включена), а опция `insert_quorum` включена.
+Включает или выключает последовательную консистентность для запросов `SELECT`.
 
 Возможные значения:
 
@@ -1700,13 +1634,10 @@ ClickHouse генерирует исключение:
 
 Когда последовательная консистентность включена, то ClickHouse позволит клиенту выполнить запрос `SELECT` только к тем репликам, которые содержат данные всех предыдущих запросов `INSERT`, выполненных с `insert_quorum`. Если клиент обратится к неполной реплике, то ClickHouse сгенерирует исключение. В запросе SELECT не будут участвовать данные, которые ещё не были записаны на кворум реплик.
 
-Если `insert_quorum_parallel` включена (по умолчанию это так), тогда `select_sequential_consistency` не будет работать. Причина в том, что параллельные запросы `INSERT` можно записать в разные наборы реплик кворума, поэтому нет гарантии того, что в отдельно взятую реплику будут сделаны все записи.
-
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
--   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 

@@ -1,7 +1,7 @@
 version: '2.3'
 services:
     mongo1:
-        image: mongo:5.0
+        image: mongo:3.6
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
@@ -9,9 +9,3 @@ services:
         ports:
             - ${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}
         command: --profile=2 --verbose
-
-    mongo2:
-        image: mongo:5.0
-        restart: always
-        ports:
-            - ${MONGO_NO_CRED_EXTERNAL_PORT}:${MONGO_NO_CRED_INTERNAL_PORT}

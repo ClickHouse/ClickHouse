@@ -59,7 +59,7 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     if (function_arguments.size() != identifiers_raw.size())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Function {} expects {} arguments actual arguments {}",
-            create_function_query->getFunctionName(),
+            create_function_query->function_name,
             identifiers_raw.size(),
             function_arguments.size());
 

@@ -424,21 +424,6 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute(f'DROP TABLE test_table ')
 
 
-def test_where_false(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test")
-    cursor.execute('CREATE TABLE test (a Integer)')
-    cursor.execute("INSERT INTO test SELECT 1")
-
-    result = node1.query("SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=0")
-    assert(int(result) == 0)
-    result = node1.query("SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 0")
-    assert(int(result) == 0)
-    result = node1.query("SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=1")
-    assert(int(result) == 1)
-    cursor.execute("DROP TABLE test")
-
-
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

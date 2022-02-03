@@ -20,11 +20,11 @@ def dict_setup(node, table_name, dict_name):
         yield
 
     finally:
-        with Finally("I drop the dictionary", flags=TE):
-            node.query(f"DROP DICTIONARY IF EXISTS default.{dict_name}")
-
-        with And("I drop the table", flags=TE):
+        with Finally("I drop the table", flags=TE):
             node.query(f"DROP TABLE IF EXISTS {table_name}")
+
+        with And("I drop the dictionary", flags=TE):
+            node.query(f"DROP DICTIONARY IF EXISTS default.{dict_name}")
 
 @TestSuite
 def config_privileges_granted_directly(self, node=None):

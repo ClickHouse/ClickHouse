@@ -127,7 +127,7 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
+                      << "DESCRIBE TABLE " << (settings.hilite ? hilite_none : "");
         table_expression->formatImpl(settings, state, frame);
     }
 

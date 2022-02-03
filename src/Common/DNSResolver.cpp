@@ -272,7 +272,7 @@ bool DNSResolver::updateCacheImpl(UpdateF && update_func, ElemsT && elems, const
     }
 
     if (!lost_elems.empty())
-        LOG_INFO(log, fmt::runtime(log_msg), lost_elems);
+        LOG_INFO(log, log_msg, lost_elems);
 
     return updated;
 }

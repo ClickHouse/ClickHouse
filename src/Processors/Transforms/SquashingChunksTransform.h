@@ -17,14 +17,12 @@ public:
     void work() override;
 
 protected:
-    void onConsume(Chunk chunk) override;
-    GenerateResult onGenerate() override;
+    void transform(Chunk & chunk) override;
     void onFinish() override;
 
 
 private:
     SquashingTransform squashing;
-    Chunk cur_chunk;
     Chunk finish_chunk;
 };
 

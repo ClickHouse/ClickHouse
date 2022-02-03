@@ -5,7 +5,7 @@
 #include "config_core.h"
 
 #if USE_MYSQL
-#    include <Common/LocalDateTime.h>
+#    include <base/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"

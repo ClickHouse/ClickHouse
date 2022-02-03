@@ -372,7 +372,7 @@ public:
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
         , fallback_searcher{needle_, needle_size}
     {
-        if (fallback || fallback_searcher.force_fallback)
+        if (fallback)
             return;
 
         hash = std::unique_ptr<VolnitskyTraits::Offset[]>(new VolnitskyTraits::Offset[VolnitskyTraits::hash_size]{});
@@ -393,7 +393,7 @@ public:
 
         const auto haystack_end = haystack + haystack_size;
 
-        if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
+        if (fallback || haystack_size <= needle_size)
             return fallback_searcher.search(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.

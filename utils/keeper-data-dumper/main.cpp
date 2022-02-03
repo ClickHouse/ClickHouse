@@ -37,9 +37,9 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         for (const auto & child : value.children)
         {
             if (key == "/")
-                keys.push(key + child.toString());
+                keys.push(key + child);
             else
-                keys.push(key + "/" + child.toString());
+                keys.push(key + "/" + child);
         }
     }
     std::cout << std::flush;

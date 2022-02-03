@@ -39,7 +39,7 @@ BrotliReadBuffer::BrotliReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_s
         , in_data(nullptr)
         , out_capacity(0)
         , out_data(nullptr)
-        , eof_flag(false)
+        , eof(false)
 {
 }
 
@@ -47,7 +47,7 @@ BrotliReadBuffer::~BrotliReadBuffer() = default;
 
 bool BrotliReadBuffer::nextImpl()
 {
-    if (eof_flag)
+    if (eof)
         return false;
 
     if (!in_available)
@@ -74,7 +74,7 @@ bool BrotliReadBuffer::nextImpl()
     {
         if (in->eof())
         {
-            eof_flag = true;
+            eof = true;
             return !working_buffer.empty();
         }
         else

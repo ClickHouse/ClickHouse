@@ -218,9 +218,9 @@ public:
     using ColVecType = ColumnVectorOrDecimal<T>;
 
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        increment(place, static_cast<const ColVecType &>(*columns[0]).getData()[row_num]);
+        this->data(place).numerator += static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
     }
 
@@ -240,7 +240,7 @@ public:
             sum_data.addMany(column.getData().data(), batch_size);
             this->data(place).denominator += batch_size;
         }
-        increment(place, sum_data.sum);
+        this->data(place).numerator += sum_data.sum;
     }
 
     void addBatchSinglePlaceNotNull(
@@ -270,7 +270,7 @@ public:
             sum_data.addManyNotNull(column.getData().data(), null_map, batch_size);
             this->data(place).denominator += batch_size - countBytesInFilter(null_map, batch_size);
         }
-        increment(place, sum_data.sum);
+        this->data(place).numerator += sum_data.sum;
     }
 
     String getName() const override { return "avg"; }
@@ -298,10 +298,5 @@ public:
 
 #endif
 
-private:
-    void NO_SANITIZE_UNDEFINED increment(AggregateDataPtr __restrict place, Numerator inc) const
-    {
-        this->data(place).numerator += inc;
-    }
 };
 }

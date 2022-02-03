@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <base/types.h>
 
 namespace DB

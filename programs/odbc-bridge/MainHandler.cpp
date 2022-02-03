@@ -19,7 +19,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <base/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Common/config.h>
 
 #include <mutex>
 #include <memory>
@@ -46,7 +45,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         *response.send() << message << std::endl;
-    LOG_WARNING(log, fmt::runtime(message));
+    LOG_WARNING(log, message);
 }
 
 
@@ -102,7 +101,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-        LOG_ERROR(log, fmt::runtime(ex.getStackTraceString()));
+        LOG_ERROR(log, ex.getStackTraceString());
         return;
     }
 

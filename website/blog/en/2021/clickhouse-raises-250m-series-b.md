@@ -2,7 +2,7 @@
 title: 'ClickHouse raises a $250M Series B at a $2B valuation...and we are hiring'
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-raises-250m-series-b/featured.jpg'
 date: '2021-10-28'
-author: 'Dorota Szeremeta'
+author: '[Dorota Szeremeta](https://www.linkedin.com/in/dorota-szeremeta-a849b7/)'
 tags: ['company', 'investment']
 ---
 

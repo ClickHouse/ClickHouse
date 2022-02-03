@@ -1,3 +1,5 @@
+#include <string.h> // memcpy
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -7,7 +9,12 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+
+#include <base/unaligned.h>
+#include <base/sort.h>
+
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -15,9 +22,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
-#include <cstring> // memcpy
 
 
 namespace DB
@@ -123,8 +127,18 @@ size_t ColumnArray::size() const
 
 Field ColumnArray::operator[](size_t n) const
 {
-    Field res;
-    get(n, res);
+    size_t offset = offsetAt(n);
+    size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
+    Array res(size);
+
+    for (size_t i = 0; i < size; ++i)
+        res[i] = getData()[offset + i];
+
     return res;
 }
 
@@ -138,12 +152,11 @@ void ColumnArray::get(size_t n, Field & res) const
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
             size, max_array_size_as_field);
 
-    res = Array();
+    res = Array(size);
     Array & res_arr = DB::get<Array &>(res);
-    res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        res_arr.push_back(getData()[offset + i]);
+        getData().get(offset + i, res_arr[i]);
 }
 
 
@@ -166,13 +179,6 @@ StringRef ColumnArray::getDataAt(size_t n) const
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
 
     return StringRef(first.data, last.data + last.size - first.data);
-}
-
-
-bool ColumnArray::isDefaultAt(size_t n) const
-{
-    const auto & offsets_data = getOffsets();
-    return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
 
@@ -570,8 +576,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
-}
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
 
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
@@ -811,9 +816,9 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        ::sort(res.begin(), res.end(), less);
+        std::sort(res.begin(), res.end(), less);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
@@ -861,16 +866,6 @@ ColumnPtr ColumnArray::compress() const
         {
             return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
         });
-}
-
-double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
-}
-
-void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
 }
 
 

@@ -13,7 +13,7 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Poco/String.h>
 
-#if USE_MYSQL
+
 using namespace DB;
 
 static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr context)
@@ -40,8 +40,7 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
         {"TINYINT", "Int8"}, {"SMALLINT", "Int16"}, {"MEDIUMINT", "Int32"}, {"INT", "Int32"},
         {"INTEGER", "Int32"}, {"BIGINT", "Int64"}, {"FLOAT", "Float32"}, {"DOUBLE", "Float64"},
         {"VARCHAR(10)", "String"}, {"CHAR(10)", "String"}, {"Date", "Date"}, {"DateTime", "DateTime"},
-        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}, {"BIT", "UInt64"}, {"SET", "UInt64"},
-        {"YEAR", "UInt16"}, {"TIME", "Int64"}, {"GEOMETRY", "String"}
+        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}
     };
 
     for (const auto & [test_type, mapped_type] : test_types)
@@ -256,4 +255,3 @@ TEST(MySQLCreateRewritten, QueryWithEnum)
         std::string(MATERIALIZEDMYSQL_TABLE_COLUMNS) +
         ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 }
-#endif

@@ -66,7 +66,7 @@ public:
         return res;
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Insert; }
+    const char * getQueryKindString() const override { return "Insert"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

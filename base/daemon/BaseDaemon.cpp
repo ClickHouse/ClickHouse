@@ -51,7 +51,6 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
-#include <Common/setThreadName.h>
 #include <filesystem>
 
 #include <loggers/OwnFormattingChannel.h>
@@ -317,7 +316,7 @@ private:
         else
             error_message = "Sanitizer trap.";
 
-        LOG_FATAL(log, fmt::runtime(error_message));
+        LOG_FATAL(log, error_message);
 
         if (stack_trace.getSize())
         {
@@ -330,11 +329,11 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
-            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+            LOG_FATAL(log, bare_stacktrace.str());
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.

@@ -35,7 +35,7 @@ private:
     size_t in_available;
     size_t out_available;
 
-    bool eof_flag = false;
+    bool eof = false;
 };
 
 }

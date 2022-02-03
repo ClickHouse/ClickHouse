@@ -25,7 +25,6 @@ Categories:
 -   **[Operations](../faq/operations/index.md)**
     -   [Which ClickHouse version to use in production?](../faq/operations/production.md)
     -   [Is it possible to delete old records from a ClickHouse table?](../faq/operations/delete-old-data.md)
-    -   [Does ClickHouse support multi-region replication?](../faq/operations/multi-region-replication.md)
 -   **[Integration](../faq/integration/index.md)**
     -   [How do I export data from ClickHouse to a file?](../faq/integration/file-export.md)
     -   [What if I have a problem with encodings when connecting to Oracle via ODBC?](../faq/integration/oracle-odbc.md)

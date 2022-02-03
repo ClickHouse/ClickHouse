@@ -1,7 +1,6 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
 #include <IO/WriteBufferFromS3.h>
-#include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -56,11 +55,6 @@ void WriteIndirectBufferFromRemoteFS<T>::sync()
 #if USE_AWS_S3
 template
 class WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>;
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-template
-class WriteIndirectBufferFromRemoteFS<WriteBufferFromAzureBlobStorage>;
 #endif
 
 #if USE_HDFS

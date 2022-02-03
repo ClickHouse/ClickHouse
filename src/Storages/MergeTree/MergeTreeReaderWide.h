@@ -34,9 +34,11 @@ public:
     bool canReadIncompleteGranules() const override { return true; }
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
+    using Serializations = std::map<std::string, SerializationPtr>;
 
 private:
     FileStreams streams;
+    Serializations serializations;
     DiskPtr disk;
 
     void addStreams(const NameAndTypePair & name_and_type,

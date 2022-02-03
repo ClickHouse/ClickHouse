@@ -58,9 +58,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            fail_message = fmt::format("There is no table {}.{} on server: {}",
-                backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            LOG_WARNING(log, fmt::runtime(fail_message));
+            const char * message_pattern = "There is no table {}.{} on server: {}";
+            fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
+            LOG_WARNING(log, fail_message);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             return;
         }

@@ -32,7 +32,7 @@ private:
     size_t out_capacity;
     uint8_t  * out_data;
 
-    bool eof_flag;
+    bool eof;
 };
 
 }

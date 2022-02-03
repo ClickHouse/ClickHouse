@@ -8,10 +8,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/Context.h>
 
 #include <Common/hex.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -202,6 +200,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
 
     ++data;
     UInt128 trace_id_128 = readHex<UInt128>(data);
+    trace_id = trace_id_128;
     data += 32;
 
     if (*data != '-')
@@ -211,7 +210,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    UInt64 span_id_64 = readHex<UInt64>(data);
+    span_id = readHex<UInt64>(data);
     data += 16;
 
     if (*data != '-')
@@ -221,9 +220,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    this->trace_flags = readHex<UInt8>(data);
-    this->trace_id = trace_id_128;
-    this->span_id = span_id_64;
+    trace_flags = readHex<UInt8>(data);
     return true;
 }
 

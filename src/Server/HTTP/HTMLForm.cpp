@@ -183,8 +183,8 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
 
-    if (!in.skipToNextBoundary())
-        throw Poco::Net::HTMLFormException("No boundary line found");
+    /// Assume there is at least one part
+    in.skipToNextBoundary();
 
     /// Read each part until next boundary (or last boundary)
     while (!in.eof())
@@ -241,9 +241,7 @@ HTMLForm::MultipartReadBuffer::MultipartReadBuffer(ReadBuffer & in_, const std::
 
 bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 {
-    if (in.eof())
-        return false;
-
+    assert(working_buffer.empty() || eof());
     assert(boundary_hit);
 
     boundary_hit = false;
@@ -259,7 +257,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
         }
     }
 
-    return false;
+    throw Poco::Net::HTMLFormException("No boundary line found");
 }
 
 std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)

@@ -2,12 +2,17 @@
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard_safe.h>
 
 namespace DB
 {
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
@@ -54,8 +59,12 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     if (thread_group)
-        CurrentThread::attachToIfDetached(thread_group);
+        CurrentThread::attachTo(thread_group);
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
@@ -128,8 +137,7 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
             if (e->getLineNumber() != -1)
                 e->setLineNumber(e->getLineNumber() + offset);
     }
-    if (is_server)
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+    tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
     first_parser_finished.set();
     reader_condvar.notify_all();

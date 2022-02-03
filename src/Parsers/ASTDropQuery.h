@@ -45,7 +45,7 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), new_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Drop; }
+    const char * getQueryKindString() const override { return "Drop"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

@@ -23,7 +23,7 @@ public:
 
     String getName() const override
     {
-        if (settings.is_executable_pool)
+        if (process_pool)
             return "ExecutablePool";
         else
             return "Executable";
@@ -42,17 +42,31 @@ protected:
 
     StorageExecutable(
         const StorageID & table_id,
-        const String & format,
-        const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
+        const String & script_name_,
+        const std::vector<String> & arguments_,
+        const String & format_,
+        const std::vector<ASTPtr> & input_queries_,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints);
+
+    StorageExecutable(
+        const StorageID & table_id,
+        const String & script_name_,
+        const std::vector<String> & arguments_,
+        const String & format_,
+        const std::vector<ASTPtr> & input_queries_,
+        const ExecutableSettings & settings_,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints);
 
 private:
-    ExecutableSettings settings;
+    String script_name;
+    std::vector<String> arguments;
+    String format;
     std::vector<ASTPtr> input_queries;
+    ExecutableSettings settings;
+    std::shared_ptr<ProcessPool> process_pool;
     Poco::Logger * log;
-    std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 
 }

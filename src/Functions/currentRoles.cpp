@@ -1,4 +1,3 @@
-#include <base/sort.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -54,7 +53,7 @@ namespace
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
-            ::sort(role_names.begin(), role_names.end());
+            std::sort(role_names.begin(), role_names.end());
         }
 
         size_t getNumberOfArguments() const override { return 0; }

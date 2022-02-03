@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeNumberBase.h>
-#include <Common/DateLUT.h>
+#include <base/DateLUT.h>
 
 namespace DB
 {

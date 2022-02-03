@@ -24,10 +24,7 @@ protected:
 private:
     std::vector<TableLockHolder> table_locks;
 
-    void onConsume(Chunk chunk) override;
-    GenerateResult onGenerate() override;
-
-    Chunk cur_chunk;
+    void transform(Chunk & chunk) override;
 };
 
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;

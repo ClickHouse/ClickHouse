@@ -73,36 +73,6 @@ void registerInputFormatProtobuf(FormatFactory & factory)
     }
 }
 
-ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_settings)
-    : schema_info(
-          format_settings.schema.format_schema,
-          "Protobuf",
-          true,
-          format_settings.schema.is_server,
-          format_settings.schema.format_schema_path)
-{
-}
-
-NamesAndTypesList ProtobufSchemaReader::readSchema()
-{
-    const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info);
-    return protobufSchemaToCHSchema(message_descriptor);
-}
-
-void registerProtobufSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("Protobuf", [](const FormatSettings & settings)
-    {
-        return std::make_shared<ProtobufSchemaReader>(settings);
-    });
-    factory.registerFileExtension("pb", "Protobuf");
-
-    factory.registerExternalSchemaReader("ProtobufSingle", [](const FormatSettings & settings)
-    {
-        return std::make_shared<ProtobufSchemaReader>(settings);
-    });
-}
-
 }
 
 #else
@@ -111,8 +81,6 @@ namespace DB
 {
 class FormatFactory;
 void registerInputFormatProtobuf(FormatFactory &) {}
-
-void registerProtobufSchemaReader(FormatFactory &) {}
 }
 
 #endif

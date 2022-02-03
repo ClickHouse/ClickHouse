@@ -21,8 +21,6 @@ public:
     ~MultipleAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
-    bool isReadOnly() const override;
-    bool isReadOnly(const UUID & id) const override;
 
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);
@@ -36,21 +34,22 @@ public:
     ConstStoragePtr getStorage(const UUID & id) const;
     StoragePtr getStorage(const UUID & id);
 
-    bool exists(const UUID & id) const override;
-    bool hasSubscription(const UUID & id) const override;
-    bool hasSubscription(AccessEntityType type) const override;
-
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
-    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
+    bool existsImpl(const UUID & id) const override;
+    AccessEntityPtr readImpl(const UUID & id) const override;
+    String readNameImpl(const UUID &id) const override;
+    bool canInsertImpl(const AccessEntityPtr & entity) const override;
+    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
+    void removeImpl(const UUID & id) override;
+    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
-    std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const override;
+    bool hasSubscriptionImpl(const UUID & id) const override;
+    bool hasSubscriptionImpl(AccessEntityType type) const override;
+    UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
+    UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;

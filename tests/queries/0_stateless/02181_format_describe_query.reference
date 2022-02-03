@@ -1,3 +1,0 @@
-DESCRIBE TABLE file('data.csv')
-DESCRIBE TABLE table
-DESCRIBE TABLE file('data.csv')

@@ -1,22 +1,3 @@
-option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
-
-if(NOT ENABLE_PROTOBUF)
-  message(STATUS "Not using protobuf")
-  return()
-endif()
-
-set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
-if(OS_FREEBSD AND SANITIZE STREQUAL "address")
-  # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
-  # #include <sanitizer/asan_interface.h>
-  if(LLVM_INCLUDE_DIRS)
-    set(Protobuf_INCLUDE_DIR "${Protobuf_INCLUDE_DIR}" ${LLVM_INCLUDE_DIRS})
-  else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
-    return()
-  endif()
-endif()
-
 set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/protobuf")
 set(protobuf_binary_dir "${ClickHouse_BINARY_DIR}/contrib/protobuf")
 
@@ -27,6 +8,7 @@ add_definitions(-DHAVE_PTHREAD)
 add_definitions(-DHAVE_ZLIB)
 
 include_directories(
+  ${ZLIB_INCLUDE_DIRECTORIES}
   ${protobuf_binary_dir}
   ${protobuf_source_dir}/src)
 
@@ -63,13 +45,13 @@ set(libprotobuf_lite_files
   ${protobuf_source_dir}/src/google/protobuf/wire_format_lite.cc
 )
 
-add_library(_libprotobuf-lite ${libprotobuf_lite_files})
-target_link_libraries(_libprotobuf-lite pthread)
+add_library(libprotobuf-lite ${libprotobuf_lite_files})
+target_link_libraries(libprotobuf-lite pthread)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-    target_link_libraries(_libprotobuf-lite log)
+    target_link_libraries(libprotobuf-lite log)
 endif()
-target_include_directories(_libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
-add_library(protobuf::libprotobuf-lite ALIAS _libprotobuf-lite)
+target_include_directories(libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
+add_library(protobuf::libprotobuf-lite ALIAS libprotobuf-lite)
 
 
 set(libprotobuf_files
@@ -127,17 +109,17 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/wrappers.pb.cc
 )
 
-add_library(_libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
+add_library(libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
 if (ENABLE_FUZZING)
-    target_compile_options(_libprotobuf PRIVATE "-fsanitize-recover=all")
+    target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
-target_link_libraries(_libprotobuf pthread)
-target_link_libraries(_libprotobuf ch_contrib::zlib)
+target_link_libraries(libprotobuf pthread)
+target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-    target_link_libraries(_libprotobuf log)
+    target_link_libraries(libprotobuf log)
 endif()
-target_include_directories(_libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
-add_library(protobuf::libprotobuf ALIAS _libprotobuf)
+target_include_directories(libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
+add_library(protobuf::libprotobuf ALIAS libprotobuf)
 
 
 set(libprotoc_files
@@ -226,9 +208,9 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
 )
 
-add_library(_libprotoc ${libprotoc_files})
-target_link_libraries(_libprotoc _libprotobuf)
-add_library(protobuf::libprotoc ALIAS _libprotoc)
+add_library(libprotoc ${libprotoc_files})
+target_link_libraries(libprotoc libprotobuf)
+add_library(protobuf::libprotoc ALIAS libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 
@@ -236,7 +218,7 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
     add_executable(protoc ${protoc_files})
-    target_link_libraries(protoc _libprotoc _libprotobuf pthread)
+    target_link_libraries(protoc libprotoc libprotobuf pthread)
     add_executable(protobuf::protoc ALIAS protoc)
 
     if (ENABLE_FUZZING)
@@ -315,15 +297,3 @@ else ()
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")
     add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
 endif ()
-
-include("${ClickHouse_SOURCE_DIR}/contrib/protobuf-cmake/protobuf_generate.cmake")
-
-add_library(_protobuf INTERFACE)
-target_link_libraries(_protobuf INTERFACE _libprotobuf)
-target_include_directories(_protobuf INTERFACE "${Protobuf_INCLUDE_DIR}")
-add_library(ch_contrib::protobuf ALIAS _protobuf)
-
-add_library(_protoc INTERFACE)
-target_link_libraries(_protoc INTERFACE _libprotoc _libprotobuf)
-target_include_directories(_protoc INTERFACE "${Protobuf_INCLUDE_DIR}")
-add_library(ch_contrib::protoc ALIAS _protoc)

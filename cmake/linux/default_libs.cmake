@@ -45,11 +45,14 @@ endif ()
 include (cmake/find/unwind.cmake)
 include (cmake/find/cxx.cmake)
 
+add_library(global-group INTERFACE)
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
     -Wl,--end-group
 )
+
+link_libraries(global-group)
 
 # FIXME: remove when all contribs will get custom cmake lists
 install(

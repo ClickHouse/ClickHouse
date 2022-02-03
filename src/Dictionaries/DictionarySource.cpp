@@ -1,7 +1,6 @@
 #include "DictionarySource.h"
 #include <Dictionaries/DictionaryHelpers.h>
 
-
 namespace DB
 {
 
@@ -11,95 +10,12 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-class DictionarySource : public SourceWithProgress
-{
-public:
-
-    explicit DictionarySource(std::shared_ptr<DictionarySourceCoordinator> coordinator_)
-        : SourceWithProgress(coordinator_->getHeader()), coordinator(std::move(coordinator_))
-    {
-    }
-
-private:
-    String getName() const override { return "DictionarySource"; }
-
-    Chunk generate() override
-    {
-        ColumnsWithTypeAndName key_columns_to_read;
-        ColumnsWithTypeAndName data_columns;
-
-        if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns))
-            return {};
-
-        const auto & header = coordinator->getHeader();
-
-        std::vector<ColumnPtr> key_columns;
-        std::vector<DataTypePtr> key_types;
-
-        key_columns.reserve(key_columns_to_read.size());
-        key_types.reserve(key_columns_to_read.size());
-
-        std::unordered_map<std::string_view, ColumnPtr> name_to_column;
-
-        for (const auto & key_column_to_read : key_columns_to_read)
-        {
-            key_columns.emplace_back(key_column_to_read.column);
-            key_types.emplace_back(key_column_to_read.type);
-
-            if (header.has(key_column_to_read.name))
-                name_to_column.emplace(key_column_to_read.name, key_column_to_read.column);
-        }
-
-        for (const auto & data_column : data_columns)
-        {
-            if (header.has(data_column.name))
-                name_to_column.emplace(data_column.name, data_column.column);
-        }
-
-        const auto & attributes_names_to_read = coordinator->getAttributesNamesToRead();
-        const auto & attributes_types_to_read = coordinator->getAttributesTypesToRead();
-        const auto & attributes_default_values_columns = coordinator->getAttributesDefaultValuesColumns();
-
-        const auto & read_columns_func = coordinator->getReadColumnsFunc();
-        auto attributes_columns = read_columns_func(
-            attributes_names_to_read,
-            attributes_types_to_read,
-            key_columns,
-            key_types,
-            attributes_default_values_columns);
-
-        for (size_t i = 0; i < attributes_names_to_read.size(); ++i)
-        {
-            const auto & attribute_name = attributes_names_to_read[i];
-            name_to_column.emplace(attribute_name, attributes_columns[i]);
-        }
-
-        std::vector<ColumnPtr> result_columns;
-        result_columns.reserve(header.columns());
-
-        for (const auto & column_with_type : header)
-        {
-            const auto & header_name = column_with_type.name;
-            auto it = name_to_column.find(header_name);
-            if (it == name_to_column.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name {} not found in result columns", header_name);
-
-            result_columns.emplace_back(it->second);
-        }
-
-        size_t rows_size = result_columns[0]->size();
-        return Chunk(result_columns, rows_size);
-    }
-
-    std::shared_ptr<DictionarySourceCoordinator> coordinator;
-};
-
 bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
 {
     size_t read_block_index = parallel_read_block_index++;
 
-    size_t start = max_block_size * read_block_index;
-    size_t end = max_block_size * (read_block_index + 1);
+    size_t start = read_block_index * max_block_size;
+    size_t end = (read_block_index + 1) * max_block_size;
 
     size_t keys_size = key_columns_with_type[0].column->size();
 
@@ -196,20 +112,73 @@ DictionarySourceCoordinator::cutColumns(const ColumnsWithTypeAndName & columns_w
     return result;
 }
 
-Pipe DictionarySourceCoordinator::read(size_t num_streams)
+
+Chunk DictionarySource::generate()
 {
-    Pipes pipes;
-    pipes.reserve(num_streams);
+    ColumnsWithTypeAndName key_columns_to_read;
+    ColumnsWithTypeAndName data_columns;
 
-    auto coordinator = shared_from_this();
+    if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns))
+        return {};
 
-    for (size_t i = 0; i < num_streams; ++i)
+    const auto & header = coordinator->getHeader();
+
+    std::vector<ColumnPtr> key_columns;
+    std::vector<DataTypePtr> key_types;
+
+    key_columns.reserve(key_columns_to_read.size());
+    key_types.reserve(key_columns_to_read.size());
+
+    std::unordered_map<std::string_view, ColumnPtr> name_to_column;
+
+    for (const auto & key_column_to_read : key_columns_to_read)
     {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
+        key_columns.emplace_back(key_column_to_read.column);
+        key_types.emplace_back(key_column_to_read.type);
+
+        if (header.has(key_column_to_read.name))
+            name_to_column.emplace(key_column_to_read.name, key_column_to_read.column);
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    for (const auto & data_column : data_columns)
+    {
+        if (header.has(data_column.name))
+            name_to_column.emplace(data_column.name, data_column.column);
+    }
+
+    const auto & attributes_names_to_read = coordinator->getAttributesNamesToRead();
+    const auto & attributes_types_to_read = coordinator->getAttributesTypesToRead();
+    const auto & attributes_default_values_columns = coordinator->getAttributesDefaultValuesColumns();
+
+    const auto & dictionary = coordinator->getDictionary();
+    auto attributes_columns = dictionary->getColumns(
+        attributes_names_to_read,
+        attributes_types_to_read,
+        key_columns,
+        key_types,
+        attributes_default_values_columns);
+
+    for (size_t i = 0; i < attributes_names_to_read.size(); ++i)
+    {
+        const auto & attribute_name = attributes_names_to_read[i];
+        name_to_column.emplace(attribute_name, attributes_columns[i]);
+    }
+
+    std::vector<ColumnPtr> result_columns;
+    result_columns.reserve(header.columns());
+
+    for (const auto & column_with_type : header)
+    {
+        const auto & header_name = column_with_type.name;
+        auto it = name_to_column.find(header_name);
+        if (it == name_to_column.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name {} not found in result columns", header_name);
+
+        result_columns.emplace_back(it->second);
+    }
+
+    size_t rows_size = result_columns[0]->size();
+    return Chunk(result_columns, rows_size);
 }
 
 }

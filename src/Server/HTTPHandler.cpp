@@ -10,7 +10,10 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -24,6 +27,7 @@
 #include <base/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -37,11 +41,13 @@
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 
 #include <chrono>
+#include <iomanip>
 #include <sstream>
 
 
@@ -50,6 +56,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -96,6 +103,7 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
 
+    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
 }
@@ -490,9 +498,12 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+        if (!client_info.client_trace_context.parseTraceparentHeader(
+            opentelemetry_traceparent, error))
         {
-            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
+                "Failed to parse OpenTelemetry traceparent header '{}': {}",
+                opentelemetry_traceparent, error);
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
@@ -915,10 +926,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         processQuery(request, params, response, used_output, query_scope);
-        if (request_credentials)
-            LOG_DEBUG(log, "Authentication in progress...");
-        else
-            LOG_DEBUG(log, "Done processing query");
+        LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)
     {

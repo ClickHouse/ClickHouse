@@ -8,11 +8,14 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-bool MergeTreeInOrderSelectProcessor::getNewTaskImpl()
+bool MergeTreeInOrderSelectProcessor::getNewTask()
 try
 {
     if (all_mark_ranges.empty())
+    {
+        finish();
         return false;
+    }
 
     if (!reader)
         initializeReaders();

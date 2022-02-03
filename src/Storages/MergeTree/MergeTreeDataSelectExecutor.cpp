@@ -1,4 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <base/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -123,8 +124,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const UInt64 max_block_size,
     const unsigned num_streams,
     QueryProcessingStage::Enum processed_stage,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-    bool enable_parallel_reading) const
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     if (query_info.merge_tree_empty_result)
         return std::make_unique<QueryPlan>();
@@ -142,8 +142,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_size,
             num_streams,
             max_block_numbers_to_read,
-            query_info.merge_tree_select_result_ptr,
-            enable_parallel_reading);
+            query_info.merge_tree_select_result_ptr);
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_snapshot->projections.empty())
@@ -185,8 +184,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_size,
             num_streams,
             max_block_numbers_to_read,
-            query_info.projection->merge_tree_projection_select_result_ptr,
-            enable_parallel_reading);
+            query_info.projection->merge_tree_projection_select_result_ptr);
     }
 
     if (projection_plan->isInitialized())
@@ -987,8 +985,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachQueryIfNotDetached(););
                     if (thread_group)
-                        CurrentThread::attachToIfDetached(thread_group);
+                        CurrentThread::attachTo(thread_group);
 
                     process_part(part_index);
                 });
@@ -1211,8 +1210,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const UInt64 max_block_size,
     const unsigned num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr,
-    bool enable_parallel_reading) const
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr) const
 {
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
@@ -1245,8 +1243,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         sample_factor_column_queried,
         max_block_numbers_to_read,
         log,
-        merge_tree_select_result_ptr,
-        enable_parallel_reading
+        merge_tree_select_result_ptr
     );
 
     QueryPlanPtr plan = std::make_unique<QueryPlan>();

@@ -9,7 +9,6 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/config.h>
 #include <base/errnoToString.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/registerFormats.h>

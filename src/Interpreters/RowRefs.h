@@ -1,17 +1,14 @@
 #pragma once
 
+#include <Common/Arena.h>
+#include <Columns/IColumn.h>
+#include <Interpreters/asof.h>
+
 #include <optional>
 #include <variant>
 #include <list>
 #include <mutex>
 #include <algorithm>
-
-#include <base/sort.h>
-
-#include <Common/Arena.h>
-#include <Columns/IColumn.h>
-#include <Interpreters/asof.h>
-
 
 namespace DB
 {
@@ -106,7 +103,7 @@ struct RowRefList : RowRef
             }
         }
 
-        bool ok() const { return first || batch; }
+        bool ok() const { return first || (batch && position < batch->size); }
 
     private:
         const RowRefList * root;
@@ -202,7 +199,7 @@ private:
             if (!sorted.load(std::memory_order_relaxed))
             {
                 if (!array.empty())
-                    ::sort(array.begin(), array.end(), (ascending ? less : greater));
+                    std::sort(array.begin(), array.end(), (ascending ? less : greater));
 
                 sorted.store(true, std::memory_order_release);
             }

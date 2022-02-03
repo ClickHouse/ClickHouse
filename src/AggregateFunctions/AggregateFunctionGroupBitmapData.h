@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <memory>
 #include <boost/noncopyable.hpp>
-#include <base/sort.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/SmallTable.h>
@@ -422,9 +421,6 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const
     {
-        if (!std::is_same_v<T, UInt64> && x > rb_max())
-            return 0;
-
         if (isSmall())
             return small.find(x) != small.end();
         else
@@ -436,9 +432,6 @@ public:
      */
     void rb_remove(UInt64 x)
     {
-        if (!std::is_same_v<T, UInt64> && x > rb_max())
-            return;
-
         if (isSmall())
             toLarge();
 
@@ -558,7 +551,7 @@ public:
             }
             if (limit < answer.size())
             {
-                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
                 answer.resize(limit);
             }
 

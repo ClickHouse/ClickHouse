@@ -5,7 +5,7 @@ toc_title: Build on Mac OS X
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-!!! info "You don't have to build ClickHouse yourself"
+!!! info "You don't have to build ClickHouse yourself!"
     You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
     Follow `macOS (Intel)` or `macOS (Apple silicon)` installation instructions.
 

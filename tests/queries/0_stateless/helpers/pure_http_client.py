@@ -14,23 +14,22 @@ class ClickHouseClient:
     def __init__(self, host = CLICKHOUSE_SERVER_URL_STR):
         self.host = host
 
-    def query(self, query, connection_timeout=1500, settings=dict(), binary_result=False):
+    def query(self, query, connection_timeout = 1500):
         NUMBER_OF_TRIES = 30
         DELAY = 10
 
-        params = {
-            'timeout_before_checking_execution_speed': 120,
-            'max_execution_time': 6000,
-            'database': CLICKHOUSE_DATABASE,
-        }
-
-        # Add extra settings to params
-        params = {**params, **settings}
-
         for i in range(NUMBER_OF_TRIES):
-            r = requests.post(self.host, params=params, timeout=connection_timeout, data=query)
+            r = requests.post(
+                self.host,
+                params = {
+                    'timeout_before_checking_execution_speed': 120,
+                    'max_execution_time': 6000,
+                    'database': CLICKHOUSE_DATABASE
+                },
+                timeout = connection_timeout,
+                data = query)
             if r.status_code == 200:
-                return r.content if binary_result else r.text
+                return r.text
             else:
                 print('ATTENTION: try #%d failed' % i)
                 if i != (NUMBER_OF_TRIES-1):
@@ -45,22 +44,9 @@ class ClickHouseClient:
         df = pd.read_csv(io.StringIO(data), sep = '\t')
         return df
 
-    def query_with_data(self, query, data, connection_timeout=1500, settings=dict()):
-        params = {
-            'query': query,
-            'timeout_before_checking_execution_speed': 120,
-            'max_execution_time': 6000,
-            'database': CLICKHOUSE_DATABASE,
-        }
-
-        headers = {
-            "Content-Type": "application/binary"
-        }
-
-        # Add extra settings to params
-        params = {**params, **settings}
-
-        r = requests.post(self.host, params=params, timeout=connection_timeout, data=data, headers=headers)
+    def query_with_data(self, query, content):
+        content = content.encode('utf-8')
+        r = requests.post(self.host, data=content)
         result = r.text
         if r.status_code == 200:
             return result

@@ -3,7 +3,7 @@
 #include <Storages/System/attachSystemTablesImpl.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/getResource.h>
+#include <base/getResource.h>
 
 namespace DB
 {

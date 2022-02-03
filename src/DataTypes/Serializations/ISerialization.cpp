@@ -16,43 +16,12 @@ namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-    extern const int LOGICAL_ERROR;
-}
-
-ISerialization::Kind ISerialization::getKind(const IColumn & column)
-{
-    if (column.isSparse())
-        return Kind::SPARSE;
-
-    return Kind::DEFAULT;
-}
-
-String ISerialization::kindToString(Kind kind)
-{
-    switch (kind)
-    {
-        case Kind::DEFAULT:
-            return "Default";
-        case Kind::SPARSE:
-            return "Sparse";
-    }
-    __builtin_unreachable();
-}
-
-ISerialization::Kind ISerialization::stringToKind(const String & str)
-{
-    if (str == "Default")
-        return Kind::DEFAULT;
-    else if (str == "Sparse")
-        return Kind::SPARSE;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 String ISerialization::Substream::toString() const
 {
     if (type == TupleElement)
-        return fmt::format("TupleElement({}, escape_tuple_delimiter = {})",
+        return fmt::format("TupleElement({}, escape_tuple_delimiter={})",
             tuple_element_name, escape_tuple_delimiter ? "true" : "false");
 
     return String(magic_enum::enum_name(type));
@@ -75,22 +44,18 @@ String ISerialization::SubstreamPath::toString() const
 void ISerialization::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    const SubstreamData & data) const
+    DataTypePtr type,
+    ColumnPtr column) const
 {
     path.push_back(Substream::Regular);
-    path.back().data = data;
+    path.back().data = {type, column, getPtr(), nullptr};
     callback(path);
     path.pop_back();
 }
 
 void ISerialization::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    enumerateStreams(path, callback, {getPtr(), nullptr, nullptr, nullptr});
-}
-
-void ISerialization::enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const
-{
-    enumerateStreams(path, callback, {getPtr(), type, nullptr, nullptr});
+    enumerateStreams(path, callback, nullptr, nullptr);
 }
 
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
@@ -182,23 +147,11 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
-static size_t isOffsetsOfNested(const ISerialization::SubstreamPath & path)
-{
-    if (path.empty())
-        return false;
-
-    for (const auto & elem : path)
-        if (elem.type == ISerialization::Substream::ArrayElements)
-            return false;
-
-    return path.back().type == ISerialization::Substream::ArraySizes;
-}
-
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
-    if (name_in_storage != nested_storage_name && isOffsetsOfNested(path))
+    if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == ISerialization::Substream::ArraySizes))
         stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);
@@ -289,9 +242,10 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     assert(prefix_len < path.size());
 
     SubstreamData res = path[prefix_len].data;
+    res.creator.reset();
     for (ssize_t i = static_cast<ssize_t>(prefix_len) - 1; i >= 0; --i)
     {
-        const auto & creator = path[i].creator;
+        const auto & creator = path[i].data.creator;
         if (creator)
         {
             res.type = res.type ? creator->create(res.type) : res.type;

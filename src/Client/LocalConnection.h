@@ -35,7 +35,6 @@ struct LocalQueryState
     /// Current block to be sent next.
     std::optional<Block> block;
     std::optional<ColumnsDescription> columns_description;
-    std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
     bool is_cancelled = false;
@@ -44,7 +43,6 @@ struct LocalQueryState
     bool sent_totals = false;
     bool sent_extremes = false;
     bool sent_progress = false;
-    bool sent_profile_info = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
@@ -93,8 +91,6 @@ public:
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
-
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 

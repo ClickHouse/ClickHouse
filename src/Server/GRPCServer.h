@@ -4,7 +4,6 @@
 
 #if USE_GRPC
 #include <Poco/Net/SocketAddress.h>
-#include <base/types.h>
 #include "clickhouse_grpc.grpc.pb.h"
 
 namespace Poco { class Logger; }
@@ -30,9 +29,6 @@ public:
 
     /// Stops the server. No new connections will be accepted.
     void stop();
-
-    /// Returns the port this server is listening to.
-    UInt16 portNumber() const { return address_to_listen.port(); }
 
     /// Returns the number of currently handled connections.
     size_t currentConnections() const;

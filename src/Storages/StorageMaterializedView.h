@@ -71,9 +71,6 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
 
-    /// Get the virtual column of the target table;
-    NamesAndTypesList getVirtuals() const override;
-
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     Pipe read(
@@ -111,8 +108,7 @@ protected:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_,
-        const String & comment);
+        bool attach_);
 };
 
 }
