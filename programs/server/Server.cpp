@@ -116,6 +116,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if defined(USE_HUALLOC)
+#    include <hualloc/hu_alloc.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -149,6 +153,10 @@ static bool jemallocOptionEnabled(const char *) { return 0; }
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
+#if defined(USE_HUALLOC)
+    RunHuReclaim();
+#endif
+
     DB::Server app;
 
     if (jemallocOptionEnabled("opt.background_thread"))
