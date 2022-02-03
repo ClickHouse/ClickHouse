@@ -95,6 +95,7 @@ public:
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
+        const String & comment_,
         size_t flush_interval_milliseconds_);
 
     void shutdown() override;
@@ -117,6 +118,7 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
+    const String comment;
     String create_query;
     String old_create_query;
     bool is_prepared = false;

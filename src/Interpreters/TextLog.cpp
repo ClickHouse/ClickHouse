@@ -78,9 +78,9 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 
 TextLog::TextLog(ContextPtr context_, const String & database_name_,
         const String & table_name_, const String & storage_def_,
-        size_t flush_interval_milliseconds_)
+        const String & comment_, size_t flush_interval_milliseconds_)
   : SystemLog<TextLogElement>(context_, database_name_, table_name_,
-        storage_def_, flush_interval_milliseconds_)
+        storage_def_, comment_, flush_interval_milliseconds_)
 {
     // SystemLog methods may write text logs, so we disable logging for the text
     // log table to avoid recursion.

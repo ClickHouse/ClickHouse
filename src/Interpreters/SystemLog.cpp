@@ -107,8 +107,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                           DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+    String comment = config.getString(config_prefix + ".comment", "");
 
-    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
+    return std::make_shared<TSystemLog>(context, database, table, engine, comment, flush_interval_milliseconds);
 }
 
 
@@ -226,10 +227,12 @@ SystemLog<LogElement>::SystemLog(
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
+    const String & comment_,
     size_t flush_interval_milliseconds_)
     : WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
+    , comment(comment_)
     , create_query(serializeAST(*getCreateTableQuery()))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
@@ -475,6 +478,11 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     create->set(create->storage, storage_ast);
+
+    if (!comment.empty())
+    {
+        create->set(create->comment, std::make_shared<ASTLiteral>(comment));
+    }
 
     return create;
 }
