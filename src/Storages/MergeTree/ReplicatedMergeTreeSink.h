@@ -35,11 +35,8 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
-    ~ReplicatedMergeTreeSink() override;
-
     void onStart() override;
     void consume(Chunk chunk) override;
-    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -93,12 +90,6 @@ private:
 
     ContextPtr context;
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
-
-    /// We can delay processing for previous chunk and start writing a new one.
-    struct DelayedChunk;
-    std::unique_ptr<DelayedChunk> delayed_chunk;
-
-    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
 };
 
 }
