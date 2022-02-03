@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
 
 log_user 0
 set timeout 60
