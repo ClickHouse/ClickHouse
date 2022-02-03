@@ -1,15 +1,17 @@
 ---
-title: How do I contribute code to ClickHouse?
+title: 我如何为ClickHouse贡献代码?
 toc_hidden: true
 toc_priority: 120
 ---
 
-# How do I contribute code to ClickHouse? {#how-do-i-contribute-code-to-clickhouse}
+# 我如何为ClickHouse贡献代码? {#how-do-i-contribute-code-to-clickhouse}
 
-ClickHouse is an open-source project [developed on GitHub](https://github.com/ClickHouse/ClickHouse).
+ClickHouse是一个开源项目[在GitHub上开发](https://github.com/ClickHouse/ClickHouse)。
 
-As customary, contribution instructions are published in [CONTRIBUTING.md](https://github.com/ClickHouse/ClickHouse/blob/master/CONTRIBUTING.md) file in the root of the source code repository.
+按照惯例，贡献指南发布在源代码库根目录的 [CONTRIBUTING.md](https://github.com/ClickHouse/ClickHouse/blob/master/CONTRIBUTING.md)文件中。
 
-If you want to suggest a substantial change to ClickHouse, consider [opening a GitHub issue](https://github.com/ClickHouse/ClickHouse/issues/new/choose) explaining what you want to do, to discuss it with maintainers and community first. [Examples of such RFC issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aissue+is%3Aopen+rfc).
+如果你想对ClickHouse提出实质性的改变建议，可以考虑[在GitHub上发布一个问题](https://github.com/ClickHouse/ClickHouse/issues/new/choose)，解释一下你想做什么，先与维护人员和社区讨论一下。[此类RFC问题的例子](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aissue+is%3Aopen+rfc)。
 
-If your contributions are security related, please check out [our security policy](https://github.com/ClickHouse/ClickHouse/security/policy/) too.
+如果您的贡献与安全相关，也请查看[我们的安全政策](https://github.com/ClickHouse/ClickHouse/security/policy/)。
+
+
