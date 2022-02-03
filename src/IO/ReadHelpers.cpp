@@ -222,7 +222,7 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
-template void readStringUntilNewlineInto<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
