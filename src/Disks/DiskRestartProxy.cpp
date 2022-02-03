@@ -234,12 +234,6 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
-{
-    ReadLock lock (mutex);
-    DiskDecorator::removeSharedFiles(files, keep_in_remote_fs);
-}
-
 void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
