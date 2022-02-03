@@ -86,7 +86,7 @@ class AggregateFunctionTTest :
     public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
 {
 private:
-    bool need_ci = false;
+    bool need_confidence_interval = false;
     Float64 confidence_level;
 public:
     AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
@@ -94,7 +94,7 @@ public:
     {
         if (params.size() > 0)
         {
-            need_ci = true;
+            need_confidence_interval = true;
             confidence_level = params.at(0).safeGet<Float64>();
 
             if (!std::isfinite(confidence_level))
@@ -117,7 +117,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if (need_ci)
+        if (need_confidence_interval)
         {
             DataTypes types
             {
@@ -201,7 +201,7 @@ public:
             column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
             column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
 
-            if (need_ci)
+            if (need_confidence_interval)
             {
                 auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
                 auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
@@ -223,7 +223,7 @@ public:
         column_stat.getData().push_back(t_statistic);
         column_value.getData().push_back(p_value);
 
-        if (need_ci)
+        if (need_confidence_interval)
         {
             auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
             auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
