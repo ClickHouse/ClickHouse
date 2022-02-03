@@ -67,7 +67,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURC
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
-include (cmake/find/ccache.cmake)
+include (cmake/ccache.cmake)
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
 # prlimit is compiler, and clang++ is its input file, and refuses to work  with
