@@ -1286,7 +1286,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         return;
     }
 
-
     DataPartsVector broken_parts_to_detach;
     DataPartsVector duplicate_parts_to_remove;
 
@@ -1356,7 +1355,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     calculateColumnAndSecondaryIndexSizesImpl();
-
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
