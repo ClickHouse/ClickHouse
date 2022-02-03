@@ -4335,7 +4335,6 @@ bool StorageReplicatedMergeTree::optimize(
     };
 
     auto zookeeper = getZooKeeper();
-    UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
@@ -4368,7 +4367,7 @@ bool StorageReplicatedMergeTree::optimize(
             else
             {
                 select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot,
+                    future_merged_part, can_merge, partition_id, final, metadata_snapshot,
                     &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
             }
 
