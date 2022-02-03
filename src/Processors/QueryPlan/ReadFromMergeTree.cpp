@@ -367,7 +367,6 @@ static ActionsDAGPtr createProjection(const Block & header)
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const Names & column_names,
-    const ActionsDAGPtr & sorting_key_prefix_expr,
     ActionsDAGPtr & out_projection,
     const InputOrderInfoPtr & input_order_info)
 {
@@ -509,10 +508,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge)
     {
+        size_t fixed_prefix_size = input_order_info->order_key_fixed_prefix_descr.size();
+        size_t prefix_size = fixed_prefix_size + input_order_info->order_key_prefix_descr.size();
+
+        auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
+        order_key_prefix_ast->children.resize(prefix_size);
+
+        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
+        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+        const auto & sorting_columns = metadata_snapshot->getSortingKey().column_names;
+
         SortDescription sort_description;
-        for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
-            sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
-                                          input_order_info->direction, 1);
+        for (size_t j = 0; j < prefix_size; ++j)
+            sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
 
@@ -1055,17 +1063,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
     {
-        size_t prefix_size = input_order_info->order_key_prefix_descr.size();
-        auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
-
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
             column_names_to_read,
-            sorting_key_prefix_expr,
             result_projection,
             input_order_info);
     }
