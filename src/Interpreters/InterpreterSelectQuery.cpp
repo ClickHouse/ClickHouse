@@ -1945,7 +1945,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query_info.projection->group_by_elements_actions,
-                        getSortDescriptionFromGroupBy(query),
+                        query_info.projection->group_by_elements_order_descr,
                         query_info.syntax_analyzer_result);
                 }
                 else
