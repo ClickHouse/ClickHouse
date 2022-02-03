@@ -6,8 +6,8 @@ name: TagsStableWorkflow
 on: # yamllint disable-line rule:truthy
   push:
     tags:
-    - 'v*-stable'
-    - 'v*-lts'
+      - 'v*-stable'
+      - 'v*-lts'
 
 
 jobs:
