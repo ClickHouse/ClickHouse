@@ -912,6 +912,11 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         parts_before_pk = parts.size();
 
         auto reader_settings = getMergeTreeReaderSettings(context);
+
+        bool use_skip_indexes = context->getSettings().use_skip_indexes;
+        if (select.final() && !context->getSettings().use_skip_indexes_if_final)
+            use_skip_indexes = false;
+
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,
@@ -922,7 +927,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             log,
             num_streams,
             result.index_stats,
-            context->getSettings().use_skip_indexes);
+            use_skip_indexes);
     }
     catch (...)
     {
