@@ -52,10 +52,10 @@ TransactionID VersionMetadata::getRemovalTID() const
     TIDHash max_lock = removal_tid_lock.load();
     if (max_lock)
     {
-        if (auto txn = TransactionLog::instance().tryGetRunningTransaction(max_lock))
-            return txn->tid;
         if (max_lock == Tx::PrehistoricTID.getHash())
             return Tx::PrehistoricTID;
+        if (auto txn = TransactionLog::instance().tryGetRunningTransaction(max_lock))
+            return txn->tid;
     }
 
     if (removal_csn.load(std::memory_order_relaxed))

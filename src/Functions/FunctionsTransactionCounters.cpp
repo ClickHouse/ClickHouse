@@ -35,18 +35,28 @@ public:
 
 class FunctionTransactionLatestSnapshot : public FunctionConstantBase<FunctionTransactionLatestSnapshot, UInt64, DataTypeUInt64>
 {
+    static UInt64 getLatestSnapshot(ContextPtr context)
+    {
+        context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+        return TransactionLog::instance().getLatestSnapshot();
+    }
 public:
     static constexpr auto name = "transactionLatestSnapshot";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
-    explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(TransactionLog::instance().getLatestSnapshot(), context->isDistributed()) {}
+    explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
 };
 
 class FunctionTransactionOldestSnapshot : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
 {
+    static UInt64 getOldestSnapshot(ContextPtr context)
+    {
+        context->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+        return TransactionLog::instance().getOldestSnapshot();
+    }
 public:
     static constexpr auto name = "transactionOldestSnapshot";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
-    explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(TransactionLog::instance().getOldestSnapshot(), context->isDistributed()) {}
+    explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}
 };
 
 }
