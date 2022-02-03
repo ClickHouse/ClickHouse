@@ -1945,6 +1945,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         // TODO Do we need a projection variant for this field?
+                        query,
                         analysis_result.order_by_elements_actions,
                         getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
@@ -1952,7 +1953,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.order_by_elements_actions, getSortDescription(query, context), query_info.syntax_analyzer_result);
+                        query,
+                        analysis_result.order_by_elements_actions,
+                        getSortDescription(query, context),
+                        query_info.syntax_analyzer_result);
                 }
             }
             else
@@ -1960,6 +1964,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 if (query_info.projection)
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        query,
                         query_info.projection->group_by_elements_actions,
                         getSortDescriptionFromGroupBy(query),
                         query_info.syntax_analyzer_result);
@@ -1967,7 +1972,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query), query_info.syntax_analyzer_result);
+                        query,
+                        analysis_result.group_by_elements_actions,
+                        getSortDescriptionFromGroupBy(query),
+                        query_info.syntax_analyzer_result);
                 }
             }
 
