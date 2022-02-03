@@ -745,9 +745,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
     {
         while (true)
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
+                future_part, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
