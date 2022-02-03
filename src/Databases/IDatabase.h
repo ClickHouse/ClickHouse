@@ -158,8 +158,13 @@ public:
 
     virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
 
-    /// Check the existence of the table.
+    /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
+
+    /// Check the existence of the table in any state (in active / detached / detached permanently state).
+    /// Throws exception when table exists.
+    virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
+
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;

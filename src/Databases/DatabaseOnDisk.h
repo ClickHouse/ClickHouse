@@ -69,7 +69,7 @@ public:
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
-    void checkMetadataFilenameAvailability(const String & to_table_name) const;
+    void checkMetadataFilenameAvailability(const String & to_table_name) const override;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
