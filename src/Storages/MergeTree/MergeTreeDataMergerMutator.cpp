@@ -52,6 +52,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -516,6 +517,11 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     const MergeTreeTransactionPtr & txn,
     MergeTreeData::Transaction * out_transaction)
 {
+    /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
+    if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
+        throw Exception(ErrorCodes::ABORTED, "Cancelling merge, because it was done without starting transaction,"
+                                             "but transactions were enabled for this table");
+
     /// Rename new part, add to the set and remove original parts.
     auto replaced_parts = data.renameTempPartAndReplace(new_data_part, txn.get(), nullptr, out_transaction);
 

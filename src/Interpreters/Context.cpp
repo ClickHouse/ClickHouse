@@ -3000,7 +3000,8 @@ void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Experimental support for transactions is disabled, "
-                    "however, some query or background task tried to access TransactionLog. Probably it's a bug.");
+                    "however, some query or background task tried to access TransactionLog."
+                    "If you have not enabled this feature explicitly, then it's a bug.");
 }
 
 void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)

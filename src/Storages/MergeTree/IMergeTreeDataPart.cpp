@@ -711,9 +711,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = fs::path(getFullRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    String txn_version_path = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
 
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    if (volume->getDisk()->exists(txn_version_path))
+        result.emplace(TXN_VERSION_METADATA_FILE_NAME);
 
     return result;
 }
