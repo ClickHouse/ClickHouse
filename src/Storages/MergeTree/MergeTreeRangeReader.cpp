@@ -645,12 +645,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     {
         read_result = prev_reader->read(max_rows, ranges);
 
-        size_t num_read_rows;
-        Columns columns = continueReadingChain(read_result, num_read_rows);
-
         /// Nothing to do. Return empty result.
         if (read_result.num_rows == 0)
             return read_result;
+
+        size_t num_read_rows;
+        Columns columns = continueReadingChain(read_result, num_read_rows);
 
         bool has_columns = false;
         size_t total_bytes = 0;
