@@ -609,10 +609,10 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
             updateSuggest(*create);
     }
 
-    /// An INSERT query may have the data that follow query text. Remove the
-    /// Send part of query without data, because data will be sent separately.
-    /// For asynchronous inserts we don't extract data, because it's needed
-    /// to be done on server side in that case.
+    /// An INSERT query may have the data that follows query text.
+    /// Send part of the query without data, because data will be sent separately.
+    /// But for asynchronous inserts we don't extract data, because it's needed
+    /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
     if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
