@@ -206,7 +206,7 @@ void TransactionLog::runUpdatingThread()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, getCurrentExceptionMessage(true));
+            tryLogCurrentException(log);
             /// TODO better backoff
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             if (Coordination::isHardwareError(e.code))
@@ -218,7 +218,7 @@ void TransactionLog::runUpdatingThread()
         }
         catch (...)
         {
-            LOG_ERROR(log, getCurrentExceptionMessage(true));
+            tryLogCurrentException(log);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             log_updated_event->set();
         }

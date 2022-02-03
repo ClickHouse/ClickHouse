@@ -961,6 +961,9 @@ protected:
     mutable std::shared_mutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
 
+    /// True if at least one part was created/removed with transaction.
+    mutable std::atomic_bool transactions_enabled = false;
+
     /// Work with data parts
 
     struct TagByInfo{};

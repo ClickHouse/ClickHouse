@@ -1315,67 +1315,78 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         removePartContributionToDataVolume(*it);
     };
 
-    /// All parts are in "Committed" state after loading
+    /// All parts are in "Active" state after loading
     assert(std::find_if(data_parts_by_state_and_info.begin(), data_parts_by_state_and_info.end(),
     [](const auto & part)
     {
         return part->getState() != DataPartState::Active;
     }) == data_parts_by_state_and_info.end());
 
+    bool have_parts_with_version_metadata = false;
     auto iter = data_parts_by_state_and_info.begin();
     while (iter != data_parts_by_state_and_info.end() && (*iter)->getState() == DataPartState::Active)
     {
         const DataPartPtr & part = *iter;
         part->loadVersionMetadata();
-        VersionMetadata & versions = part->version;
+        VersionMetadata & version = part->version;
+        if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
+        {
+            ++iter;
+            continue;
+        }
+        else
+        {
+            have_parts_with_version_metadata = true;
+        }
 
         /// Check if CSNs were witten after committing transaction, update and write if needed.
-        bool versions_updated = false;
-        if (!versions.creation_tid.isEmpty() && !part->version.creation_csn)
+        bool version_updated = false;
+        assert(!version.creation_tid.isEmpty());
+        if (!part->version.creation_csn)
         {
-            auto min = TransactionLog::getCSN(versions.creation_tid);
+            auto min = TransactionLog::getCSN(version.creation_tid);
             if (!min)
             {
                 /// Transaction that created this part was not committed. Remove part.
                 min = Tx::RolledBackCSN;
             }
             LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has creation_tid={}, setting creation_csn={}",
-                      part->name, versions.creation_tid, min);
-            versions.creation_csn = min;
-            versions_updated = true;
+                      part->name, version.creation_tid, min);
+            version.creation_csn = min;
+            version_updated = true;
         }
-        if (!versions.removal_tid.isEmpty() && !part->version.removal_csn)
+        if (!version.removal_tid.isEmpty() && !part->version.removal_csn)
         {
-            auto max = TransactionLog::getCSN(versions.removal_tid);
+            auto max = TransactionLog::getCSN(version.removal_tid);
             if (max)
             {
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has removal_tid={}, setting removal_csn={}",
-                          part->name, versions.removal_tid, max);
-                versions.removal_csn = max;
+                          part->name, version.removal_tid, max);
+                version.removal_csn = max;
             }
             else
             {
                 /// Transaction that tried to remove this part was not committed. Clear removal_tid.
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: clearing removal_tid={}",
-                          part->name, versions.removal_tid);
-                versions.unlockMaxTID(versions.removal_tid, TransactionInfoContext{getStorageID(), part->name});
+                          part->name, version.removal_tid);
+                version.unlockMaxTID(version.removal_tid, TransactionInfoContext{getStorageID(), part->name});
             }
-            versions_updated = true;
+            version_updated = true;
         }
 
         /// Sanity checks
-        bool csn_order = !versions.removal_csn || versions.creation_csn <= versions.removal_csn;
-        bool min_start_csn_order = versions.creation_tid.start_csn <= versions.creation_csn;
-        bool max_start_csn_order = versions.removal_tid.start_csn <= versions.removal_csn;
-        bool creation_csn_known = versions.creation_csn;
+        bool csn_order = !version.removal_csn || version.creation_csn <= version.removal_csn;
+        bool min_start_csn_order = version.creation_tid.start_csn <= version.creation_csn;
+        bool max_start_csn_order = version.removal_tid.start_csn <= version.removal_csn;
+        bool creation_csn_known = version.creation_csn;
         if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid versions metadata: {}", part->name, versions.toString());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", part->name, version.toString());
 
-        if (versions_updated)
+        if (version_updated)
             part->storeVersionMetadata();
 
         /// Deactivate part if creation was not committed or if removal was.
-        if (versions.creation_csn == Tx::RolledBackCSN || versions.removal_csn)
+        if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
         {
             auto next_it = std::next(iter);
             deactivate_part(iter);
@@ -1386,6 +1397,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             ++iter;
         }
     }
+
+    if (have_parts_with_version_metadata)
+        transactions_enabled.store(true);
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
@@ -2587,6 +2601,9 @@ bool MergeTreeData::renameTempPartAndReplace(
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
+    if (txn)
+        transactions_enabled.store(true);
+
     part->assertState({DataPartState::Temporary});
 
     MergeTreePartInfo part_info = part->info;
@@ -2734,6 +2751,9 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
 {
+    if (txn)
+        transactions_enabled.store(true);
+
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
     for (const DataPartPtr & part : remove)

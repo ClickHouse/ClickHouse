@@ -773,7 +773,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
         if (tx)
         {
             /// Cannot merge parts if some of them is not visible in current snapshot
-            /// TODO We can use simplified visibility rules (without CSN lookup) here
+            /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
             if (left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
             if (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
@@ -1106,9 +1106,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    /// FIXME Transactions: do not begin transaction if we don't need it
-    auto txn = TransactionLog::instance().beginTransaction();
-    MergeTreeTransactionHolder autocommit{txn, true};
+    MergeTreeTransactionHolder transaction_for_merge;
+    MergeTreeTransactionPtr txn;
+    if (transactions_enabled.load(std::memory_order_relaxed))
+    {
+        /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
+        txn = TransactionLog::instance().beginTransaction();
+        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ true};
+    }
 
     bool has_mutations = false;
     {
@@ -1134,7 +1139,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (merge_entry)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
-        task->setCurrentTransaction(std::move(autocommit), std::move(txn));
+        task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
