@@ -243,7 +243,7 @@ void ProgressIndication::writeProgress()
 
                 if (width_of_progress_bar > 0)
                 {
-                    size_t bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
+                    double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
                     std::string bar = UnicodeBar::render(bar_width);
 
                     /// Render profiling_msg at left on top of the progress bar.
