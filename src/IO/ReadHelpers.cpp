@@ -217,6 +217,12 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<'\0'>(s, buf);
