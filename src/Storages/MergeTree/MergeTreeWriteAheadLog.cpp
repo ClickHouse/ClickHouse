@@ -109,6 +109,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
         + toString(min_block_number) + "_"
         + toString(max_block_number) + WAL_FILE_EXTENSION;
 
+    /// Finalize stream before file rename
+    out->finalize();
     disk->replaceFile(path, storage.getRelativeDataPath() + new_name);
     init();
 }
