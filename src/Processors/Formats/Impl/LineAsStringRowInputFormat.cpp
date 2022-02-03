@@ -17,7 +17,6 @@ LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, Re
     IRowInputFormat(header_, in_, std::move(params_))
 {
     if (header_.columns() != 1
-        || header_.getByPosition(0).type->getTypeId() != TypeIndex::String
         || !typeid_cast<const ColumnString *>(header_.getByPosition(0).column.get()))
     {
         throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::INCORRECT_QUERY);
