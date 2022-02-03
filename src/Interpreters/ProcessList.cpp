@@ -16,6 +16,11 @@
 #include <chrono>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric Query;
+}
+
 namespace DB
 {
 
@@ -291,6 +296,7 @@ QueryStatus::QueryStatus(
     , query(query_)
     , client_info(client_info_)
     , priority_handle(std::move(priority_handle_))
+    , num_queries_increment(CurrentMetrics::Query)
 {
     auto settings = getContext()->getSettings();
     limits.max_execution_time = settings.max_execution_time;

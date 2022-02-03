@@ -118,6 +118,10 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    /// This field is unused in this class, but it
+    /// increments/decrements metric in constructor/destructor.
+    CurrentMetrics::Increment num_queries_increment;
+
 public:
 
     QueryStatus(
