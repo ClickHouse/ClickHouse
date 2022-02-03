@@ -4631,8 +4631,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return std::nullopt;
 
-    // Currently projections don't support sampling yet.
-    if (settings.parallel_replicas_count > 1)
+    // Currently projections don't support parallel replicas reading yet.
+    if (settings.parallel_replicas_count > 1 || settings.max_parallel_replicas > 1)
         return std::nullopt;
 
     auto query_ptr = query_info.original_query;
