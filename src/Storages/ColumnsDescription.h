@@ -84,9 +84,10 @@ public:
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
+        Weird = 5, // currently only _is_deleted
 
         AllPhysical = Ordinary | Materialized,
-        All = AllPhysical | Aliases,
+        All = AllPhysical | Aliases | Weird,
     };
 
     NamesAndTypesList getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const;

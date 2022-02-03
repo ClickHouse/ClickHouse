@@ -396,14 +396,14 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
-    const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
+    const MergeTreeDataPartDeletedMask& getDeletedMask() const; //{ return deleted_mask; }
 //    MergeTreeDataPartDeletedMask& getDeletedMask() { return deleted_mask; }
     void setDeletedMaskData(MergeTreeDataPartDeletedMask::DeletedRows new_mask);// { deleted_mask = std::move(new_mask); }
 
 
 protected:
     /// Loaded in table engines.
-    MergeTreeDataPartDeletedMask deleted_mask {};
+    mutable MergeTreeDataPartDeletedMask deleted_mask {}; // TODO: fix loading and remove mutable
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;

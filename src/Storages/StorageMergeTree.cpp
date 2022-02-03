@@ -60,7 +60,10 @@ namespace ActionLocks
 StorageInMemoryMetadata addIsDeletedColumn(const StorageInMemoryMetadata & metadata)
 {
     StorageInMemoryMetadata result(metadata);
-    result.columns.add(ColumnDescription("_is_deleted", std::make_shared<DataTypeUInt8>()));
+    ColumnDescription is_deleted_column_description("_is_deleted", std::make_shared<DataTypeUInt8>());
+    is_deleted_column_description.default_desc.kind = ColumnDefaultKind::Weird;
+    is_deleted_column_description.comment = "Column representing a mask of deleted rows";
+    result.columns.add(std::move(is_deleted_column_description));
 
     return result;
 }

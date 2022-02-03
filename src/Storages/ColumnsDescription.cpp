@@ -402,6 +402,8 @@ static ColumnsDescription::GetFlags defaultKindToGetFlag(ColumnDefaultKind kind)
             return ColumnsDescription::Materialized;
         case ColumnDefaultKind::Alias:
             return ColumnsDescription::Aliases;
+        case ColumnDefaultKind::Weird:
+            return ColumnsDescription::Weird;
     }
     __builtin_unreachable();
 }

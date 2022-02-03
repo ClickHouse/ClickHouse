@@ -51,9 +51,11 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
     {
-        // Do not remove _is_deleted from virtual columns, since it is going to be added after.
-//        if (*it != "_is_deleted" && header_without_virtual_columns.has(*it))
+        //Do not remove _is_deleted from virtual columns, since it is going to be added after.
+        if (*it != "_is_deleted" && header_without_virtual_columns.has(*it))
+        {
             header_without_virtual_columns.erase(*it);
+        }
     }
 
     if (prewhere_info)

@@ -1599,6 +1599,15 @@ void IMergeTreeDataPart::setDeletedMaskData(MergeTreeDataPartDeletedMask::Delete
     volume->getDisk()->moveFile(tmp_path, final_path);
 }
 
+const MergeTreeDataPartDeletedMask& IMergeTreeDataPart::getDeletedMask() const
+{
+    // TODO: remove, temporary Safety precaution, if mask failed to load
+    if (deleted_mask.getDeletedRows().size() != rows_count)
+        deleted_mask.setDeletedRows(rows_count, false);
+
+    return deleted_mask;
+}
+
 
 String IMergeTreeDataPart::getZeroLevelPartBlockID() const
 {
