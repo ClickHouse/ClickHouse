@@ -67,5 +67,4 @@ done
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE concurrent_mutate_kill"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_mutate_kill FINAL"
 $CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM concurrent_mutate_kill"
-
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill"
