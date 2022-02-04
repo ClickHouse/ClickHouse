@@ -1182,16 +1182,7 @@ std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
     if (force_keep_shared_data)
         return true;
 
-    /// TODO Unlocking in try-catch and ignoring exception look ugly
-    try
-    {
-        return !storage.unlockSharedData(*this);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "There is a problem with deleting part " + name + " from filesystem");
-    }
-    return {};
+    return !storage.unlockSharedData(*this, is_temp ? relative_path : name);
 }
 
 void IMergeTreeDataPart::remove() const
