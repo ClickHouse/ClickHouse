@@ -12,6 +12,9 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/asof.h>
 
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -248,8 +251,7 @@ public:
     template <typename T>
     struct Entry
     {
-        using LookupType = SortedLookupVector<Entry<T>, T>;
-        using LookupPtr = std::unique_ptr<LookupType>;
+        using LookupPtr = std::unique_ptr<SortedLookupVector<Entry<T>>>;
         T asof_value;
         RowRef row_ref;
 
@@ -282,10 +284,36 @@ public:
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    void insert(TypeIndex type, const IColumn & asof_column, const Block * block, size_t row_num);
+    void insert(const IColumn & asof_column, const Block * block, size_t row_num)
+    {
+        std::visit([&](auto && arg)
+            {
+                using T = typename std::decay_t<decltype(arg)>::element_type::TKey;
+                using ColumnType = ColumnVectorOrDecimal<T>;
+                const auto & column = assert_cast<const ColumnType &>(asof_column);
+
+                T key = column.getElement(row_num);
+                arg->insert(key, block, row_num);
+            },
+            lookups);
+    }
 
     // This will internally synchronize
-    const RowRef * findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const;
+    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const
+    {
+        const RowRef * out = nullptr;
+        std::visit([&](auto && arg)
+            {
+                using T = typename std::decay_t<decltype(arg)>::element_type::TKey;
+                using ColumnType = ColumnVectorOrDecimal<T>;
+                const auto & column = assert_cast<const ColumnType &>(asof_column);
+
+                T key = column.getElement(row_num);
+                out = arg->find(key, inequality);
+            },
+            lookups);
+        return out;
+    }
 
 private:
     // Lookups can be stored in a HashTable because it is memmovable
