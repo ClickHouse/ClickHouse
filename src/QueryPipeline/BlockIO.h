@@ -40,12 +40,10 @@ struct BlockIO
         pipeline.reset();
     }
 
-    void onException()
+    void onException() const
     {
         if (exception_callback)
             exception_callback();
-
-        pipeline.reset();
     }
 
 private:

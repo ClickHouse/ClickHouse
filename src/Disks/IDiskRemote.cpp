@@ -415,20 +415,6 @@ void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_meta
     }
 }
 
-void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only)
-{
-    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    for (const auto & file : files)
-    {
-        bool skip = file.if_exists && !metadata_disk->exists(file.path);
-        if (!skip)
-            removeMetadata(file.path, fs_paths_keeper);
-    }
-
-    if (!delete_metadata_only)
-        removeFromRemoteFS(fs_paths_keeper);
-}
-
 void IDiskRemote::removeSharedRecursive(const String & path, bool delete_metadata_only)
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
@@ -566,14 +552,6 @@ AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
 UInt32 IDiskRemote::getRefCount(const String & path) const
 {
     return readMetadata(path).ref_count;
-}
-
-ThreadPool & IDiskRemote::getThreadPoolWriter()
-{
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool writer(pool_size, pool_size, queue_size);
-    return writer;
 }
 
 }

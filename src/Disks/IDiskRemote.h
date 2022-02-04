@@ -100,9 +100,7 @@ public:
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
-
-    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -139,7 +137,6 @@ public:
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
-    static ThreadPool & getThreadPoolWriter();
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
 

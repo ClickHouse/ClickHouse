@@ -8,22 +8,15 @@
 namespace DB
 {
 /**
- * This buffer writes to cache, but after finalize() copy written file from cache to disk.
+ * Write buffer with possibility to set and invoke callback after 'finalize' call.
  */
-class WritingToCacheWriteBuffer final : public WriteBufferFromFileDecorator
+class CompletionAwareWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
-    WritingToCacheWriteBuffer(
-        std::unique_ptr<WriteBufferFromFileBase> impl_,
-        std::function<std::unique_ptr<ReadBuffer>()> create_read_buffer_,
-        std::function<std::unique_ptr<WriteBuffer>()> create_write_buffer_)
-        : WriteBufferFromFileDecorator(std::move(impl_))
-        , create_read_buffer(std::move(create_read_buffer_))
-        , create_write_buffer(std::move(create_write_buffer_))
-    {
-    }
+    CompletionAwareWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), completion_callback(completion_callback_) { }
 
-    ~WritingToCacheWriteBuffer() override
+    ~CompletionAwareWriteBuffer() override
     {
         try
         {
@@ -35,36 +28,15 @@ public:
         }
     }
 
-    void preFinalize() override
-    {
-        impl->next();
-        impl->preFinalize();
-        impl->finalize();
-
-        read_buffer = create_read_buffer();
-        write_buffer = create_write_buffer();
-        copyData(*read_buffer, *write_buffer);
-        write_buffer->next();
-        write_buffer->preFinalize();
-
-        is_prefinalized = true;
-    }
-
     void finalizeImpl() override
     {
-        if (!is_prefinalized)
-            preFinalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
-        write_buffer->finalize();
+        completion_callback();
     }
 
 private:
-    std::function<std::unique_ptr<ReadBuffer>()> create_read_buffer;
-    std::function<std::unique_ptr<WriteBuffer>()> create_write_buffer;
-    std::unique_ptr<ReadBuffer> read_buffer;
-    std::unique_ptr<WriteBuffer> write_buffer;
-
-    bool is_prefinalized = false;
+    const std::function<void()> completion_callback;
 };
 
 enum FileDownloadStatus
@@ -193,22 +165,21 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode);
 
-    LOG_TEST(log, "Write file {} to cache", backQuote(path));
+    LOG_TRACE(log, "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
         cache_disk->createDirectories(dir_path);
 
-    return std::make_unique<WritingToCacheWriteBuffer>(
+    return std::make_unique<CompletionAwareWriteBuffer>(
         cache_disk->writeFile(path, buf_size, mode),
-        [this, path]()
-        {
-            /// Copy file from cache to actual disk when cached buffer is finalized.
-            return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
-        },
         [this, path, buf_size, mode]()
         {
-            return DiskDecorator::writeFile(path, buf_size, mode);
+            /// Copy file from cache to actual disk when cached buffer is finalized.
+            auto src_buffer = cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
+            auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
+            copyData(*src_buffer, *dst_buffer);
+            dst_buffer->finalize();
         });
 }
 

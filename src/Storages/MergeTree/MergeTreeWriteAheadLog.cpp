@@ -210,12 +210,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
-                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get());
-                temp_part.finalize();
                 if (projection_block.rows())
-                    part->addProjectionPart(projection.name, std::move(temp_part.part));
+                    part->addProjectionPart(
+                        projection.name,
+                        MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get()));
             }
-            part_out.finalizePart(part, false);
+            part_out.writeSuffixAndFinalizePart(part);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);
