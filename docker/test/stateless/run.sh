@@ -89,6 +89,10 @@ function run_tests()
         # everything in parallel except DatabaseReplicated. See below.
     fi
 
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+    fi
+
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         ADDITIONAL_OPTIONS+=('--jobs')
