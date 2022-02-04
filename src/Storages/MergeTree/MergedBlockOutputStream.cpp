@@ -66,10 +66,9 @@ struct MergedBlockOutputStream::Finalizer::Impl
 
 void MergedBlockOutputStream::Finalizer::finish()
 {
-    if (impl)
-        impl->finish();
-
-    impl.reset();
+    std::unique_ptr<Impl> to_finish = std::move(impl);
+    if (to_finish)
+        to_finish->finish();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()

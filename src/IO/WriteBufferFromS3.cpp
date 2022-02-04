@@ -201,9 +201,12 @@ void WriteBufferFromS3::writePart()
                 std::lock_guard lock(bg_tasks_mutex);
                 task->is_finised = true;
                 ++num_finished_bg_tasks;
-            }
 
-            bg_tasks_condvar.notify_one();
+                /// Notification under mutex is important here.
+                /// Othervies, WriteBuffer could be destroyed in between
+                /// Releasing lock and condvar notification.
+                bg_tasks_condvar.notify_one();
+            }
         });
     }
     else
@@ -305,9 +308,13 @@ void WriteBufferFromS3::makeSinglepartUpload()
             {
                 std::lock_guard lock(bg_tasks_mutex);
                 put_object_task->is_finised = true;
+
+                /// Notification under mutex is important here.
+                /// Othervies, WriteBuffer could be destroyed in between
+                /// Releasing lock and condvar notification.
+                bg_tasks_condvar.notify_one();
             }
 
-            bg_tasks_condvar.notify_one();
         });
     }
     else
