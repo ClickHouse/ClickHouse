@@ -485,6 +485,8 @@ void AsynchronousInsertQueue::finishWithException(
             entry->finish(std::make_exception_ptr(exception));
         }
     }
+
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
 }
 
 }
