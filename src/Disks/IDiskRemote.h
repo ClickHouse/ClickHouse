@@ -100,7 +100,7 @@ public:
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
+    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
