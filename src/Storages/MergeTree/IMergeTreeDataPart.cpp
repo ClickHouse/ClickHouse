@@ -1109,7 +1109,11 @@ void IMergeTreeDataPart::storeVersionMetadata() const
     String tmp_version_file_name = version_file_name + ".tmp";
     DiskPtr disk = volume->getDisk();
     {
-        auto out = volume->getDisk()->writeFile(tmp_version_file_name, 4096, WriteMode::Rewrite);
+        /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
+        /// so we create empty file at first (expecting that createFile throws if file already exists)
+        /// and the overwrite it.
+        disk->createFile(tmp_version_file_name);
+        auto out = disk->writeFile(tmp_version_file_name, 256, WriteMode::Rewrite);
         version.write(*out);
         out->finalize();
         out->sync();
@@ -1117,7 +1121,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
 
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
-        sync_guard = volume->getDisk()->getDirectorySyncGuard(getFullRelativePath());
+        sync_guard = disk->getDirectorySyncGuard(getFullRelativePath());
     disk->moveFile(tmp_version_file_name, version_file_name);
 }
 
