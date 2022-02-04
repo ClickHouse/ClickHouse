@@ -100,7 +100,7 @@ public:
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
 
