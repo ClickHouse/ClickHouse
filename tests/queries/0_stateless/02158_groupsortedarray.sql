@@ -13,13 +13,12 @@ SELECT groupSortedArray(5)(text) FROM (select toString(number) as text from numb
 
 SELECT groupSortedArray(5)(text, -number) FROM (select toString(number) as text, number from numbers(10));
 
-SELECT groupSortedArray(10)(number, number) from numbers(100); -- { serverError 42 }
-
-SELECT groupSortedArray(10)(number) from numbers(100); -- { serverError 42 }
-
-SELECT groupSortedArray(5)(number, text) FROM (select toString(number) as text, number from numbers(10)); -- { serverError 43 }
-
 SELECT groupSortedArray(5)((number,text)) from (SELECT toString(number) as text, number FROM numbers(100));
+
+SELECT groupSortedArray(5)(text,text) from (SELECT toString(number) as text FROM numbers(100));
+
+SELECT groupSortedArray(50)(text,(number,text)) from (SELECT toString(number) as text, number FROM numbers(100));
+
 
 DROP TABLE IF EXISTS test;
 DROP VIEW IF EXISTS mv_test;
@@ -36,3 +35,7 @@ INSERT INTO test VALUES ('pablo',1)('pablo', 2)('luis', 1)('luis', 3)('pablo', 5
 SELECT n, groupSortedArrayMerge(2)(h) from mv_test GROUP BY n;
 DROP TABLE test;
 DROP VIEW mv_test;
+
+SELECT groupSortedArrayIf(5)(number, number, number>3) from numbers(100);
+SELECT groupSortedArrayIf(5)(number, toString(number), number>3) from numbers(100);
+SELECT groupSortedArrayIf(5)(toString(number), number>3) from numbers(100);

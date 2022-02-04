@@ -8,12 +8,12 @@
 
 namespace DB
 {
-template <typename T, bool is_plain_column>
-inline T readItem(const IColumn * column, Arena * arena, size_t row)
+template <typename TColumn, bool is_plain>
+inline TColumn readItem(const IColumn * column, Arena * arena, size_t row)
 {
-    if constexpr (std::is_same_v<T, StringRef>)
+    if constexpr (std::is_same_v<TColumn, StringRef>)
     {
-        if constexpr (is_plain_column)
+        if constexpr (is_plain)
         {
             StringRef str = column->getDataAt(row);
             auto ptr = arena->alloc(str.size);
@@ -28,12 +28,15 @@ inline T readItem(const IColumn * column, Arena * arena, size_t row)
     }
     else
     {
-        return column->getUInt(row);
+        if constexpr (std::is_same_v<TColumn, UInt64>)
+            return column->getUInt(row);
+        else
+            return column->getInt(row);
     }
 }
 
-template <typename T>
-void getFirstNElements(const T * data, int num_elements, int threshold, size_t * results)
+template <typename TColumn>
+size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, size_t * results, const UInt8 * filter = nullptr)
 {
     for (int i = 0; i < threshold; i++)
     {
@@ -46,14 +49,20 @@ void getFirstNElements(const T * data, int num_elements, int threshold, size_t *
     int z;
     for (int i = 0; i < num_elements; i++)
     {
+        if (filter && (filter[i] == 0))
+            continue;
+
         //Starting from the highest values and we look for the immediately lower than the given one
-        for (cur = current_max; cur > 0 && (data[i] < data[results[cur - 1]]); cur--)
-            ;
+        for (cur = current_max; cur > 0; cur--)
+        {
+            if (!(data[i] < data[results[cur - 1]]))
+                break;
+        }
 
         if (cur < threshold)
         {
             //Move all the higher values 1 position to the right
-            for (z = current_max - 1; z >= cur; z--)
+            for (z = current_max - 1; z > cur; z--)
                 results[z] = results[z - 1];
 
             if (current_max < threshold)
@@ -63,17 +72,20 @@ void getFirstNElements(const T * data, int num_elements, int threshold, size_t *
             results[cur] = i;
         }
     }
+
+    return current_max;
 }
 
-template <bool is_plain_column, typename T, bool expr_sorted, typename TIndex>
+template <typename TColumnA, bool is_plain_a, bool use_column_b, typename TColumnB, bool is_plain_b>
 class AggregateFunctionGroupSortedArray : public IAggregateFunctionDataHelper<
-                                              AggregateFunctionGroupSortedArrayData<T, expr_sorted, TIndex>,
-                                              AggregateFunctionGroupSortedArray<is_plain_column, T, expr_sorted, TIndex>>
+                                              AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
+                                              AggregateFunctionGroupSortedArray<TColumnA, is_plain_a, use_column_b, TColumnB, is_plain_b>>
 {
 protected:
-    using State = AggregateFunctionGroupSortedArrayData<T, expr_sorted, TIndex>;
-    using Base
-        = IAggregateFunctionDataHelper<AggregateFunctionGroupSortedArrayData<T, expr_sorted, TIndex>, AggregateFunctionGroupSortedArray>;
+    using State = AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>;
+    using Base = IAggregateFunctionDataHelper<
+        AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
+        AggregateFunctionGroupSortedArray>;
 
     UInt64 threshold;
     DataTypePtr & input_data_type;
@@ -83,8 +95,9 @@ protected:
 
 public:
     AggregateFunctionGroupSortedArray(UInt64 threshold_, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupSortedArrayData<T, expr_sorted, TIndex>, AggregateFunctionGroupSortedArray>(
-            argument_types_, params)
+        : IAggregateFunctionDataHelper<
+            AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
+            AggregateFunctionGroupSortedArray>(argument_types_, params)
         , threshold(threshold_)
         , input_data_type(this->argument_types[0])
     {
@@ -102,7 +115,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        if constexpr (std::is_same_v<T, StringRef>)
+        if constexpr (std::is_same_v<TColumnA, StringRef>)
             return true;
         else
             return false;
@@ -111,13 +124,51 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         State & data = this->data(place);
-        if constexpr (expr_sorted)
+        if constexpr (use_column_b)
         {
-            data.add(readItem<T, is_plain_column>(columns[0], arena, row_num), readItem<TIndex, false>(columns[1], arena, row_num));
+            data.add(
+                readItem<TColumnA, is_plain_a>(columns[0], arena, row_num), readItem<TColumnB, is_plain_b>(columns[1], arena, row_num));
         }
         else
         {
-            data.add(readItem<T, is_plain_column>(columns[0], arena, row_num));
+            data.add(readItem<TColumnA, is_plain_a>(columns[0], arena, row_num));
+        }
+    }
+
+    template <typename TColumn, bool is_plain, typename TFunc>
+    void
+    forFirstRows(size_t batch_size, const IColumn ** columns, size_t data_column, Arena * arena, ssize_t if_argument_pos, TFunc func) const
+    {
+        const TColumn * values = nullptr;
+        std::unique_ptr<std::vector<TColumn>> values_vector;
+        std::vector<size_t> best_rows(threshold);
+
+        if constexpr (std::is_same_v<TColumn, StringRef>)
+        {
+            values_vector.reset(new std::vector<TColumn>(batch_size));
+            for (size_t i = 0; i < batch_size; i++)
+                (*values_vector)[i] = readItem<TColumn, is_plain>(columns[data_column], arena, i);
+            values = (*values_vector).data();
+        }
+        else
+        {
+            StringRef ref = columns[data_column]->getRawData();
+            values = reinterpret_cast<const TColumn *>(ref.data);
+        }
+
+        const UInt8 * filter = nullptr;
+        StringRef refFilter;
+
+        if (if_argument_pos >= 0)
+        {
+            refFilter = columns[if_argument_pos]->getRawData();
+            filter = reinterpret_cast<const UInt8 *>(refFilter.data);
+        }
+
+        size_t num_elements = getFirstNElements(values, batch_size, threshold, best_rows.data(), filter);
+        for (size_t i = 0; i < num_elements; i++)
+        {
+            func(best_rows[i], values);
         }
     }
 
@@ -125,58 +176,22 @@ public:
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         State & data = this->data(place);
-        if constexpr (expr_sorted)
+
+        if constexpr (use_column_b)
         {
-            StringRef ref = columns[1]->getRawData();
-            TIndex values[batch_size];
-            memcpy(values, ref.data, batch_size * sizeof(TIndex));
-            size_t num_results = std::min(this->threshold, batch_size);
-            size_t * bestRows = new size_t[batch_size];
-
-            //First store the first n elements with the column number
-            if (if_argument_pos >= 0)
-            {
-                TIndex * value_w = values;
-
-                const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-                for (size_t i = 0; i < batch_size; ++i)
+            forFirstRows<TColumnB, is_plain_b>(
+                batch_size, columns, 1, arena, if_argument_pos, [columns, &arena, &data](size_t row, const TColumnB * values) 
                 {
-                    if (flags[i])
-                        *(value_w++) = values[i];
-                }
-
-                batch_size = value_w - values;
-            }
-
-            num_results = std::min(this->threshold, batch_size);
-            getFirstNElements(values, batch_size, num_results, bestRows);
-            for (size_t i = 0; i < num_results; i++)
-            {
-                auto row = bestRows[i];
-                data.add(readItem<T, is_plain_column>(columns[0], arena, row), values[row]);
-            }
-            delete[] bestRows;
+                    data.add(readItem<TColumnA, is_plain_a>(columns[0], arena, row), values[row]);
+                });
         }
         else
         {
-            if (if_argument_pos >= 0)
-            {
-                const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-                for (size_t i = 0; i < batch_size; ++i)
-                {
-                    if (flags[i])
-                    {
-                        data.add(readItem<T, is_plain_column>(columns[0], arena, i));
-                    }
-                }
-            }
-            else
-            {
-                for (size_t i = 0; i < batch_size; ++i)
-                {
-                    data.add(readItem<T, is_plain_column>(columns[0], arena, i));
-                }
-            }
+            forFirstRows<TColumnA, is_plain_a>(
+                batch_size, columns, 0, arena, if_argument_pos, [&data](size_t row, const TColumnA * values) 
+                { 
+                    data.add(values[row]); 
+                });
         }
     }
 
@@ -207,10 +222,10 @@ public:
         IColumn & data_to = arr_to.getData();
         for (auto value : values)
         {
-            if constexpr (std::is_same_v<T, StringRef>)
+            if constexpr (std::is_same_v<TColumnA, StringRef>)
             {
                 auto str = State::itemValue(value);
-                if constexpr (is_plain_column)
+                if constexpr (is_plain_a)
                 {
                     data_to.insertData(str.data, str.size);
                 }

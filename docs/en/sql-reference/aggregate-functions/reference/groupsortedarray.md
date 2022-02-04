@@ -18,8 +18,8 @@ If the parameter is omitted, default value 10 is used.
 
 **Arguments**
 
--   `x` – The value.
--   `expr` — Optional. The field or expresion to sort by. If not set values are sorted by themselves. [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `column` – The value.
+-   `expr` — Optional. The field or expresion to sort by. If not set values are sorted by themselves.
 
 **Example**
 
