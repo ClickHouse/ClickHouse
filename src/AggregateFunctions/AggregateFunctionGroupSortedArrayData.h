@@ -125,7 +125,7 @@ struct AggregateFunctionGroupSortedArrayData<T, true, TIndex> : public Aggregate
 
     virtual typename Base::ValueType deserializeItem(ReadBuffer & buf, Arena * arena) const override
     {
-        Int64 first;
+        TIndex first;
         T second;
         readOneItem(buf, arena, first);
         readOneItem(buf, arena, second);
