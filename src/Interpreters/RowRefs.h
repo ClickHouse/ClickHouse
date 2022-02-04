@@ -142,59 +142,86 @@ private:
  * references that can be returned by the lookup methods
  */
 
-template <typename TEntry, typename TKey>
+template <typename TEntry>
 class SortedLookupVector
 {
 public:
     using Base = std::vector<TEntry>;
+    using TKey = decltype(TEntry::asof_value);
+    using Keys = std::vector<TKey>;
 
-    // First stage, insertions into the vector
-    template <typename U, typename ... TAllocatorParams>
-    void insert(U && x, TAllocatorParams &&... allocator_params)
+    void insert(const TKey & key, const Block * block, size_t row_num)
     {
         assert(!sorted.load(std::memory_order_acquire));
-        array.push_back(std::forward<U>(x), std::forward<TAllocatorParams>(allocator_params)...);
+        array.emplace_back(key, block, row_num);
     }
 
-    const RowRef * upperBound(const TEntry & k, bool ascending)
+    /// Find an element based on the inequality rules
+    /// Note that this function uses 2 arrays, one with only the keys (so it's smaller and more memory efficient)
+    /// and a second one with both the key and the Rowref to be returned
+    /// Both are sorted only once, in a concurrent safe manner
+    const RowRef * find(const TKey & k, ASOF::Inequality inequality)
     {
-        sort(ascending);
-        auto it = std::upper_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
-        if (it != array.cend())
-            return &(it->row_ref);
-        return nullptr;
-    }
+        sort();
+        auto it = keys.cend();
+        switch (inequality)
+        {
+            case ASOF::Inequality::LessOrEquals:
+            {
+                it = std::lower_bound(keys.cbegin(), keys.cend(), k);
+                break;
+            }
+            case ASOF::Inequality::Less:
+            {
+                it = std::upper_bound(keys.cbegin(), keys.cend(), k);
+                break;
+            }
+            case ASOF::Inequality::GreaterOrEquals:
+            {
+                auto first_ge = std::upper_bound(keys.cbegin(), keys.cend(), k);
+                if (first_ge == keys.cend() && keys.size())
+                    first_ge--;
+                while (first_ge != keys.cbegin() && *first_ge > k)
+                    first_ge--;
+                if (*first_ge <= k)
+                    it = first_ge;
+                break;
+            }
+            case ASOF::Inequality::Greater:
+            {
+                auto first_ge = std::upper_bound(keys.cbegin(), keys.cend(), k);
+                if (first_ge == keys.cend() && keys.size())
+                    first_ge--;
+                while (first_ge != keys.cbegin() && *first_ge >= k)
+                    first_ge--;
+                if (*first_ge < k)
+                    it = first_ge;
+                break;
+            }
+            default:
+                throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);
+        }
 
-    const RowRef * lowerBound(const TEntry & k, bool ascending)
-    {
-        sort(ascending);
-        auto it = std::lower_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
-        if (it != array.cend())
-            return &(it->row_ref);
+        if (it != keys.cend())
+            return &((array.cbegin() + (it - keys.begin()))->row_ref);
+
         return nullptr;
     }
 
 private:
     std::atomic<bool> sorted = false;
-    Base array;
     mutable std::mutex lock;
 
-    static bool less(const TEntry & a, const TEntry & b)
-    {
-        return a.asof_value < b.asof_value;
-    }
-
-    static bool greater(const TEntry & a, const TEntry & b)
-    {
-        return a.asof_value > b.asof_value;
-    }
+    Base array;
+    /// We keep a separate copy of just the keys to make the searches more memory efficient
+    Keys keys;
 
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
     // The first thread that calls one of the lookup methods sorts the data
     // After calling the first lookup method it is no longer allowed to insert any data
     // the array becomes immutable
-    void sort(bool ascending)
+    void sort()
     {
         if (!sorted.load(std::memory_order_acquire))
         {
@@ -202,7 +229,12 @@ private:
             if (!sorted.load(std::memory_order_relaxed))
             {
                 if (!array.empty())
-                    ::sort(array.begin(), array.end(), (ascending ? less : greater));
+                {
+                    ::sort(array.begin(), array.end());
+                    keys.reserve(array.size());
+                    for (auto & e : array)
+                        keys.push_back(e.asof_value);
+                }
 
                 sorted.store(true, std::memory_order_release);
             }
@@ -222,7 +254,10 @@ public:
         RowRef row_ref;
 
         Entry(T v) : asof_value(v) {}
-        Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
+        Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) { }
+        Entry(T v, const Block * block, size_t row_num) : asof_value(v), row_ref(block, row_num) { }
+
+        bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
 
     using Lookups = std::variant<
