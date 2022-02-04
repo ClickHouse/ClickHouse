@@ -218,7 +218,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     }
 }
 
-void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     if (columns_buffer.size() != 0)
     {
@@ -253,12 +253,6 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
     marks.next();
     addToChecksums(checksums);
 
-    plain_file->preFinalize();
-    marks_file->preFinalize();
-}
-
-void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
-{
     plain_file->finalize();
     marks_file->finalize();
     if (sync)
@@ -362,28 +356,16 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     return accumulated_columns.at(0)->size();
 }
 
-void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
-        fillDataChecksums(checksums);
+        finishDataSerialization(checksums, sync);
 
     if (settings.rewrite_primary_key)
-        fillPrimaryIndexChecksums(checksums);
+        finishPrimaryIndexSerialization(checksums, sync);
 
-    fillSkipIndicesChecksums(checksums);
-}
-
-void MergeTreeDataPartWriterCompact::finish(bool sync)
-{
-    // If we don't have anything to write, skip finalization.
-    if (!columns_list.empty())
-        finishDataSerialization(sync);
-
-    if (settings.rewrite_primary_key)
-        finishPrimaryIndexSerialization(sync);
-
-    finishSkipIndicesSerialization(sync);
+    finishSkipIndicesSerialization(checksums, sync);
 }
 
 }
