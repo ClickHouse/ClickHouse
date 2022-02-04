@@ -1,13 +1,15 @@
+#include <base/sort.h>
+
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "DataTypes/IDataType.h"
-#include "DataTypes/DataTypeMap.h"
+#include <DataTypes/DataTypeMap.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -202,7 +204,7 @@ private:
                 continue;
             }
 
-            std::sort(sorted_keys_values.begin(), sorted_keys_values.end());
+            ::sort(sorted_keys_values.begin(), sorted_keys_values.end());
 
             KeyType min_key = sorted_keys_values.front().first;
             KeyType max_key = sorted_keys_values.back().first;
@@ -240,7 +242,7 @@ private:
             else
             {
                 bool is_max_key_positive = max_key >= 0;
-                bool is_min_key_positive = max_key >= 0;
+                bool is_min_key_positive = min_key >= 0;
 
                 if (is_max_key_positive && is_min_key_positive)
                 {
@@ -253,8 +255,9 @@ private:
                 }
                 else
                 {
+                    /// Both max and min key are negative
                     KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
-                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key_unsigned);
+                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(max_key);
                     max_min_key_difference = min_key_unsigned - max_key_unsigned;
                 }
             }
@@ -307,7 +310,7 @@ private:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    struct KeyAndValueInput
     {
         DataTypePtr key_series_type;
         DataTypePtr value_series_type;
@@ -315,6 +318,14 @@ private:
         ColumnPtr key_column;
         ColumnPtr value_column;
         ColumnPtr offsets_column;
+
+        /// Optional max key column
+        ColumnPtr max_key_column;
+    };
+
+    KeyAndValueInput extractKeyAndValueInput(const ColumnsWithTypeAndName & arguments) const
+    {
+        KeyAndValueInput input;
 
         size_t max_key_argument_index = 0;
 
@@ -336,12 +347,12 @@ private:
                     "Function {} if array argument is passed as key, additional array argument as value must be passed",
                     getName());
 
-            key_series_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
-            key_column = key_argument_array_column->getDataPtr();
+            input.key_series_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+            input.key_column = key_argument_array_column->getDataPtr();
             const auto & key_offsets = key_argument_array_column->getOffsets();
 
-            value_series_type = assert_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
-            value_column = value_argument_array_column->getDataPtr();
+            input.value_series_type = assert_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
+            input.value_column = value_argument_array_column->getDataPtr();
             const auto & value_offsets = value_argument_array_column->getOffsets();
 
             if (key_offsets != value_offsets)
@@ -350,7 +361,7 @@ private:
                     "Function {} key and value array should have same amount of elements",
                     getName());
 
-            offsets_column = key_argument_array_column->getOffsetsPtr();
+            input.offsets_column = key_argument_array_column->getOffsetsPtr();
             max_key_argument_index = 2;
         }
         else if (const auto * key_argument_map_column = typeid_cast<const ColumnMap *>(first_argument_column.get()))
@@ -359,12 +370,12 @@ private:
             const auto & nested_data_column = key_argument_map_column->getNestedData();
 
             const auto & map_argument_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-            key_series_type = map_argument_type.getKeyType();
-            value_series_type = map_argument_type.getValueType();
+            input.key_series_type = map_argument_type.getKeyType();
+            input.value_series_type = map_argument_type.getValueType();
 
-            key_column = nested_data_column.getColumnPtr(0);
-            value_column = nested_data_column.getColumnPtr(1);
-            offsets_column = nested_array.getOffsetsPtr();
+            input.key_column = nested_data_column.getColumnPtr(0);
+            input.value_column = nested_data_column.getColumnPtr(1);
+            input.offsets_column = nested_array.getOffsetsPtr();
 
             max_key_argument_index = 1;
         }
@@ -382,22 +393,32 @@ private:
             max_key_column = arguments[max_key_argument_index].column;
             auto max_key_column_type = arguments[max_key_argument_index].type;
 
-            if (!max_key_column_type->equals(*key_series_type))
+            if (!max_key_column_type->equals(*input.key_series_type))
             {
                 ColumnWithTypeAndName column_to_cast = {max_key_column, max_key_column_type, ""};
-                auto casted_column = castColumnAccurate(std::move(column_to_cast), key_series_type);
+                auto casted_column = castColumnAccurate(std::move(column_to_cast), input.key_series_type);
                 max_key_column = std::move(casted_column);
             }
         }
 
-        auto result_column = result_type->createColumn();
-        WhichDataType result_data_type(result_type);
+        input.max_key_column = std::move(max_key_column);
 
+        return input;
+    }
+
+    struct ResultColumns
+    {
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
         IColumn * result_offset_column_raw;
+        /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
+    };
+
+    ResultColumns extractResultColumns(MutableColumnPtr & result_column, const DataTypePtr & result_type) const
+    {
+        ResultColumns result;
 
         auto * tuple_column = typeid_cast<ColumnTuple *>(result_column.get());
 
@@ -415,20 +436,19 @@ private:
                     getName(),
                     result_type->getName());
 
-            result_key_column = key_array_column_typed->getDataPtr()->assumeMutable();
-            result_value_column = value_array_column_typed->getDataPtr()->assumeMutable();
-
-            result_offset_column = key_array_column_typed->getOffsetsPtr()->assumeMutable();
-            result_offset_column_raw = result_offset_column.get();
-
-            result_array_additional_offset_column = value_array_column_typed->getOffsetsPtr()->assumeMutable();
+            result.result_key_column = key_array_column_typed->getDataPtr()->assumeMutable();
+            result.result_value_column = value_array_column_typed->getDataPtr()->assumeMutable();
+            result.result_offset_column = key_array_column_typed->getOffsetsPtr()->assumeMutable();
+            result.result_offset_column_raw = result.result_offset_column.get();
+            result.result_array_additional_offset_column = value_array_column_typed->getOffsetsPtr()->assumeMutable();
         }
         else if (const auto * map_column = typeid_cast<ColumnMap *>(result_column.get()))
         {
-            result_key_column = map_column->getNestedData().getColumnPtr(0)->assumeMutable();
-            result_value_column = map_column->getNestedData().getColumnPtr(1)->assumeMutable();
-            result_offset_column = map_column->getNestedColumn().getOffsetsPtr()->assumeMutable();
-            result_offset_column_raw = result_offset_column.get();
+            result.result_key_column = map_column->getNestedData().getColumnPtr(0)->assumeMutable();
+            result.result_value_column = map_column->getNestedData().getColumnPtr(1)->assumeMutable();
+            result.result_offset_column = map_column->getNestedColumn().getOffsetsPtr()->assumeMutable();
+            result.result_offset_column_raw = result.result_offset_column.get();
+            result.result_array_additional_offset_column = nullptr;
         }
         else
         {
@@ -437,6 +457,16 @@ private:
                     getName(),
                     result_type->getName());
         }
+
+        return result;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    {
+        auto input = extractKeyAndValueInput(arguments);
+
+        auto result_column = result_type->createColumn();
+        auto result_columns = extractResultColumns(result_column, result_type);
 
         auto call = [&](const auto & types)
         {
@@ -453,13 +483,13 @@ private:
                 using ValueFieldType = typename ValueType::FieldType;
 
                 executeImplTyped<KeyFieldType, ValueFieldType>(
-                    key_column,
-                    value_column,
-                    offsets_column,
-                    max_key_column,
-                    std::move(result_key_column),
-                    std::move(result_value_column),
-                    std::move(result_offset_column));
+                    input.key_column,
+                    input.value_column,
+                    input.offsets_column,
+                    input.max_key_column,
+                    std::move(result_columns.result_key_column),
+                    std::move(result_columns.result_value_column),
+                    std::move(result_columns.result_offset_column));
 
                 return true;
             }
@@ -467,17 +497,17 @@ private:
             return false;
         };
 
-        if (!callOnTwoTypeIndexes(key_series_type->getTypeId(), value_series_type->getTypeId(), call))
+        if (!callOnTwoTypeIndexes(input.key_series_type->getTypeId(), input.value_series_type->getTypeId(), call))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Function {} illegal columns passed as arguments",
              getName());
 
-        if (result_array_additional_offset_column)
+        if (result_columns.result_array_additional_offset_column)
         {
-            result_array_additional_offset_column->insertRangeFrom(
-                *result_offset_column_raw,
+            result_columns.result_array_additional_offset_column->insertRangeFrom(
+                *result_columns.result_offset_column_raw,
                 0,
-                result_offset_column_raw->size());
+                result_columns.result_offset_column_raw->size());
         }
 
         return result_column;
