@@ -230,14 +230,42 @@ private:
                 }
             }
 
-            size_t length = static_cast<size_t>(max_key - min_key);
-            static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
-            if (length > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Function {} too large array size {} in the result",
-                    getName(),
-                    length);
+            using KeyTypeUnsigned = ::make_unsigned_t<KeyType>;
+            KeyTypeUnsigned max_min_key_difference = 0;
 
+            if constexpr (::is_unsigned_v<KeyType>)
+            {
+                max_min_key_difference = max_key - min_key;
+            }
+            else
+            {
+                bool is_max_key_positive = max_key >= 0;
+                bool is_min_key_positive = max_key >= 0;
+
+                if (is_max_key_positive && is_min_key_positive)
+                {
+                    max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key - min_key);
+                }
+                else if (is_max_key_positive && !is_min_key_positive)
+                {
+                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key) + min_key_unsigned;
+                }
+                else
+                {
+                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key_unsigned);
+                    max_min_key_difference = min_key_unsigned - max_key_unsigned;
+                }
+            }
+
+            static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
+            if (max_min_key_difference > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Function {} too large array size in the result",
+                    getName());
+
+            size_t length = static_cast<size_t>(max_min_key_difference);
             size_t result_key_data_size = result_key_data.size();
             size_t result_value_data_size = result_value_data.size();
             size_t sorted_keys_values_size = sorted_keys_values.size();
@@ -416,7 +444,10 @@ private:
             using KeyType = typename Types::LeftType;
             using ValueType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<KeyType> && IsDataTypeNumber<ValueType>)
+            static constexpr bool key_and_value_are_numbers = IsDataTypeNumber<KeyType> && IsDataTypeNumber<ValueType>;
+            static constexpr bool key_is_float = std::is_same_v<KeyType, DataTypeFloat32> || std::is_same_v<KeyType, DataTypeFloat64>;
+
+            if constexpr (key_and_value_are_numbers && !key_is_float)
             {
                 using KeyFieldType = typename KeyType::FieldType;
                 using ValueFieldType = typename ValueType::FieldType;
