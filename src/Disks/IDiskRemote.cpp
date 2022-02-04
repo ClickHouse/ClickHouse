@@ -162,7 +162,6 @@ void IDiskRemote::Metadata::addObject(const String & path, size_t size)
 /// Fsync metadata file if 'sync' flag is set.
 void IDiskRemote::Metadata::save(bool sync)
 {
-    namespace fs = std::filesystem;
     auto buf = metadata_disk->writeFile(metadata_file_path, 1024);
 
     writeIntText(VERSION_RELATIVE_PATHS, *buf);
