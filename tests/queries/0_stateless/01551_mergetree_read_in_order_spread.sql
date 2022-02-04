@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 DROP TABLE IF EXISTS data_01551;
 
 CREATE TABLE data_01551
