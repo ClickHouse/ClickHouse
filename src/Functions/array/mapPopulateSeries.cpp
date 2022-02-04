@@ -39,7 +39,7 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(const DataTypePtr & key_type, const DataTypePtr & value_type, const DataTypePtr & max_key_type) const
@@ -175,12 +175,7 @@ private:
         auto & result_offsets_column_typed = assert_cast<ColumnVector<ColumnArray::Offset> &>(*result_offset_column);
         auto & result_offsets_data = result_offsets_column_typed.getData();
 
-        std::optional<KeyType> max_key_column_const;
-        if (max_key_column)
-        {
-            if (auto * const_max_key_column = checkAndGetColumnConst<ColumnVector<KeyType>>(max_key_column.get()))
-                max_key_column_const = const_max_key_column->template getValue<KeyType>();
-        }
+        const PaddedPODArray<KeyType> * max_key_data = max_key_column ? &assert_cast<const ColumnVector<KeyType> &>(*max_key_column).getData() : nullptr;
 
         PaddedPODArray<std::pair<KeyType, ValueType>> sorted_keys_values;
 
@@ -209,21 +204,9 @@ private:
             KeyType min_key = sorted_keys_values.front().first;
             KeyType max_key = sorted_keys_values.back().first;
 
-            if (max_key_column)
+            if (max_key_data)
             {
-                KeyType max_key_column_value {};
-
-                if (max_key_column_const)
-                {
-                    max_key_column_value = *max_key_column_const;
-                }
-                else
-                {
-                    const auto & max_key_column_typed = assert_cast<const ColumnVector<KeyType> &>(*max_key_column);
-                    max_key_column_value = max_key_column_typed.getData()[offset_index];
-                }
-
-                max_key = max_key_column_value;
+                max_key = (*max_key_data)[offset_index];
 
                 if (unlikely(max_key < min_key))
                 {
@@ -390,7 +373,7 @@ private:
 
         if (max_key_argument_index < arguments.size())
         {
-            max_key_column = arguments[max_key_argument_index].column;
+            max_key_column = arguments[max_key_argument_index].column->convertToFullColumnIfConst();
             auto max_key_column_type = arguments[max_key_argument_index].type;
 
             if (!max_key_column_type->equals(*input.key_series_type))
