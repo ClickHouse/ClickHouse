@@ -217,6 +217,15 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<'\0'>(s, buf);
