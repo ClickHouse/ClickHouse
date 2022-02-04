@@ -1,12 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Core/Block.h>
 #include <base/types.h>
-#include <Common/assert_cast.h>
-#include <Common/ColumnsHashing.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
 
 
 namespace DB
@@ -49,63 +44,16 @@ void callWithType(TypeIndex which, F && f)
 
 }
 
-
 AsofRowRefs::AsofRowRefs(TypeIndex type)
 {
     auto call = [&](const auto & t)
     {
       using T = std::decay_t<decltype(t)>;
-      using LookupType = typename Entry<T>::LookupType;
+      using LookupType = typename Entry<T>::LookupPtr::element_type;
       lookups = std::make_unique<LookupType>();
     };
 
     callWithType(type, call);
-}
-
-void AsofRowRefs::insert(TypeIndex type, const IColumn & asof_column, const Block * block, size_t row_num)
-{
-    auto call = [&](const auto & t)
-    {
-        using T = std::decay_t<decltype(t)>;
-        using LookupPtr = typename Entry<T>::LookupPtr;
-
-        using ColumnType = ColumnVectorOrDecimal<T>;
-        const auto & column = assert_cast<const ColumnType &>(asof_column);
-
-        T key = column.getElement(row_num);
-        auto entry = Entry<T>(key, RowRef(block, row_num));
-        std::get<LookupPtr>(lookups)->insert(entry);
-    };
-
-    callWithType(type, call);
-}
-
-const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const
-{
-    const RowRef * out = nullptr;
-
-    bool ascending = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::LessOrEquals);
-    bool is_strict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
-
-    auto call = [&](const auto & t)
-    {
-        using T = std::decay_t<decltype(t)>;
-        using EntryType = Entry<T>;
-        using LookupPtr = typename EntryType::LookupPtr;
-
-        using ColumnType = ColumnVectorOrDecimal<T>;
-        const auto & column = assert_cast<const ColumnType &>(asof_column);
-        T key = column.getElement(row_num);
-        auto & typed_lookup = std::get<LookupPtr>(lookups);
-
-        if (is_strict)
-            out = typed_lookup->upperBound(EntryType(key), ascending);
-        else
-            out = typed_lookup->lowerBound(EntryType(key), ascending);
-    };
-
-    callWithType(type, call);
-    return out;
 }
 
 std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, size_t & size)
@@ -138,7 +86,6 @@ std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, s
         case TypeIndex::Int64:
             size = sizeof(Int64);
             return idx;
-        //case TypeIndex::Int128:
         case TypeIndex::Float32:
             size = sizeof(Float32);
             return idx;
