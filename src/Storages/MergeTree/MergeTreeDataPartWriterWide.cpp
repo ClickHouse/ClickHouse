@@ -412,6 +412,11 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String escaped_name = escapeForFileName(name);
     String mrk_path = part_path + escaped_name + marks_file_extension;
     String bin_path = part_path + escaped_name + DATA_FILE_EXTENSION;
+
+    /// Some columns may be removed because of ttl. Skip them.
+    if (!disk->exists(mrk_path))
+        return;
+
     auto mrk_in = disk->readFile(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(disk->readFile(bin_path));
     bool must_be_last = false;
