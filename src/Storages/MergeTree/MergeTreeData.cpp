@@ -2882,9 +2882,11 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
             continue;
 
         /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
-        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        if (!part->version.isVisible(tid.start_csn, tid))
-            continue;
+        if (txn)
+        {
+            if (!part->version.isVisible(*txn))
+                continue;
+        }
 
         parts_to_remove.emplace_back(part);
     }

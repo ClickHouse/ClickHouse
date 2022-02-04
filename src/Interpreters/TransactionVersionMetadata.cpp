@@ -89,6 +89,7 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const TransactionInf
 bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
     assert(!tid.isEmpty());
+    assert(!creation_tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash expected_max_lock_value = 0;
     bool locked = removal_tid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);

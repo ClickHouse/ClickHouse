@@ -312,7 +312,9 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
-    LOG_TRACE(log, "Rolling back transaction {}", txn->tid);
+    LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
+              std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
+
     if (!txn->rollback())
         return;
 
