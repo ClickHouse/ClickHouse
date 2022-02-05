@@ -9,13 +9,12 @@ namespace DB
 {
 
 /*
-Simple TDigest sketch for column;
 */
-class MergeTreeColumnDistributionStatisticTDigest : public IColumnDistributionStatistic
+class MergeTreeColumnDistributionStatisticBlockTDigest : public IColumnDistributionStatistic
 {
 public:
-    explicit MergeTreeColumnDistributionStatisticTDigest(const String & column_name_);
-    MergeTreeColumnDistributionStatisticTDigest(QuantileTDigest<Float32>&& sketch_, const String & column_name_);
+    explicit MergeTreeColumnDistributionStatisticBlockTDigest(const String & column_name_);
+    MergeTreeColumnDistributionStatisticBlockTDigest(QuantileTDigest<Float32>&& sketch_, const String & column_name_);
 
     const String& name() const override;
 
@@ -33,14 +32,15 @@ public:
 
 private:
     const String column_name;
-    mutable QuantileTDigest<Float32> sketch;
+    mutable QuantileTDigest<Float32> min_sketch;
+    mutable QuantileTDigest<Float32> max_sketch;
     bool is_empty;
 };
 
-class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeColumnDistributionStatisticCollector
+class MergeTreeColumnDistributionStatisticCollectorBlockTDigest : public IMergeTreeColumnDistributionStatisticCollector
 {
 public:
-    explicit MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_);
+    explicit MergeTreeColumnDistributionStatisticCollectorBlockTDigest(const String & column_name_);
 
     const String & name() const override;
     const String & column() const override;
@@ -55,10 +55,10 @@ private:
     std::optional<QuantileTDigest<Float32>> sketch;
 };
 
-IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticBlockTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
-IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorBlockTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
-void validatorColumnDistributionStatisticTDigest(
+void validatorColumnDistributionStatisticBlockTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 }

@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
+#include "Core/Field.h"
 #include "base/types.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -125,6 +126,7 @@ void MergeTreeStatistics::serializeBinary(WriteBuffer & ostr) const
     auto size_serialization = size_type->getDefaultSerialization();
     size_serialization->serializeBinary(1, ostr);
     // TODO: support versions and multiple distrs
+    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION), ostr);
     column_distributions->serializeBinary(ostr);
 }
 
@@ -136,9 +138,19 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
     Poco::Logger::get("MergeTreeStatistics").information("COUNT " + std::to_string(stats_count));
-    if (stats_count != 1)
-        throw Exception("Deserialization error: stats count in file not equal to 1", ErrorCodes::LOGICAL_ERROR);
-    column_distributions->deserializeBinary(istr);
+    if (stats_count > static_cast<size_t>(StatisticType::LAST))
+        throw Exception("Deserialization error: too many stats in file", ErrorCodes::LOGICAL_ERROR);
+    for (size_t stat_index = 0; stat_index < stats_count; ++stat_index) {
+        size_serialization->deserializeBinary(field, istr);
+        switch (field.get<size_t>()) {
+        case static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION):
+            column_distributions->deserializeBinary(istr);
+            break;
+        //  block_distributions->deserializeBinary(istr);
+        default:
+            throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
 }
 
 void MergeTreeStatistics::setColumnDistributionStatistics(IColumnDistributionStatisticsPtr && stat)
@@ -157,7 +169,6 @@ void MergeTreeColumnDistributionStatistics::serializeBinary(WriteBuffer & ostr) 
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
 
-    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION), ostr);
     size_serialization->serializeBinary(column_to_stats.size(), ostr);
     for (const auto & [column, stat] : column_to_stats)
     {
@@ -172,15 +183,11 @@ void MergeTreeColumnDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     auto size_serialization = size_type->getDefaultSerialization();
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
-
-    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("START");
-    Field field;
-    size_serialization->deserializeBinary(field, istr);
-    if (field.get<size_t>() != static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION))
-        throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
     Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
         "TYPE {}" + std::to_string(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION)));
 
+    Field field;
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("START");
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
     Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(

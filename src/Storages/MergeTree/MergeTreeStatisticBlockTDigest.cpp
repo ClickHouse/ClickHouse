@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
+#include <Storages/MergeTree/MergeTreeStatisticBlockTDigest.h>
 
 #include <cmath>
 #include <Common/Exception.h>
@@ -14,14 +14,14 @@ namespace ErrorCodes {
 extern int INCORRECT_QUERY;
 }
 
-MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
+MergeTreeColumnDistributionStatisticBlockTDigest::MergeTreeColumnDistributionStatisticBlockTDigest(
     const String & column_name_)
     : column_name(column_name_)
     , is_empty(true)
 {
 }
 
-MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
+MergeTreeColumnDistributionStatisticBlockTDigest::MergeTreeColumnDistributionStatisticBlockTDigest(
     QuantileTDigest<Float32>&& sketch_, const String & column_name_)
     : column_name(column_name_)
     , sketch(std::move(sketch_))
@@ -29,51 +29,51 @@ MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisti
 {
 }
 
-const String& MergeTreeColumnDistributionStatisticTDigest::name() const
+const String& MergeTreeColumnDistributionStatisticBlockTDigest::name() const
 {
-    static String name = "tdigest";
+    static String name = "block_tdigest";
     return name;
 }
 
-bool MergeTreeColumnDistributionStatisticTDigest::empty() const
+bool MergeTreeColumnDistributionStatisticBlockTDigest::empty() const
 {
     return is_empty;
 }
 
-void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & other)
+void MergeTreeColumnDistributionStatisticBlockTDigest::merge(const IStatisticPtr & other)
 {
-    auto other_ptr = std::dynamic_pointer_cast<MergeTreeColumnDistributionStatisticTDigest>(other);
+    auto other_ptr = std::dynamic_pointer_cast<MergeTreeColumnDistributionStatisticBlockTDigest>(other);
     // versions control???
     if (other_ptr)
     {
         is_empty &= other_ptr->is_empty;
         sketch.merge(other_ptr->sketch);
-        Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("MERGED emp=" + std::to_string(empty()));
+        Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("MERGED emp=" + std::to_string(empty()));
     }
     else
     {
         throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
     }
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information(
             "MERGE: 50% = " + std::to_string(sketch.getFloat(0.5))
             + " 90% = " + std::to_string(sketch.getFloat(0.9))
             + " 1% = " + std::to_string(sketch.getFloat(0.01)));
 }
 
-const String& MergeTreeColumnDistributionStatisticTDigest::getColumnsRequiredForStatisticCalculation() const
+const String& MergeTreeColumnDistributionStatisticBlockTDigest::getColumnsRequiredForStatisticCalculation() const
 {
     return column_name;
 }
 
-void MergeTreeColumnDistributionStatisticTDigest::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeColumnDistributionStatisticBlockTDigest::serializeBinary(WriteBuffer & ostr) const
 {
     sketch.serialize(ostr);
 }
 
-void MergeTreeColumnDistributionStatisticTDigest::deserializeBinary(ReadBuffer & istr)
+void MergeTreeColumnDistributionStatisticBlockTDigest::deserializeBinary(ReadBuffer & istr)
 {
     sketch.deserialize(istr);
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information(
         "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
         + " 90% = " + std::to_string(sketch.getFloat(0.9))
         + " 1% = " + std::to_string(sketch.getFloat(0.01)));
@@ -98,15 +98,15 @@ double extractValue(const Field& value)
     }
     else
     {
-        throw Exception("Bad type for TDigest", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Bad type for BlockTDigest", ErrorCodes::LOGICAL_ERROR);
     }
 }
 }
 
-double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const Field& value) const
+double MergeTreeColumnDistributionStatisticBlockTDigest::estimateQuantileLower(const Field& value) const
 {
     if (empty())
-        throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("BlockTDigest is empty", ErrorCodes::LOGICAL_ERROR);
     // TODO: t-digest grows O(log n)
     // TODO: try ddsketch???
 
@@ -120,10 +120,10 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const 
         return sketch.cdf(threshold).first;
 }
 
-double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
+double MergeTreeColumnDistributionStatisticBlockTDigest::estimateQuantileUpper(const Field& value) const
 {
     if (empty())
-        throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("BlockTDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
     double threshold = extractValue(value);
     if (std::isnan(threshold)
@@ -135,15 +135,15 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const 
         return sketch.cdf(threshold).second;
 }
 
-double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
+double MergeTreeColumnDistributionStatisticBlockTDigest::estimateProbability(const Field& lower, const Field& upper) const
 {
     // lower <= value <= upper
     // null = infty
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("emp=" + toString(empty()));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("sktch50=" + toString(sketch.getFloat(0.5)) + " " + toString(sketch.getFloat(1)));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("est " + toString(lower) + " " + toString(upper));
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("emp=" + toString(empty()));
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("sktch50=" + toString(sketch.getFloat(0.5)) + " " + toString(sketch.getFloat(1)));
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
+    Poco::Logger::get("MergeTreeColumnDistributionStatisticBlockTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
     if (!lower.isNull() && !upper.isNull())
         return std::max(std::min(estimateQuantileUpper(upper) - estimateQuantileLower(lower), 1.0), 0.0);
     else if (!lower.isNull())
@@ -154,38 +154,38 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
         return 1.0 - 0.0;
 }
 
-MergeTreeColumnDistributionStatisticCollectorTDigest::MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_)
+MergeTreeColumnDistributionStatisticCollectorBlockTDigest::MergeTreeColumnDistributionStatisticCollectorBlockTDigest(const String & column_name_)
     : column_name(column_name_)
 {
 }
 
-const String & MergeTreeColumnDistributionStatisticCollectorTDigest::name() const
+const String & MergeTreeColumnDistributionStatisticCollectorBlockTDigest::name() const
 {
-    static String name = "tdigest";
+    static String name = "block_tdigest";
     return name;
 }
 
-const String & MergeTreeColumnDistributionStatisticCollectorTDigest::column() const
+const String & MergeTreeColumnDistributionStatisticCollectorBlockTDigest::column() const
 {
     return column_name;
 }
 
-bool MergeTreeColumnDistributionStatisticCollectorTDigest::empty() const
+bool MergeTreeColumnDistributionStatisticCollectorBlockTDigest::empty() const
 {
     return !sketch.has_value();
 }
 
-IColumnDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::getStatisticAndReset()
+IColumnDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorBlockTDigest::getStatisticAndReset()
 {
     if (empty())
-        throw Exception("TDigest collector is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("BlockTDigest collector is empty", ErrorCodes::LOGICAL_ERROR);
     std::optional<QuantileTDigest<Float32>> res;
     sketch.swap(res);
     res->compress();
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(*std::move(res), column_name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticBlockTDigest>(*std::move(res), column_name);
 }
 
-void MergeTreeColumnDistributionStatisticCollectorTDigest::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeColumnDistributionStatisticCollectorBlockTDigest::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -206,36 +206,36 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::update(const Block & 
     *pos += rows_read;
 }
 
-void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
+void MergeTreeColumnDistributionStatisticCollectorBlockTDigest::granuleFinished()
 {
     // do nothing
 }
 
-IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticBlockTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
-    validatorColumnDistributionStatisticTDigest(stat, column);
+    validatorColumnDistributionStatisticBlockTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticBlockTDigest>(column.name);
 }
 
-IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorBlockTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
-    validatorColumnDistributionStatisticTDigest(stat, column);
+    validatorColumnDistributionStatisticBlockTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorBlockTDigest>(column.name);
 }
 
-void validatorColumnDistributionStatisticTDigest(
+void validatorColumnDistributionStatisticBlockTDigest(
     const StatisticDescription &, const ColumnDescription & column)
 {
     if (!column.type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic TDIGEST can be used only for numeric columns.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic BlockTDigest can be used only for numeric columns.");
     if (column.type->isNullable())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic TDIGEST can be used only for not nullable columns.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic BlockTDigest can be used only for not nullable columns.");
 }
 
 }

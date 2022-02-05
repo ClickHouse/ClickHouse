@@ -14,7 +14,10 @@ namespace DB
 
 enum class StatisticType
 {
+    // Distribution for values in column
     COLUMN_DISRIBUTION = 1,
+    // The same but value is counted only once per block
+    BLOCK_DISTRIBUTION = 2,
     //COLUMN_MOST_FREQUENT, -- in list => bad selectivity
     //COLUMN_DISTINCT_COUNT, -- for join/group by
     //COLUMN_LOW_CARDINALITY_COUNT, -- exact per block stats for low cardinality
@@ -22,6 +25,7 @@ enum class StatisticType
     //COLUMN_NULL_COUNT, -- like postgres
     //COLUMN_CORRELATION_WITH_PRIMARY, -- like postgres
     //...
+    LAST,
 };
 
 class IStatistic {

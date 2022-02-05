@@ -344,7 +344,10 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
     if (stats_collectors.empty())
         return;
 
-    const auto filename = generateFileNameForStatistics(); //String(PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
+    // Different stats can be stored in different files
+    // in order not to interfere with vertical merges.
+    // It is possible because one stat is calculated exactly for one column.
+    const auto filename = generateFileNameForStatistics();
     auto stats_file_stream = data_part->volume->getDisk()->writeFile(
         part_path + filename,
         DBMS_DEFAULT_BUFFER_SIZE,
