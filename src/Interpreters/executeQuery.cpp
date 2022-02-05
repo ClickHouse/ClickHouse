@@ -867,6 +867,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         query_log->add(elem);
                 }
 
+                {
+                    if (auto query_log = context->getQueryLog())
+                        query_log->add(elem);
+                }
+
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
                     context->query_trace_context.trace_id != UUID()
                         && opentelemetry_span_log)
