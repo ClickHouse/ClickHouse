@@ -324,16 +324,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             if (!use_new_scoring)
             {
                 cond.good = isConditionGood(node);
-                cond.score = 0;
+                cond.rank = 0;
                 LOG_DEBUG(&Poco::Logger::get("TEST COND"), "USED OLD");
             }
             else
             {
                 cond.good = isConditionGoodNew(node);
                 cond.selectivity = scoreSelectivity(stats, node);
-                cond.score = cond.columns_size / cond.selectivity;
-                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "cond={} good={} score={} size={} select={}",
-                    *cond.identifiers.begin(), cond.good, cond.score, cond.columns_size, cond.selectivity);
+                // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
+                // Cost per tuple = mean size of tuple = columns_size / count.
+                cond.rank = (1 - cond.selectivity) / cond.columns_size;
+                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "cond={} good={} rank={} size={} select={}",
+                    *cond.identifiers.begin(), cond.good, cond.rank, cond.columns_size, cond.selectivity);
             }
         }
 

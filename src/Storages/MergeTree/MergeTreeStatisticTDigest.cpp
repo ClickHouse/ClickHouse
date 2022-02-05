@@ -146,11 +146,11 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
     Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
     Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
     if (!lower.isNull() && !upper.isNull())
-        return estimateQuantileUpper(upper) - estimateQuantileLower(lower);
+        return std::max(std::min(estimateQuantileUpper(upper) - estimateQuantileLower(lower), 1.0), 0.0);
     else if (!lower.isNull())
-        return 1.0 - estimateQuantileLower(lower);
+        return std::max(std::min(1.0 - estimateQuantileLower(lower), 1.0), 0.0);
     else if (!upper.isNull())
-        return estimateQuantileUpper(upper) - 0.0;
+        return std::max(std::min(estimateQuantileUpper(upper) - 0.0, 1.0), 0.0);
     else
         return 1.0 - 0.0;
 }

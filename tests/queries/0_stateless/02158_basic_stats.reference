@@ -16,8 +16,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d = 100
-WHERE (d = 100) AND ((a = 10) AND (b = 100) AND (c = 0))
+PREWHERE b = 100
+WHERE (b = 100) AND ((a = 10) AND (c = 0) AND (d = 100))
 SELECT
     a,
     b,
@@ -26,8 +26,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d < 100
-WHERE (d < 100) AND ((a > 0) AND (c > 0) AND (b < 100))
+PREWHERE b < 100
+WHERE (b < 100) AND ((a > 0) AND (c > 0) AND (d < 100))
 SELECT
     a,
     b,
@@ -36,8 +36,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d > 100
-WHERE (d > 100) AND ((a > 0) AND (c > 0) AND (b > 100))
+PREWHERE b > 100
+WHERE (b > 100) AND ((a > 0) AND (c > 0) AND (d > 100))
 SELECT
     a,
     b,
@@ -76,8 +76,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d = 100
-WHERE (d = 100) AND ((a = 10) AND (b = 100) AND (c = 0))
+PREWHERE b = 100
+WHERE (b = 100) AND ((a = 10) AND (c = 0) AND (d = 100))
 SELECT
     a,
     b,
@@ -86,8 +86,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d < 100
-WHERE (d < 100) AND ((a > 0) AND (c > 0) AND (b < 100))
+PREWHERE b < 100
+WHERE (b < 100) AND ((a > 0) AND (c > 0) AND (d < 100))
 SELECT
     a,
     b,
@@ -96,8 +96,8 @@ SELECT
     heavy,
     heavy2
 FROM prewhere
-PREWHERE d > 100
-WHERE (d > 100) AND ((a > 0) AND (c > 0) AND (b > 100))
+PREWHERE b > 100
+WHERE (b > 100) AND ((a > 0) AND (c > 0) AND (d > 100))
 SELECT
     a,
     b,

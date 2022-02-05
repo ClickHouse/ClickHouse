@@ -62,12 +62,12 @@ private:
         bool good = false;
 
         /// New algorithm
-        double score = 0;
+        double rank = 0;
         double selectivity = 0;
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -score, columns_size, identifiers.size());
+            return std::make_tuple(!viable, !good, -rank, columns_size, identifiers.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
