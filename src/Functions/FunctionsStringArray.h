@@ -244,8 +244,8 @@ private:
     Pos end;
 
     char sep;
-    Int64 max_split = -1;
-    Int64 curr_split = 0;
+    std::optional<UInt64> max_split;
+    UInt64 curr_split = 0;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -295,15 +295,14 @@ public:
 
         if (arguments.size() > 2)
         {
-            std::optional<Int64> max_split_opt = std::nullopt;
-            if (!((max_split_opt = getMaxSplit<UInt8>(arguments[2]))
-                || (max_split_opt = getMaxSplit<Int8>(arguments[2]))
-                || (max_split_opt = getMaxSplit<UInt16>(arguments[2]))
-                || (max_split_opt = getMaxSplit<Int16>(arguments[2]))
-                || (max_split_opt = getMaxSplit<UInt32>(arguments[2]))
-                || (max_split_opt = getMaxSplit<Int32>(arguments[2]))
-                || (max_split_opt = getMaxSplit<UInt64>(arguments[2]))
-                || (max_split_opt = getMaxSplit<Int64>(arguments[2]))))
+            if (!((max_split = getMaxSplit<UInt8>(arguments[2]))
+                || (max_split = getMaxSplit<Int8>(arguments[2]))
+                || (max_split = getMaxSplit<UInt16>(arguments[2]))
+                || (max_split = getMaxSplit<Int16>(arguments[2]))
+                || (max_split = getMaxSplit<UInt32>(arguments[2]))
+                || (max_split = getMaxSplit<Int32>(arguments[2]))
+                || (max_split = getMaxSplit<UInt64>(arguments[2]))
+                || (max_split = getMaxSplit<Int64>(arguments[2]))))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -311,23 +310,21 @@ public:
                     arguments[2].column->getName(),
                     getName());
             }
-            max_split = *max_split_opt;
         }
     }
 
     template <typename DataType>
-    std::optional<Int64> getMaxSplit(const ColumnWithTypeAndName & argument)
+    std::optional<UInt64> getMaxSplit(const ColumnWithTypeAndName & argument)
     {
         const auto * col = checkAndGetColumnConst<ColumnVector<DataType>>(argument.column.get());
         if (!col)
             return std::nullopt;
 
-        Int64 result= static_cast<Int64>(col->template getValue<DataType>());
-        if (result < 0 && result != -1)
-            throw Exception("Illegal column " + argument.column->getName()
-                + " of third argument of function " + getName() + ". Must be non-negative number or -1",
-                ErrorCodes::ILLEGAL_COLUMN);
-        return result;
+        auto value = col->template getValue<DataType>();
+        if (value < 0)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of third argument of function {}", argument.column->getName(), getName());
+        return value;
     }
 
     /// Returns the position of the argument, that is the column of strings
@@ -348,14 +345,14 @@ public:
             return false;
 
         token_begin = pos;
-        if (unlikely(max_split >= 0 && curr_split >= max_split))
+        if (unlikely(max_split && curr_split >= *max_split))
         {
             token_end = end;
             pos = nullptr;
             return true;
         }
-        pos = reinterpret_cast<Pos>(memchr(pos, sep, end - pos));
 
+        pos = reinterpret_cast<Pos>(memchr(pos, sep, end - pos));
         if (pos)
         {
             token_end = pos;
