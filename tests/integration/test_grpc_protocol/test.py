@@ -431,3 +431,18 @@ def test_compressed_external_table():
                             b"3\tCarl\n"\
                             b"4\tDaniel\n"\
                             b"5\tEthan\n"
+
+def test_opentelemetry_context_propagation():
+    trace_id = "80c190b5-9dc1-4eae-82b9-6c261438c817"
+    parent_span_id = 123
+    trace_state = "some custom state"
+    trace_id_hex = trace_id.replace("-", "")
+    parent_span_id_hex = f'{parent_span_id:0>16X}'
+    metadata = [("traceparent", f"00-{trace_id_hex}-{parent_span_id_hex}-01"), ("tracestate", trace_state)]
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 1")
+    result = stub.ExecuteQuery(query_info, metadata=metadata)
+    assert result.output == b"1\n"
+    node.query("SYSTEM FLUSH LOGS")
+    assert node.query(f"SELECT attribute['db.statement'], attribute['clickhouse.tracestate'] FROM system.opentelemetry_span_log "
+                      f"WHERE trace_id='{trace_id}' AND parent_span_id={parent_span_id}") == "SELECT 1\tsome custom state\n"
