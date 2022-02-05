@@ -234,6 +234,7 @@ void ReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
+    buffer_is_dirty = true;
 }
 
 
