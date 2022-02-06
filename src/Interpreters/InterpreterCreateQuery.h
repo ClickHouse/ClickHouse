@@ -34,6 +34,7 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
     static ASTPtr formatIndices(const IndicesDescription & indices);
+    static ASTPtr formatStatistics(const StatisticDescriptions & statistics);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
@@ -71,7 +72,7 @@ private:
     {
         ColumnsDescription columns;
         IndicesDescription indices;
-        StatisticsDescriptions stats;
+        StatisticDescriptions stats;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;
     };

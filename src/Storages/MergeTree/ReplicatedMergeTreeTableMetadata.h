@@ -27,6 +27,7 @@ struct ReplicatedMergeTreeTableMetadata
     String partition_key;
     String sorting_key;
     String skip_indices;
+    String statistics;
     String projections;
     String constraints;
     String ttl_table;
@@ -52,6 +53,9 @@ struct ReplicatedMergeTreeTableMetadata
         bool skip_indices_changed = false;
         String new_skip_indices;
 
+        bool statistics_changed = false;
+        String new_statistics;
+
         bool constraints_changed = false;
         String new_constraints;
 
@@ -63,8 +67,13 @@ struct ReplicatedMergeTreeTableMetadata
 
         bool empty() const
         {
-            return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
-                && !ttl_table_changed && !constraints_changed;
+            return !sorting_key_changed
+                && !sampling_expression_changed
+                && !skip_indices_changed
+                && !statistics_changed
+                && !projections_changed
+                && !ttl_table_changed
+                && !constraints_changed;
         }
     };
 

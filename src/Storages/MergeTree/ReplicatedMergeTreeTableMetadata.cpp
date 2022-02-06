@@ -65,6 +65,8 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     skip_indices = metadata_snapshot->getSecondaryIndices().toString();
 
+    statistics = metadata_snapshot->getStatistics().toString();
+
     projections = metadata_snapshot->getProjections().toString();
 
     if (data.canUseAdaptiveGranularity())
@@ -99,6 +101,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
+
+    if (!statistics.empty())
+        out << "statistics: " << statistics << "\n";
 
     if (!projections.empty())
         out << "projections: " << projections << "\n";
@@ -143,6 +148,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
+
+    if (checkString("statistics: ", in))
+        in >> statistics >> "\n";
 
     if (checkString("projections: ", in))
         in >> projections >> "\n";
@@ -260,6 +268,17 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
                 ErrorCodes::METADATA_MISMATCH);
     }
 
+    String parsed_zk_statistics = StatisticDescriptions::parse(from_zk.statistics, columns, context).toString();
+    if (statistics != parsed_zk_statistics)
+    {
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in statistics."
+                " Stored in ZooKeeper: " + from_zk.statistics +
+                ", parsed from ZooKeeper: " + parsed_zk_statistics +
+                ", local: " + statistics,
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
     if (projections != parsed_zk_projections)
     {
@@ -319,6 +338,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     {
         diff.skip_indices_changed = true;
         diff.new_skip_indices = from_zk.skip_indices;
+    }
+
+    if (statistics != from_zk.statistics)
+    {
+        diff.statistics_changed = true;
+        diff.new_statistics = from_zk.statistics;
     }
 
     if (projections != from_zk.projections)

@@ -42,7 +42,7 @@ static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
-    const StatisticsDescriptions & /* stats */,
+    const StatisticDescriptions & /* stats */,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -55,14 +55,6 @@ static void extractMergingAndGatheringColumns(
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
-
-    /// TODO: support vertical merge for stats (each stat is calculatated using one column).
-    /// Multiple stats files???
-    //for (const auto & stat : stats)
-    //{
-    //    std::copy(stat.column_names.cbegin(), stat.column_names.cend(),
-    //              std::inserter(key_columns, key_columns.end()));
-    //}
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)

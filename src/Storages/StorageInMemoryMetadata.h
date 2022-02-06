@@ -26,7 +26,7 @@ struct StorageInMemoryMetadata
     /// Table indices. Currently supported for MergeTree only.
     IndicesDescription secondary_indices;
     /// Table statistics. Currently supported for MergeTree only.
-    StatisticsDescriptions statistics;
+    StatisticDescriptions statistics;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
@@ -72,7 +72,7 @@ struct StorageInMemoryMetadata
     void setSecondaryIndices(IndicesDescription secondary_indices_);
 
     /// Sets statistics
-    void setStatistics(StatisticsDescriptions stats_);
+    void setStatistics(StatisticDescriptions stats_);
 
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
@@ -112,7 +112,7 @@ struct StorageInMemoryMetadata
     bool hasSecondaryIndices() const;
 
     /// Returns statistics
-    const StatisticsDescriptions & getStatistics() const;
+    const StatisticDescriptions & getStatistics() const;
 
     /// Has at least one statistic
     bool hasStatistics() const;

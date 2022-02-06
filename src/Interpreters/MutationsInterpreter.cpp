@@ -417,6 +417,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
+    // TODO: MATERIALIZE STATS
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;

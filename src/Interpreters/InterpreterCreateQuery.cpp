@@ -413,6 +413,16 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     return res;
 }
 
+ASTPtr InterpreterCreateQuery::formatStatistics(const StatisticDescriptions & statistics)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & statistic : statistics)
+        res->children.push_back(statistic.definition_ast->clone());
+
+    return res;
+}
+
 ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)
 {
     auto res = std::make_shared<ASTExpressionList>();
@@ -658,11 +668,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
+    ASTPtr new_statistics = formatStatistics(properties.stats);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
+    create.columns_list->setOrReplace(create.columns_list->stats, new_statistics);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 

@@ -1022,6 +1022,9 @@ void StorageReplicatedMergeTree::setTableStructure(
         if (metadata_diff.skip_indices_changed)
             new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, getContext());
 
+        if (metadata_diff.statistics_changed)
+            new_metadata.statistics = StatisticDescriptions::parse(metadata_diff.new_statistics, new_columns, getContext());
+
         if (metadata_diff.constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 

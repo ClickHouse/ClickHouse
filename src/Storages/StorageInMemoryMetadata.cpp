@@ -90,7 +90,7 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
     secondary_indices = std::move(secondary_indices_);
 }
 
-void StorageInMemoryMetadata::setStatistics(StatisticsDescriptions stats_)
+void StorageInMemoryMetadata::setStatistics(StatisticDescriptions stats_)
 {
     statistics = std::move(stats_);
 }
@@ -143,7 +143,7 @@ bool StorageInMemoryMetadata::hasSecondaryIndices() const
     return !secondary_indices.empty();
 }
 
-const StatisticsDescriptions & StorageInMemoryMetadata::getStatistics() const
+const StatisticDescriptions & StorageInMemoryMetadata::getStatistics() const
 {
     return statistics;
 }

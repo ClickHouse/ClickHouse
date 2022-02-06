@@ -36,7 +36,7 @@ struct StatisticDescription
     StatisticDescription & operator=(const StatisticDescription & other);
 };
 
-struct StatisticsDescriptions : public std::vector<StatisticDescription>
+struct StatisticDescriptions : public std::vector<StatisticDescription>
 {
     /// Stat with name exists
     bool has(const String & name) const;
@@ -44,7 +44,7 @@ struct StatisticsDescriptions : public std::vector<StatisticDescription>
     String toString() const;
     /// Parse description from string
     // TODO: replication
-    static StatisticsDescriptions parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
+    static StatisticDescriptions parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 };
 
 }

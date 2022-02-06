@@ -3,9 +3,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticDeclaration.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/extractKeyExpressionList.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Poco/Logger.h>
+#include <Storages/extractKeyExpressionList.h>
+#include <Storages/StatisticsDescription.h>
 
 namespace DB
 {
@@ -25,11 +28,10 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     if (stat_definition->name.empty())
         throw Exception("Statistic must have name in definition.", ErrorCodes::INCORRECT_QUERY);
 
-    // TODO: type == nullptr => auto
+    // type == nullptr => auto
     if (!stat_definition->type)
         throw Exception("TYPE is required for statistic", ErrorCodes::INCORRECT_QUERY);
 
-    // TODO: many params
     if (stat_definition->type->parameters && !stat_definition->type->parameters->children.empty())
         throw Exception("Statistic type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
 
@@ -43,7 +45,6 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     {
         ASTIdentifier* ident = ast->as<ASTIdentifier>();
         Poco::Logger::get("TEST").information(ident->name() + " " + ident->getColumnName());
-        Poco::Logger::get("TEST").information(std::to_string(columns.hasPhysical("a")) + " " + std::to_string(columns.has("a")));
         for (const auto& cl : columns) {
             Poco::Logger::get("TEXT").information(cl.name);
         }
@@ -92,25 +93,37 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
 }
 
 
-bool StatisticsDescriptions::has(const String & name) const
+bool StatisticDescriptions::has(const String & name) const
 {
-    for (const auto & stat : *this)
-        if (stat.name == name)
+    for (const auto & statistic : *this)
+        if (statistic.name == name)
             return true;
     return false;
 }
 
-String StatisticsDescriptions::toString() const {
-    return "not implemented";
+String StatisticDescriptions::toString() const {
+    if (empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & statistic : *this)
+        list.children.push_back(statistic.definition_ast);
+
+    return serializeAST(list, true);
 }
 
-StatisticsDescriptions StatisticsDescriptions::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
+StatisticDescriptions StatisticDescriptions::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
 {
-    StatisticsDescriptions result;
-    if (!str.empty())
-    {
-        UNUSED(columns, context);
-    }
+    StatisticDescriptions result;
+    if (str.empty())
+        return result;
+
+    ParserStatisticDeclaration parser;
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+    for (const auto & index : list->children)
+        result.emplace_back(StatisticDescription::getStatisticFromAST(index, columns, context));
+
     return result;
 }
 
