@@ -337,8 +337,9 @@ std::string LocalServer::getInitialCreateTableQuery()
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    auto data_format
-        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
 
     if (table_structure == "auto")
         table_structure = "";
