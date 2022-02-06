@@ -16,6 +16,7 @@ Restart=always
 RestartSec=30
 RuntimeDirectory=clickhouse-server
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
+# Minus means that this file is optional.
 EnvironmentFile=-/etc/default/clickhouse
 LimitCORE=infinity
 LimitNOFILE=500000
