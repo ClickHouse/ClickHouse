@@ -628,10 +628,11 @@ namespace
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
+        CompressionMethod input_compression_method = CompressionMethod::None;
         PODArray<char> output;
         String output_format;
-        CompressionMethod compression_method = CompressionMethod::None;
-        int compression_level = 0;
+        CompressionMethod output_compression_method = CompressionMethod::None;
+        int output_compression_level = 0;
 
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
@@ -852,8 +853,16 @@ namespace
             output_format = query_context->getDefaultFormat();
 
         /// Choose compression.
-        compression_method = chooseCompressionMethod("", query_info.compression_type());
-        compression_level = query_info.compression_level();
+        String input_compression_method_str = query_info.input_compression_type();
+        if (input_compression_method_str.empty())
+            input_compression_method_str = query_info.obsolete_compression_type();
+        input_compression_method = chooseCompressionMethod("", input_compression_method_str);
+
+        String output_compression_method_str = query_info.output_compression_type();
+        if (output_compression_method_str.empty())
+            output_compression_method_str = query_info.obsolete_compression_type();
+        output_compression_method = chooseCompressionMethod("", output_compression_method_str);
+        output_compression_level = query_info.output_compression_level();
 
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -984,7 +993,7 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), compression_method);
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
         auto source = query_context->getInputFormat(
@@ -1112,13 +1121,13 @@ namespace
         if (io.pipeline.pulling())
             header = io.pipeline.getHeader();
 
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), compression_method, compression_level);
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1414,10 +1423,10 @@ namespace
             return;
 
         PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1432,10 +1441,10 @@ namespace
             return;
 
         PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
