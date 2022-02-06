@@ -373,14 +373,6 @@ def test_cancel_while_generating_output():
         output += result.output
     assert output == b'0\t0\n1\t0\n2\t0\n3\t0\n'
 
-def test_result_compression():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000000)",
-                                               result_compression=clickhouse_grpc_pb2.Compression(algorithm=clickhouse_grpc_pb2.CompressionAlgorithm.GZIP,
-                                                                                                  level=clickhouse_grpc_pb2.CompressionLevel.COMPRESSION_HIGH))
-    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    result = stub.ExecuteQuery(query_info)
-    assert result.output == (b'0\n')*1000000
-
 def test_compressed_output():
     query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", output_compression_type="lz4")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
@@ -444,6 +436,12 @@ def test_compressed_external_table():
                             b"3\tCarl\n"\
                             b"4\tDaniel\n"\
                             b"5\tEthan\n"
+
+def test_transport_compression():
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000000)", transport_compression_type='gzip', transport_compression_level=3)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == (b'0\n')*1000000
 
 def test_opentelemetry_context_propagation():
     trace_id = "80c190b5-9dc1-4eae-82b9-6c261438c817"
