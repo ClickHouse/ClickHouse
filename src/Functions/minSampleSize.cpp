@@ -13,6 +13,11 @@
 namespace DB
 {
 
+    namespace ErrorCodes
+    {
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    }
+
     template <typename Impl>
     class FunctionMinSampleSize : public IFunction
     {
@@ -57,24 +62,24 @@ namespace DB
             );
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
+            for (auto arg : arguments)
+            {
+                if (!isFloat(arg))
+                {
+                    throw Exception("Arguments of function " + getName() + " must be floats", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                }
+
+            }
+
             return getReturnType();
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
-            MutableColumnPtr to{getReturnType()->createColumn()};
-            to->reserve(input_rows_count);
-
-            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            {
-                to->insert(Impl::execute(arguments, row_num));
-            }
-
-            return to;
+            return Impl::execute(arguments, input_rows_count);
         }
-
     };
 
 
@@ -89,31 +94,62 @@ namespace DB
         static constexpr auto name = "minSampleSizeContinous";
         static constexpr size_t num_args = 5;
 
-        static Tuple execute(const ColumnsWithTypeAndName & arguments, size_t row_num)
+        static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
         {
-            /// Mean of control-metric
-            Float64 baseline = arguments[0].column->getFloat64(row_num);
-            /// Standard deviation of conrol-metric
-            Float64 sigma = arguments[1].column->getFloat64(row_num);
-            /// Minimal Detectable Effect
-            Float64 mde = arguments[2].column->getFloat64(row_num);
-            /// Sufficient statistical power to detect a treatment effect
-            Float64 power = arguments[3].column->getFloat64(row_num);
-            /// Significance level
-            Float64 alpha = arguments[4].column->getFloat64(row_num);
+            const auto converted_type = std::make_shared<DataTypeFloat64>();
 
-            if (!std::isfinite(baseline) || !std::isfinite(sigma) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
+            const ColumnFloat64 * col_baseline = typeid_cast<const ColumnFloat64 *>(arguments[0].column.get());
+            const ColumnFloat64 * col_sigma = typeid_cast<const ColumnFloat64 *>(arguments[1].column.get());
+            const ColumnFloat64 * col_mde = typeid_cast<const ColumnFloat64 *>(arguments[2].column.get());
+            const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
+            const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[4].column.get());
+
+            auto res_min_sample_size = ColumnUInt64::create();
+            auto & data_min_sample_size = res_min_sample_size->getData();
+            data_min_sample_size.reserve(input_rows_count);
+
+            auto res_detect_lower = ColumnFloat64::create();
+            auto & data_detect_lower = res_detect_lower->getData();
+            data_detect_lower.reserve(input_rows_count);
+
+            auto res_detect_upper = ColumnFloat64::create();
+            auto & data_detect_upper = res_detect_upper->getData();
+            data_detect_upper.reserve(input_rows_count);
+
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
-                return {0, std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+                /// Mean of control-metric
+                Float64 baseline = col_baseline->getFloat64(row_num);
+                /// Standard deviation of conrol-metric
+                Float64 sigma = col_sigma->getFloat64(row_num);
+                printf("\n\nbaseline: %f, sigma: %f\n\n", baseline, sigma);
+                /// Minimal Detectable Effect
+                Float64 mde = col_mde->getFloat64(row_num);
+                /// Sufficient statistical power to detect a treatment effect
+                Float64 power = col_power->getFloat64(row_num);
+                /// Significance level
+                Float64 alpha = col_alpha->getFloat64(row_num);
+
+                if (!std::isfinite(baseline) || !std::isfinite(sigma) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
+                {
+                    data_min_sample_size.emplace_back(0);
+                    data_detect_lower.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
+                    data_detect_upper.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
+                    continue;
+                }
+
+                Float64 delta = baseline * mde;
+
+                using namespace boost::math;
+                normal_distribution<> nd(0.0, 1.0);
+                Float64 min_sample_size = 2 * (std::pow(sigma, 2)) * std::pow(quantile(nd, 1.0 - alpha / 2) + quantile(nd, power), 2) / std::pow(delta, 2);
+
+                data_min_sample_size.emplace_back(static_cast<UInt64>(min_sample_size));
+                data_detect_lower.emplace_back(baseline - delta);
+                data_detect_upper.emplace_back(baseline + delta);
             }
 
-            Float64 delta = baseline * mde;
-
-            using namespace boost::math;
-            normal_distribution<> nd(0.0, 1.0);
-            Float64 min_sample_size = 2 * (std::pow(sigma, 2)) * std::pow(quantile(nd, 1.0 - alpha / 2) + quantile(nd, power), 2) / std::pow(delta, 2);
-
-            return {static_cast<UInt64>(min_sample_size), baseline - delta, baseline + delta};
+            return ColumnTuple::create(Columns{std::move(res_min_sample_size), std::move(res_detect_lower), std::move(res_detect_upper)});
         }
     };
 
@@ -123,35 +159,62 @@ namespace DB
         static constexpr auto name = "minSampleSizeConversion";
         static constexpr size_t num_args = 4;
 
-        static Tuple execute(const ColumnsWithTypeAndName & arguments, size_t row_num)
+        static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
         {
-            /// Mean of control-metric
-            Float64 p1 = arguments[0].column->getFloat64(row_num);
-            /// Minimal Detectable Effect
-            Float64 mde = arguments[1].column->getFloat64(row_num);
-            /// Sufficient statistical power to detect a treatment effect
-            Float64 power = arguments[2].column->getFloat64(row_num);
-            /// Significance level
-            Float64 alpha = arguments[3].column->getFloat64(row_num);
+            const ColumnFloat64 * col_p1 = typeid_cast<const ColumnFloat64 *>(arguments[0].column.get());
+            const ColumnFloat64 * col_mde = typeid_cast<const ColumnFloat64 *>(arguments[1].column.get());
+            const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[2].column.get());
+            const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
 
-            if (!std::isfinite(p1) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
+            auto res_min_sample_size = ColumnUInt64::create();
+            auto & data_min_sample_size = res_min_sample_size->getData();
+            data_min_sample_size.reserve(input_rows_count);
+
+            auto res_detect_lower = ColumnFloat64::create();
+            auto & data_detect_lower = res_detect_lower->getData();
+            data_detect_lower.reserve(input_rows_count);
+
+            auto res_detect_upper = ColumnFloat64::create();
+            auto & data_detect_upper = res_detect_upper->getData();
+            data_detect_upper.reserve(input_rows_count);
+
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
-                return {0, std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+                /// Mean of control-metric
+                Float64 p1 = col_p1->getFloat64(row_num);
+                /// Minimal Detectable Effect
+                Float64 mde = col_mde->getFloat64(row_num);
+                /// Sufficient statistical power to detect a treatment effect
+                Float64 power = col_power->getFloat64(row_num);
+                /// Significance level
+                Float64 alpha = col_alpha->getFloat64(row_num);
+
+                if (!std::isfinite(p1) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
+                {
+                    data_min_sample_size.emplace_back(0);
+                    data_detect_lower.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
+                    data_detect_upper.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
+                    continue;
+                }
+
+                Float64 q1 = 1.0 - p1;
+                Float64 p2 = p1 + mde;
+                Float64 q2 = 1.0 - p2;
+                Float64 p_bar = (p1 + p2) / 2.0;
+
+                using namespace boost::math;
+                normal_distribution<> nd(0.0, 1.0);
+                Float64 min_sample_size = std::pow(
+                    quantile(nd, 1.0 - alpha / 2.0) * std::sqrt(2.0 * p_bar * (1 - p_bar))
+                    + quantile(nd, power) * std::sqrt(p1 * q1 + p2 * q2), 2
+                ) / std::pow(mde, 2);
+
+                data_min_sample_size.emplace_back(static_cast<UInt64>(min_sample_size));
+                data_detect_lower.emplace_back(p1 - mde);
+                data_detect_upper.emplace_back(p1 + mde);
             }
 
-            Float64 q1 = 1.0 - p1;
-            Float64 p2 = p1 + mde;
-            Float64 q2 = 1.0 - p2;
-            Float64 p_bar = (p1 + p2) / 2.0;
-
-            using namespace boost::math;
-            normal_distribution<> nd(0.0, 1.0);
-            Float64 min_sample_size = std::pow(
-                quantile(nd, 1.0 - alpha / 2.0) * std::sqrt(2.0 * p_bar * (1 - p_bar))
-                + quantile(nd, power) * std::sqrt(p1 * q1 + p2 * q2), 2
-            ) / std::pow(mde, 2);
-
-            return {static_cast<UInt64>(min_sample_size), p1 - mde, p1 + mde};
+            return ColumnTuple::create(Columns{std::move(res_min_sample_size), std::move(res_detect_lower), std::move(res_detect_upper)});
         }
     };
 
