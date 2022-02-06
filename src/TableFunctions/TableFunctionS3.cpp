@@ -64,7 +64,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     }
     else
     {
-        if (args.size() < 1 || args.size() > 6)
+        if (args.empty() || args.size() > 6)
             throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & arg : args)
