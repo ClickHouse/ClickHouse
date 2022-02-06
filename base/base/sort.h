@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/BitSetSort.h>
+#include <pdqsort.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -30,7 +30,7 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last, Compare compar
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
 {
-    ::stdext::bitsetsort(first, last, compare);
+    ::pdqsort(first, last, compare);
 }
 
 template <typename RandomIt>
@@ -38,5 +38,5 @@ void sort(RandomIt first, RandomIt last)
 {
     using value_type = typename std::iterator_traits<RandomIt>::value_type;
     using comparator = std::less<value_type>;
-    ::stdext::bitsetsort(first, last, comparator());
+    ::pdqsort(first, last, comparator());
 }
