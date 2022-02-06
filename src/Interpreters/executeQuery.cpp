@@ -45,6 +45,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
@@ -811,6 +812,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries,
                  log_queries_min_type = settings.log_queries_min_type,
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                 log_processors_profiles = settings.log_processors_profiles,
                  status_info_to_query_log,
                  pulling_pipeline = pipeline.pulling()
             ]
@@ -866,10 +868,24 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
                 }
-
+                if (log_processors_profiles)
                 {
-                    if (auto query_log = context->getQueryLog())
-                        query_log->add(elem);
+                    if (auto processors_profile_log = context->getProcessorsProfileLog())
+                    {
+                        ProcessorProfileLogElement processor_elem;
+                        processor_elem.event_time = time_in_seconds(finish_time);
+                        processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
+                        processor_elem.query_id = elem.client_info.current_query_id;
+
+                        for (const auto & processor : query_pipeline.getProcessors())
+                        {
+                            processor_elem.processor_name = processor->getName();
+                            processor_elem.elapsed_us = processor->getElapsedUs();
+                            processor_elem.need_data_elapsed_us = processor->getNeedDataElapsedUs();
+                            processor_elem.port_full_elapsed_us = processor->getPortFullElapsedUs();
+                            processors_profile_log->add(processor_elem);
+                        }
+                    }
                 }
 
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
