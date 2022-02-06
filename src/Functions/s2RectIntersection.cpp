@@ -76,7 +76,6 @@ public:
                 arguments[0].type->getName(),
                 1,
                 getName());
-
         const auto & data_lo1 = col_lo1->getData();
 
         const auto * col_hi1 = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
@@ -87,7 +86,6 @@ public:
                 arguments[1].type->getName(),
                 2,
                 getName());
-
         const auto & data_hi1 = col_hi1->getData();
 
         const auto * col_lo2 = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
@@ -98,7 +96,6 @@ public:
                 arguments[2].type->getName(),
                 3,
                 getName());
-
         const auto & data_lo2 = col_lo2->getData();
 
         const auto * col_hi2 = checkAndGetColumn<ColumnFloat64>(arguments[3].column.get());
@@ -109,7 +106,6 @@ public:
                 arguments[3].type->getName(),
                 4,
                 getName());
-
         const auto & data_hi2 = col_hi2->getData();
 
         auto col_res_first = ColumnUInt64::create();

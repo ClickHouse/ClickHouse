@@ -71,7 +71,6 @@ public:
                 arguments[0].type->getName(),
                 1,
                 getName());
-
         const auto & data_low = col_lo->getData();
 
         const auto * col_hi = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
@@ -82,7 +81,6 @@ public:
                 arguments[1].type->getName(),
                 2,
                 getName());
-
         const auto & data_hi = col_hi->getData();
 
         const auto * col_point = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
@@ -93,7 +91,6 @@ public:
                 arguments[2].type->getName(),
                 3,
                 getName());
-
         const auto & data_point = col_point->getData();
 
         auto dst = ColumnVector<UInt8>::create();
