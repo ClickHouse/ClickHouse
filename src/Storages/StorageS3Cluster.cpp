@@ -152,9 +152,8 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 
