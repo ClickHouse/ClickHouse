@@ -263,7 +263,30 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
                 try
                 {
-                    node.last_processor_status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
+                    auto & processor = *node.processor;
+                    IProcessor::Status last_status = node.last_processor_status;
+                    IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
+                    node.last_processor_status = status;
+
+                    /// NeedData
+                    if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
+                    {
+                        processor.need_data_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                    {
+                        processor.need_data_elapsed_us += processor.need_data_watch.elapsedMicroseconds();
+                    }
+
+                    /// PortFull
+                    if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                    {
+                        processor.port_full_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                    {
+                        processor.port_full_elapsed_us += processor.port_full_watch.elapsedMicroseconds();
+                    }
                 }
                 catch (...)
                 {
