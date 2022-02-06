@@ -1180,8 +1180,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 executeAggregation(
                     query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                /// We need to reset input order info, so that executeOrder can't use  it
+                /// We need to reset input order info, so that executeOrder can't use it
                 query_info.input_order_info.reset();
+                if (query_info.projection)
+                    query_info.projection->input_order_info.reset();
             }
 
             // Now we must execute:
