@@ -382,13 +382,13 @@ def test_result_compression():
     assert result.output == (b'0\n')*1000000
 
 def test_compressed_output():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", output_compression_type="lz4")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.output) == (b'0\n')*1000
 
 def test_compressed_output_streaming():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(100000)", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(100000)", output_compression_type="lz4")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     d_context = lz4.frame.create_decompression_context()
     data = b''
@@ -398,7 +398,7 @@ def test_compressed_output_streaming():
     assert data == (b'0\n')*100000
 
 def test_compressed_output_gzip():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="gzip", compression_level=6)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", output_compression_type="gzip", output_compression_level=6)
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
     assert gzip.decompress(result.output) == (b'0\n')*1000
@@ -407,10 +407,10 @@ def test_compressed_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT sum(x), y FROM t GROUP BY y WITH TOTALS", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT sum(x), y FROM t GROUP BY y WITH TOTALS", output_compression_type="lz4")
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.totals) == b'12\t0\n'
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT x, y FROM t", settings={"extremes": "1"}, compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT x, y FROM t", settings={"extremes": "1"}, output_compression_type="lz4")
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.extremes) == b'1\t2\n3\t4\n'
 
@@ -423,7 +423,7 @@ def test_compressed_insert_query_streaming():
     d2 = data[sz1:sz1+sz2]
     d3 = data[sz1+sz2:]
     def send_query_info():
-        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t VALUES", input_data=d1, compression_type="lz4", next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t VALUES", input_data=d1, input_compression_type="lz4", next_query_info=True)
         yield clickhouse_grpc_pb2.QueryInfo(input_data=d2, next_query_info=True)
         yield clickhouse_grpc_pb2.QueryInfo(input_data=d3)
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)

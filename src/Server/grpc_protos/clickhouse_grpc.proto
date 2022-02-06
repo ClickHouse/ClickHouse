@@ -106,12 +106,16 @@ message QueryInfo {
    /// If not set the compression settings from the configuration file will be used.
    Compression result_compression = 17;
 
-   // Compression type for `input_data`, `output_data`, `totals` and `extremes`.
+   // Compression type for `input_data`.
    // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
-   // When used for `input_data` the client is responsible to compress data before putting it into `input_data`.
-   // When used for `output_data` or `totals` or `extremes` the client receives compressed data and should decompress it by itself.
-   // In the latter case consider to specify also `compression_level`.
-   string compression_type = 18;
+   // The client is responsible to compress data before putting it into `input_data`.
+   string input_compression_type = 20;
+
+   // Compression type for `output_data`, `totals` and `extremes`.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // The client receives compressed data and should decompress it by itself.
+   // Consider also setting `output_compression_level`.
+   string output_compression_type = 21;
 
    // Compression level.
    // WARNING: If it's not specified the compression level is set to zero by default which might be not the best choice for some compression types (see below).
@@ -123,7 +127,10 @@ message QueryInfo {
    // zstd: 1..22; 3 is recommended by default (compression level 0 also means 3)
    // lz4: 0..16; values < 0 mean fast acceleration
    // bz2: 1..9
-   int32 compression_level = 19;
+   int32 output_compression_level = 19;
+
+   /// Obsolete fields, should not be used in new code.
+   string obsolete_compression_type = 18;
 }
 
 enum LogsLevel {
