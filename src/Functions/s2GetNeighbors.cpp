@@ -57,19 +57,21 @@ public:
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
-                arg->getName(), 1, getName());
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(),
+                1,
+                getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id = checkAndGetColumn<ColumnFloat64>(arguments[0].column.get());
+        const auto * col_id = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
         if (!col_id)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arguments[0].type->getName(),
                 1,
                 getName());
