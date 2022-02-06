@@ -9,9 +9,10 @@ namespace DB
 {
 
 /*
-Simple TDigest sketch for column;
+Simple TDigest sketch for column.
+Includes each value.
 */
-class MergeTreeColumnDistributionStatisticTDigest : public IColumnDistributionStatistic
+class MergeTreeColumnDistributionStatisticTDigest : public IDistributionStatistic
 {
 public:
     explicit MergeTreeColumnDistributionStatisticTDigest(const String & column_name_);
@@ -37,7 +38,7 @@ private:
     bool is_empty;
 };
 
-class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeColumnDistributionStatisticCollector
+class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
 {
 public:
     explicit MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_);
@@ -45,7 +46,7 @@ public:
     const String & name() const override;
     const String & column() const override;
     bool empty() const override;
-    IColumnDistributionStatisticPtr getStatisticAndReset() override;
+    IDistributionStatisticPtr getStatisticAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
     void granuleFinished() override;
@@ -55,9 +56,9 @@ private:
     std::optional<QuantileTDigest<Float32>> sketch;
 };
 
-IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
-IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+IMergeTreeDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 void validatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);

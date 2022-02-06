@@ -28,6 +28,8 @@ enum class StatisticType
     LAST,
 };
 
+
+// Basic class for column statistics
 class IStatistic {
 public:
     virtual ~IStatistic() = default;
@@ -45,7 +47,8 @@ public:
 
 using IStatisticPtr = std::shared_ptr<IStatistic>;
 
-class IColumnDistributionStatistic : public IStatistic {
+
+class IDistributionStatistic : public IStatistic {
 public:
     // some quantile of value smaller than value 
     virtual double estimateQuantileLower(const Field& value) const = 0;
@@ -55,28 +58,29 @@ public:
     virtual double estimateProbability(const Field & lower, const Field & upper) const = 0;
 };
 
-using IColumnDistributionStatisticPtr = std::shared_ptr<IColumnDistributionStatistic>;
-using IColumnDistributionStatisticPtrs = std::vector<IColumnDistributionStatisticPtr>;
+using IDistributionStatisticPtr = std::shared_ptr<IDistributionStatistic>;
+using IDistributionStatisticPtrs = std::vector<IDistributionStatisticPtr>;
 
 
-class IColumnDistributionStatistics {
+class IDistributionStatistics {
 public:
-    virtual ~IColumnDistributionStatistics() = default;
+    virtual ~IDistributionStatistics() = default;
 
     virtual bool empty() const = 0;
 
-    virtual void merge(const std::shared_ptr<IColumnDistributionStatistics> & other) = 0;
+    virtual void merge(const std::shared_ptr<IDistributionStatistics> & other) = 0;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
-    virtual void add(const String & name, const IColumnDistributionStatisticPtr & stat) = 0;
+    virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
     virtual void remove(const String & name) = 0;
 };
 
-using IColumnDistributionStatisticsPtr = std::shared_ptr<IColumnDistributionStatistics>;
-using IConstColumnDistributionStatisticsPtr = std::shared_ptr<const IColumnDistributionStatistics>;
+using IDistributionStatisticsPtr = std::shared_ptr<IDistributionStatistics>;
+using IConstDistributionStatisticsPtr = std::shared_ptr<const IDistributionStatistics>;
+
 
 class IStatistics {
 public:
@@ -89,8 +93,8 @@ public:
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
-    virtual void setColumnDistributionStatistics(IColumnDistributionStatisticsPtr && stat) = 0;
-    virtual IConstColumnDistributionStatisticsPtr getColumnDistributionStatistics() const = 0;
+    virtual void setDistributionStatistics(IDistributionStatisticsPtr && stat) = 0;
+    virtual IConstDistributionStatisticsPtr getDistributionStatistics() const = 0;
 };
 
 using IStatisticsPtr = std::shared_ptr<IStatistics>;

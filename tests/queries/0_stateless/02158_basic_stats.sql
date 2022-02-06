@@ -41,6 +41,8 @@ EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c 
 DROP TABLE prewhere SYNC;
 
 -- the same with automatic stats
+-- auto creates granule_tdigest instead of simple tdigest
+-- results for this test stay the same
 CREATE TABLE prewhere
 (
     a Int,

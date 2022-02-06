@@ -200,28 +200,28 @@ static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & cond
             // everything is converted to float
             if (function->name == "equals")
             {
-                return stats->getColumnDistributionStatistics()->estimateProbability(
+                return stats->getDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     field,
                     field).value_or(1);
             }
             else if (function->name == "notEquals")
             {
-                return 1 - stats->getColumnDistributionStatistics()->estimateProbability(
+                return 1 - stats->getDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     field,
                     field).value_or(0);
             }
             else if (function->name == "less" || function->name == "lessOrEquals")
             {
-                return stats->getColumnDistributionStatistics()->estimateProbability(
+                return stats->getDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     {},
                     field).value_or(1); 
             }
             else if (function->name == "greater" || function->name == "greaterOrEquals")
             {
-                return stats->getColumnDistributionStatistics()->estimateProbability(
+                return stats->getDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     field,
                     {}).value_or(1); 

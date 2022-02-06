@@ -185,7 +185,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 void MergeTreeDataPartWriterOnDisk::initStats()
 {
     stats_collectors = MergeTreeStatisticFactory::instance()
-        .getColumnDistributionStatisticCollectors(
+        .getDistributionStatisticCollectors(
             metadata_snapshot->getStatistics(),
             metadata_snapshot->getColumns(),
             columns_list);
@@ -280,8 +280,8 @@ void MergeTreeDataPartWriterOnDisk::calculateStatistics(const Block & stat_block
         {
             size_t pos = granule.start_row;
             stats_collector->update(stat_block, &pos, granule.rows_to_write);
+            stats_collector->granuleFinished();
         }
-        stats_collector->granuleFinished();
     }
 }
 
@@ -353,15 +353,15 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
         DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode::Rewrite);
     auto stats_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
-    
-    auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
+
+    auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
     for (auto & stats_collector : stats_collectors)
     {
         column_distribution_stats->add(stats_collector->column(), stats_collector->getStatisticAndReset());
     }
 
     MergeTreeStatistics stats;
-    stats.setColumnDistributionStatistics(std::move(column_distribution_stats));
+    stats.setDistributionStatistics(std::move(column_distribution_stats));
     stats.serializeBinary(*stats_stream);
 
     // TODO: compression
