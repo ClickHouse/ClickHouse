@@ -58,6 +58,7 @@ bool ExecutionThreadContext::executeTask()
     Stopwatch execution_time_watch;
 #endif
 
+    Stopwatch watch;
     try
     {
         executeJob(node->processor);
@@ -68,6 +69,7 @@ bool ExecutionThreadContext::executeTask()
     {
         node->exception = std::current_exception();
     }
+    node->processor->elapsed_us += watch.elapsedMicroseconds();
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch.elapsed();
