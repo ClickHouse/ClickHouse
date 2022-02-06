@@ -90,8 +90,7 @@ public:
                 arguments[0].type->getName(),
                 1,
                 getName());
-
-        const auto & data_center_1 = col_center1->getData();
+        const auto & data_center1 = col_center1->getData();
 
         const auto * col_radius1 = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
         if (!col_radius1)
@@ -101,8 +100,7 @@ public:
                 arguments[1].type->getName(),
                 2,
                 getName());
-
-        const auto & data_radius_1 = col_radius1->getData();
+        const auto & data_radius1 = col_radius1->getData();
 
         const auto * col_center2 = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
         if (!col_center2)
@@ -112,8 +110,7 @@ public:
                 arguments[2].type->getName(),
                 3,
                 getName());
-
-        const auto & data_center_2 = col_center2->getData();
+        const auto & data_center2 = col_center2->getData();
 
         const auto * col_radius2 = checkAndGetColumn<ColumnFloat64>(arguments[3].column.get());
         if (!col_radius2)
@@ -123,9 +120,7 @@ public:
                 arguments[3].type->getName(),
                 4,
                 getName());
-
-        const auto & data_radius_2 = col_radius2->getData();
-
+        const auto & data_radius2 = col_radius2->getData();
 
         auto col_res_center = ColumnUInt64::create();
         auto col_res_radius = ColumnFloat64::create();
@@ -138,10 +133,10 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 first_center = data_center_1[row];
-            const Float64 first_radius = data_radius_1[row];
-            const UInt64 second_center = data_center_2[row];
-            const Float64 second_radius = data_radius_2[row];
+            const UInt64 first_center = data_center1[row];
+            const Float64 first_radius = data_radius1[row];
+            const UInt64 second_center = data_center2[row];
+            const Float64 second_radius = data_radius2[row];
 
             if (isNaN(first_radius) || isNaN(second_radius))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
