@@ -48,7 +48,7 @@ private:
 /// (according to format_regexp_escaping_rule setting). If the regexp did not match the line,
 /// if format_regexp_skip_unmatched is 1, the line is silently skipped, if the setting is 0, exception will be thrown.
 
-class RegexpRowInputFormat : public IRowInputFormat
+class RegexpRowInputFormat final : public IRowInputFormat
 {
 public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
