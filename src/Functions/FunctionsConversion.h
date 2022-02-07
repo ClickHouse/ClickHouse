@@ -1444,6 +1444,9 @@ struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
         static constexpr auto kind = IntervalKind::INTERVAL_KIND; \
     };
 
+DEFINE_NAME_TO_INTERVAL(Nanosecond)
+DEFINE_NAME_TO_INTERVAL(Microsecond)
+DEFINE_NAME_TO_INTERVAL(Millisecond)
 DEFINE_NAME_TO_INTERVAL(Second)
 DEFINE_NAME_TO_INTERVAL(Minute)
 DEFINE_NAME_TO_INTERVAL(Hour)

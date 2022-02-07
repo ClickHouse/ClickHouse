@@ -80,7 +80,7 @@ struct ToStartOfTransform;
     TRANSFORM_TIME(Hour)
     TRANSFORM_TIME(Minute)
     TRANSFORM_TIME(Second)
-#undef TRANSFORM_DATE
+#undef TRANSFORM_TIME
 
     template <IntervalKind::Kind unit>
     struct AddTime;
