@@ -1,6 +1,5 @@
 #pragma once
 #include <base/map.h>
-#include <base/logger_useful.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
