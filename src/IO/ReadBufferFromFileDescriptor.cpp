@@ -111,7 +111,6 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
-        buffer_is_dirty = false;
     }
     else
         return false;
@@ -153,10 +152,10 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
 
     /// Position is unchanged.
-    if (!buffer_is_dirty && (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end))
+    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (!buffer_is_dirty && file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
+    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
@@ -177,12 +176,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         off_t offset_after_seek_pos = new_pos - seek_pos;
 
-        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
-        pos = working_buffer.end();
-
-        /// Mark buffer as dirty to disallow further seek optimizations, because fetching data to the buffer
-        /// is delayed to the next call of 'nextImpl', but it may be not called before next seek.
-        buffer_is_dirty = true;
+        /// First reset the buffer so the next read will fetch new data to the buffer.
+        resetWorkingBuffer();
 
         /// In case of using 'pread' we just update the info about the next position in file.
         /// In case of using 'read' we call 'lseek'.
@@ -234,7 +229,6 @@ void ReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
-    buffer_is_dirty = true;
 }
 
 
