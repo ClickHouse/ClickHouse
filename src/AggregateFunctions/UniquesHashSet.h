@@ -174,8 +174,8 @@ public:
     * must deal with special case when
     * the remain buf len not enough for
     * 4 continue space to satisfy our sse2
-    * processing. so we use 0xFFFFFFFFFFFFFFFC 
-    * to make the start pos can round 4 
+    * processing. so we use 0xFFFFFFFFFFFFFFFC
+    * to make the start pos can round 4
     */
     inline static size_t place(HashValue x, size_t mask) { return ((x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask) & 0xFFFFFFFFFFFFFFFC; }
 
