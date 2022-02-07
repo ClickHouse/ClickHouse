@@ -14,7 +14,7 @@ toc_title: SQLite
     ENGINE = SQLite('db_path')
 ```
 
-** 引擎参数 **
+**引擎参数**
 
 -   `db_path` — SQLite 数据库文件的路径.
     
