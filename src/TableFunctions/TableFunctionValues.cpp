@@ -88,7 +88,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception("Table function '" + getName() + "' requires at least 1 argument");
+        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto & literal = args[0]->as<const ASTLiteral>();
     String value;
