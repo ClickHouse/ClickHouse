@@ -302,13 +302,13 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
     /// NOTE This is weird. Most of these virtual columns are part of MergeTree
     /// tables info. But Distributed is general-purpose engine.
     return NamesAndTypesList{
-            NameAndTypePair("_table", std::make_shared<DataTypeString>()),
-            NameAndTypePair("_part", std::make_shared<DataTypeString>()),
-            NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-            NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-            NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
-            NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-            NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
+        NameAndTypePair("_table", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
 
@@ -605,8 +605,8 @@ Pipe StorageDistributed::read(
 
 void StorageDistributed::read(
     QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const Names &,
+    const StorageMetadataPtr &,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -635,10 +635,6 @@ void StorageDistributed::read(
         return;
     }
 
-    bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
-    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
-        has_virtual_shard_num_column = false;
-
     StorageID main_table = StorageID::createEmpty();
     if (!remote_table_function_ptr)
         main_table = StorageID{remote_database, remote_table};
@@ -646,8 +642,7 @@ void StorageDistributed::read(
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
             header,
-            processed_stage,
-            has_virtual_shard_num_column);
+            processed_stage);
 
     ClusterProxy::executeQuery(
         query_plan, header, processed_stage,

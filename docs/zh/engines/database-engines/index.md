@@ -26,4 +26,6 @@ toc_title: Introduction
 
 -   [Replicated](../../engines/database-engines/replicated.md)
 
+-   [SQLite](../../engines/database-engines/sqlite.md)
+
 [来源文章](https://clickhouse.com/docs/en/database_engines/) <!--hide-->
