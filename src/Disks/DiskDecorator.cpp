@@ -151,11 +151,6 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
     delegate->removeSharedFile(path, keep_s3);
 }
 
-void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
-{
-    delegate->removeSharedFiles(files, keep_in_remote_fs);
-}
-
 void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
 {
     delegate->removeSharedRecursive(path, keep_s3);

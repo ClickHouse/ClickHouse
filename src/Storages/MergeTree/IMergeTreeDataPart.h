@@ -300,11 +300,9 @@ public:
         {
         }
 
-        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
-
         void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);

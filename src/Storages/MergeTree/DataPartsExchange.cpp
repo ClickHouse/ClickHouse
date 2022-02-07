@@ -300,7 +300,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
         if (hashing_out.count() != size)
-            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}, expected {} got {}", path, hashing_out.count(), size);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}", path);
 
         writePODBinary(hashing_out.getHash(), out);
 
@@ -595,7 +595,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             CompressionCodecFactory::instance().get("NONE", {}));
 
         part_out.write(block);
-        part_out.finalizePart(new_projection_part, false);
+        part_out.writeSuffixAndFinalizePart(new_projection_part);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
         new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
     }
@@ -619,7 +619,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         CompressionCodecFactory::instance().get("NONE", {}));
 
     part_out.write(block);
-    part_out.finalizePart(new_data_part, false);
+    part_out.writeSuffixAndFinalizePart(new_data_part);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;
