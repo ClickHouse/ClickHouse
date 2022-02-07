@@ -614,7 +614,7 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, 
 {
     if constexpr (search_type == ArraySearchType::Substr)
         return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
-    else if constexpr (search_type == ArraySearchType::StartsWith)
+    else if constexpr (search_type == ArraySearchType::StartsWith || search_type == ArraySearchType::EndsWith)
         return sliceHasImplStartsEndsWith<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
     else
         return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
