@@ -90,7 +90,7 @@ private:
 
         Columns preprocessed_columns(2);
         for (size_t i = 0; i < 2; ++i)
-            preprocessed_columns[i] = castColumn(arguments[i], common_type); 
+            preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
         std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
         for (auto & argument_column : preprocessed_columns)
