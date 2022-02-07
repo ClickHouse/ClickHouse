@@ -340,6 +340,15 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
     return ret;
 }
 
+NamesAndTypesList ColumnsDescription::getInsertable() const
+{
+    NamesAndTypesList ret;
+    for (const auto & col : columns)
+        if (col.default_desc.kind == ColumnDefaultKind::Default || col.default_desc.kind == ColumnDefaultKind::Ephemeral)
+            ret.emplace_back(col.name, col.type);
+    return ret;
+}
+
 NamesAndTypesList ColumnsDescription::getMaterialized() const
 {
     NamesAndTypesList ret;
@@ -355,6 +364,15 @@ NamesAndTypesList ColumnsDescription::getAliases() const
     for (const auto & col : columns)
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
+    return ret;
+}
+
+NamesAndTypesList ColumnsDescription::getEphemeral() const
+{
+    NamesAndTypesList ret;
+        for (const auto & col : columns)
+            if (col.default_desc.kind == ColumnDefaultKind::Ephemeral)
+                ret.emplace_back(col.name, col.type);
     return ret;
 }
 
@@ -402,6 +420,8 @@ static ColumnsDescription::GetFlags defaultKindToGetFlag(ColumnDefaultKind kind)
             return ColumnsDescription::Materialized;
         case ColumnDefaultKind::Alias:
             return ColumnsDescription::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return ColumnsDescription::Ephemeral;
     }
     __builtin_unreachable();
 }

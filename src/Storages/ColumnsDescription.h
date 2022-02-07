@@ -84,18 +84,21 @@ public:
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
+	Ephemeral = 8,
 
         AllPhysical = Ordinary | Materialized,
-        All = AllPhysical | Aliases,
+        All = AllPhysical | Aliases | Ephemeral,
     };
 
     NamesAndTypesList getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const;
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
+    NamesAndTypesList getInsertable() const;
     NamesAndTypesList getAliases() const;
+    NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
-    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
+    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
     NamesAndTypesList getAllWithSubcolumns() const;
     NamesAndTypesList getAllPhysicalWithSubcolumns() const;
 
