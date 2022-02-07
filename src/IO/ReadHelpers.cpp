@@ -4,7 +4,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
@@ -216,6 +215,15 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<' '>(s, buf);
 }
+
+template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
