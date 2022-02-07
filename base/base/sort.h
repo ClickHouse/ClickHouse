@@ -5,6 +5,7 @@
 #ifdef NDEBUG
 
 #include <pcg_random.hpp>
+#include <base/getThreadId.h>
 
 /** Same as libcxx std::__debug_less. Just without dependency on private part of standard library.
   * Check that Comparator induce strict weak ordering.
@@ -47,7 +48,7 @@ using ComparatorWrapper = DebugLessComparator<Comparator>;
 template <typename RandomIt, typename Compare>
 void shuffleItemsInEqualRanges(RandomIt first, RandomIt last, Compare compare)
 {
-    static pcg64 rng(randomSeed());
+    static pcg64 rng(getThreadId());
 
     bool equal_range_started = false;
     RandomIt equal_range_start_it;
@@ -112,7 +113,6 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last, Compare compar
     ::shuffleItemsInEqualRanges(first, middle, compare_wrapper);
 #endif
 }
-
 
 template <typename RandomIt>
 void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
