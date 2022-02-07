@@ -133,6 +133,12 @@ def test_deduplication_while_move(started_cluster):
                     settings={"allow_experimental_query_deduplication": 1})
         ) == TSV(expected)
 
+        # https://github.com/ClickHouse/ClickHouse/issues/34089
+        assert TSV(
+            n.query("SELECT count() FROM test_deduplication_d",
+                    settings={"allow_experimental_query_deduplication": 1})
+        ) == TSV("2")
+
     deduplication_invariant = ConcurrentInvariant(deduplication_invariant_test)
     deduplication_invariant.start()
 

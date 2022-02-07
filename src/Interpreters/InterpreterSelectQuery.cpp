@@ -1759,6 +1759,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
+        && !settings.allow_experimental_query_deduplication
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
