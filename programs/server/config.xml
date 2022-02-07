@@ -188,6 +188,10 @@
     <listen_host>127.0.0.1</listen_host>
     -->
 
+    <!-- <interserver_listen_host>::</interserver_listen_host> -->
+    <!-- Listen host for communication between replicas. Used for data exchange -->
+    <!-- Default values - equal to listen_host -->
+
     <!-- Don't exit if IPv6 or IPv4 networks are unavailable while trying to listen. -->
     <!-- <listen_try>0</listen_try> -->
 
