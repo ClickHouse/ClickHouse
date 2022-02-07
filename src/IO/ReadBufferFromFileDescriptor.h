@@ -62,6 +62,9 @@ public:
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds);
+
+    /// If it's true then we cannot assume on content of buffer to optimize seek calls.
+    bool buffer_is_dirty = true;
 };
 
 

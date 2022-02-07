@@ -75,11 +75,11 @@ struct AggregateFunctionSequenceMatchData final
 
     void sort()
     {
-        if (!sorted)
-        {
-            ::sort(std::begin(events_list), std::end(events_list), Comparator{});
-            sorted = true;
-        }
+        if (sorted)
+            return;
+
+        ::sort(std::begin(events_list), std::end(events_list), Comparator{});
+        sorted = true;
     }
 
     void serialize(WriteBuffer & buf) const

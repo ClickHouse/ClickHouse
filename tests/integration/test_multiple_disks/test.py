@@ -382,11 +382,17 @@ def test_round_robin(start_cluster, name, engine):
         used_disk = get_used_disks_for_table(node1, name)
         assert len(used_disk) == 1, 'More than one disk used for single insert'
 
+        # sleep is required because we order disks by their modification time, and if insert will be fast
+        # modification time of two disks will be equal, then sort will not provide deterministic results
+        time.sleep(5)
+
         node1.query_with_retry("insert into {} select * from numbers(10000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
 
         assert len(used_disks) == 2, 'Two disks should be used for two parts'
         assert used_disks[0] != used_disks[1], "Should write to different disks"
+
+        time.sleep(5)
 
         node1.query_with_retry("insert into {} select * from numbers(20000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
