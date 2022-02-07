@@ -20,6 +20,7 @@ void registerFunctionToISOYear(FunctionFactory &);
 void registerFunctionToCustomWeek(FunctionFactory &);
 void registerFunctionToModifiedJulianDay(FunctionFactory &);
 void registerFunctionToStartOfMonth(FunctionFactory &);
+void registerFunctionToLastDayOfMonth(FunctionFactory &);
 void registerFunctionToStartOfQuarter(FunctionFactory &);
 void registerFunctionToStartOfYear(FunctionFactory &);
 void registerFunctionToStartOfMinute(FunctionFactory &);
@@ -91,6 +92,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionToCustomWeek(factory);
     registerFunctionToModifiedJulianDay(factory);
     registerFunctionToStartOfMonth(factory);
+    registerFunctionToLastDayOfMonth(factory);
     registerFunctionToStartOfQuarter(factory);
     registerFunctionToStartOfYear(factory);
     registerFunctionToStartOfSecond(factory);

@@ -174,6 +174,30 @@ struct ToStartOfMonthImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToLastDayOfMonthImpl
+{
+    static constexpr auto name = "toLastDayOfMonth";
+
+    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(DayNum(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToStartOfQuarterImpl
 {
     static constexpr auto name = "toStartOfQuarter";
