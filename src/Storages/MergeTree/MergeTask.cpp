@@ -263,6 +263,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
+        global_ctx->merging_columns,
         ctx->compression_codec,
         /*reset_columns=*/ true,
         ctx->blocks_are_granules_size);
@@ -450,6 +451,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         /// because all of them were already recalculated and written
         /// as key part of vertical merge
         std::vector<MergeTreeIndexPtr>{},
+        ctx->executor->getHeader().getNamesAndTypesList(),
         &global_ctx->written_offset_columns,
         global_ctx->to->getIndexGranularity());
 

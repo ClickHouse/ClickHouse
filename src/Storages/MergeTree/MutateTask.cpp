@@ -962,6 +962,7 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
+            ctx->new_data_part->getColumns(),
             ctx->compression_codec);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -1112,6 +1113,7 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
+                ctx->updated_header.getNamesAndTypesList(),
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info

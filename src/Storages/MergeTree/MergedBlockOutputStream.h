@@ -18,6 +18,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
+        const NamesAndTypesList & statistics_columns,
         CompressionCodecPtr default_codec_,
         bool reset_columns_ = false,
         bool blocks_are_granules_size = false);

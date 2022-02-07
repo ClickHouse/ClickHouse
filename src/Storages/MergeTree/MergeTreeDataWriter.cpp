@@ -419,7 +419,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        // TODO: {} on insert???
+        columns, compression_codec);
 
     bool sync_on_insert = data_settings->fsync_after_insert;
 
@@ -527,6 +529,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         new_data_part,
         metadata_snapshot,
         columns,
+        {},
         {},
         compression_codec);
 

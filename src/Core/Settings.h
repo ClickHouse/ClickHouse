@@ -550,6 +550,7 @@ class IColumn;
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     \
     M(Bool, allow_experimental_stats_for_prewhere_optimization, true, "Allow to use statistics for prewhere optimization.", 0) \
+    M(Bool, calculate_stats_during_insert, true, "Caclucate statistics during insert (they will be calculated only during merge).", 0) \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.

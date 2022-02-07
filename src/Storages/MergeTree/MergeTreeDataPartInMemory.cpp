@@ -59,6 +59,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & /* indices_to_recalc */,
+    const NamesAndTypesList & /* statistics_columns_to_recalc */,
     const CompressionCodecPtr & /* default_codec */,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & /* computed_index_granularity */) const
@@ -91,7 +92,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, columns, compression_codec);
     out.write(block);
     const auto & projections = metadata_snapshot->getProjections();
     for (const auto & [projection_name, projection] : projection_parts)
@@ -122,7 +123,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
             auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
             MergedBlockOutputStream projection_out(
                 projection_data_part, desc.metadata, projection_part->columns, projection_indices,
-                projection_compression_codec);
+                projection_part->columns, projection_compression_codec);
 
             projection_out.write(projection_part->block);
             projection_out.writeSuffixAndFinalizePart(projection_data_part);

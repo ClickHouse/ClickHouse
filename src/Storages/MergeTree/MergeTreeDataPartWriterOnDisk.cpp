@@ -4,6 +4,7 @@
 #include "Storages/MergeTree/MergeTreeStatistic.h"
 
 #include <memory>
+#include <unordered_set>
 #include <utility>
 
 namespace DB
@@ -82,6 +83,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
+    const NamesAndTypesList & statistics_columns_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -89,6 +91,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     : IMergeTreeDataPartWriter(data_part_,
         columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
+    , statistics_columns_to_recalc(statistics_columns_to_recalc_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
@@ -188,7 +191,7 @@ void MergeTreeDataPartWriterOnDisk::initStats()
         .getDistributionStatisticCollectors(
             metadata_snapshot->getStatistics(),
             metadata_snapshot->getColumns(),
-            columns_list);
+            statistics_columns_to_recalc);
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)
@@ -385,10 +388,21 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 Names MergeTreeDataPartWriterOnDisk::getStatsColumns() const
 {
+    /*std::unordered_set<String> written_column_names;
+    for (const auto& column_and_type : columns_list)
+        written_column_names.insert(column_and_type.name);
+
     std::unordered_set<String> stats_column_names_set;
     for (const auto & stat : metadata_snapshot->getStatistics())
-        std::copy(std::cbegin(stat.column_names), std::cend(stat.column_names),
-                  std::inserter(stats_column_names_set, std::end(stats_column_names_set)));
+        std::copy_if(std::cbegin(stat.column_names), std::cend(stat.column_names),
+                  std::inserter(stats_column_names_set, std::end(stats_column_names_set)),
+                  [&written_column_names] (const String& column_name) {
+                      return written_column_names.find(column_name) != std::end(written_column_names);
+                  });*/
+    std::unordered_set<String> stats_column_names_set;
+    for (const auto & statistics_column_to_recalc : statistics_columns_to_recalc) {
+        stats_column_names_set.insert(statistics_column_to_recalc.name);
+    }
     return Names(std::begin(stats_column_names_set), std::end(stats_column_names_set));
 }
 

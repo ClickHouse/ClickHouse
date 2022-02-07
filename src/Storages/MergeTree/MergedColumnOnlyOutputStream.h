@@ -19,6 +19,7 @@ public:
         const Block & header_,
         CompressionCodecPtr default_codec_,
         const MergeTreeIndices & indices_to_recalc_,
+        const NamesAndTypesList & statistics_columns_,
         WrittenOffsetColumns * offset_columns_ = nullptr,
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);

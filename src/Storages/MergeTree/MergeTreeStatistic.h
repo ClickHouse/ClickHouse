@@ -97,6 +97,9 @@ public:
         const std::vector<StatisticDescription> & stats,
         const ColumnsDescription & columns) const;
 
+    // Creates collectors for available pairs (stat, column).
+    // Statistics on different columns are computed independently,
+    // so collector can calculate statistics only on subset of columns provided in columns_for_collection.
     IMergeTreeDistributionStatisticCollectorPtrs getDistributionStatisticCollectors(
         const std::vector<StatisticDescription> & stats,
         const ColumnsDescription & columns,
