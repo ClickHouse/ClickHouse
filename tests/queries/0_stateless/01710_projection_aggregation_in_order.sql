@@ -11,7 +11,7 @@ CREATE TABLE normal
             ts,
             key,
             value
-        ORDER BY (ts, key)
+        ORDER BY ts, key
     )
 )
 ENGINE = MergeTree
@@ -23,7 +23,7 @@ INSERT INTO normal SELECT
     number
 FROM numbers(100000);
 
-SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=1, force_optimize_projection = 1;
+SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=1, force_optimize_projection=1;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
@@ -41,7 +41,7 @@ CREATE TABLE agg
             ts,
             key,
             sum(value)
-        GROUP BY (ts, key)
+        GROUP BY ts, key
     )
 )
 ENGINE = MergeTree
