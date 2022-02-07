@@ -113,7 +113,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// need to skip some bytes in decompressed data (seek happened before readBig call).
         if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
-
             decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
