@@ -13,7 +13,7 @@ insert into ttl values (toDateTime('2100-10-10 00:00:00'), 3);
 insert into ttl values (toDateTime('2100-10-10 00:00:00'), 4);
 optimize table ttl partition 10 final;
 
-select * from ttl order by d;
+select * from ttl order by d, a;
 
 alter table ttl modify ttl a; -- { serverError 450 }
 
