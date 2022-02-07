@@ -717,6 +717,8 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
     std::vector<String> getAllRegisteredNames() const override;
+
+    void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
 };
 
 /*
