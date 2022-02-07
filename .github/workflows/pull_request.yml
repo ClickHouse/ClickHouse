@@ -111,6 +111,7 @@ jobs:
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -118,6 +119,8 @@ jobs:
           TEMP_PATH=${{ runner.temp }}/style_check
           EOF
       - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
         uses: actions/download-artifact@v2
         with:
           name: changed_images
