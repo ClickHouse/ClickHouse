@@ -22,6 +22,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Formats/MsgPackExtensionTypes.h>
+
 namespace DB
 {
 
@@ -197,7 +199,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                     writeBinaryBigEndian(value.toUnderType().items[0], buf);
                     writeBinaryBigEndian(value.toUnderType().items[1], buf);
                     StringRef uuid_ext = buf.stringRef();
-                    packer.pack_ext(16, 0x02);
+                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUID));
                     packer.pack_ext_body(uuid_ext.data, uuid_ext.size);
                     return;
                 }

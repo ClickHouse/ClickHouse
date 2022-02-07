@@ -17,11 +17,6 @@ namespace DB
 
 class ReadBuffer;
 
-enum class MsgPackExtensionTypes
-{
-    UUID = 0x02,
-};
-
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
@@ -61,7 +56,7 @@ private:
     std::stack<Info> info_stack;
 };
 
-class MsgPackRowInputFormat final : public IRowInputFormat
+class MsgPackRowInputFormat : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
