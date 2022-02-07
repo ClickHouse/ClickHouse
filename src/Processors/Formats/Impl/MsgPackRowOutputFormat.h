@@ -15,7 +15,7 @@
 namespace DB
 {
 
-class MsgPackRowOutputFormat : public IRowOutputFormat
+class MsgPackRowOutputFormat final : public IRowOutputFormat
 {
 public:
     MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_);
