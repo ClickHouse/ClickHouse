@@ -262,9 +262,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
 
-    ScheduleFunc schedule = [pool = &getThreadPoolWriter()](auto callback)
+    ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
     {
-        pool->scheduleOrThrow([callback = std::move(callback), thread_group = CurrentThread::getGroup()]()
+        pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
         {
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
