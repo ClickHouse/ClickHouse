@@ -18,7 +18,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat : public IRowInputFormat
+class JSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(

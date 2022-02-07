@@ -17,7 +17,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferCreator read_buffer_creator, ContextPtr context)
+ColumnsDescription readSchemaFromFormat(
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    ReadBufferCreator read_buffer_creator,
+    ContextPtr context,
+    std::unique_ptr<ReadBuffer> & buf_out)
 {
     NamesAndTypesList names_and_types;
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
@@ -34,11 +39,11 @@ ColumnsDescription readSchemaFromFormat(const String & format_name, const std::o
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
     {
-        auto read_buf = read_buffer_creator();
-        if (read_buf->eof())
+        buf_out = read_buffer_creator();
+        if (buf_out->eof())
             throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file, file is empty", format_name);
 
-        auto schema_reader = FormatFactory::instance().getSchemaReader(format_name, *read_buf, context, format_settings);
+        auto schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf_out, context, format_settings);
         try
         {
             names_and_types = schema_reader->readSchema();
@@ -52,6 +57,12 @@ ColumnsDescription readSchemaFromFormat(const String & format_name, const std::o
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference", format_name);
 
     return ColumnsDescription(names_and_types);
+}
+
+ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferCreator read_buffer_creator, ContextPtr context)
+{
+    std::unique_ptr<ReadBuffer> buf_out;
+    return readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, buf_out);
 }
 
 DataTypePtr generalizeDataType(DataTypePtr type)

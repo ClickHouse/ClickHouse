@@ -26,7 +26,7 @@ struct FormatSettings;
   * SELECT * from table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowOutputFormat : public IRowOutputFormat
+class ProtobufRowOutputFormat final : public IRowOutputFormat
 {
 public:
     ProtobufRowOutputFormat(
