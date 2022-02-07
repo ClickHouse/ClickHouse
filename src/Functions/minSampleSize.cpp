@@ -44,7 +44,7 @@ namespace DB
         {
             DataTypes types
             {
-                std::make_shared<DataTypeNumber<UInt64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
                 std::make_shared<DataTypeNumber<Float64>>(),
                 std::make_shared<DataTypeNumber<Float64>>(),
             };
@@ -64,7 +64,7 @@ namespace DB
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            for (auto arg : arguments)
+            for (const auto & arg : arguments)
             {
                 if (!isFloat(arg))
                 {
@@ -104,7 +104,7 @@ namespace DB
             const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
             const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[4].column.get());
 
-            auto res_min_sample_size = ColumnUInt64::create();
+            auto res_min_sample_size = ColumnFloat64::create();
             auto & data_min_sample_size = res_min_sample_size->getData();
             data_min_sample_size.reserve(input_rows_count);
 
@@ -122,7 +122,6 @@ namespace DB
                 Float64 baseline = col_baseline->getFloat64(row_num);
                 /// Standard deviation of conrol-metric
                 Float64 sigma = col_sigma->getFloat64(row_num);
-                printf("\n\nbaseline: %f, sigma: %f\n\n", baseline, sigma);
                 /// Minimal Detectable Effect
                 Float64 mde = col_mde->getFloat64(row_num);
                 /// Sufficient statistical power to detect a treatment effect
@@ -132,7 +131,7 @@ namespace DB
 
                 if (!std::isfinite(baseline) || !std::isfinite(sigma) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
                 {
-                    data_min_sample_size.emplace_back(0);
+                    data_min_sample_size.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     data_detect_lower.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     data_detect_upper.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     continue;
@@ -144,7 +143,7 @@ namespace DB
                 normal_distribution<> nd(0.0, 1.0);
                 Float64 min_sample_size = 2 * (std::pow(sigma, 2)) * std::pow(quantile(nd, 1.0 - alpha / 2) + quantile(nd, power), 2) / std::pow(delta, 2);
 
-                data_min_sample_size.emplace_back(static_cast<UInt64>(min_sample_size));
+                data_min_sample_size.emplace_back(min_sample_size);
                 data_detect_lower.emplace_back(baseline - delta);
                 data_detect_upper.emplace_back(baseline + delta);
             }
@@ -166,7 +165,7 @@ namespace DB
             const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[2].column.get());
             const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
 
-            auto res_min_sample_size = ColumnUInt64::create();
+            auto res_min_sample_size = ColumnFloat64::create();
             auto & data_min_sample_size = res_min_sample_size->getData();
             data_min_sample_size.reserve(input_rows_count);
 
@@ -191,7 +190,7 @@ namespace DB
 
                 if (!std::isfinite(p1) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
                 {
-                    data_min_sample_size.emplace_back(0);
+                    data_min_sample_size.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     data_detect_lower.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     data_detect_upper.emplace_back(std::numeric_limits<Float64>::quiet_NaN());
                     continue;
@@ -209,7 +208,7 @@ namespace DB
                     + quantile(nd, power) * std::sqrt(p1 * q1 + p2 * q2), 2
                 ) / std::pow(mde, 2);
 
-                data_min_sample_size.emplace_back(static_cast<UInt64>(min_sample_size));
+                data_min_sample_size.emplace_back(min_sample_size);
                 data_detect_lower.emplace_back(p1 - mde);
                 data_detect_upper.emplace_back(p1 + mde);
             }
