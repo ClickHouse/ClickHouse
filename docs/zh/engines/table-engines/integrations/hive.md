@@ -5,7 +5,7 @@ toc_title: Hive
 
 # Hive {#hive}
 
-Hive引擎允许对HDFS Hive表执行SELECT查询。目前它支持如下输入格式:
+Hive引擎允许对HDFS Hive表执行 `SELECT` 查询。目前它支持如下输入格式:
 
 -文本:只支持简单的标量列类型，除了 `Binary`
 
