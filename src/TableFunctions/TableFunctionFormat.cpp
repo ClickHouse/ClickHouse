@@ -60,34 +60,27 @@ ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr conte
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const
 {
-    Block result;
+    Block block;
     for (const auto & name_and_type : columns.getAllPhysical())
-        result.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
+        block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
-    auto input_format = context->getInputFormat(format, *read_buf, result, context->getSettingsRef().max_block_size);
+    auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
-    reader->pull(result);
 
-    /// In case when data contains more then 1 block we read all blocks
-    /// and combine them all to one big block (this is considered a rare case).
-    Block new_block;
-    while (reader->pull(new_block))
-    {
-        for (size_t i = 0; i != result.columns(); ++i)
-        {
-            auto & result_column = result.getByPosition(i);
-            const auto & new_column = new_block.getByPosition(i);
-            auto mutable_column = IColumn::mutate(result_column.column);
-            mutable_column->insertManyFrom(*new_column.column, 0, new_column.column->size());
-            result_column.column = std::move(mutable_column);
-        }
-    }
+    std::vector<Block> blocks;
+    while (reader->pull(block))
+        blocks.push_back(std::move(block));
 
-    return result;
+    if (blocks.size() == 1)
+        return blocks[0];
+
+    /// In case when data contains more then 1 block we combine
+    /// them all to one big block (this is considered a rare case).
+    return concatenateBlocks(blocks);
 }
 
 StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
