@@ -95,6 +95,12 @@ const char * IntervalKind::toDateDiffUnit() const
 {
     switch (kind)
     {
+        case IntervalKind::Nanosecond:
+            return "nanosecond";
+        case IntervalKind::Microsecond:
+            return "microsecond";
+        case IntervalKind::Millisecond:
+            return "millisecond";
         case IntervalKind::Second:
             return "second";
         case IntervalKind::Minute:

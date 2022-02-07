@@ -37,6 +37,84 @@ namespace ErrorCodes
 ///  - 'AddSecondsImpl::execute(UInt32, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(DateTime, ...) -> DateTime'
 ///  - 'AddSecondsImpl::execute(UInt16, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(Date, ...) -> DateTime'
 
+struct AddNanosecondsImpl
+{
+    static constexpr auto name = "addNanoseconds";
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t.whole, t.fractional + delta};
+    }
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t, delta};
+    }
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+    }
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(DayNum(d)) + delta;
+    }
+};
+
+struct AddMicrosecondsImpl
+{
+    static constexpr auto name = "addMicroseconds";
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t.whole, t.fractional + delta};
+    }
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t, delta};
+    }
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+    }
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(DayNum(d)) + delta;
+    }
+};
+
+struct AddMillisecondsImpl
+{
+    static constexpr auto name = "addMilliseconds";
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t.whole, t.fractional + delta};
+    }
+
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    {
+        return {t, delta};
+    }
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        // use default datetime64 scale
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+    }
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(DayNum(d)) + delta;
+    }
+};
+
 struct AddSecondsImpl
 {
     static constexpr auto name = "addSeconds";
