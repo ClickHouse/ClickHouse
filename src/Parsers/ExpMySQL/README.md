@@ -1,0 +1,1 @@
+-Werror ruins autogenereated files

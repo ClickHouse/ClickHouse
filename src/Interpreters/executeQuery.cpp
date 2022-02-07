@@ -65,6 +65,8 @@
 
 #include <random>
 
+// MOO
+#include <Parsers/ExpMySQL/Exp.h>
 
 namespace ProfileEvents
 {
@@ -390,6 +392,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    
+    LOG_INFO(&Poco::Logger::get("executeQuery"), "executeQueryImpl: {}", begin);
+    Exp cls;
+    std::string testAst = cls.Test(begin);
+    LOG_INFO(&Poco::Logger::get("executeQuery"), "TEST {}", testAst); 
     const auto current_time = std::chrono::system_clock::now();
 
     auto & client_info = context->getClientInfo();
