@@ -246,22 +246,11 @@ protected:
             String host_with_port;
             in >> host_with_port;
             DB::DNSResolver & resolver = DB::DNSResolver::instance();
-            try
-            {
-                Poco::Net::SocketAddress address = resolver.resolveAddress(host_with_port);
-                hostPort.host = address.host().toString();
-                hostPort.port = address.port();
-            }
-            catch (const Exception & e)
-            {
-                if (e.message() == "Missing port number")
-                {
-                    hostPort.host = resolver.resolveHost(host_with_port).toString();
-                    hostPort.port = std::nullopt;
-                    return in;
-                }
-                throw;
-            }
+            std::pair<Poco::Net::IPAddress, std::optional<UInt16>>
+                host_and_port = resolver.resolveHostOrAddress(host_with_port);
+            hostPort.host = host_and_port.first.toString();
+            hostPort.port = host_and_port.second;
+
             return in;
         }
     };
