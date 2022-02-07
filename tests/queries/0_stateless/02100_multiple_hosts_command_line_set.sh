@@ -33,3 +33,19 @@ error="$(${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}" --port "${not_alive_po
 ${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}:${not_alive_port}" "${CLICKHOUSE_HOST}" --query "SELECT 1";
 ${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}" --port "${not_alive_port}" --query "SELECT 1";
 
+ipv6_host_without_brackets="2001:3984:3989::1:1000"
+exception_msg="Code: 210. DB::NetException: Connection refused (${ipv6_host_without_brackets}). (NETWORK_ERROR)
+"
+error="$(${CLICKHOUSE_CLIENT} --host "${ipv6_host_without_brackets}" --query "SELECT 1" 2>&1 > /dev/null)"
+[ "${error}" == "${exception_msg}" ]; echo "$?"
+
+ipv6_host_with_brackets="[2001:3984:3989::1:1000]"
+exception_msg="Code: 210. DB::NetException: Connection refused (${ipv6_host_with_brackets}). (NETWORK_ERROR)
+"
+error="$(${CLICKHOUSE_CLIENT} --host "${ipv6_host_with_brackets}" --query "SELECT 1" 2>&1 > /dev/null)"
+[ "${error}" == "${exception_msg}" ]; echo "$?"
+
+exception_msg="Code: 210. DB::NetException: Connection refused (${ipv6_host_with_brackets}:${not_alive_port}). (NETWORK_ERROR)
+"
+error="$(${CLICKHOUSE_CLIENT} --host "${ipv6_host_with_brackets}:${not_alive_port}" --query "SELECT 1" 2>&1 > /dev/null)"
+[ "${error}" == "${exception_msg}" ]; echo "$?"
