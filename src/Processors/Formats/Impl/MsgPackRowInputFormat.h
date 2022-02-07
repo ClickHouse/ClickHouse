@@ -17,6 +17,11 @@ namespace DB
 
 class ReadBuffer;
 
+enum class MsgPackExtensionTypes
+{
+    UUID = 0x02,
+};
+
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
