@@ -11,7 +11,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-if(MAKE_STATIC_LIBRARIES)
+if(USE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
     set(MAX_LINKER_MEMORY 2500)
@@ -193,7 +193,7 @@ add_subdirectory(Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
-    if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
         add_headers_and_sources(dbms ${common_path})
     else ()
         list (APPEND all_modules ${name})
@@ -254,7 +254,7 @@ endif()
 
 set (DBMS_COMMON_LIBRARIES)
 
-if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PRIVATE ch_contrib::libdivide ${DBMS_COMMON_LIBRARIES})
     if (TARGET ch_contrib::jemalloc)
@@ -341,6 +341,8 @@ target_link_libraries(clickhouse_common_io
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
+
+dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
@@ -473,11 +475,6 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
-if (USE_CASSANDRA)
-    dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
-endif()
-
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
@@ -504,6 +501,7 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::bzip2)
@@ -556,3 +554,4 @@ if (ENABLE_TESTS)
 
     add_check(unit_tests_dbms)
 endif ()
+

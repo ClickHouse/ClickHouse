@@ -1,3 +1,4 @@
+-- { echo }
 with anySimpleState(number) as c select toTypeName(c), c from numbers(1);
 with anyLastSimpleState(number) as c select toTypeName(c), c from numbers(1);
 with minSimpleState(number) as c select toTypeName(c), c from numbers(1);

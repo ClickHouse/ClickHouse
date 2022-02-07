@@ -9,8 +9,20 @@ on: # yamllint disable-line rule:truthy
     branches:
       - 'master'
 jobs:
+  PythonUnitTests:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Python unit tests
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
-    runs-on: [self-hosted, func-tester-aarch64]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Clear repository
         run: |
@@ -44,7 +56,7 @@ jobs:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
   DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
+    needs: [DockerHubPushAmd64, DockerHubPushAarch64, PythonUnitTests]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
@@ -74,6 +86,7 @@ jobs:
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -81,6 +94,8 @@ jobs:
           TEMP_PATH=${{ runner.temp }}/style_check
           EOF
       - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
         uses: actions/download-artifact@v2
         with:
           name: changed_images
