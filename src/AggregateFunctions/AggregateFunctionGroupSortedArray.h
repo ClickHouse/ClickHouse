@@ -180,7 +180,7 @@ public:
         if constexpr (use_column_b)
         {
             forFirstRows<TColumnB, is_plain_b>(
-                batch_size, columns, 1, arena, if_argument_pos, [columns, &arena, &data](size_t row, const TColumnB * values) 
+                batch_size, columns, 1, arena, if_argument_pos, [columns, &arena, &data](size_t row, const TColumnB * values)
                 {
                     data.add(readItem<TColumnA, is_plain_a>(columns[0], arena, row), values[row]);
                 });
@@ -188,9 +188,9 @@ public:
         else
         {
             forFirstRows<TColumnA, is_plain_a>(
-                batch_size, columns, 0, arena, if_argument_pos, [&data](size_t row, const TColumnA * values) 
-                { 
-                    data.add(values[row]); 
+                batch_size, columns, 0, arena, if_argument_pos, [&data](size_t row, const TColumnA * values)
+                {
+                    data.add(values[row]);
                 });
         }
     }
