@@ -55,7 +55,7 @@ PARTITION BY expr
 ```
 
 
-- enable: true:开启后，ClickHouse将为HDFS (远程文件系统)维护本地缓存。
+- enable: 开启后，ClickHouse将为HDFS (远程文件系统)维护本地缓存。
 - root_dir: 必需的。用于存储远程文件系统的本地缓存文件的根目录。
 - limit_size: 必需的。本地缓存文件的最大大小(单位为字节)。
 - bytes_read_before_flush: 从远程文件系统下载文件时，刷新到本地文件系统前的控制字节数。缺省值为1MB。
