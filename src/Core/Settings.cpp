@@ -89,16 +89,6 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
     }
 }
 
-void Settings::addFormatOptions(boost::program_options::options_description & options)
-{
-    for (const auto & field : all())
-    {
-        const auto & name = field.getName();
-        if (formatSettingNames.count(name))
-            addProgramOption(options, field);
-    }
-}
-
 void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
 {
     const std::string_view name = field.getName();
