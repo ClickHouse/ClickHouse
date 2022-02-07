@@ -32,17 +32,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct ReplicatedMergeTreeSink::DelayedChunk
-{
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        UInt64 elapsed_ns;
-        String block_id;
-    };
-
-    std::vector<Partition> partitions;
-};
 
 ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     StorageReplicatedMergeTree & storage_,
@@ -70,8 +59,6 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     if (quorum == 1)
         quorum = 0;
 }
-
-ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink() = default;
 
 
 /// Allow to verify that the session in ZooKeeper is still alive.
@@ -139,6 +126,8 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
+    last_block_is_duplicate = false;
+
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
@@ -151,7 +140,6 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         checkQuorumPrecondition(zookeeper);
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
-    std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition> partitions;
     String block_dedup_token;
 
     for (auto & current_block : part_blocks)
@@ -160,11 +148,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
-        if (!temp_part.part)
+        if (!part)
             continue;
 
         String block_id;
@@ -182,7 +170,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
                 block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
                 ++chunk_dedup_seqnum;
             }
-            block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
+            block_id = part->getZeroLevelPartBlockID(block_dedup_token);
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
@@ -190,63 +178,27 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
-        UInt64 elapsed_ns = watch.elapsed();
-
-        partitions.emplace_back(ReplicatedMergeTreeSink::DelayedChunk::Partition{
-            .temp_part = std::move(temp_part),
-            .elapsed_ns = elapsed_ns,
-            .block_id = std::move(block_id)
-        });
-    }
-
-    finishDelayedChunk(zookeeper);
-    delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
-    delayed_chunk->partitions = std::move(partitions);
-
-    /// If deduplicated data should not be inserted into MV, we need to set proper
-    /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
-    /// Othervide we can delay commit.
-    /// TODO: we can also delay commit if there is no MVs.
-    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        finishDelayedChunk(zookeeper);
-}
-
-void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper)
-{
-    if (!delayed_chunk)
-        return;
-
-    last_block_is_duplicate = false;
-
-    for (auto & partition : delayed_chunk->partitions)
-    {
-        partition.temp_part.finalize();
-
-        auto & part = partition.temp_part.part;
-
         try
         {
-            commitPart(zookeeper, part, partition.block_id);
-
-            last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
+            commitPart(zookeeper, part, block_id);
 
             /// Set a special error code if the block is duplicate
-            int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
+            int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
-
-    delayed_chunk.reset();
 }
 
 
 void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
+    last_block_is_duplicate = false;
+
     /// NOTE: No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
@@ -404,6 +356,7 @@ void ReplicatedMergeTreeSink::commitPart(
             if (storage.getActiveContainingPart(existing_part_name))
             {
                 part->is_duplicate = true;
+                last_block_is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                 if (quorum)
                 {
@@ -578,12 +531,6 @@ void ReplicatedMergeTreeSink::onStart()
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 }
 
-void ReplicatedMergeTreeSink::onFinish()
-{
-    auto zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(zookeeper);
-    finishDelayedChunk(zookeeper);
-}
 
 void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,

@@ -25,11 +25,8 @@ public:
 
     Block getHeader() const { return header; }
     void write(const Block & block) override;
-
     MergeTreeData::DataPart::Checksums
-    fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
-
-    void finish(bool sync);
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums, bool sync = false);
 
 private:
     Block header;

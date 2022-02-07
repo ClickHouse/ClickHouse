@@ -51,66 +51,7 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
     writeImpl(block, permutation);
 }
 
-struct MergedBlockOutputStream::Finalizer::Impl
-{
-    IMergeTreeDataPartWriter & writer;
-    MergeTreeData::MutableDataPartPtr part;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    bool sync;
-
-    Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, bool sync_)
-        : writer(writer_), part(std::move(part_)), sync(sync_) {}
-
-    void finish();
-};
-
-void MergedBlockOutputStream::Finalizer::finish()
-{
-    std::unique_ptr<Impl> to_finish = std::move(impl);
-    if (to_finish)
-        to_finish->finish();
-}
-
-void MergedBlockOutputStream::Finalizer::Impl::finish()
-{
-    writer.finish(sync);
-
-    for (auto & file : written_files)
-    {
-        file->finalize();
-        if (sync)
-            file->sync();
-    }
-
-    part->storage.lockSharedData(*part);
-}
-
-MergedBlockOutputStream::Finalizer::~Finalizer()
-{
-    try
-    {
-        finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("MergedBlockOutputStream");
-    }
-}
-
-MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) = default;
-MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) = default;
-MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
-
-void MergedBlockOutputStream::finalizePart(
-        MergeTreeData::MutableDataPartPtr & new_part,
-        bool sync,
-        const NamesAndTypesList * total_columns_list,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums)
-{
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
-}
-
-MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
+void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list,
@@ -123,9 +64,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->fillChecksums(checksums);
-
-    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
+    writer->finish(checksums, sync);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -145,9 +84,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setSerializationInfos(serialization_infos);
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, sync);
     if (new_part->isStoredOnDisk())
-       finalizer->written_files = finalizePartOnDisk(new_part, checksums);
+        finalizePartOnDisk(new_part, checksums, sync);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -159,15 +97,15 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
-
-    return Finalizer(std::move(finalizer));
+    new_part->storage.lockSharedData(*new_part);
 }
 
-MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
+void MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeData::DataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & checksums)
+    MergeTreeData::DataPart::Checksums & checksums,
+    bool sync)
 {
-    WrittenFiles written_files;
+
     if (new_part->isProjectionPart())
     {
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
@@ -178,8 +116,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             count_out_hashing.next();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            count_out->preFinalize();
-            written_files.emplace_back(std::move(count_out));
         }
     }
     else
@@ -191,21 +127,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             writeUUIDText(new_part->uuid, out_hashing);
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-            out->preFinalize();
-            written_files.emplace_back(std::move(out));
+            out->finalize();
+            if (sync)
+                out->sync();
         }
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(storage, volume->getDisk(), part_path, checksums))
-                written_files.emplace_back(std::move(file));
-
+            new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
             if (new_part->minmax_idx->initialized)
-            {
-                auto files = new_part->minmax_idx->store(storage, volume->getDisk(), part_path, checksums);
-                for (auto & file : files)
-                    written_files.emplace_back(std::move(file));
-            }
+                new_part->minmax_idx->store(storage, volume->getDisk(), part_path, checksums);
             else if (rows_count)
                 throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                     + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -218,8 +149,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             count_out_hashing.next();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            count_out->preFinalize();
-            written_files.emplace_back(std::move(count_out));
+            count_out->finalize();
+            if (sync)
+                count_out->sync();
         }
     }
 
@@ -231,8 +163,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+        out->finalize();
+        if (sync)
+            out->sync();
     }
 
     if (!new_part->getSerializationInfos().empty())
@@ -242,24 +175,25 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->getSerializationInfos().writeJSON(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+        out->finalize();
+        if (sync)
+            out->sync();
     }
 
     {
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
         new_part->getColumns().writeText(*out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+        out->finalize();
+        if (sync)
+            out->sync();
     }
 
     if (default_codec != nullptr)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+        out->finalize();
     }
     else
     {
@@ -271,11 +205,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write file with checksums.
         auto out = volume->getDisk()->writeFile(fs::path(part_path) / "checksums.txt", 4096);
         checksums.write(*out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+        out->finalize();
+        if (sync)
+            out->sync();
     }
-
-    return written_files;
 }
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)

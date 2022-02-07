@@ -14,10 +14,6 @@ WriteBufferFromFileDecorator::WriteBufferFromFileDecorator(std::unique_ptr<Write
 void WriteBufferFromFileDecorator::finalizeImpl()
 {
     next();
-
-    if (!is_prefinalized)
-        WriteBufferFromFileDecorator::preFinalize();
-
     impl->finalize();
 }
 

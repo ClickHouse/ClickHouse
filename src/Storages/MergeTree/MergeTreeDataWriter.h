@@ -10,7 +10,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 
 namespace DB
@@ -47,28 +46,11 @@ public:
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
 
-    /// This structure contains not completely written temporary part.
-    /// Some writes may happen asynchronously, e.g. for blob storages.
-    /// You should call finalize() to wait until all data is written.
-    struct TemporaryPart
-    {
-        MergeTreeData::MutableDataPartPtr part;
-
-        struct Stream
-        {
-            std::unique_ptr<MergedBlockOutputStream> stream;
-            MergedBlockOutputStream::Finalizer finalizer;
-        };
-
-        std::vector<Stream> streams;
-
-        void finalize();
-    };
-
-    TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    MergeTreeData::MutableDataPartPtr
+    writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
     /// For insertion.
-    static TemporaryPart writeProjectionPart(
+    static MergeTreeData::MutableDataPartPtr writeProjectionPart(
         MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -76,7 +58,7 @@ public:
         const IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
-    static TemporaryPart writeTempProjectionPart(
+    static MergeTreeData::MutableDataPartPtr writeTempProjectionPart(
         MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -85,7 +67,7 @@ public:
         size_t block_num);
 
     /// For WriteAheadLog AddPart.
-    static TemporaryPart writeInMemoryProjectionPart(
+    static MergeTreeData::MutableDataPartPtr writeInMemoryProjectionPart(
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -100,7 +82,7 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
-    static TemporaryPart writeProjectionPartImpl(
+    static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
         const String & part_name,
         MergeTreeDataPartType part_type,
         const String & relative_path,

@@ -71,10 +71,6 @@ public:
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
         HashingWriteBuffer marks;
 
-        bool is_prefinalized = false;
-
-        void preFinalize();
-
         void finalize();
 
         void sync() const;
@@ -111,11 +107,9 @@ protected:
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
-    void finishPrimaryIndexSerialization(bool sync);
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
-    void finishSkipIndicesSerialization(bool sync);
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }

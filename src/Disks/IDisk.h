@@ -197,32 +197,6 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
-    struct RemoveRequest
-    {
-        String path;
-        bool if_exists = false;
-
-        explicit RemoveRequest(String path_, bool if_exists_ = false)
-            : path(std::move(path_)), if_exists(std::move(if_exists_))
-        {
-        }
-    };
-
-    using RemoveBatchRequest = std::vector<RemoveRequest>;
-
-    /// Batch request to remove multiple files.
-    /// May be much faster for blob storage.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
-    {
-        for (const auto & file : files)
-        {
-            if (file.if_exists)
-                removeSharedFileIfExists(file.path, keep_in_remote_fs);
-            else
-                removeSharedFile(file.path, keep_in_remote_fs);
-        }
-    }
-
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
