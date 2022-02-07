@@ -236,12 +236,9 @@ static void insertNull(IColumn & column, DataTypePtr type)
 static void insertUUID(IColumn & column, DataTypePtr /*type*/, const char * value, size_t size)
 {
     ReadBufferFromMemory buf(value, size);
-    UInt64 first, second;
-    readBinaryBigEndian(first, buf);
-    readBinaryBigEndian(second, buf);
     UUID uuid;
-    uuid.toUnderType().items[0] = first;
-    uuid.toUnderType().items[1] = second;
+    readBinaryBigEndian(uuid.toUnderType().items[0], buf);
+    readBinaryBigEndian(uuid.toUnderType().items[1], buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
@@ -353,8 +350,8 @@ bool MsgPackVisitor::visit_nil()
 
 bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
 {
-    uint8_t type = *value;
-    if (*value == 0x02)
+    int8_t type = *value;
+    if (*value == int8_t(MsgPackExtensionTypes::UUID))
     {
         insertUUID(info_stack.top().column, info_stack.top().type, value + 1, size - 1);
         return true;
@@ -497,7 +494,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
         case msgpack::type::object_type::EXT:
         {
             msgpack::object_ext object_ext = object.via.ext;
-            if (object_ext.type() == 0x02)
+            if (object_ext.type() == int8_t(MsgPackExtensionTypes::UUID))
                 return std::make_shared<DataTypeUUID>();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {} is not supported", object_ext.type());
         }
