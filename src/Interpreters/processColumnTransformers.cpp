@@ -19,7 +19,7 @@ ASTPtr processColumnTransformers(
         ASTPtr query_columns)
 {
     const auto & columns = metadata_snapshot->getColumns();
-    auto names_and_types = columns.getOrdinary();
+    auto names_and_types = columns.getInsertable();
     removeDuplicateColumns(names_and_types);
 
     TablesWithColumns tables_with_columns;
