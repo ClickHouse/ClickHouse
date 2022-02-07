@@ -58,7 +58,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
     ;
 
     Settings cmd_settings;
-    cmd_settings.addFormatOptions(desc);
+    for (const auto & field : cmd_settings.all())
+    {
+        if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
+            cmd_settings.addProgramOption(desc, field);
+    }
 
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
