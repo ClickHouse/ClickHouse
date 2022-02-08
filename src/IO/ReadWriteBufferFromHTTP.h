@@ -547,7 +547,7 @@ namespace detail
                 impl.reset();
             }
 
-            pos = working_buffer.end();
+            resetWorkingBuffer();
             read_range.begin = offset_;
             read_range.end = std::nullopt;
             offset_from_begin_pos = 0;
