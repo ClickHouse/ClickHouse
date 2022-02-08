@@ -2,17 +2,21 @@
 
 #include <TableFunctions/ITableFunction.h>
 
+
 namespace DB
 {
-/* values(structure, values...) - creates a temporary storage filling columns with values
- * values is case-insensitive table function
+
+class Context;
+
+/* format(format_name, data) - ...
  */
-class TableFunctionValues : public ITableFunction
+class TableFunctionFormat : public ITableFunction
 {
 public:
-    static constexpr auto name = "values";
+    static constexpr auto name = "format";
     std::string getName() const override { return name; }
-    bool hasStaticStructure() const override { return true; }
+    bool hasStaticStructure() const override { return false; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Values"; }
@@ -20,11 +24,10 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    static DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
+    Block parseData(ColumnsDescription columns, ContextPtr context) const;
 
-    ColumnsDescription structure;
-    bool has_structure_in_arguments;
+    String format;
+    String data;
 };
-
 
 }
