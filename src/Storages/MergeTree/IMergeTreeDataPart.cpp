@@ -1187,7 +1187,7 @@ std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
     if (force_keep_shared_data)
         return true;
 
-    return !storage.unlockSharedData(*this, is_temp ? relative_path : name);
+    return !storage.unlockSharedData(*this);
 }
 
 void IMergeTreeDataPart::remove() const
