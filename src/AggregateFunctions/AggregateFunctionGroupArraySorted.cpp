@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionGroupSortedArray.h>
+#include <AggregateFunctions/AggregateFunctionGroupArraySorted.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -27,51 +27,51 @@ namespace ErrorCodes
 namespace
 {
     template <typename T, bool expr_sorted, typename TColumnB, bool is_plain_b>
-    class AggregateFunctionGroupSortedArrayNumeric : public AggregateFunctionGroupSortedArray<T, false, expr_sorted, TColumnB, is_plain_b>
+    class AggregateFunctionGroupArraySortedNumeric : public AggregateFunctionGroupArraySorted<T, false, expr_sorted, TColumnB, is_plain_b>
     {
-        using AggregateFunctionGroupSortedArray<T, false, expr_sorted, TColumnB, is_plain_b>::AggregateFunctionGroupSortedArray;
+        using AggregateFunctionGroupArraySorted<T, false, expr_sorted, TColumnB, is_plain_b>::AggregateFunctionGroupArraySorted;
     };
 
     template <typename T, bool expr_sorted, typename TColumnB, bool is_plain_b>
-    class AggregateFunctionGroupSortedArrayFieldType
-        : public AggregateFunctionGroupSortedArray<typename T::FieldType, false, expr_sorted, TColumnB, is_plain_b>
+    class AggregateFunctionGroupArraySortedFieldType
+        : public AggregateFunctionGroupArraySorted<typename T::FieldType, false, expr_sorted, TColumnB, is_plain_b>
     {
-        using AggregateFunctionGroupSortedArray<typename T::FieldType, false, expr_sorted, TColumnB, is_plain_b>::
-            AggregateFunctionGroupSortedArray;
+        using AggregateFunctionGroupArraySorted<typename T::FieldType, false, expr_sorted, TColumnB, is_plain_b>::
+            AggregateFunctionGroupArraySorted;
         DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<T>()); }
     };
 
     template <bool expr_sorted = false, typename TColumnB = UInt64, bool is_plain_b = false>
     AggregateFunctionPtr
-    createAggregateFunctionGroupSortedArrayTyped(const DataTypes & argument_types, const Array & params, UInt64 threshold)
+    createAggregateFunctionGroupArraySortedTyped(const DataTypes & argument_types, const Array & params, UInt64 threshold)
     {
 #define DISPATCH(A, C, B) \
     if (which.idx == TypeIndex::A) \
         return AggregateFunctionPtr(new C<B, expr_sorted, TColumnB, is_plain_b>(threshold, argument_types, params));
-#define DISPATCH_NUMERIC(A) DISPATCH(A, AggregateFunctionGroupSortedArrayNumeric, A)
+#define DISPATCH_NUMERIC(A) DISPATCH(A, AggregateFunctionGroupArraySortedNumeric, A)
         WhichDataType which(argument_types[0]);
         FOR_NUMERIC_TYPES(DISPATCH_NUMERIC)
-        DISPATCH(Enum8, AggregateFunctionGroupSortedArrayNumeric, Int8)
-        DISPATCH(Enum16, AggregateFunctionGroupSortedArrayNumeric, Int16)
-        DISPATCH(Date, AggregateFunctionGroupSortedArrayFieldType, DataTypeDate)
-        DISPATCH(DateTime, AggregateFunctionGroupSortedArrayFieldType, DataTypeDateTime)
+        DISPATCH(Enum8, AggregateFunctionGroupArraySortedNumeric, Int8)
+        DISPATCH(Enum16, AggregateFunctionGroupArraySortedNumeric, Int16)
+        DISPATCH(Date, AggregateFunctionGroupArraySortedFieldType, DataTypeDate)
+        DISPATCH(DateTime, AggregateFunctionGroupArraySortedFieldType, DataTypeDateTime)
 #undef DISPATCH
 #undef DISPATCH_NUMERIC
 
         if (argument_types[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
-            return AggregateFunctionPtr(new AggregateFunctionGroupSortedArray<StringRef, true, expr_sorted, TColumnB, is_plain_b>(
+            return AggregateFunctionPtr(new AggregateFunctionGroupArraySorted<StringRef, true, expr_sorted, TColumnB, is_plain_b>(
                 threshold, argument_types, params));
         }
         else
         {
-            return AggregateFunctionPtr(new AggregateFunctionGroupSortedArray<StringRef, false, expr_sorted, TColumnB, is_plain_b>(
+            return AggregateFunctionPtr(new AggregateFunctionGroupArraySorted<StringRef, false, expr_sorted, TColumnB, is_plain_b>(
                 threshold, argument_types, params));
         }
     }
 
 
-    AggregateFunctionPtr createAggregateFunctionGroupSortedArray(
+    AggregateFunctionPtr createAggregateFunctionGroupArraySorted(
         const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
     {
         UInt64 threshold = GROUP_SORTED_ARRAY_DEFAULT_THRESHOLD;
@@ -101,7 +101,7 @@ namespace
             {
 #define DISPATCH2(A, B) \
     if (which.idx == TypeIndex::A) \
-        return createAggregateFunctionGroupSortedArrayTyped<true, B>(argument_types, params, threshold);
+        return createAggregateFunctionGroupArraySortedTyped<true, B>(argument_types, params, threshold);
 #define DISPATCH(A) DISPATCH2(A, A)
                 WhichDataType which(argument_types[1]);
                 FOR_NUMERIC_TYPES(DISPATCH)
@@ -113,16 +113,16 @@ namespace
             }
             else if (argument_types[1]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             {
-                return createAggregateFunctionGroupSortedArrayTyped<true, StringRef, true>(argument_types, params, threshold);
+                return createAggregateFunctionGroupArraySortedTyped<true, StringRef, true>(argument_types, params, threshold);
             }
             else
             {
-                return createAggregateFunctionGroupSortedArrayTyped<true, StringRef, false>(argument_types, params, threshold);
+                return createAggregateFunctionGroupArraySortedTyped<true, StringRef, false>(argument_types, params, threshold);
             }
         }
         else if (argument_types.size() == 1)
         {
-            return createAggregateFunctionGroupSortedArrayTyped<>(argument_types, params, threshold);
+            return createAggregateFunctionGroupArraySortedTyped<>(argument_types, params, threshold);
         }
         else
         {
@@ -132,9 +132,9 @@ namespace
     }
 }
 
-void registerAggregateFunctionGroupSortedArray(AggregateFunctionFactory & factory)
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("groupSortedArray", {createAggregateFunctionGroupSortedArray, properties});
+    factory.registerFunction("groupArraySorted", {createAggregateFunctionGroupArraySorted, properties});
 }
 }

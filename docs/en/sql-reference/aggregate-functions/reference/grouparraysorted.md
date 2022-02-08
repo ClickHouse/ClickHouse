@@ -2,12 +2,12 @@
 toc_priority: 108
 ---
 
-# groupSortedArray {#groupSortedArray}
+# groupArraySorted {#groupArraySorted}
 
 Returns an array with the first N items in ascending order.
 
 ``` sql
-groupSortedArray(N)(column)
+groupArraySorted(N)(column)
 ```
 
 **Arguments**
@@ -26,11 +26,11 @@ If the parameter is omitted, default value 10 is used.
 Gets the first 10 numbers:
 
 ``` sql
-SELECT groupSortedArray(10)(number) FROM numbers(100)
+SELECT groupArraySorted(10)(number) FROM numbers(100)
 ```
 
 ``` text
-┌─groupSortedArray(10)(number)─┐
+┌─groupArraySorted(10)(number)─┐
 │ [0,1,2,3,4,5,6,7,8,9]        │
 └──────────────────────────────┘
 ```
@@ -38,11 +38,11 @@ SELECT groupSortedArray(10)(number) FROM numbers(100)
 Or the last 10:
 
 ``` sql
-SELECT groupSortedArray(10)(number, -number) FROM numbers(100)
+SELECT groupArraySorted(10)(number, -number) FROM numbers(100)
 ```
 
 ``` text
-┌─groupSortedArray(10)(number, negate(number))─┐
+┌─groupArraySorted(10)(number, negate(number))─┐
 │ [99,98,97,96,95,94,93,92,91,90]              │
 └──────────────────────────────────────────────┘
 ```

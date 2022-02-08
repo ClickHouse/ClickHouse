@@ -3,7 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <AggregateFunctions/AggregateFunctionGroupSortedArrayData.h>
+#include <AggregateFunctions/AggregateFunctionGroupArraySortedData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
@@ -77,15 +77,15 @@ size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, 
 }
 
 template <typename TColumnA, bool is_plain_a, bool use_column_b, typename TColumnB, bool is_plain_b>
-class AggregateFunctionGroupSortedArray : public IAggregateFunctionDataHelper<
-                                              AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
-                                              AggregateFunctionGroupSortedArray<TColumnA, is_plain_a, use_column_b, TColumnB, is_plain_b>>
+class AggregateFunctionGroupArraySorted : public IAggregateFunctionDataHelper<
+                                              AggregateFunctionGroupArraySortedData<TColumnA, use_column_b, TColumnB>,
+                                              AggregateFunctionGroupArraySorted<TColumnA, is_plain_a, use_column_b, TColumnB, is_plain_b>>
 {
 protected:
-    using State = AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>;
+    using State = AggregateFunctionGroupArraySortedData<TColumnA, use_column_b, TColumnB>;
     using Base = IAggregateFunctionDataHelper<
-        AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
-        AggregateFunctionGroupSortedArray>;
+        AggregateFunctionGroupArraySortedData<TColumnA, use_column_b, TColumnB>,
+        AggregateFunctionGroupArraySorted>;
 
     UInt64 threshold;
     DataTypePtr & input_data_type;
@@ -94,10 +94,10 @@ protected:
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
-    AggregateFunctionGroupSortedArray(UInt64 threshold_, const DataTypes & argument_types_, const Array & params)
+    AggregateFunctionGroupArraySorted(UInt64 threshold_, const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<
-            AggregateFunctionGroupSortedArrayData<TColumnA, use_column_b, TColumnB>,
-            AggregateFunctionGroupSortedArray>(argument_types_, params)
+            AggregateFunctionGroupArraySortedData<TColumnA, use_column_b, TColumnB>,
+            AggregateFunctionGroupArraySorted>(argument_types_, params)
         , threshold(threshold_)
         , input_data_type(this->argument_types[0])
     {
@@ -109,7 +109,7 @@ public:
         this->data(place).threshold = threshold;
     }
 
-    String getName() const override { return "groupSortedArray"; }
+    String getName() const override { return "groupArraySorted"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(input_data_type); }
 

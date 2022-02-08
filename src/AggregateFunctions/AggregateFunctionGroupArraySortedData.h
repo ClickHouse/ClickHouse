@@ -52,19 +52,19 @@ static void readOneItem(ReadBuffer & buf, Arena * arena, StringRef & item)
 }
 
 template <typename Storage>
-struct AggregateFunctionGroupSortedArrayDataBase
+struct AggregateFunctionGroupArraySortedDataBase
 {
     typedef typename Storage::value_type ValueType;
-    AggregateFunctionGroupSortedArrayDataBase(UInt64 threshold_ = GROUP_SORTED_DEFAULT_THRESHOLD) : threshold(threshold_) { }
+    AggregateFunctionGroupArraySortedDataBase(UInt64 threshold_ = GROUP_SORTED_DEFAULT_THRESHOLD) : threshold(threshold_) { }
 
-    virtual ~AggregateFunctionGroupSortedArrayDataBase() { }
+    virtual ~AggregateFunctionGroupArraySortedDataBase() { }
     inline void narrowDown()
     {
         while (values.size() > threshold)
             values.erase(--values.end());
     }
 
-    void merge(const AggregateFunctionGroupSortedArrayDataBase & other)
+    void merge(const AggregateFunctionGroupArraySortedDataBase & other)
     {
         values.merge(Storage(other.values));
         narrowDown();
@@ -101,14 +101,14 @@ struct AggregateFunctionGroupSortedArrayDataBase
 };
 
 template <typename T, bool expr_sorted, typename TIndex>
-struct AggregateFunctionGroupSortedArrayData
+struct AggregateFunctionGroupArraySortedData
 {
 };
 
 template <typename T, typename TIndex>
-struct AggregateFunctionGroupSortedArrayData<T, true, TIndex> : public AggregateFunctionGroupSortedArrayDataBase<std::multimap<TIndex, T>>
+struct AggregateFunctionGroupArraySortedData<T, true, TIndex> : public AggregateFunctionGroupArraySortedDataBase<std::multimap<TIndex, T>>
 {
-    using Base = AggregateFunctionGroupSortedArrayDataBase<std::multimap<TIndex, T>>;
+    using Base = AggregateFunctionGroupArraySortedDataBase<std::multimap<TIndex, T>>;
     using Base::Base;
 
     void add(T item, TIndex weight)
@@ -137,9 +137,9 @@ struct AggregateFunctionGroupSortedArrayData<T, true, TIndex> : public Aggregate
 };
 
 template <typename T, typename TIndex>
-struct AggregateFunctionGroupSortedArrayData<T, false, TIndex> : public AggregateFunctionGroupSortedArrayDataBase<std::multiset<T>>
+struct AggregateFunctionGroupArraySortedData<T, false, TIndex> : public AggregateFunctionGroupArraySortedDataBase<std::multiset<T>>
 {
-    using Base = AggregateFunctionGroupSortedArrayDataBase<std::multiset<T>>;
+    using Base = AggregateFunctionGroupArraySortedDataBase<std::multiset<T>>;
     using Base::Base;
 
     void add(T item)
