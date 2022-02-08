@@ -1,33 +1,11 @@
 #pragma once
 
-#include <thread>
-#include <atomic>
-#include <memory>
-#include <vector>
-#include <condition_variable>
-#include <boost/noncopyable.hpp>
+#include <Common/SystemLogBase.h>
 
-#include <base/types.h>
-#include <Core/Defines.h>
-#include <Storages/IStorage_fwd.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST_fwd.h>
-#include <Common/ThreadPool.h>
-
-
-namespace Poco
-{
-class Logger;
-namespace Util
-{
-class AbstractConfiguration;
-}
-}
 
 namespace DB
 {
-
 
 /** Allow to store structured log in system table.
   *
@@ -66,44 +44,6 @@ class QueryViewsLog;
 class ZooKeeperLog;
 class SessionLog;
 
-
-class ISystemLog
-{
-public:
-    virtual String getName() = 0;
-    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0;
-    virtual void prepareTable() = 0;
-
-    /// Start the background thread.
-    virtual void startup();
-
-    /// Stop the background flush thread before destructor. No more data will be written.
-    virtual void shutdown() = 0;
-
-    virtual ~ISystemLog() = default;
-
-    virtual void savingThreadFunction() = 0;
-
-    /// returns CREATE TABLE query, but with removed:
-    /// - UUID
-    /// - SETTINGS (for MergeTree)
-    /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
-    static ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context);
-
-protected:
-    ThreadFromGlobalPool saving_thread;
-
-    /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
-    std::mutex mutex;
-
-    bool is_shutdown = false;
-    std::condition_variable flush_event;
-
-    void stopFlushThread();
-};
-
-
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
@@ -136,10 +76,11 @@ struct SystemLogs
 
 
 template <typename LogElement>
-class SystemLog : public ISystemLog, private boost::noncopyable, WithContext
+class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
 {
 public:
     using Self = SystemLog;
+    using Base = SystemLogBase<LogElement>;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -156,27 +97,23 @@ public:
         const String & storage_def_,
         size_t flush_interval_milliseconds_);
 
-    /** Append a record into log.
-      * Writing to table will be done asynchronously and in case of failure, record could be lost.
-      */
-    void add(const LogElement & element);
-
     void shutdown() override;
 
-    /// Flush data in the buffer to disk
-    void flush(bool force) override;
-
-    String getName() override
-    {
-        return LogElement::name();
-    }
-
-    ASTPtr getCreateTableQuery();
-
 protected:
-    Poco::Logger * log;
+    using ISystemLog::mutex;
+    using ISystemLog::is_shutdown;
+    using ISystemLog::flush_event;
+    using ISystemLog::stopFlushThread;
+    using Base::log;
+    using Base::queue;
+    using Base::queue_front_index;
+    using Base::is_force_prepare_tables;
+    using Base::requested_flush_up_to;
+    using Base::flushed_up_to;
+    using Base::logged_queue_full_at_index;
 
 private:
+
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
@@ -185,32 +122,17 @@ private:
     bool is_prepared = false;
     const size_t flush_interval_milliseconds;
 
-    // Queue is bounded. But its size is quite large to not block in all normal cases.
-    std::vector<LogElement> queue;
-    // An always-incrementing index of the first message currently in the queue.
-    // We use it to give a global sequential index to every message, so that we
-    // can wait until a particular message is flushed. This is used to implement
-    // synchronous log flushing for SYSTEM FLUSH LOGS.
-    uint64_t queue_front_index = 0;
-    // A flag that says we must create the tables even if the queue is empty.
-    bool is_force_prepare_tables = false;
-    // Requested to flush logs up to this index, exclusive
-    uint64_t requested_flush_up_to = 0;
-    // Flushed log up to this index, exclusive
-    uint64_t flushed_up_to = 0;
-    // Logged overflow message at this queue front index
-    uint64_t logged_queue_full_at_index = -1;
-
-    void savingThreadFunction() override;
-
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
     void prepareTable() override;
 
+    void savingThreadFunction() override;
+
     /// flushImpl can be executed only in saving_thread.
     void flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end);
+    ASTPtr getCreateTableQuery();
 };
 
 }

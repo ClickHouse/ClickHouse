@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class JSONEachRowWithProgressRowOutputFormat : public JSONEachRowRowOutputFormat
+class JSONEachRowWithProgressRowOutputFormat final : public JSONEachRowRowOutputFormat
 {
 public:
     using JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat;

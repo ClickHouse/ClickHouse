@@ -177,7 +177,8 @@ public:
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
+    /// If token is not empty, block id is calculated based on it instead of block data
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     const MergeTreeData & storage;
 
@@ -299,9 +300,11 @@ public:
         {
         }
 
+        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+
         void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
-        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
-        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);

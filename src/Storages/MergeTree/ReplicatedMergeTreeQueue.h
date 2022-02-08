@@ -251,11 +251,18 @@ private:
         friend class ReplicatedMergeTreeQueue;
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
-        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_);
+        CurrentlyExecuting(
+            const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
+            ReplicatedMergeTreeQueue & queue_,
+            std::lock_guard<std::mutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
-        static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
-            ReplicatedMergeTreeQueue & queue);
+        static void setActualPartName(
+            ReplicatedMergeTreeQueue::LogEntry & entry,
+            const String & actual_part_name,
+            ReplicatedMergeTreeQueue & queue,
+            std::lock_guard<std::mutex> & state_lock);
+
     public:
         ~CurrentlyExecuting();
     };

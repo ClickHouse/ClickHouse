@@ -475,11 +475,6 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
-if (USE_CASSANDRA)
-    dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
-endif()
-
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
@@ -506,6 +501,7 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::bzip2)
@@ -558,3 +554,4 @@ if (ENABLE_TESTS)
 
     add_check(unit_tests_dbms)
 endif ()
+

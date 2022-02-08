@@ -193,7 +193,7 @@ Pipe MySQLDictionarySource::loadAll()
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(load_all_query);
 }
 
@@ -203,7 +203,7 @@ Pipe MySQLDictionarySource::loadUpdatedAll()
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadFromQuery(load_update_query);
 }
 
@@ -289,7 +289,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(configuration.table));
 
-        LOG_TRACE(log, query.str());
+        LOG_TRACE(log, fmt::runtime(query.str()));
 
         auto result = query.use();
 
