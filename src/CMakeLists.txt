@@ -532,13 +532,13 @@ if (ENABLE_TESTS)
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
-        -Wno-zero-as-null-pointer-constant
-        -Wno-covered-switch-default
-        -Wno-undef
+       # -Wno-zero-as-null-pointer-constant
+       # -Wno-covered-switch-default
+       # -Wno-undef
         -Wno-sign-compare
-        -Wno-used-but-marked-unused
-        -Wno-missing-noreturn
-        -Wno-gnu-zero-variadic-macro-arguments
+       # -Wno-used-but-marked-unused
+       # -Wno-missing-noreturn
+       #  -Wno-gnu-zero-variadic-macro-arguments
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE

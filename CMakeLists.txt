@@ -421,7 +421,7 @@ link_libraries(global-group)
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
-    target_compile_options(global-group INTERFACE "-Werror")
+    # target_compile_options(global-group INTERFACE "-Werror")
 endif ()
 
 # Make this extra-checks for correct library dependencies.
