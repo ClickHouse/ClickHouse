@@ -140,6 +140,8 @@ if (ENABLE_NLP)
     add_contrib (libstemmer-c-cmake libstemmer_c)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
+    add_contrib (nlp-data-cmake nlp-data)
+    add_contrib (cld2-cmake cld2)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)

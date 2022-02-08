@@ -19,12 +19,14 @@ toc_priority: 76
     -   [什么是 OLAP?](../faq/general/olap.md)
     -   [什么是列存储数据库?](../faq/general/columnar-database.md)
     -   [为何不使用 MapReduce等技术?](../faq/general/mapreduce.md)
+    -   [我如何为 ClickHouse贡献代码?](../faq/general/how-do-i-contribute-code-to-clickhouse.md)
 -   **[应用案例](../faq/use-cases/index.md)**
     -   [我能把 ClickHouse 作为时序数据库来使用吗?](../faq/use-cases/time-series.md)
     -   [我能把 ClickHouse 作为 key-value 键值存储吗？](../faq/use-cases/key-value.md)
 -   **[运维操作](../faq/operations/index.md)**
     -   [如果想在生产环境部署，需要用哪个版本的 ClickHouse 呢?](../faq/operations/production.md)
     -   [是否可能从 ClickHouse 数据表中删除所有旧的数据记录?](../faq/operations/delete-old-data.md)
+    -   [ClickHouse支持多区域复制吗?](../faq/operations/multi-region-replication.md)
 -   **[集成开发](../faq/integration/index.md)**
     -   [如何从 ClickHouse 导出数据到一个文件?](../faq/integration/file-export.md)
     -   [如果我用ODBC链接Oracle数据库出现编码问题该怎么办?](../faq/integration/oracle-odbc.md)

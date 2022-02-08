@@ -209,9 +209,15 @@ String StorageS3Source::KeysIterator::next()
 Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool with_file_column)
 {
     if (with_path_column)
-        sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        sample_block.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_path"});
     if (with_file_column)
-        sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        sample_block.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_file"});
 
     return sample_block;
 }
@@ -253,6 +259,7 @@ StorageS3Source::StorageS3Source(
 
 void StorageS3Source::onCancel()
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
@@ -304,23 +311,29 @@ Chunk StorageS3Source::generate()
         UInt64 num_rows = chunk.getNumRows();
 
         if (with_path_column)
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                .createColumnConst(num_rows, file_path)
+                                ->convertToFullColumnIfConst());
         if (with_file_column)
         {
             size_t last_slash_pos = file_path.find_last_of('/');
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path.substr(
-                    last_slash_pos + 1))->convertToFullColumnIfConst());
+            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
+                                ->convertToFullColumnIfConst());
         }
 
         return chunk;
     }
 
-    reader.reset();
-    pipeline.reset();
-    read_buf.reset();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader.reset();
+        pipeline.reset();
+        read_buf.reset();
 
-    if (!initialize())
-        return {};
+        if (!initialize())
+            return {};
+    }
 
     return generate();
 }
@@ -957,9 +970,8 @@ void registerStorageCOS(StorageFactory & factory)
 NamesAndTypesList StorageS3::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 bool StorageS3::supportsPartitionBy() const
