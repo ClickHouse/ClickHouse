@@ -2,6 +2,8 @@ import os
 import pytest
 import sys
 import time
+import pytz
+import uuid
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
@@ -205,15 +207,21 @@ def test_totals_and_extremes():
     assert query_and_get_extremes("SELECT x, y FROM t", settings={"extremes": "1"}) == "1\t2\n3\t4\n"
 
 def test_get_query_details():
-    result = list(query_no_errors("CREATE TABLE t (a UInt8) ENGINE = Memory"))[0]
+    result = list(query_no_errors("CREATE TABLE t (a UInt8) ENGINE = Memory", query_id = '123'))[0]
+    assert result.query_id == '123'
+    pytz.timezone(result.time_zone)
     assert result.output_format == ''
     assert result.output == b''
     #
     result = list(query_no_errors("SELECT 'a', 1", query_id = '', output_format = 'TabSeparated'))[0]
+    uuid.UUID(result.query_id)
+    pytz.timezone(result.time_zone)
     assert result.output_format == 'TabSeparated'
     assert result.output == b'a\t1\n'
     #
-    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow"))[0]
+    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow", query_id = ''))[0]
+    uuid.UUID(result.query_id)
+    pytz.timezone(result.time_zone)
     assert result.output_format == 'JSONEachRow'
     assert result.output == b'{"x":"a","1":1}\n'
 
@@ -238,6 +246,9 @@ def test_logs():
 
 def test_progress():
     results = query_no_errors("SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000", stream_output=True)
+    for result in results:
+        result.time_zone = ''
+        result.query_id = ''
     #print(results)
     assert str(results) ==\
 """[progress {
