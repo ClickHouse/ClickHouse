@@ -644,6 +644,7 @@ namespace
 
         void addQueryDetailsToResult();
         void addOutputFormatToResult();
+        void addOutputColumnsNamesAndTypesToResult(const Block & headers);
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
@@ -669,6 +670,7 @@ namespace
         CompressionMethod input_compression_method = CompressionMethod::None;
         PODArray<char> output;
         String output_format;
+        bool send_output_columns_names_and_types = false;
         CompressionMethod output_compression_method = CompressionMethod::None;
         int output_compression_level = 0;
 
@@ -889,6 +891,8 @@ namespace
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
+
+        send_output_columns_names_and_types = query_info.send_output_columns();
 
         /// Choose compression.
         String input_compression_method_str = query_info.input_compression_type();
@@ -1195,6 +1199,7 @@ namespace
             };
 
             addOutputFormatToResult();
+            addOutputColumnsNamesAndTypesToResult(header);
 
             Block block;
             while (check_for_cancel())
@@ -1455,6 +1460,18 @@ namespace
     void Call::addOutputFormatToResult()
     {
         *result.mutable_output_format() = output_format;
+    }
+
+    void Call::addOutputColumnsNamesAndTypesToResult(const Block & header)
+    {
+        if (!send_output_columns_names_and_types)
+            return;
+        for (const auto & column : header)
+        {
+            auto & name_and_type = *result.add_output_columns();
+            *name_and_type.mutable_name() = column.name;
+            *name_and_type.mutable_type() = column.type->getName();
+        }
     }
 
     void Call::addProgressToResult()
