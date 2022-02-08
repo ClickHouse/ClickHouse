@@ -95,6 +95,9 @@ class HttpProcessor(SimpleHTTPRequestHandler):
         self._set_headers()
         self.wfile.write(SERVER_JSON_RESPONSE.encode())
 
+    def log_message(self, format, *args):
+        return
+
 class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
