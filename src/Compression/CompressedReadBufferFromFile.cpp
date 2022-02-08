@@ -80,7 +80,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
         /// We will discard our working_buffer, but have to account rest bytes
         bytes += offset();
         /// No data, everything discarded
-        pos = working_buffer.end();
+        resetWorkingBuffer();
         size_compressed = 0;
         /// Remember required offset in decompressed block which will be set in
         /// the next ReadBuffer::next() call
