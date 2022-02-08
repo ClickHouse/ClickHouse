@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include "Core/NamesAndTypes.h"
 #include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
@@ -420,8 +421,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        // TODO: {} on insert???
-        columns, compression_codec);
+        context->getSettings().calculate_stats_during_insert ? columns : NamesAndTypesList{},
+        compression_codec);
 
     bool sync_on_insert = data_settings->fsync_after_insert;
 
