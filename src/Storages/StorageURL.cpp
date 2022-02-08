@@ -130,6 +130,20 @@ namespace
                 reader->cancel();
         }
 
+        static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
+        {
+            const auto & user_info = request_uri.getUserInfo();
+            if (!user_info.empty())
+            {
+                std::size_t n = user_info.find(':');
+                if (n != std::string::npos)
+                {
+                    credentials.setUsername(user_info.substr(0, n));
+                    credentials.setPassword(user_info.substr(n + 1));
+                }
+            }
+        }
+
         StorageURLSource(
             URIInfoPtr uri_info_,
             const std::string & http_method,
@@ -154,10 +168,44 @@ namespace
             /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
             initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
             {
-                read_buf = getFirstAvailableURLReadBuffer(
-                    uri_options, context, params, http_method,
-                    callback, timeouts, compression_method, credentials, headers,
-                    /* glob_url */glob_url);
+                if (uri_options.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+
+                if (uri_options.size() > 1)
+                {
+                    read_buf = getFirstAvailableURLReadBuffer(
+                        uri_options, context, params, http_method,
+                        callback, timeouts, compression_method, credentials, headers);
+                }
+                else
+                {
+                    ReadSettings read_settings = context->getReadSettings();
+                    bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs;
+                    auto request_uri = Poco::URI(uri_options[0]);
+
+                    for (const auto & [param, value] : params)
+                        request_uri.addQueryParameter(param, value);
+
+                    setCredentials(credentials, request_uri);
+
+                    read_buf = wrapReadBufferWithCompressionMethod(
+                        std::make_unique<ReadWriteBufferFromHTTP>(
+                            request_uri,
+                            http_method,
+                            callback,
+                            timeouts,
+                            credentials,
+                            context->getSettingsRef().max_http_get_redirects,
+                            DBMS_DEFAULT_BUFFER_SIZE,
+                            read_settings,
+                            headers,
+                            ReadWriteBufferFromHTTP::Range{},
+                            context->getRemoteHostFilter(),
+                            /* delay_initiliazation */true,
+                            /* use_external_buffer */false,
+                            /* skip_url_not_found_error */skip_url_not_found_error),
+                        chooseCompressionMethod(request_uri.getPath(), compression_method));
+                }
 
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
                 QueryPipelineBuilder builder;
@@ -216,31 +264,23 @@ namespace
             const ConnectionTimeouts & timeouts,
             const String & compression_method,
             Poco::Net::HTTPBasicCredentials & credentials,
-            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-            bool glob_url)
+            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers)
         {
             String first_exception_message;
-            bool skip_url_not_found_error = urls.size() == 1 && glob_url;
+            ReadSettings read_settings = context->getReadSettings();
 
-            for (const auto & option : urls)
+            for (auto option = urls.begin(); option != urls.end(); ++option)
             {
-                auto request_uri = Poco::URI(option);
+                bool skip_url_not_found_error = read_settings.http_skip_not_found_url_for_globs && option == std::prev(urls.end());
+                auto request_uri = Poco::URI(*option);
+
                 for (const auto & [param, value] : params)
                     request_uri.addQueryParameter(param, value);
 
+                setCredentials(credentials, request_uri);
+
                 try
                 {
-                    std::string user_info = request_uri.getUserInfo();
-                    if (!user_info.empty())
-                    {
-                        std::size_t n = user_info.find(':');
-                        if (n != std::string::npos)
-                        {
-                            credentials.setUsername(user_info.substr(0, n));
-                            credentials.setPassword(user_info.substr(n + 1));
-                        }
-                    }
-
                     return wrapReadBufferWithCompressionMethod(
                         std::make_unique<ReadWriteBufferFromHTTP>(
                             request_uri,
@@ -250,13 +290,13 @@ namespace
                             credentials,
                             context->getSettingsRef().max_http_get_redirects,
                             DBMS_DEFAULT_BUFFER_SIZE,
-                            context->getReadSettings(),
+                            read_settings,
                             headers,
                             ReadWriteBufferFromHTTP::Range{},
                             context->getRemoteHostFilter(),
-                            /* delay_initiliazation */urls.size() == 1,
+                            /* delay_initiliazation */false,
                             /* use_external_buffer */false,
-                            skip_url_not_found_error),
+                            /* skip_url_not_found_error */skip_url_not_found_error),
                         chooseCompressionMethod(request_uri.getPath(), compression_method));
                 }
                 catch (...)
@@ -432,7 +472,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
                 ConnectionTimeouts::getHTTPTimeouts(context),
                 compression_method,
                 credentials,
-                headers, /* glob_url */true);
+                headers);
         };
     }
     else
