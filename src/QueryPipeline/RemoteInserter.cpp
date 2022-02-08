@@ -24,7 +24,9 @@ RemoteInserter::RemoteInserter(
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_)
-    : connection(connection_), query(query_)
+    : connection(connection_)
+    , query(query_)
+    , server_revision(connection.getServerRevision(timeouts))
 {
     ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -33,8 +35,6 @@ RemoteInserter::RemoteInserter(
         modified_client_info.client_trace_context
             = CurrentThread::get().thread_trace_context;
     }
-
-    server_revision = connection.getServerRevision(timeouts);
 
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
