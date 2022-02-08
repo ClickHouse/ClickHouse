@@ -449,7 +449,7 @@ class TestCase:
         return client_options + " --" + " --".join(self.random_settings)
 
     def add_info_about_settings(self, description):
-        return description + "\n" + "Settings used in the test: " + ", ".join(self.random_settings) + "\n"
+        return description + "\n" + "Settings used in the test: " + "--" + " --".join(self.random_settings) + "\n"
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case   # case file name
