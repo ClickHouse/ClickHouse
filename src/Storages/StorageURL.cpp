@@ -479,7 +479,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     else
     {
         auto parsed_uri = Poco::URI(uri);
-        setCredentials(credentials, parsed_uri);
+        StorageURLSource::setCredentials(credentials, parsed_uri);
         read_buffer_creator = [&]()
         {
             return wrapReadBufferWithCompressionMethod(
