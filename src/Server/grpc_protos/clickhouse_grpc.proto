@@ -82,6 +82,9 @@ message QueryInfo {
    // Default output format. If not specified, 'TabSeparated' is used.
    string output_format = 7;
 
+   // Set it if you want the names and the types of output columns to be sent to the client.
+   bool send_output_columns = 24;
+
    repeated ExternalTable external_tables = 8;
 
    string user_name = 9;
@@ -193,6 +196,9 @@ message Result {
    // The format in which `output`, `totals` and `extremes` are written.
    // It's either the same as `output_format` specified in `QueryInfo` or the format specified in the query itself.
    string output_format = 11;
+
+   // The names and types of columns of the result written in `output`.
+   repeated NameAndType output_columns = 12;
 
    // Output of the query, represented in the `output_format`.
    bytes output = 1;

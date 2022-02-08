@@ -45,8 +45,8 @@ def create_channel():
         main_channel = channel
     return channel
 
-def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', external_tables=[],
-                 user_name='', password='', query_id='123', session_id='', stream_output=False, channel=None):
+def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', send_output_columns=False,
+                 external_tables=[], user_name='', password='', query_id='123', session_id='', stream_output=False, channel=None):
     if type(input_data) is not list:
         input_data = [input_data]
     if type(input_data_delimiter) is str:
@@ -60,7 +60,8 @@ def query_common(query_text, settings={}, input_data=[], input_data_delimiter=''
             input_data_part = input_data_part.encode(DEFAULT_ENCODING)
         return clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part,
                                              input_data_delimiter=input_data_delimiter, output_format=output_format,
-                                             external_tables=external_tables, user_name=user_name, password=password, query_id=query_id,
+                                             send_output_columns=send_output_columns, external_tables=external_tables,
+                                             user_name=user_name, password=password, query_id=query_id,
                                              session_id=session_id, next_query_info=bool(input_data))
     def send_query_info():
         yield query_info()
@@ -211,18 +212,21 @@ def test_get_query_details():
     assert result.query_id == '123'
     pytz.timezone(result.time_zone)
     assert result.output_format == ''
+    assert len(result.output_columns) == 0
     assert result.output == b''
     #
     result = list(query_no_errors("SELECT 'a', 1", query_id = '', output_format = 'TabSeparated'))[0]
     uuid.UUID(result.query_id)
     pytz.timezone(result.time_zone)
     assert result.output_format == 'TabSeparated'
+    assert len(result.output_columns) == 0
     assert result.output == b'a\t1\n'
     #
-    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow", query_id = ''))[0]
+    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow", query_id = '', send_output_columns=True))[0]
     uuid.UUID(result.query_id)
     pytz.timezone(result.time_zone)
     assert result.output_format == 'JSONEachRow'
+    assert ([(col.name, col.type) for col in result.output_columns]) == [('x', 'String'), ('1', 'UInt8')]
     assert result.output == b'{"x":"a","1":1}\n'
 
 def test_errors_handling():
