@@ -138,7 +138,11 @@ private:
 
     void updateSuggest(const ASTCreateQuery & ast_create);
 
+    void initQueryIdFormats();
+
 protected:
+    static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;

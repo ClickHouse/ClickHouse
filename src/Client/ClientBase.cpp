@@ -573,6 +573,18 @@ void ClientBase::updateSuggest(const ASTCreateQuery & ast_create)
     suggest->addWords(std::move(new_words));
 }
 
+bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context)
+{
+    if (!insert_query.data)
+        return false;
+
+    auto settings = context->getSettings();
+    if (insert_query.settings_ast)
+        settings.applyChanges(insert_query.settings_ast->as<ASTSetQuery>()->changes);
+
+    return !settings.async_insert;
+}
+
 void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
@@ -597,10 +609,12 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
             updateSuggest(*create);
     }
 
-    // An INSERT query may have the data that follow query text. Remove the
-    /// Send part of query without data, because data will be sent separately.
-    auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && insert->data)
+    /// An INSERT query may have the data that follows query text.
+    /// Send part of the query without data, because data will be sent separately.
+    /// But for asynchronous inserts we don't extract data, because it's needed
+    /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
+    const auto * insert = parsed_query->as<ASTInsertQuery>();
+    if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
     else
         query_to_execute = full_query;
@@ -1261,7 +1275,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, std_out);
-            writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
@@ -1303,8 +1317,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
+        bool is_async_insert = global_context->getSettings().async_insert && insert && insert->hasInlinedData();
+
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
                 throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -1434,16 +1450,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // row input formats (e.g. TSV) can't tell when the input stops,
     // unlike VALUES.
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    const char * query_to_execute_end = this_query_end;
+
     if (insert_ast && insert_ast->data)
     {
         this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
         insert_ast->end = this_query_end;
-        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), insert_ast->data - this_query_begin);
+        query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
-    else
-    {
-        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-    }
+
+    query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
 
     // Try to include the trailing comment with test hints. It is just
     // a guess for now, because we don't yet know where the query ends
@@ -1485,12 +1501,33 @@ String ClientBase::prompt() const
 }
 
 
+void ClientBase::initQueryIdFormats()
+{
+    if (!query_id_formats.empty())
+        return;
+
+    /// Initialize query_id_formats if any
+    if (config().has("query_id_formats"))
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config().keys("query_id_formats", keys);
+        for (const auto & name : keys)
+            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+    }
+
+    if (query_id_formats.empty())
+        query_id_formats.emplace_back("Query id:", " {query_id}\n");
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
         throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
     if (print_time_to_stderr)
         throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+
+    initQueryIdFormats();
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
@@ -1511,18 +1548,6 @@ void ClientBase::runInteractive()
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
-
-    /// Initialize query_id_formats if any
-    if (config().has("query_id_formats"))
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config().keys("query_id_formats", keys);
-        for (const auto & name : keys)
-            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-    }
-
-    if (query_id_formats.empty())
-        query_id_formats.emplace_back("Query id:", " {query_id}\n");
 
     /// Load command history if present.
     if (config().has("history_file"))
@@ -1632,6 +1657,9 @@ void ClientBase::runInteractive()
 
 void ClientBase::runNonInteractive()
 {
+    if (delayed_interactive)
+        initQueryIdFormats();
+
     if (!queries_files.empty())
     {
         auto process_multi_query_from_file = [&](const String & file)

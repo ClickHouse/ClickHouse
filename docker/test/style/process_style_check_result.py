@@ -10,72 +10,26 @@ def process_result(result_folder):
     status = "success"
     description = ""
     test_results = []
+    checks = (
+        ("header duplicates", "duplicate_output.txt"),
+        ("shellcheck", "shellcheck_output.txt"),
+        ("style", "style_output.txt"),
+        ("typos", "typos_output.txt"),
+        ("whitespaces", "whitespaces_output.txt"),
+        ("workflows", "workflows_output.txt"),
+    )
 
-    duplicate_log_path = "{}/duplicate_output.txt".format(result_folder)
-    if not os.path.exists(duplicate_log_path):
-        logging.info("No header duplicates check log on path %s", duplicate_log_path)
-        return "exception", "No header duplicates check log", []
-    elif os.stat(duplicate_log_path).st_size != 0:
-        description += " Header duplicates check failed. "
-        test_results.append(("Header duplicates check", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Header duplicates check", "OK"))
-
-    shellcheck_log_path = "{}/shellcheck_output.txt".format(result_folder)
-    if not os.path.exists(shellcheck_log_path):
-        logging.info("No shellcheck  log on path %s", shellcheck_log_path)
-        return "exception", "No shellcheck log", []
-    elif os.stat(shellcheck_log_path).st_size != 0:
-        description += " Shellcheck check failed. "
-        test_results.append(("Shellcheck ", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Shellcheck", "OK"))
-
-    style_log_path = "{}/style_output.txt".format(result_folder)
-    if not os.path.exists(style_log_path):
-        logging.info("No style check log on path %s", style_log_path)
-        return "exception", "No style check log", []
-    elif os.stat(style_log_path).st_size != 0:
-        description += "Style check failed. "
-        test_results.append(("Style check", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Style check", "OK"))
-
-    typos_log_path = "{}/typos_output.txt".format(result_folder)
-    if not os.path.exists(typos_log_path):
-        logging.info("No typos check log on path %s", typos_log_path)
-        return "exception", "No typos check log", []
-    elif os.stat(typos_log_path).st_size != 0:
-        description += "Typos check failed. "
-        test_results.append(("Typos check", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Typos check", "OK"))
-
-    whitespaces_log_path = "{}/whitespaces_output.txt".format(result_folder)
-    if not os.path.exists(whitespaces_log_path):
-        logging.info("No whitespaces check log on path %s", whitespaces_log_path)
-        return "exception", "No whitespaces check log", []
-    elif os.stat(whitespaces_log_path).st_size != 0:
-        description += "Whitespaces check failed. "
-        test_results.append(("Whitespaces check", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Whitespaces check", "OK"))
-
-    workflows_log_path = "{}/workflows_output.txt".format(result_folder)
-    if not os.path.exists(workflows_log_path):
-        logging.info("No workflows check log on path %s", style_log_path)
-        return "exception", "No workflows check log", []
-    elif os.stat(whitespaces_log_path).st_size != 0:
-        description += "Workflows check failed. "
-        test_results.append(("Workflows check", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Workflows check", "OK"))
+    for name, out_file in checks:
+        full_path = os.path.join(result_folder, out_file)
+        if not os.path.exists(full_path):
+            logging.info("No %s check log on path %s", name, full_path)
+            return "exception", f"No {name} check log", []
+        elif os.stat(full_path).st_size != 0:
+            description += f"Check {name} failed. "
+            test_results.append((f"Check {name}", "FAIL"))
+            status = "failure"
+        else:
+            test_results.append((f"Check {name}", "OK"))
 
     if not description:
         description += "Style check success"

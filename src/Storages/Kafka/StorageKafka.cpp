@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,13 +17,15 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -36,8 +39,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
 
 
 namespace DB
@@ -807,15 +808,14 @@ void registerStorageKafka(StorageFactory & factory)
 NamesAndTypesList StorageKafka::getVirtuals() const
 {
     auto result = NamesAndTypesList{
-        {"_topic", std::make_shared<DataTypeString>()},
+        {"_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
         {"_partition", std::make_shared<DataTypeUInt64>()},
         {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
-    };
+        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
