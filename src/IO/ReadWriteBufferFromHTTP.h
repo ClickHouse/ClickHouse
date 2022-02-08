@@ -279,7 +279,8 @@ namespace detail
 
             // Configure User-Agent if it not already set.
             const std::string user_agent = "User-Agent";
-            auto iter = std::find_if(http_header_entries.begin(), http_header_entries.end(), [&user_agent](const HTTPHeaderEntry & entry) {
+            auto iter = std::find_if(http_header_entries.begin(), http_header_entries.end(), [&user_agent](const HTTPHeaderEntry & entry)
+            {
                 return std::get<0>(entry) == user_agent;
             });
 
