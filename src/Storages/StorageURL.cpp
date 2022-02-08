@@ -82,16 +82,28 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
+    auto parsed_uri = Poco::URI(uri);
+    Poco::Net::HTTPBasicCredentials credentials;
+    std::string user_info = parsed_uri.getUserInfo();
+    if (!user_info.empty())
+    {
+        std::size_t n = user_info.find(':');
+        if (n != std::string::npos)
+        {
+            credentials.setUsername(user_info.substr(0, n));
+            credentials.setPassword(user_info.substr(n + 1));
+        }
+    }
+
     auto read_buffer_creator = [&]()
     {
-        auto parsed_uri = Poco::URI(uri);
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadWriteBufferFromHTTP>(
                 parsed_uri,
                 Poco::Net::HTTPRequest::HTTP_GET,
                 nullptr,
                 ConnectionTimeouts::getHTTPTimeouts(context),
-                Poco::Net::HTTPBasicCredentials{},
+                credentials,
                 context->getSettingsRef().max_http_get_redirects,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 context->getReadSettings(),
