@@ -285,6 +285,15 @@ namespace
             return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
         }
 
+        std::optional<String> getClientHeader(const String & key) const
+        {
+            const auto & client_metadata = grpc_context.client_metadata();
+            auto it = client_metadata.find(key);
+            if (it != client_metadata.end())
+                return String{it->second.data(), it->second.size()};
+            return std::nullopt;
+        }
+
         void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
         {
             grpc_context.set_compression_algorithm(algorithm);
@@ -295,8 +304,6 @@ namespace
         {
             setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
         }
-
-        grpc::ServerContext grpc_context;
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -319,6 +326,8 @@ namespace
             };
             return &callback_in_map;
         }
+
+        grpc::ServerContext grpc_context;
 
     private:
         grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> reader_writer{&grpc_context};
@@ -752,33 +761,21 @@ namespace
         session->authenticate(user, password, user_address);
         session->getClientInfo().quota_key = quota_key;
 
-        // Parse the OpenTelemetry traceparent header.
         ClientInfo client_info = session->getClientInfo();
-        const auto & client_metadata = responder->grpc_context.client_metadata();
-        auto traceparent = client_metadata.find("traceparent");
-        if (traceparent != client_metadata.end())
+
+        /// Parse the OpenTelemetry traceparent header.
+        auto traceparent = responder->getClientHeader("traceparent");
+        if (traceparent)
         {
-            grpc::string_ref parent_ref = traceparent->second;
-            std::string opentelemetry_traceparent(parent_ref.data(), parent_ref.length());
-            std::string error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(
-                opentelemetry_traceparent, error))
+            String error;
+            if (!client_info.client_trace_context.parseTraceparentHeader(traceparent.value(), error))
             {
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
                     "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                    opentelemetry_traceparent, error);
+                    traceparent.value(), error);
             }
-            auto tracestate = client_metadata.find("tracestate");
-            if (tracestate != client_metadata.end())
-            {
-                grpc::string_ref state_ref = tracestate->second;
-                client_info.client_trace_context.tracestate =
-                    std::string(state_ref.data(), state_ref.length());
-            }
-            else
-            {
-                client_info.client_trace_context.tracestate = "";
-            }
+            auto tracestate = responder->getClientHeader("tracestate");
+            client_info.client_trace_context.tracestate = tracestate.value_or("");
         }
 
         /// The user could specify session identifier and session timeout.

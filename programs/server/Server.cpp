@@ -80,6 +80,7 @@
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -972,7 +973,9 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-
+#if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+#endif
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
@@ -1361,6 +1364,16 @@ if (ThreadFuzzer::instance().isEffective())
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         }
+
+        if (servers.empty())
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+#endif
+
+        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
 
         async_metrics.start();
 

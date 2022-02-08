@@ -138,6 +138,8 @@ private:
 
     void updateSuggest(const ASTCreateQuery & ast_create);
 
+    void initQueryIdFormats();
+
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
 
