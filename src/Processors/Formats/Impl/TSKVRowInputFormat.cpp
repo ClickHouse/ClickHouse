@@ -20,10 +20,11 @@ namespace ErrorCodes
 
 
 TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_)
 {
     const auto & sample_block = getPort().getHeader();
     size_t num_columns = sample_block.columns();
+    name_map.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         name_map[sample_block.getByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
 }
