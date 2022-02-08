@@ -277,10 +277,16 @@ Pipe StorageMaterializedPostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto materialized_table_lock = lockForShare(String(), context_->getSettingsRef().lock_acquire_timeout);
     auto nested_table = getNested();
-    return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+
+    auto pipe = readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
             query_info, context_, processed_stage, max_block_size, num_streams);
+
+    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+    pipe.addTableLock(lock);
+    pipe.addStorageHolder(shared_from_this());
+
+    return pipe;
 }
 
 
