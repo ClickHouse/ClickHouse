@@ -268,7 +268,7 @@ namespace detail
             const RemoteHostFilter & remote_host_filter_ = {},
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
-            bool glob_url = false)
+            bool http_skip_not_found_url_ = false)
             : SeekableReadBufferWithSize(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -280,7 +280,7 @@ namespace detail
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
             , read_range(read_range_)
-            , http_skip_not_found_url(settings_.http_skip_not_found_url_for_globs && glob_url)
+            , http_skip_not_found_url(http_skip_not_found_url_)
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
         {
@@ -321,9 +321,9 @@ namespace detail
         }
 
         /**
-         * Throws if error is not retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
+         * Throws if error is retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
          * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
-         * sets initialization_error = DKIP_NOT_FOUND_URL, otherwise throws.
+         * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
          */
         void initialize()
         {
@@ -355,6 +355,7 @@ namespace detail
                                       "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
 
                     initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    return;
                 }
                 else if (read_range.end)
                 {
@@ -619,11 +620,11 @@ public:
         const RemoteHostFilter & remote_host_filter_ = {},
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
-        bool glob_url_ = false)
+        bool skip_not_found_url_ = false)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
             uri_, credentials_, method_, out_stream_callback_, buffer_size_,
             settings_, http_header_entries_, read_range_, remote_host_filter_,
-            delay_initialization_, use_external_buffer_, glob_url_)
+            delay_initialization_, use_external_buffer_, skip_not_found_url_)
     {
     }
 };
