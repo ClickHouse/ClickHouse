@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -519,7 +520,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums)
 {
     const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
@@ -552,10 +553,19 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
                 writeFinalMark(*it, offset_columns, serialize_settings.path);
         }
     }
+
+    for (auto & stream : column_streams)
+    {
+        stream.second->preFinalize();
+        stream.second->addToChecksums(checksums);
+    }
+}
+
+void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
+{
     for (auto & stream : column_streams)
     {
         stream.second->finalize();
-        stream.second->addToChecksums(checksums);
         if (sync)
             stream.second->sync();
     }
@@ -579,16 +589,28 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 }
 
-void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
-        finishDataSerialization(checksums, sync);
+        fillDataChecksums(checksums);
 
     if (settings.rewrite_primary_key)
-        finishPrimaryIndexSerialization(checksums, sync);
+        fillPrimaryIndexChecksums(checksums);
 
-    finishSkipIndicesSerialization(checksums, sync);
+    fillSkipIndicesChecksums(checksums);
+}
+
+void MergeTreeDataPartWriterWide::finish(bool sync)
+{
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(sync);
+
+    if (settings.rewrite_primary_key)
+        finishPrimaryIndexSerialization(sync);
+
+    finishSkipIndicesSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

@@ -99,7 +99,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     initialized = true;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::store(
+IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & out_checksums) const
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -108,10 +108,10 @@ void IMergeTreeDataPart::MinMaxIndex::store(
     auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
 
-    store(minmax_column_names, minmax_column_types, disk_, part_path, out_checksums);
+    return store(minmax_column_names, minmax_column_types, disk_, part_path, out_checksums);
 }
 
-void IMergeTreeDataPart::MinMaxIndex::store(
+IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     const Names & column_names,
     const DataTypes & data_types,
     const DiskPtr & disk_,
@@ -121,6 +121,8 @@ void IMergeTreeDataPart::MinMaxIndex::store(
     if (!initialized)
         throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
+
+    WrittenFiles written_files;
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
@@ -134,8 +136,11 @@ void IMergeTreeDataPart::MinMaxIndex::store(
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
-        out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
+
+    return written_files;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
@@ -1271,6 +1276,7 @@ void IMergeTreeDataPart::remove() const
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
+            IDisk::RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
@@ -1279,18 +1285,19 @@ void IMergeTreeDataPart::remove() const
             for (const auto & [file, _] : checksums.files)
             {
                 if (projection_directories.find(file) == projection_directories.end())
-                    disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
+                    request.emplace_back(fs::path(to) / file);
             }
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
+                request.emplace_back(fs::path(to) / file);
 
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, *keep_shared_data);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, *keep_shared_data);
+            request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
+            request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
+            disk->removeSharedFiles(request, *keep_shared_data);
             disk->removeDirectory(to);
         }
         catch (...)
@@ -1324,22 +1331,24 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
+            IDisk::RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
+                request.emplace_back(fs::path(to) / file);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
+                request.emplace_back(fs::path(to) / file);
+            request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
+            request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
+            disk->removeSharedFiles(request, keep_shared_data);
             disk->removeSharedRecursive(to, keep_shared_data);
         }
         catch (...)
