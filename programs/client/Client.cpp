@@ -19,7 +19,6 @@
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
-#include <Common/DNSResolver.h>
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
