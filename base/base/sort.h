@@ -2,7 +2,7 @@
 
 #include <pdqsort.h>
 
-#ifdef NDEBUG
+// #ifdef NDEBUG
 
 #include <pcg_random.hpp>
 #include <base/getThreadId.h>
@@ -53,12 +53,12 @@ void shuffle(RandomIt first, RandomIt last)
     std::shuffle(first, last, rng);
 }
 
-#else
+// #else
 
-template <typename Comparator>
-using ComparatorWrapper = Comparator;
+// template <typename Comparator>
+// using ComparatorWrapper = Comparator;
 
-#endif
+// #endif
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -74,33 +74,25 @@ void nth_element(RandomIt first, RandomIt nth, RandomIt last)
     comparator compare;
     ComparatorWrapper<comparator> compare_wrapper = compare;
 
-#ifdef NDEBUG
     ::shuffle(first, last);
-#endif
 
     ::miniselect::floyd_rivest_select(first, nth, last, compare_wrapper);
 
-#ifdef NDEBUG
     ::shuffle(first, nth);
 
     if (nth != last)
         ::shuffle(nth + 1, last);
-#endif
 }
 
 template <typename RandomIt, typename Compare>
 void partial_sort(RandomIt first, RandomIt middle, RandomIt last, Compare compare)
 {
-#ifdef NDEBUG
     ::shuffle(first, last);
-#endif
 
     ComparatorWrapper<Compare> compare_wrapper = compare;
     ::miniselect::floyd_rivest_partial_sort(first, middle, last, compare_wrapper);
 
-#ifdef NDEBUG
     ::shuffle(middle, last);
-#endif
 }
 
 template <typename RandomIt>
@@ -117,9 +109,7 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
 {
-#ifdef NDEBUG
     ::shuffle(first, last);
-#endif
 
     ComparatorWrapper<Compare> compare_wrapper = compare;
     ::pdqsort(first, last, compare_wrapper);
