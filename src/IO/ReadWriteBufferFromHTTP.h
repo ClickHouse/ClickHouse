@@ -240,6 +240,17 @@ namespace detail
             return read_range.end;
         }
 
+        enum class InitializeError
+        {
+            /// If error is not retriable, `exception` variable must be set.
+            NON_RETRIABLE_ERROR,
+            /// Allows to skip not found urls for globs
+            SKIP_NOT_FOUND_URL,
+            NONE,
+        };
+
+        InitializeError initialization_error = InitializeError::NONE;
+
     public:
         using NextCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
@@ -282,17 +293,14 @@ namespace detail
                                 settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
 
             if (!delay_initialization)
+            {
                 initialize();
+                if (exception)
+                    std::rethrow_exception(exception);
+            }
         }
 
-        enum class InitializeError
-        {
-            NON_RETRIABLE_ERROR,
-            SKIP_NOT_FOUND_URL,
-            NONE,
-        };
-
-        InitializeError call(Poco::Net::HTTPResponse & response, const String & method_)
+        void call(Poco::Net::HTTPResponse & response, const String & method_)
         {
             try
             {
@@ -303,28 +311,27 @@ namespace detail
                 if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
                     && http_skip_not_found_url)
                 {
-                    return InitializeError::SKIP_NOT_FOUND_URL;
+                    initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
                 }
                 else
                 {
                     throw;
                 }
             }
-
-            return InitializeError::NONE;
         }
 
         /**
-         * Note: In case of error return false if error is not retriable, otherwise throw.
+         * Throws if error is not retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
+         * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
+         * sets initialization_error = DKIP_NOT_FOUND_URL, otherwise throws.
          */
-        InitializeError initialize()
+        void initialize()
         {
             Poco::Net::HTTPResponse response;
 
-            auto error = call(response, method);
-            if (error == InitializeError::SKIP_NOT_FOUND_URL)
-                return error;
-            assert(error == InitializeError::NONE);
+            call(response, method);
+            if (initialization_error != InitializeError::NONE)
+                return;
 
             while (isRedirect(response.getStatus()))
             {
@@ -347,7 +354,7 @@ namespace detail
                             Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                                       "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
 
-                    return InitializeError::NON_RETRIABLE_ERROR;
+                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
                 }
                 else if (read_range.end)
                 {
@@ -382,12 +389,14 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
-
-            return InitializeError::NONE;
         }
 
         bool nextImpl() override
         {
+            if (initialization_error == InitializeError::SKIP_NOT_FOUND_URL)
+                return false;
+            assert(initialization_error == InitializeError::NONE);
+
             if (next_callback)
                 next_callback(count());
 
@@ -429,15 +438,13 @@ namespace detail
                 {
                     if (!impl)
                     {
-                        /// If error is not retriable -- false is returned and exception is set.
-                        /// Otherwise the error is thrown and retries continue.
-                        auto error = initialize();
-                        if (error == InitializeError::NON_RETRIABLE_ERROR)
+                        initialize();
+                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
                         {
                             assert(exception);
                             break;
                         }
-                        else if (error == InitializeError::SKIP_NOT_FOUND_URL)
+                        else if (initialization_error == InitializeError::SKIP_NOT_FOUND_URL)
                         {
                             return false;
                         }

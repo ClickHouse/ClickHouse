@@ -69,6 +69,7 @@ IStorageURLBase::IStorageURLBase(
     , partition_by(partition_by_)
 {
     StorageInMemoryMetadata storage_metadata;
+
     if (columns_.empty())
     {
         auto columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
@@ -155,8 +156,8 @@ namespace
             {
                 read_buf = getFirstAvailableURLReadBuffer(
                     uri_options, context, params, http_method,
-                    callback, timeouts, compression_method, headers,
-                    /* skip_url_not_found_error */glob_url);
+                    callback, timeouts, compression_method, credentials, headers,
+                    /* glob_url */glob_url);
 
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
                 QueryPipelineBuilder builder;
@@ -214,15 +215,16 @@ namespace
             std::function<void(std::ostream &)> callback,
             const ConnectionTimeouts & timeouts,
             const String & compression_method,
+            Poco::Net::HTTPBasicCredentials & credentials,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-            bool skip_url_not_found_error)
+            bool glob_url)
         {
-            Poco::Net::HTTPBasicCredentials credentials{};
             String first_exception_message;
+            bool skip_url_not_found_error = urls.size() == 1 && glob_url;
 
-            for (auto option = urls.begin(); option < urls.end(); ++option)
+            for (const auto & option : urls)
             {
-                auto request_uri = Poco::URI(*option);
+                auto request_uri = Poco::URI(option);
                 for (const auto & [param, value] : params)
                     request_uri.addQueryParameter(param, value);
 
@@ -285,6 +287,8 @@ namespace
         /// onCancell and generate can be called concurrently and both of them
         /// have R/W access to reader pointer.
         std::mutex reader_mutex;
+
+        Poco::Net::HTTPBasicCredentials credentials;
     };
 }
 
@@ -403,6 +407,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     ContextPtr context)
 {
     ReadBufferCreator read_buffer_creator;
+    Poco::Net::HTTPBasicCredentials credentials;
 
     if (urlWithGlobs(uri))
     {
@@ -426,8 +431,8 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
                 {},
                 ConnectionTimeouts::getHTTPTimeouts(context),
                 compression_method,
-                headers,
-                /* skip_url_not_found_error */true);
+                credentials,
+                headers, /* glob_url */true);
         };
     }
     else
