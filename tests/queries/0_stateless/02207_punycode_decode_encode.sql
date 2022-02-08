@@ -1,0 +1,30 @@
+select punycodeDecode('https://xn--b1aaa.xn--d1acpjx3f.xn--p1ai/') = 'https://ввв.яндекс.рф/';
+select punycodeDecode('https://xn--b1agh1afp.label.xn--h1ahn.com/') == 'https://привет.label.мир.com/';
+select punycodeDecode('xn--c1yn36f') == '點看';
+select punycodeDecode('xn--abcdef-qua4k') == 'abæcdöef';
+select punycodeDecode('abcdef') == 'abcdef';
+select punycodeDecode('xn--mxacd') == 'αβγ';
+select punycodeDecode('xn--22cdfh1b8fsa') == 'ยจฆฟคฏข';
+select punycodeDecode('xn--80aafi6cg') == 'правда';
+select punycodeDecode('xn--Bahnhof Mnchen-Ost-u6b') == 'Bahnhof München-Ost';
+select punycodeDecode('-> $1.00 <-') == '-> $1.00 <-';
+select punycodeDecode('xn--eckwd4c7cu47r2wf') == 'ドメイン名例';
+select punycodeDecode('xn--MajiKoi5-783gue6qz075azm5e') == 'MajiでKoiする5秒前';
+select punycodeDecode('xn--bcher-kva8445foa') == '「bücher」';
+select punycodeDecode('https://google.com/') == 'https://google.com/';
+
+
+select punycodeEncode('https://ввв.яндекс.рф/') = 'https://xn--b1aaa.xn--d1acpjx3f.xn--p1ai/';
+select punycodeEncode('https://привет.label.мир.com/') == 'https://xn--b1agh1afp.label.xn--h1ahn.com/';
+select punycodeEncode('點看') == 'xn--c1yn36f';
+select punycodeEncode('abæcdöef') == 'xn--abcdef-qua4k';
+select punycodeEncode('abcdef') == 'abcdef';
+select punycodeEncode('αβγ') == 'xn--mxacd';
+select punycodeEncode('ยจฆฟคฏข') == 'xn--22cdfh1b8fsa';
+select punycodeEncode('правда') == 'xn--80aafi6cg';
+select punycodeEncode('Bahnhof München-Ost') == 'xn--Bahnhof Mnchen-Ost-u6b';
+select punycodeEncode('-> $1.00 <-') == '-> $1.00 <-';
+select punycodeEncode('ドメイン名例') == 'xn--eckwd4c7cu47r2wf';
+select punycodeEncode('MajiでKoiする5秒前') == 'xn--MajiKoi5-783gue6qz075azm5e';
+select punycodeEncode('「bücher」') == 'xn--bcher-kva8445foa';
+select punycodeEncode('https://google.com/') == 'https://google.com/';
