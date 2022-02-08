@@ -177,13 +177,13 @@ def test_insert_query_delimiter():
     assert query("SELECT a FROM t ORDER BY a") == "1\n5\n234\n"
 
 def test_insert_default_column():
-    query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100, c String DEFAULT 'c') ENGINE = Memory")
+    query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100 - a, c String DEFAULT 'c') ENGINE = Memory")
     query("INSERT INTO t (c, a) VALUES ('x',1),('y',2)")
     query("INSERT INTO t (a) FORMAT TabSeparated", input_data="3\n4\n")
-    assert query("SELECT * FROM t ORDER BY a") == "1\t100\tx\n" \
-                                                  "2\t100\ty\n" \
-                                                  "3\t100\tc\n" \
-                                                  "4\t100\tc\n"
+    assert query("SELECT * FROM t ORDER BY a") == "1\t99\tx\n" \
+                                                  "2\t98\ty\n" \
+                                                  "3\t97\tc\n" \
+                                                  "4\t96\tc\n"
 
 def test_insert_splitted_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
@@ -257,7 +257,7 @@ def test_progress():
 }
 ]"""
 
-def test_session():
+def test_session_settings():
     session_a = "session A"
     session_b = "session B"
     query("SET custom_x=1", session_id=session_a)
@@ -267,8 +267,21 @@ def test_session():
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_a) == "1\t2\n"
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_b) == "3\t4\n"
 
+def test_session_temp_tables():
+    session_a = "session A"
+    session_b = "session B"
+    query("CREATE TEMPORARY TABLE my_temp_table(a Int8)", session_id=session_a)
+    query("INSERT INTO my_temp_table VALUES (10)", session_id=session_a)
+    assert query("SELECT * FROM my_temp_table", session_id=session_a) == "10\n"
+    query("CREATE TEMPORARY TABLE my_temp_table(a Int8)", session_id=session_b)
+    query("INSERT INTO my_temp_table VALUES (20)", session_id=session_b)
+    assert query("SELECT * FROM my_temp_table", session_id=session_b) == "20\n"
+    assert query("SELECT * FROM my_temp_table", session_id=session_a) == "10\n"
+
 def test_no_session():
     e = query_and_get_error("SET custom_x=1")
+    assert "There is no session" in e.display_text
+    e = query_and_get_error("CREATE TEMPORARY TABLE my_temp_table(a Int8)")
     assert "There is no session" in e.display_text
 
 def test_input_function():
