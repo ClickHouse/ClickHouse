@@ -8,11 +8,6 @@ import sys
 
 SCRIPT_PATH = os.path.realpath(__file__)
 
-IMAGE_MAP = {
-    "deb": "clickhouse/deb-builder",
-    "binary": "clickhouse/binary-builder",
-}
-
 
 def check_image_exists_locally(image_name):
     try:
@@ -66,6 +61,15 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
+def is_release_build(build_type, package_type, sanitizer, split_binary):
+    return (
+        build_type == ""
+        and package_type == "deb"
+        and sanitizer == ""
+        and not split_binary
+    )
+
+
 def parse_env_variables(
     build_type,
     compiler,
@@ -90,6 +94,7 @@ def parse_env_variables(
     PPC_SUFFIX = "-ppc64le"
 
     result = []
+    result.append("OUTPUT_DIR=/output")
     cmake_flags = ["$CMAKE_FLAGS"]
 
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
@@ -131,7 +136,7 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
         )
-        result.append("DEB_ARCH_FLAG=-aarm64")
+        result.append("DEB_ARCH=arm64")
     elif is_cross_freebsd:
         cc = compiler[: -len(FREEBSD_SUFFIX)]
         cmake_flags.append(
@@ -144,21 +149,27 @@ def parse_env_variables(
         )
     else:
         cc = compiler
-        result.append("DEB_ARCH_FLAG=-aamd64")
+        result.append("DEB_ARCH=amd64")
 
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if image_type == "deb":
-        result.append(f"DEB_CC={cc}")
-        result.append(f"DEB_CXX={cxx}")
-        # For building fuzzers
-        result.append(f"CC={cc}")
-        result.append(f"CXX={cxx}")
-    elif image_type == "binary":
-        result.append(f"CC={cc}")
-        result.append(f"CXX={cxx}")
-        cmake_flags.append(f"-DCMAKE_C_COMPILER=`which {cc}`")
-        cmake_flags.append(f"-DCMAKE_CXX_COMPILER=`which {cxx}`")
+        result.append("MAKE_DEB=true")
+        cmake_flags.append("-DENABLE_TESTS=0")
+        cmake_flags.append("-DENABLE_UTILS=0")
+        cmake_flags.append("-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON")
+        cmake_flags.append("-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON")
+        cmake_flags.append("-DCMAKE_AUTOGEN_VERBOSE=ON")
+        cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
+        cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
+        cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
+        if is_release_build(build_type, package_type, sanitizer, split_binary):
+            cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
+
+    result.append(f"CC={cc}")
+    result.append(f"CXX={cxx}")
+    cmake_flags.append(f"-DCMAKE_C_COMPILER=`which {cc}`")
+    cmake_flags.append(f"-DCMAKE_CXX_COMPILER=`which {cxx}`")
 
     # Create combined output archive for split build and for performance tests.
     if package_type == "performance":
@@ -170,7 +181,9 @@ def parse_env_variables(
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
     if build_type:
-        result.append(f"BUILD_TYPE={build_type}")
+        result.append(f"BUILD_TYPE={build_type.capitalize()}")
+    else:
+        result.append("BUILD_TYPE=None")
 
     if cache == "distcc":
         result.append(f"CCACHE_PREFIX={cache}")
@@ -192,9 +205,8 @@ def parse_env_variables(
         result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if alien_pkgs:
-        result.append(
-            "ALIEN_PKGS='" + " ".join(["--" + pkg for pkg in alien_pkgs]) + "'"
-        )
+        result.append("MAKE_RPM=true")
+        result.append("MAKE_TGZ=true")
 
     if with_binaries == "programs":
         result.append("BINARY_OUTPUT=programs")
@@ -317,7 +329,7 @@ if __name__ == "__main__":
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
     image_type = "binary" if args.package_type == "performance" else args.package_type
-    image_name = IMAGE_MAP[image_type]
+    image_name = "clickhouse/binary-builder"
 
     if not os.path.isabs(args.clickhouse_repo_path):
         ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))

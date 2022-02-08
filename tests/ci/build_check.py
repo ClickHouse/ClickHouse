@@ -21,6 +21,8 @@ from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
+IMAGE_NAME = "clickhouse/binary-builder"
+
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
     if build_check_name == "ClickHouse build check (actions)":
@@ -84,13 +86,6 @@ def get_packager_cmd(
         cmd += " --with-binaries=tests"
 
     return cmd
-
-
-def get_image_name(build_config: BuildConfig) -> str:
-    if build_config["package_type"] != "deb":
-        return "clickhouse/binary-builder"
-    else:
-        return "clickhouse/deb-builder"
 
 
 def build_clickhouse(
@@ -256,8 +251,7 @@ def main():
         else:
             sys.exit(0)
 
-    image_name = get_image_name(build_config)
-    docker_image = get_image_with_version(IMAGES_PATH, image_name)
+    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
