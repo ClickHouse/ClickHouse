@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/SettingsEnums.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
@@ -81,6 +82,7 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    static String getTableEngineName(DefaultTableEngine default_table_engine);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 

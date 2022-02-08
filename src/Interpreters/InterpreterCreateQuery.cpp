@@ -9,10 +9,10 @@
 #include <Common/randomSeed.h>
 #include <Common/renameat2.h>
 #include <Common/hex.h>
-#include <Core/SettingsEnums.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -719,6 +719,36 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
+{
+    switch (default_table_engine)
+    {
+        case DefaultTableEngine::Log:
+            return "Log";
+
+        case DefaultTableEngine::StripeLog:
+            return "StripeLog";
+
+        case DefaultTableEngine::MergeTree:
+            return "MergeTree";
+
+        case DefaultTableEngine::ReplacingMergeTree:
+            return "ReplacingMergeTree";
+
+        case DefaultTableEngine::ReplicatedMergeTree:
+            return "ReplicatedMergeTree";
+
+        case DefaultTableEngine::ReplicatedReplacingMergeTree:
+            return "ReplicatedReplacingMergeTree";
+
+        case DefaultTableEngine::Memory:
+            return "Memory";
+
+        default:
+            throw Exception("default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
@@ -791,38 +821,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (getContext()->getSettingsRef().default_table_engine.value != DefaultTableEngine::None)
     {
-        auto default_table_engine = getContext()->getSettingsRef().default_table_engine.value;
-        String default_table_engine_name;
-        switch (default_table_engine)
-        {
-            case DefaultTableEngine::Log:
-                default_table_engine_name = "Log";
-                break;
-            case DefaultTableEngine::StripeLog:
-                default_table_engine_name = "StripeLog";
-                break;
-            case DefaultTableEngine::MergeTree:
-                default_table_engine_name = "MergeTree";
-                break;
-            case DefaultTableEngine::ReplacingMergeTree:
-                default_table_engine_name = "ReplacingMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedMergeTree:
-                default_table_engine_name = "ReplicatedMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedReplacingMergeTree:
-                default_table_engine_name = "ReplicatedReplacingMergeTree";
-                break;
-            case DefaultTableEngine::Memory:
-                default_table_engine_name = "Memory";
-                break;
-            default:
-                throw Exception("default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
-        }
+
         if (!create.storage->engine)
         {
             auto engine_ast = std::make_shared<ASTFunction>();
-            engine_ast->name = default_table_engine_name;
+            auto default_table_engine = getContext()->getSettingsRef().default_table_engine.value;
+            engine_ast->name = getTableEngineName(default_table_engine);
             engine_ast->no_empty_args = true;
             create.storage->set(create.storage->engine, engine_ast);
         }
