@@ -21,7 +21,6 @@
 #include <Common/config.h>
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
-#include <Poco/Net/HTTPResponse.h>
 
 
 namespace ProfileEvents
