@@ -45,38 +45,12 @@ private:
 template <typename Comparator>
 using ComparatorWrapper = DebugLessComparator<Comparator>;
 
-template <typename RandomIt, typename Compare>
-void shuffleItemsInEqualRanges(RandomIt first, RandomIt last, Compare compare)
+template <typename RandomIt>
+void shuffle(RandomIt first, RandomIt last)
 {
     static pcg64 rng(getThreadId());
 
-    bool equal_range_started = false;
-    RandomIt equal_range_start_it;
-
-    while (true)
-    {
-        auto next = first + 1;
-        if (next == last)
-            break;
-
-        bool first_equal_second = compare(*first, *next) == compare(*next, *first);
-
-        if (equal_range_started && !first_equal_second)
-        {
-            std::shuffle(equal_range_start_it, next, rng);
-            equal_range_started = false;
-        }
-        else if (!equal_range_started && first_equal_second)
-        {
-            equal_range_started = true;
-            equal_range_start_it = first;
-        }
-
-        ++first;
-    }
-
-    if (equal_range_started)
-        std::shuffle(equal_range_start_it, last, rng);
+    std::shuffle(first, last, rng);
 }
 
 #else
@@ -100,17 +74,32 @@ void nth_element(RandomIt first, RandomIt nth, RandomIt last)
     comparator compare;
     ComparatorWrapper<comparator> compare_wrapper = compare;
 
+#ifdef NDEBUG
+    ::shuffle(first, last);
+#endif
+
     ::miniselect::floyd_rivest_select(first, nth, last, compare_wrapper);
+
+#ifdef NDEBUG
+    ::shuffle(first, nth);
+
+    if (nth != last)
+        ::shuffle(nth + 1, last);
+#endif
 }
 
 template <typename RandomIt, typename Compare>
 void partial_sort(RandomIt first, RandomIt middle, RandomIt last, Compare compare)
 {
+#ifdef NDEBUG
+    ::shuffle(first, last);
+#endif
+
     ComparatorWrapper<Compare> compare_wrapper = compare;
     ::miniselect::floyd_rivest_partial_sort(first, middle, last, compare_wrapper);
 
 #ifdef NDEBUG
-    ::shuffleItemsInEqualRanges(first, middle, compare_wrapper);
+    ::shuffle(middle, last);
 #endif
 }
 
@@ -119,6 +108,7 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 {
     using value_type = typename std::iterator_traits<RandomIt>::value_type;
     using comparator = std::less<value_type>;
+
     ::partial_sort(first, middle, last, comparator());
 }
 
@@ -127,12 +117,12 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
 {
+#ifdef NDEBUG
+    ::shuffle(first, last);
+#endif
+
     ComparatorWrapper<Compare> compare_wrapper = compare;
     ::pdqsort(first, last, compare_wrapper);
-
-#ifdef NDEBUG
-    ::shuffleItemsInEqualRanges(first, last, compare_wrapper);
-#endif
 }
 
 template <typename RandomIt>
