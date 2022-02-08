@@ -191,7 +191,9 @@ namespace
                 NativeReader header_block_in(header_buf, distributed_header.revision);
                 distributed_header.block_header = header_block_in.read();
                 if (!distributed_header.block_header)
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
+                            in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
             }
 
             /// Add handling new data here, for example:
