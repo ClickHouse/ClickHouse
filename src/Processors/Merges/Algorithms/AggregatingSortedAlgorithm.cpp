@@ -292,7 +292,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     const Block & header, size_t num_inputs,
     SortDescription description_, size_t max_block_size)
-    : IMergingAlgorithmWithDelayedChunk(num_inputs, description_)
+    : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
     , columns_definition(defineColumns(header, description_))
     , merged_data(getMergedColumns(header, columns_definition), max_block_size, columns_definition)
 {

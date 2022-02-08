@@ -29,7 +29,6 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/logger_useful.h>
-#include <base/sort.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
@@ -458,7 +457,7 @@ Pipe StorageEmbeddedRocksDB::read(
         if (keys->empty())
             return {};
 
-        ::sort(keys->begin(), keys->end());
+        std::sort(keys->begin(), keys->end());
         keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
 
         Pipes pipes;

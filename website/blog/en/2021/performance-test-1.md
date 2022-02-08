@@ -2,7 +2,7 @@
 title: 'Testing the Performance of ClickHouse'
 image: 'https://blog-images.clickhouse.com/en/2021/performance-testing-1/chebu-crop.jpg'
 date: '2021-08-19'
-author: 'Alexander Kuzmenkov'
+author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
 tags: ['testing', 'performance']
 ---
 

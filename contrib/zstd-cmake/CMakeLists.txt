@@ -148,7 +148,7 @@ IF (ZSTD_LEGACY_SUPPORT)
             "${LIBRARY_LEGACY_DIR}/zstd_v07.h")
 ENDIF (ZSTD_LEGACY_SUPPORT)
 
-add_library(_zstd ${Sources} ${Headers})
-add_library(ch_contrib::zstd ALIAS _zstd)
-target_include_directories(_zstd BEFORE PUBLIC ${LIBRARY_DIR})
-target_compile_options(_zstd PRIVATE -fno-sanitize=undefined)
+ADD_LIBRARY(zstd ${Sources} ${Headers})
+
+target_include_directories (zstd PUBLIC ${LIBRARY_DIR})
+target_compile_options(zstd PRIVATE -fno-sanitize=undefined)

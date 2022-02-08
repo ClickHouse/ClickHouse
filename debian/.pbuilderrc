@@ -104,7 +104,8 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    #MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -124,7 +125,8 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     OSNAME=ubuntu
 
     if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
-        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/$OSNAME/"}
+        #MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/$OSNAME/"}
+        MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     else
         MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
     fi

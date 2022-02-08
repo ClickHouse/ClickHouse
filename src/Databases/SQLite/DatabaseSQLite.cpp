@@ -94,7 +94,7 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table_name);
+    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';", table_name);
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
     {

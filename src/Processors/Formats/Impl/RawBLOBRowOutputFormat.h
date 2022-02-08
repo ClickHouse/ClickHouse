@@ -24,7 +24,7 @@ class WriteBuffer;
   *
   * If you are output more than one value, the output format is ambiguous and you may not be able to read data back.
   */
-class RawBLOBRowOutputFormat final : public IRowOutputFormat
+class RawBLOBRowOutputFormat : public IRowOutputFormat
 {
 public:
     RawBLOBRowOutputFormat(
@@ -39,3 +39,4 @@ private:
 };
 
 }
+

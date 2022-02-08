@@ -317,7 +317,7 @@ public:
         , load_frequency_ms(Aws::Auth::REFRESH_THRESHOLD)
         , logger(&Poco::Logger::get("AWSInstanceProfileCredentialsProvider"))
     {
-        LOG_INFO(logger, "Creating Instance with injected EC2MetadataClient and refresh rate.");
+        LOG_INFO(logger, "Creating Instance with injected EC2MetadataClient and refresh rate {}.");
     }
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override

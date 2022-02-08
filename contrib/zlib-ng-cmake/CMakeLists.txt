@@ -130,8 +130,8 @@ set(ZLIB_SRCS
 
 set(ZLIB_ALL_SRCS ${ZLIB_SRCS} ${ZLIB_ARCH_SRCS})
 
-add_library(_zlib ${ZLIB_ALL_SRCS})
-add_library(ch_contrib::zlib ALIAS _zlib)
+add_library(zlib ${ZLIB_ALL_SRCS})
+add_library(zlibstatic ALIAS zlib)
 
 # https://github.com/zlib-ng/zlib-ng/pull/733
 # This is disabed by default
@@ -153,9 +153,9 @@ configure_file(${SOURCE_DIR}/zlib.pc.cmakein ${ZLIB_PC} @ONLY)
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/zconf.h.cmakein ${CMAKE_CURRENT_BINARY_DIR}/zconf.h @ONLY)
 
 # We should use same defines when including zlib.h as used when zlib compiled
-target_compile_definitions (_zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
 if (ARCH_AMD64 OR ARCH_AARCH64)
-    target_compile_definitions (_zlib PUBLIC X86_64 UNALIGNED_OK)
+    target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
 endif ()
 
-target_include_directories(_zlib SYSTEM BEFORE PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(zlib PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})

@@ -86,18 +86,12 @@ if __name__ == "__main__":
     docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    cmd = (
+    subprocess.check_output(
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{docker_image}"
-    )
-
-    logging.info("Is going to run the command: %s", cmd)
-    subprocess.check_call(
-        cmd,
+        f"{docker_image}",
         shell=True,
     )
-
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)

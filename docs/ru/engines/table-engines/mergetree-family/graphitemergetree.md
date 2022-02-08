@@ -99,16 +99,13 @@ patterns
 
 ``` text
 pattern
-    rule_type
     regexp
     function
 pattern
-    rule_type
     regexp
     age + precision
     ...
 pattern
-    rule_type
     regexp
     function
     age + precision
@@ -132,20 +129,12 @@ default
 
 Поля для разделов `pattern` и `default`:
 
--   `rule_type` - тип правила (применяется только к метрикам указанных типов), используется для разделения правил проверки плоских/теггированных метрик. Опциональное поле. Значение по умолчанию: `all`.  
-Если используются метрики только одного типа или производительность проверки правил некритична, можно не использовать. По умолчанию создается только один тип правил для проверки. Иначе, если хотя бы для одного правила указано отличное от умолчания значение, создаются 2 независимых типа правил - для обычных (классические root.branch.leaf) и теггированных метрик (root.branch.leaf;tag1=value1).  
-Правила по умолчанию попадают в оба правила обоих типов.  
-Возможные значения:
-    -   `all` (default) - универсальное правило, назначается также по умолчанию, если поле не задано
-    -   `plain` - правило для плоских метрик (без тегов). Поле `regexp` обрабатывается как регулярное выражение.
-    -   `tagged` - правило для теггированных метрик (метрика хранится в БД в формате `someName?tag1=value1&tag2=value2&tag3=value3`), регулярное выражение должно быть отсортированно по именам тегов, первым - значение тега `__name__`, если есть.  Поле `regexp` обрабатывается как регулярное выражение.
-    -   `tag_list` - правило для теггированных метрик, простой DSL для упрощения задания регулярного выражения в формате тегов graphite `someName;tag1=value1;tag2=value2`, `someName` или `tag1=value1;tag2=value2`. Поле `regexp` транслируется в правило `tagged`. Cортировать по именам тегов не обязательно, оно отсортируется автоматически. Значение тега (но не имя) может быть регулярным выражением (например `env=(dev|staging)`).
--   `regexp` – шаблон имени метрики (регулярное выражение или DSL).
+-   `regexp` – шаблон имени метрики.
 -   `age` – минимальный возраст данных в секундах.
 -   `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
 -   `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`. Допустимые функции: min/max/any/avg. Avg вычисляется неточно, как среднее от средних.
 
-### Пример конфигурации без разделения типа правил {#configuration-example}
+### Пример конфигурации {#configuration-example}
 
 ``` xml
 <graphite_rollup>
@@ -153,80 +142,6 @@ default
     <pattern>
         <regexp>click_cost</regexp>
         <function>any</function>
-        <retention>
-            <age>0</age>
-            <precision>5</precision>
-        </retention>
-        <retention>
-            <age>86400</age>
-            <precision>60</precision>
-        </retention>
-    </pattern>
-    <default>
-        <function>max</function>
-        <retention>
-            <age>0</age>
-            <precision>60</precision>
-        </retention>
-        <retention>
-            <age>3600</age>
-            <precision>300</precision>
-        </retention>
-        <retention>
-            <age>86400</age>
-            <precision>3600</precision>
-        </retention>
-    </default>
-</graphite_rollup>
-```
-
-### Пример конфигурации c разделением типа правил {#configuration-typed-example}
-
-``` xml
-<graphite_rollup>
-    <version_column_name>Version</version_column_name>
-    <pattern>
-        <rule_type>plain</rule_type>
-        <regexp>click_cost</regexp>
-        <function>any</function>
-        <retention>
-            <age>0</age>
-            <precision>5</precision>
-        </retention>
-        <retention>
-            <age>86400</age>
-            <precision>60</precision>
-        </retention>
-    </pattern>
-    <pattern>
-        <rule_type>tagged</rule_type>
-        <regexp>^((.*)|.)min\?</regexp>
-        <function>min</function>
-        <retention>
-            <age>0</age>
-            <precision>5</precision>
-        </retention>
-        <retention>
-            <age>86400</age>
-            <precision>60</precision>
-        </retention>
-    </pattern>
-    <pattern>
-        <rule_type>tagged</rule_type>
-        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
-        <function>min</function>
-        <retention>
-            <age>0</age>
-            <precision>5</precision>
-        </retention>
-        <retention>
-            <age>86400</age>
-            <precision>60</precision>
-        </retention>
-    </pattern>
-    <pattern>
-        <rule_type>tag_list</rule_type>
-        <regexp>someName;tag2=value2</regexp>
         <retention>
             <age>0</age>
             <precision>5</precision>

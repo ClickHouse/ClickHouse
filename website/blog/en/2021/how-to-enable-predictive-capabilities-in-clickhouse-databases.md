@@ -2,7 +2,7 @@
 title: 'How to Enable Predictive Capabilities in Clickhouse Databases'
 image: 'https://blog-images.clickhouse.com/en/2021/mindsdb-enables-predictive-capabilities-in-clickHouse/featured.png'
 date: '2021-12-14'
-author: 'Ilya Yatsishin'
+author: '[Ilya Yatsishin](https://github.com/qoega)'
 tags: ['company', 'how-to', 'MindsDB']
 ---
 

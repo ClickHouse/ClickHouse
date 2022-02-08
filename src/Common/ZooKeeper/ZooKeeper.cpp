@@ -1145,7 +1145,7 @@ std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts
         if (check_starts_with_slash)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
         if (log)
-            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases");
         zookeeper_path = "/" + zookeeper_path;
     }
 

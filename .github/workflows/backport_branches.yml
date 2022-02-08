@@ -10,7 +10,7 @@ on: # yamllint disable-line rule:truthy
       - 'backport/**'
 jobs:
   DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Clear repository
         run: |

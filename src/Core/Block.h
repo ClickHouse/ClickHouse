@@ -203,6 +203,4 @@ ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column
 Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
 
-Block concatenateBlocks(const std::vector<Block> & blocks);
-
 }

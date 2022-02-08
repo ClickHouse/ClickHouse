@@ -21,11 +21,11 @@ def dict_setup(node, table_name, dict_name, type="UInt64"):
         yield
 
     finally:
-        with Finally("I drop the dictionary", flags=TE):
-            node.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
-
-        with And("I drop the table", flags=TE):
+        with Finally("I drop the table", flags=TE):
             node.query(f"DROP TABLE IF EXISTS {table_name}")
+
+        with And("I drop the dictionary", flags=TE):
+            node.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
 
 @TestSuite
 def dictGet_granted_directly(self, node=None):
@@ -651,34 +651,37 @@ def dictGetType_check(self, privilege, on, grant_target_name, user_name, type, n
     RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Name("dictGet")
-def feature(self, stress=None, node="clickhouse1"):
+def feature(self, node="clickhouse1", stress=None, parallel=None):
     """Check the RBAC functionality of dictGet.
     """
     self.context.node = self.context.cluster.node(node)
 
+    if parallel is not None:
+        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
     with Pool(20) as pool:
+        tasks = []
         try:
-            Suite(run=dictGet_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictGet_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictGetOrDefault_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictGetOrDefault_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictHas_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictHas_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictGetHierarchy_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictGetHierarchy_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictIsIn_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(run=dictIsIn_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+
+            run_scenario(pool, tasks, Suite(test=dictGet_granted_directly, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictGet_granted_via_role, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictGetOrDefault_granted_directly, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictGetOrDefault_granted_via_role, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictHas_granted_directly, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictHas_granted_via_role, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictGetHierarchy_granted_directly, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictGetHierarchy_granted_via_role, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictIsIn_granted_directly, setup=instrument_clickhouse_server_log))
+            run_scenario(pool, tasks, Suite(test=dictIsIn_granted_via_role, setup=instrument_clickhouse_server_log))
 
             for example in dictGetType_granted_directly.examples:
                 type, = example
-                args = {"type" : type}
 
                 with Example(example):
-                    Suite(test=dictGetType_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
-                    Suite(test=dictGetType_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
+                    run_scenario(pool, tasks, Suite(test=dictGetType_granted_directly, setup=instrument_clickhouse_server_log),{"type" : type})
+                    run_scenario(pool, tasks, Suite(test=dictGetType_granted_via_role, setup=instrument_clickhouse_server_log),{"type" : type})
 
         finally:
-            join()
+            join(tasks)

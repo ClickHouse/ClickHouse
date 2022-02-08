@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -53,14 +52,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        if (!column)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                1,
-                getName());
-
         const auto & data = column->getData();
 
         auto result_column_data = ColumnUInt8::create();

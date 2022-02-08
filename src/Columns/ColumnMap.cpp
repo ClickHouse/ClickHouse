@@ -4,6 +4,8 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -62,9 +64,8 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 
 Field ColumnMap::operator[](size_t n) const
 {
-    Field res;
-    get(n, res);
-    return res;
+    auto array = DB::get<Array>((*nested)[n]);
+    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
 }
 
 void ColumnMap::get(size_t n, Field & res) const
@@ -73,12 +74,11 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    res = Map();
+    res = Map(size);
     auto & map = DB::get<Map &>(res);
-    map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        map.push_back(getNestedData()[offset + i]);
+        getNestedData().get(offset + i, map[i]);
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const

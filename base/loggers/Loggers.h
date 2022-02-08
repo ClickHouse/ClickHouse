@@ -5,12 +5,9 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
+#include <Interpreters/TextLog.h>
 #include "OwnSplitChannel.h"
 
-namespace DB
-{
-    class TextLog;
-}
 
 namespace Poco::Util
 {

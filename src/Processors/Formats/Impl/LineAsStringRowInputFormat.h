@@ -14,7 +14,7 @@ class ReadBuffer;
 /// Each Line object is parsed as a whole to string.
 /// This format can only parse a table with single field of type String.
 
-class LineAsStringRowInputFormat final : public IRowInputFormat
+class LineAsStringRowInputFormat : public IRowInputFormat
 {
 public:
     LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);

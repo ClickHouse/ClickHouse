@@ -194,7 +194,7 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 6)
             {
-                /// This is YYYYMM or hhmmss
+                /// This is YYYYMM
                 if (!year && !month)
                 {
                     readDecimalNumber<4>(year, digits);
@@ -435,59 +435,47 @@ ReturnType parseDateTimeBestEffortImpl(
             else if (c == '+' || c == '-')
             {
                 ++in.position();
+                has_time_zone_offset = true;
+                if (c == '-')
+                    time_zone_offset_negative = true;
+
                 num_digits = readDigits(digits, sizeof(digits), in);
 
-                if (num_digits == 6 && !has_time && year && month && day_of_month)
+                if (num_digits == 4)
                 {
-                    /// It looks like hhmmss
-                    readDecimalNumber<2>(hour, digits);
-                    readDecimalNumber<2>(minute, digits + 2);
-                    readDecimalNumber<2>(second, digits + 4);
-                    has_time = true;
+                    readDecimalNumber<2>(time_zone_offset_hour, digits);
+                    readDecimalNumber<2>(time_zone_offset_minute, digits + 2);
+                }
+                else if (num_digits == 3)
+                {
+                    readDecimalNumber<1>(time_zone_offset_hour, digits);
+                    readDecimalNumber<2>(time_zone_offset_minute, digits + 1);
+                }
+                else if (num_digits == 2)
+                {
+                    readDecimalNumber<2>(time_zone_offset_hour, digits);
+                }
+                else if (num_digits == 1)
+                {
+                    readDecimalNumber<1>(time_zone_offset_hour, digits);
                 }
                 else
-                {
-                    /// It looks like time zone offset
-                    has_time_zone_offset = true;
-                    if (c == '-')
-                        time_zone_offset_negative = true;
+                    return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
 
-                    if (num_digits == 4)
+                if (num_digits < 3 && checkChar(':', in))
+                {
+                    num_digits = readDigits(digits, sizeof(digits), in);
+
+                    if (num_digits == 2)
                     {
-                        readDecimalNumber<2>(time_zone_offset_hour, digits);
-                        readDecimalNumber<2>(time_zone_offset_minute, digits + 2);
-                    }
-                    else if (num_digits == 3)
-                    {
-                        readDecimalNumber<1>(time_zone_offset_hour, digits);
-                        readDecimalNumber<2>(time_zone_offset_minute, digits + 1);
-                    }
-                    else if (num_digits == 2)
-                    {
-                        readDecimalNumber<2>(time_zone_offset_hour, digits);
+                        readDecimalNumber<2>(time_zone_offset_minute, digits);
                     }
                     else if (num_digits == 1)
                     {
-                        readDecimalNumber<1>(time_zone_offset_hour, digits);
+                        readDecimalNumber<1>(time_zone_offset_minute, digits);
                     }
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
-
-                    if (num_digits < 3 && checkChar(':', in))
-                    {
-                        num_digits = readDigits(digits, sizeof(digits), in);
-
-                        if (num_digits == 2)
-                        {
-                            readDecimalNumber<2>(time_zone_offset_minute, digits);
-                        }
-                        else if (num_digits == 1)
-                        {
-                            readDecimalNumber<1>(time_zone_offset_minute, digits);
-                        }
-                        else
-                            return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
-                    }
+                        return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
                 }
             }
             else

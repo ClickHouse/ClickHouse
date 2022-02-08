@@ -9,6 +9,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -63,7 +64,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int BAD_REQUEST_PARAMETER;
 }
 
 namespace
@@ -282,15 +282,6 @@ namespace
         {
             String peer = grpc_context.peer();
             return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
-        }
-
-        std::optional<String> getClientHeader(const String & key) const
-        {
-            const auto & client_metadata = grpc_context.client_metadata();
-            auto it = client_metadata.find(key);
-            if (it != client_metadata.end())
-                return String{it->second.data(), it->second.size()};
-            return std::nullopt;
         }
 
         void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
@@ -760,23 +751,6 @@ namespace
         session->authenticate(user, password, user_address);
         session->getClientInfo().quota_key = quota_key;
 
-        ClientInfo client_info = session->getClientInfo();
-
-        /// Parse the OpenTelemetry traceparent header.
-        auto traceparent = responder->getClientHeader("traceparent");
-        if (traceparent)
-        {
-            String error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(traceparent.value(), error))
-            {
-                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                    "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                    traceparent.value(), error);
-            }
-            auto tracestate = responder->getClientHeader("tracestate");
-            client_info.client_trace_context.tracestate = tracestate.value_or("");
-        }
-
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
@@ -785,7 +759,7 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
-        query_context = session->makeQueryContext(std::move(client_info));
+        query_context = session->makeQueryContext();
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -989,9 +963,40 @@ namespace
         assert(!pipeline);
         auto source = query_context->getInputFormat(
             input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
-
         QueryPipelineBuilder builder;
         builder.init(Pipe(source));
+
+        /// Add default values if necessary.
+        if (ast)
+        {
+            if (insert_query)
+            {
+                auto table_id = StorageID::createEmpty();
+
+                if (insert_query->table_id)
+                {
+                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                }
+                else
+                {
+                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
+                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
+                }
+
+                if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
+                {
+                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
+                    if (!columns.empty())
+                    {
+                        builder.addSimpleTransform([&](const Block & cur_header)
+                        {
+                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
+                        });
+                    }
+                }
+            }
+        }
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1227,7 +1232,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, fmt::runtime(getExceptionMessage(exception, true)));
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {

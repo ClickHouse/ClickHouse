@@ -30,6 +30,7 @@ xfails = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse LDAP role mapping regression module.
     """
+    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }

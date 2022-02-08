@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
-    extern const int ILLEGAL_COLUMN;
 }
 
 /// Cast DateTime64 to Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
@@ -109,8 +108,8 @@ public:
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
-        if (!isInteger(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be integer", name);
+        if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be Int64", name);
 
         std::string timezone;
         if (arguments.size() == 2)
@@ -119,48 +118,21 @@ public:
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
 
-    template <typename T>
-    bool executeType(auto & result_column, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        if (!checkAndGetColumn<ColumnVector<T>>(col))
-            return 0;
+        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
+        auto & result_data = res_column->getData();
 
-        auto & result_data = result_column->getData();
-
-        const auto & source_data = typeid_cast<const ColumnVector<T> &>(col).getData();
+        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return 1;
+        return res_column;
     }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
-
-        if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
-              || (executeType<UInt16>(result_column, arguments, input_rows_count))
-              || (executeType<UInt32>(result_column, arguments, input_rows_count))
-              || (executeType<UInt32>(result_column, arguments, input_rows_count))
-              || (executeType<UInt64>(result_column, arguments, input_rows_count))
-              || (executeType<Int8>(result_column, arguments, input_rows_count))
-              || (executeType<Int16>(result_column, arguments, input_rows_count))
-              || (executeType<Int32>(result_column, arguments, input_rows_count))
-              || (executeType<Int64>(result_column, arguments, input_rows_count))))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column {} of first argument of function {}",
-                            arguments[0].column->getName(),
-                            getName());
-        }
-
-        return result_column;
-    }
-
 };
 
 }

@@ -178,20 +178,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
-        {
-            column.insertDefault();
-            read = false;
-        }
+        const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
+        if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+            read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
         else
-        {
-            const auto & type = types[column_idx];
-            const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
-                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
-            else
-                serialization->deserializeTextQuoted(column, *buf, format_settings);
-        }
+            serialization->deserializeTextQuoted(column, *buf, format_settings);
 
         rollback_on_exception = true;
 

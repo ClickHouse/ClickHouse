@@ -1,34 +1,3 @@
-# We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
-# But you can update auto-generated parquet files manually:
-# cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
-# cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
-#          -DARROW_BUILD_SHARED=1 -DARROW_BUILD_UTILITIES=OFF -DARROW_BUILD_INTEGRATION=OFF
-#          -DBoost_FOUND=1 -DARROW_TEST_LINKAGE="shared"
-# make -j8
-# copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> {BUILD_DIR}/contrib/arrow-cmake/cpp/src/parquet/
-
-# Also useful parquet reader:
-# cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
-# cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
-# make -j8
-# {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
-
-set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
-if (OS_FREEBSD)
-    set (ENABLE_PARQUET_DEFAULT OFF)
-endif()
-option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
-
-if (NOT ENABLE_PARQUET)
-    message(STATUS "Building without Parquet support")
-    return()
-endif()
-
-# Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
-if (OS_FREEBSD)
-    message (FATAL_ERROR "Using internal parquet library on FreeBSD is not supported")
-endif()
-
 set (CMAKE_CXX_STANDARD 17)
 
 set(ARROW_VERSION "6.0.1")
@@ -58,10 +27,11 @@ set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
 set(ORC_BUILD_SRC_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src")
 set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
 
+set(GOOGLE_PROTOBUF_DIR "${Protobuf_INCLUDE_DIR}/")
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
-set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
+set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
 
@@ -78,7 +48,7 @@ set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
 # set flatbuffers CMake options
-if (USE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
     set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
 else ()
@@ -89,16 +59,9 @@ set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
 add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
-add_library(_flatbuffers INTERFACE)
-if(USE_STATIC_LIBRARIES)
-    target_link_libraries(_flatbuffers INTERFACE flatbuffers)
-else()
-    target_link_libraries(_flatbuffers INTERFACE flatbuffers_shared)
-endif()
-target_include_directories(_flatbuffers INTERFACE ${FLATBUFFERS_INCLUDE_DIR})
+message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
 # ===  hdfs
-# NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
 set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
@@ -124,6 +87,8 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 
 # ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
+        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
+        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
         "${ORC_SOURCE_SRC_DIR}/Reader.cc"
@@ -149,22 +114,6 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
         )
-
-add_library(_orc ${ORC_SRCS})
-target_link_libraries(_orc PRIVATE
-    ch_contrib::protobuf
-    ch_contrib::lz4
-    ch_contrib::snappy
-    ch_contrib::zlib
-    ch_contrib::zstd)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
-target_include_directories(_orc SYSTEM PRIVATE
-    ${ORC_SOURCE_SRC_DIR}
-    ${ORC_SOURCE_WRAP_DIR}
-    ${ORC_BUILD_SRC_DIR}
-    ${ORC_ADDITION_SOURCE_DIR}
-    ${ARROW_SRC_DIR})
 
 
 # === arrow
@@ -351,18 +300,33 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/ipc/reader.cc"
         "${LIBRARY_DIR}/ipc/writer.cc"
 
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
+        ${ORC_SRCS}
         )
+
+if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
+    set(ARROW_WITH_SNAPPY 1)
+endif ()
+
+if (ZLIB_INCLUDE_DIR AND ZLIB_LIBRARIES)
+    set(ARROW_WITH_ZLIB 1)
+endif ()
+
+if (ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
+    set(ARROW_WITH_ZSTD 1)
+endif ()
 
 add_definitions(-DARROW_WITH_LZ4)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_lz4.cc" ${ARROW_SRCS})
 
-add_definitions(-DARROW_WITH_SNAPPY)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
+if (ARROW_WITH_SNAPPY)
+    add_definitions(-DARROW_WITH_SNAPPY)
+    SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
+endif ()
 
-add_definitions(-DARROW_WITH_ZLIB)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
+if (ARROW_WITH_ZLIB)
+    add_definitions(-DARROW_WITH_ZLIB)
+    SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
+endif ()
 
 if (ARROW_WITH_ZSTD)
     add_definitions(-DARROW_WITH_ZSTD)
@@ -370,30 +334,42 @@ if (ARROW_WITH_ZSTD)
 endif ()
 
 
-add_library(_arrow ${ARROW_SRCS})
+add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 
-target_link_libraries(_arrow PRIVATE
-    boost::filesystem
+# Arrow dependencies
+add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
 
-    _flatbuffers
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
-    ch_contrib::double_conversion
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    add_dependencies(${ARROW_LIBRARY} protoc)
+endif ()
 
-    ch_contrib::lz4
-    ch_contrib::snappy
-    ch_contrib::zlib
-    ch_contrib::zstd
-    ch_contrib::zstd
-)
-target_link_libraries(_arrow PUBLIC _orc)
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
+target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
+if (ARROW_WITH_SNAPPY)
+    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${SNAPPY_LIBRARY})
+endif ()
+if (ARROW_WITH_ZLIB)
+    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
+endif ()
+if (ARROW_WITH_ZSTD)
+    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZSTD_LIBRARY})
+    target_include_directories(${ARROW_LIBRARY} SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+endif ()
 
-add_dependencies(_arrow protoc)
-
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
-
-target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${HDFS_INCLUDE_DIR})
 
 # === parquet
 
@@ -436,23 +412,13 @@ set(PARQUET_SRCS
         "${GEN_LIBRARY_DIR}/parquet_types.cpp"
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
-add_library(_parquet ${PARQUET_SRCS})
-add_library(ch_contrib::parquet ALIAS _parquet)
-target_include_directories(_parquet SYSTEM BEFORE
-    PUBLIC
-        "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
-target_link_libraries(_parquet
-    PUBLIC _arrow
-    PRIVATE
-        ch_contrib::thrift
-        boost::headers_only
-        boost::regex
-        OpenSSL::Crypto OpenSSL::SSL)
+add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
+target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src" PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex ${OPENSSL_LIBRARIES})
 
 if (SANITIZE STREQUAL "undefined")
-    target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
-    target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
+    target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)
+    target_compile_options(${ARROW_LIBRARY} PRIVATE -fno-sanitize=undefined)
 endif ()
 
 # === tools
@@ -461,9 +427,5 @@ set(TOOLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet")
 set(PARQUET_TOOLS parquet_dump_schema parquet_reader parquet_scan)
 foreach (TOOL ${PARQUET_TOOLS})
     add_executable(${TOOL} "${TOOLS_DIR}/${TOOL}.cc")
-    target_link_libraries(${TOOL} PRIVATE _parquet)
+    target_link_libraries(${TOOL} PRIVATE ${PARQUET_LIBRARY})
 endforeach ()
-
-# The library is large - avoid bloat.
-target_compile_options (_arrow PRIVATE -g0)
-target_compile_options (_parquet PRIVATE -g0)

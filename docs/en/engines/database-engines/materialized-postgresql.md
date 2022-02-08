@@ -26,7 +26,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 ## Example of Use {#example-of-use}
 
 ``` sql
-CREATE DATABASE postgres_db
+CREATE DATABASE postgresql;
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
 SHOW TABLES FROM postgres_db;

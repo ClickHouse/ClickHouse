@@ -21,7 +21,7 @@ class ReadBuffer;
   * An equal sign can be escaped in the field name.
   * Also, as an additional element there may be a useless tskv fragment - it needs to be ignored.
   */
-class TSKVRowInputFormat final : public IRowInputFormat
+class TSKVRowInputFormat : public IRowInputFormat
 {
 public:
     TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);

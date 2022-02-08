@@ -15,11 +15,9 @@ target_include_directories (mysqlxx PUBLIC .)
 
 target_link_libraries (mysqlxx
     clickhouse_common_io
-    ch_contrib::zlib
-    ch_contrib::mariadbclient
+    ${MYSQLCLIENT_LIBRARIES}
+    ${ZLIB_LIBRARIES}
 )
-
-add_library(ch::mysqlxx ALIAS mysqlxx)
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

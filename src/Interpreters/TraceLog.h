@@ -3,10 +3,8 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/TraceCollector.h>
 #include <Common/QueryProfiler.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
+#include <Common/TraceCollector.h>
 
 
 namespace DB

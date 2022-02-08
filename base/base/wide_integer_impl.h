@@ -125,11 +125,11 @@ public:
 template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>
 struct common_type<wide::integer<Bits, Signed>, wide::integer<Bits2, Signed2>>
 {
-    using type = std::conditional_t<Bits == Bits2,
-        wide::integer<
-            Bits,
-            std::conditional_t<(std::is_same_v<Signed, Signed2> && std::is_same_v<Signed2, signed>), signed, unsigned>>,
-        std::conditional_t<Bits2<Bits, wide::integer<Bits, Signed>, wide::integer<Bits2, Signed2>>>;
+    using type = std::conditional_t < Bits == Bits2,
+          wide::integer<
+              Bits,
+              std::conditional_t<(std::is_same_v<Signed, Signed2> && std::is_same_v<Signed2, signed>), signed, unsigned>>,
+          std::conditional_t<Bits2<Bits, wide::integer<Bits, Signed>, wide::integer<Bits2, Signed2>>>;
 };
 
 template <size_t Bits, typename Signed, typename Arithmetic>

@@ -30,21 +30,19 @@ namespace DB
 
 
     RedisSource::RedisSource(
-        ConnectionPtr connection_,
-        const RedisArray & keys_,
-        const RedisStorageType & storage_type_,
-        const DB::Block & sample_block,
-        size_t max_block_size_)
-        : SourceWithProgress(sample_block)
-        , connection(std::move(connection_))
-        , keys(keys_)
-        , storage_type(storage_type_)
-        , max_block_size{max_block_size_}
+            const std::shared_ptr<Poco::Redis::Client> & client_,
+            const RedisArray & keys_,
+            const RedisStorageType & storage_type_,
+            const DB::Block & sample_block,
+            const size_t max_block_size_)
+            : SourceWithProgress(sample_block)
+            , client(client_), keys(keys_), storage_type(storage_type_), max_block_size{max_block_size_}
     {
         description.init(sample_block);
     }
 
     RedisSource::~RedisSource() = default;
+
 
     namespace
     {
@@ -123,6 +121,7 @@ namespace DB
         }
     }
 
+
     Chunk RedisSource::generate()
     {
         if (keys.isNull() || description.sample_block.rows() == 0 || cursor >= keys.size())
@@ -169,7 +168,7 @@ namespace DB
                 for (const auto & elem : keys_array)
                     command_for_values.addRedisType(elem);
 
-                auto values = connection->client->execute<RedisArray>(command_for_values);
+                auto values = client->execute<RedisArray>(command_for_values);
 
                 if (keys_array.size() != values.size() + 1) // 'HMGET' primary_key secondary_keys
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
@@ -200,7 +199,7 @@ namespace DB
             for (size_t i = 0; i < need_values; ++i)
                 command_for_values.add(keys.get<RedisBulkString>(cursor + i));
 
-            auto values = connection->client->execute<RedisArray>(command_for_values);
+            auto values = client->execute<RedisArray>(command_for_values);
             if (values.size() != need_values)
                 throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
                     "Inconsistent sizes of keys and values in Redis request");

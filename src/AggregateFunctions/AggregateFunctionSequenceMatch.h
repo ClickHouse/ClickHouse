@@ -6,7 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/sort.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -75,11 +74,11 @@ struct AggregateFunctionSequenceMatchData final
 
     void sort()
     {
-        if (sorted)
-            return;
-
-        ::sort(std::begin(events_list), std::end(events_list), Comparator{});
-        sorted = true;
+        if (!sorted)
+        {
+            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+            sorted = true;
+        }
     }
 
     void serialize(WriteBuffer & buf) const

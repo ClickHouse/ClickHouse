@@ -12,7 +12,6 @@
 #include <Columns/ColumnSparse.h>
 
 #include <iterator>
-#include <base/sort.h>
 
 
 namespace DB
@@ -539,7 +538,7 @@ Block Block::sortColumns() const
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
             sorted_index_by_name[i++] = it;
     }
-    ::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
+    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
     {
         return lhs->first < rhs->first;
     });
@@ -753,32 +752,6 @@ void materializeBlockInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
         block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
-}
-
-Block concatenateBlocks(const std::vector<Block> & blocks)
-{
-    if (blocks.empty())
-        return {};
-
-    size_t num_rows = 0;
-    for (const auto & block : blocks)
-        num_rows += block.rows();
-
-    Block out = blocks[0].cloneEmpty();
-    MutableColumns columns = out.mutateColumns();
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns[i]->reserve(num_rows);
-        for (const auto & block : blocks)
-        {
-            const auto & tmp_column = *block.getByPosition(i).column;
-            columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
-        }
-    }
-
-    out.setColumns(std::move(columns));
-    return out;
 }
 
 }

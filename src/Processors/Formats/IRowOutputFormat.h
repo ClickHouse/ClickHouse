@@ -57,7 +57,6 @@ protected:
     virtual void writeAfterExtremes() {}
     virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
-    size_t num_columns;
     DataTypes types;
     Serializations serializations;
     Params params;

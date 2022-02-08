@@ -95,8 +95,6 @@ public:
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
-    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
-
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,

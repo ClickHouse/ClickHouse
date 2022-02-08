@@ -148,7 +148,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = times->getScale();
+            scale = times_data.getScale();
         }
 
         auto result_column = ColumnString::create();

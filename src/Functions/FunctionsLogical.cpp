@@ -11,7 +11,6 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/FieldVisitors.h>
 
@@ -484,13 +483,9 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
 
     bool has_nullable_arguments = false;
-    bool has_bool_arguments = false;
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         const auto & arg_type = arguments[i];
-
-        if (isBool(arg_type))
-            has_bool_arguments = true;
 
         if (!has_nullable_arguments)
         {
@@ -508,7 +503,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
+    auto result_type = std::make_shared<DataTypeUInt8>();
     return has_nullable_arguments
             ? makeNullable(result_type)
             : result_type;
@@ -716,7 +711,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
             + ") of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return isBool(arguments[0]) ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
+    return std::make_shared<DataTypeUInt8>();
 }
 
 template <template <typename> class Impl, typename T>

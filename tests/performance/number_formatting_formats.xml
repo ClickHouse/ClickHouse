@@ -32,7 +32,7 @@
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File(`{format}`)</create_query>
     <create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} (x UInt64) ENGINE = File(`{format}`)</create_query>
 
-    <query>INSERT INTO table_{format}      SELECT number FROM numbers(10000000) SETTINGS engine_file_truncate_on_insert = 1</query>
+    <query>INSERT INTO table_{format}      SELECT number FROM numbers(10000000)</query>
     <query>INSERT INTO table_{format_fast} SELECT number FROM numbers(20000000)</query>
 
     <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>

@@ -6,7 +6,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Formats/FormatFactory.h>
@@ -16,7 +15,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>

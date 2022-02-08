@@ -109,23 +109,6 @@ void AsynchronousMetrics::openSensors()
             else
                 break;
         }
-
-        file->rewind();
-        Int64 temperature = 0;
-        try
-        {
-            readText(temperature, *file);
-        }
-        catch (const ErrnoException & e)
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("AsynchronousMetrics"),
-                "Thermal monitor '{}' exists but could not be read, error {}.",
-                thermal_device_index,
-                e.getErrno());
-            continue;
-        }
-
         thermal.emplace_back(std::move(file));
     }
 }
@@ -237,23 +220,6 @@ void AsynchronousMetrics::openSensorsChips()
                 ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
                 readText(sensor_name, sensor_name_in);
                 std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
-            }
-
-            file->rewind();
-            Int64 temperature = 0;
-            try
-            {
-                readText(temperature, *file);
-            }
-            catch (const ErrnoException & e)
-            {
-                LOG_WARNING(
-                    &Poco::Logger::get("AsynchronousMetrics"),
-                    "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.",
-                    hwmon_name,
-                    sensor_name,
-                    e.getErrno());
-                continue;
             }
 
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);

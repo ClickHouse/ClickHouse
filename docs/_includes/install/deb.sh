@@ -8,4 +8,4 @@ sudo apt-get update
 sudo apt-get install -y clickhouse-server clickhouse-client
 
 sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+clickhouse-client

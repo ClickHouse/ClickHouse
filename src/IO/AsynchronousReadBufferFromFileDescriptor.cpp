@@ -181,8 +181,8 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         off_t offset_after_seek_pos = new_pos - seek_pos;
 
-        /// First reset the buffer so the next read will fetch new data to the buffer.
-        resetWorkingBuffer();
+        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
+        pos = working_buffer.end();
 
         /// Just update the info about the next position in file.
 

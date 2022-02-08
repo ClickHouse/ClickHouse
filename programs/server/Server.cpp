@@ -80,7 +80,6 @@
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
-#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -99,7 +98,9 @@
 #endif
 
 #if USE_SSL
-#    include <Compression/CompressionCodecEncrypted.h>
+#    if USE_INTERNAL_SSL_LIBRARY
+#        include <Compression/CompressionCodecEncrypted.h>
+#    endif
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -111,6 +112,10 @@
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
+#endif
+
+#if USE_BASE64
+#   include <turbob64.h>
 #endif
 
 #if USE_JEMALLOC
@@ -195,7 +200,6 @@ namespace
 {
 
 void setupTmpPath(Poco::Logger * log, const std::string & path)
-try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -213,15 +217,6 @@ try
         else
             LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
-}
-catch (...)
-{
-    DB::tryLogCurrentException(
-        log,
-        fmt::format(
-            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
-            "necessary",
-            path));
 }
 
 int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
@@ -973,9 +968,7 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-#if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
-#endif
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
@@ -1364,16 +1357,6 @@ if (ThreadFuzzer::instance().isEffective())
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         }
-
-        if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-#if USE_SSL
-        CertificateReloader::instance().tryLoad(config());
-#endif
-
-        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
 
         async_metrics.start();
 

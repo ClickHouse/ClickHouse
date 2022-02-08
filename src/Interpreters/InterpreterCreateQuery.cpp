@@ -39,7 +39,6 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -726,8 +725,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.storage || create.is_dictionary || create.isView())
     {
         if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
+            throw Exception(
+                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
+                ErrorCodes::INCORRECT_QUERY);
 
         return;
     }
@@ -1254,14 +1254,17 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
-        && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(insert, getContext(),
+        if (create.temporary && !getContext()->getSessionContext()->hasQueryContext())
+            getContext()->getSessionContext()->makeQueryContext();
+
+        return InterpreterInsertQuery(insert,
+            create.temporary ? getContext()->getSessionContext() : getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
 

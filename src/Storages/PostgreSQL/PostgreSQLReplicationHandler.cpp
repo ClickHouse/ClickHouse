@@ -1,7 +1,5 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#include <base/sort.h>
-
 #include <Common/setThreadName.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
@@ -700,7 +698,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 }
 
                 NameSet diff;
-                ::sort(expected_tables.begin(), expected_tables.end());
+                std::sort(expected_tables.begin(), expected_tables.end());
                 std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
                                               result_tables.begin(), result_tables.end(),
                                               std::inserter(diff, diff.begin()));

@@ -90,10 +90,7 @@ def concatenate(lang, docs_path, single_page_file, nav):
                                 line)
 
                             # If failed to replace the relative link, print to log
-                            # But with some exceptions:
-                            # - "../src/" -- for cmake-in-clickhouse.md (link to sources)
-                            # - "../usr/share" -- changelog entry that has "../usr/share/zoneinfo"
-                            if '../' in line and (not '../usr/share' in line) and (not '../src/' in line):
+                            if '../' in line:
                                 logging.info('Failed to resolve relative link:')
                                 logging.info(path)
                                 logging.info(line)

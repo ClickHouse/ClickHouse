@@ -27,7 +27,6 @@ toc_title: Client Libraries
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
-    -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
 -   Swift

@@ -244,7 +244,7 @@
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile> -->
+            <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>

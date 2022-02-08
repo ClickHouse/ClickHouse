@@ -157,12 +157,6 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
-        void operator() (const bool & x) const
-        {
-            UInt8 type = Field::Types::Bool;
-            hash.update(type);
-            hash.update(x);
-        }
     };
 }
 
@@ -375,17 +369,17 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    return store(partition_key_sample, disk, part_path, checksums);
+    store(partition_key_sample, disk, part_path, checksums);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     if (!partition_key_sample)
-        return nullptr;
+        return;
 
     auto out = disk->writeFile(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(*out);
@@ -395,8 +389,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-    out->preFinalize();
-    return out;
+    out->finalize();
 }
 
 void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)

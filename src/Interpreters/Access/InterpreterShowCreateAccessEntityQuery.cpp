@@ -27,7 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <base/range.h>
-#include <base/sort.h>
+#include <boost/range/algorithm/sort.hpp>
 
 
 namespace DB
@@ -341,7 +341,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
             entities.push_back(access_control.read(access_control.getID(show_query.type, name)));
     }
 
-    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByName{});
+    boost::range::sort(entities, IAccessEntity::LessByName{});
     return entities;
 }
 

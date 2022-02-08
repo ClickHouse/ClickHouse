@@ -7,13 +7,13 @@ env:
 on: # yamllint disable-line rule:truthy
   push:
     branches:
-      # 22.1 and 22.10
+    # 22.1 and 22.10
       - '2[1-9].[1-9][0-9]'
       - '2[1-9].[1-9]'
-
+      
 jobs:
   DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Clear repository
         run: |

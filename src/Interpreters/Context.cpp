@@ -63,7 +63,6 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/TraceCollector.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -75,6 +74,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/TraceCollector.h>
 #include <base/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
@@ -2647,19 +2647,6 @@ void Context::shutdown()
         {
             LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
             disk->shutdown();
-        }
-    }
-
-    // Special volumes might also use disks that require shutdown.
-    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
-    {
-        if (volume)
-        {
-            auto & disks = volume->getDisks();
-            for (auto & disk : disks)
-            {
-                disk->shutdown();
-            }
         }
     }
 

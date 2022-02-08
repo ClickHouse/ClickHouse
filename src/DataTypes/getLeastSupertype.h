@@ -14,7 +14,4 @@ namespace DB
   */
 DataTypePtr getLeastSupertype(const DataTypes & types);
 
-/// Same as above but return nullptr instead of throwing exception.
-DataTypePtr tryGetLeastSupertype(const DataTypes & types);
-
 }

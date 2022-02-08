@@ -48,8 +48,6 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
-void registerTableFunctionFormat(TableFunctionFactory & factory);
-
 void registerTableFunctions();
 
 }

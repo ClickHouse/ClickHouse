@@ -204,7 +204,6 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATE:
                 case MYSQL_TYPE_DATETIME:
                 case MYSQL_TYPE_NEWDATE:
-                case MYSQL_TYPE_YEAR:
                 {
                     /// No data here.
                     column_meta.emplace_back(0);
@@ -215,9 +214,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DOUBLE:
                 case MYSQL_TYPE_TIMESTAMP2:
                 case MYSQL_TYPE_DATETIME2:
-                case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_BLOB:
-                case MYSQL_TYPE_GEOMETRY:
                 {
                     column_meta.emplace_back(UInt16(meta[pos]));
                     pos += 1;
@@ -435,98 +432,6 @@ namespace MySQLReplication
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
                     }
-                    case MYSQL_TYPE_YEAR: {
-                        Int16 val = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
-                        break;
-                    }
-                    case MYSQL_TYPE_TIME2:
-                    {
-                        UInt64 uintpart = 0UL;
-                        Int32 frac = 0U;
-                        Int64 ltime;
-                        Int64 intpart;
-                        switch (meta)
-                        {
-                            case 0:
-                            {
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
-                                intpart = uintpart - 0x800000L;
-                                ltime = intpart << 24;
-                                break;
-                            }
-                            case 1:
-                            case 2:
-                            {
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
-                                intpart = uintpart - 0x800000L;
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 1);
-                                if (intpart < 0 && frac > 0)
-                                {
-                                    intpart ++;
-                                    frac -= 0x100;
-                                }
-                                frac = frac * 10000;
-                                ltime = intpart << 24;
-                                break;
-                            }
-                            case 3:
-                            case 4:
-                            {
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
-                                intpart = uintpart - 0x800000L;
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 2);
-                                if (intpart < 0 && frac > 0)
-                                {
-                                    intpart ++;
-                                    frac -= 0x10000;
-                                }
-                                frac = frac * 100;
-                                ltime = intpart << 24;
-                                break;
-                            }
-                            case 5:
-                            case 6:
-                            {
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 6);
-                                intpart = uintpart - 0x800000000000L;
-                                ltime = intpart;
-                                frac = std::abs(intpart % (1L << 24));
-                                break;
-                            }
-                            default:
-                            {
-                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
-                                intpart = uintpart - 0x800000L;
-                                ltime = intpart << 24;
-                                break;
-                            }
-                        }
-                        Int64 hh, mm, ss;
-                        bool negative = false;
-                        if (intpart == 0)
-                        {
-                            hh = 0;
-                            mm = 0;
-                            ss = 0;
-                        }
-                        else
-                        {
-                            if (ltime < 0) negative= true;
-                            UInt64 ultime = std::abs(ltime);
-                            intpart = ultime >> 24;
-                            hh = (intpart >> 12) % (1 << 10);
-                            mm = (intpart >> 6) % (1 << 6);
-                            ss = intpart % (1 << 6);
-                        }
-
-                        Int64 time_micro = 0;
-                        time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
-                        if (negative) time_micro = - time_micro;
-                        row.push_back(Field{Int64{time_micro}});
-                        break;
-                    }
                     case MYSQL_TYPE_DATETIME2:
                     {
                         Int64 val = 0;
@@ -680,14 +585,6 @@ namespace MySQLReplication
                         }
                         break;
                     }
-                    case MYSQL_TYPE_SET:
-                    {
-                        UInt32 size = (meta & 0xff);
-                        Bitmap bitmap1;
-                        readBitmap(payload, bitmap1, size);
-                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
-                        break;
-                    }
                     case MYSQL_TYPE_BIT:
                     {
                         UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
@@ -734,7 +631,6 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
-                    case MYSQL_TYPE_GEOMETRY:
                     case MYSQL_TYPE_BLOB:
                     {
                         UInt32 size = 0;

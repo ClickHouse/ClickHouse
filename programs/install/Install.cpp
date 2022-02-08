@@ -364,9 +364,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
-            "clickhouse-extract-from-config",
-            "clickhouse-keeper",
-            "clickhouse-keeper-converter",
+            "clickhouse-extract-from-config"
         };
 
         for (const auto & tool : tools)

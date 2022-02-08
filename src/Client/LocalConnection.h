@@ -142,7 +142,5 @@ private:
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
-
-    String current_database;
 };
 }

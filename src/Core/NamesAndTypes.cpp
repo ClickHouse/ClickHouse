@@ -1,6 +1,4 @@
 #include <Core/NamesAndTypes.h>
-
-#include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
@@ -115,7 +113,7 @@ bool NamesAndTypesList::isSubsetOf(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
-    ::sort(vector.begin(), vector.end());
+    std::sort(vector.begin(), vector.end());
     return std::unique(vector.begin(), vector.end()) == vector.begin() + rhs.size();
 }
 
@@ -123,16 +121,16 @@ size_t NamesAndTypesList::sizeOfDifference(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
-    ::sort(vector.begin(), vector.end());
+    std::sort(vector.begin(), vector.end());
     return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 }
 
 void NamesAndTypesList::getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const
 {
     NamesAndTypes lhs_vector(begin(), end());
-    ::sort(lhs_vector.begin(), lhs_vector.end());
+    std::sort(lhs_vector.begin(), lhs_vector.end());
     NamesAndTypes rhs_vector(rhs.begin(), rhs.end());
-    ::sort(rhs_vector.begin(), rhs_vector.end());
+    std::sort(rhs_vector.begin(), rhs_vector.end());
 
     std::set_difference(lhs_vector.begin(), lhs_vector.end(), rhs_vector.begin(), rhs_vector.end(),
         std::back_inserter(deleted));

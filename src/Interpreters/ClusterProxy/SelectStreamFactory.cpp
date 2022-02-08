@@ -35,9 +35,11 @@ namespace ClusterProxy
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
-    QueryProcessingStage::Enum processed_stage_)
-    : header(header_)
-    , processed_stage{processed_stage_}
+    QueryProcessingStage::Enum processed_stage_,
+    bool has_virtual_shard_num_column_)
+    : header(header_),
+    processed_stage{processed_stage_},
+    has_virtual_shard_num_column(has_virtual_shard_num_column_)
 {
 }
 
@@ -100,15 +102,19 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count)
 {
+    auto modified_query_ast = query_ast->clone();
+    if (has_virtual_shard_num_column)
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
+
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
+        local_plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
-            .query = query_ast,
+            .query = modified_query_ast,
             .header = header,
             .shard_num = shard_info.shard_num,
             .num_replicas = shard_info.getAllNodeCount(),

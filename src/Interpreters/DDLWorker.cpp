@@ -28,7 +28,6 @@
 #include <base/sleep.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/logger_useful.h>
-#include <base/sort.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <base/scope_guard_safe.h>
@@ -222,7 +221,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
     all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
-    ::sort(all_nodes.begin(), all_nodes.end());
+    std::sort(all_nodes.begin(), all_nodes.end());
 }
 
 void DDLWorker::scheduleTasks(bool reinitialized)

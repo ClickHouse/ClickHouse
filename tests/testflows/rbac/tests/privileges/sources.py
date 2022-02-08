@@ -73,7 +73,7 @@ def file(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the File source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File('')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("File source with privilege"):
@@ -82,8 +82,8 @@ def file(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the File source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File('')", settings = [("user", f"{user_name}")],
-                exitcode=0, message=None)
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File()", settings = [("user", f"{user_name}")],
+                exitcode=42, message='Exception: Storage')
 
     with Scenario("File source with revoked privilege"):
 
@@ -94,7 +94,7 @@ def file(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the File source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File('')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=File()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -152,9 +152,9 @@ def url(self, privilege, grant_target_name, user_name, node=None):
     if node is None:
         node = self.context.node
 
-    table_name = f'table_{getuid()}'
-    
     with Scenario("URL source without privilege"):
+        table_name = f'table_{getuid()}'
+
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
@@ -165,18 +165,20 @@ def url(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("URL source with privilege"):
+
         with When(f"I grant {privilege}"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("URL source with revoked privilege"):
+
         with When(f"I grant {privilege}"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -184,7 +186,7 @@ def url(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -255,7 +257,7 @@ def remote(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the Remote source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("Remote source with privilege"):
@@ -264,7 +266,7 @@ def remote(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the Remote source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("Remote source with revoked privilege"):
@@ -276,7 +278,7 @@ def remote(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the Remote source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE = Distributed()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -347,7 +349,7 @@ def MySQL(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the MySQL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("MySQL source with privilege"):
@@ -356,7 +358,7 @@ def MySQL(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the MySQL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("MySQL source with revoked privilege"):
@@ -368,7 +370,7 @@ def MySQL(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the MySQL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=MySQL()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -439,7 +441,7 @@ def ODBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the ODBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("ODBC source with privilege"):
@@ -448,7 +450,7 @@ def ODBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the ODBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("ODBC source with revoked privilege"):
@@ -460,7 +462,7 @@ def ODBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the ODBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=ODBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -531,7 +533,7 @@ def JDBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the JDBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("JDBC source with privilege"):
@@ -540,7 +542,7 @@ def JDBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the JDBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("JDBC source with revoked privilege"):
@@ -552,7 +554,7 @@ def JDBC(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the JDBC source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=JDBC()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -623,7 +625,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("HDFS source with privilege"):
@@ -632,7 +634,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("HDFS source with revoked privilege"):
@@ -644,7 +646,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -715,7 +717,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("S3 source with privilege"):
@@ -724,7 +726,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings = [("user", f"{user_name}")],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3()", settings = [("user", f"{user_name}")],
                 exitcode=42, message='Exception: Storage')
 
     with Scenario("S3 source with revoked privilege"):
@@ -736,7 +738,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3()", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestFeature

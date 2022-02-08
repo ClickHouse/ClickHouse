@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/sort.h>
-
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
@@ -74,7 +72,7 @@ private:
 private:
     void sort()
     {
-        ::sort(points, points + size,
+        std::sort(points, points + size,
             [](const WeightedValue & first, const WeightedValue & second)
             {
                 return first.mean < second.mean;

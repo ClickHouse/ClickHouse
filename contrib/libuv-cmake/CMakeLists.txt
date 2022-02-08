@@ -1,8 +1,3 @@
-if (OS_DARWIN AND COMPILER_GCC)
-    message (WARNING "libuv cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082")
-    return()
-endif()
-
 # This file is a modified version of contrib/libuv/CMakeLists.txt
 
 set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/libuv")
@@ -127,17 +122,19 @@ set(uv_sources "${uv_sources_tmp}")
 
 list(APPEND uv_defines CLICKHOUSE_GLIBC_COMPATIBILITY)
 
-add_library(_uv ${uv_sources})
-add_library(ch_contrib::uv ALIAS _uv)
+add_library(uv ${uv_sources})
+target_compile_definitions(uv
+                           INTERFACE USING_UV_SHARED=1
+                           PRIVATE ${uv_defines} BUILDING_UV_SHARED=1)
+target_compile_options(uv PRIVATE ${uv_cflags})
+target_include_directories(uv PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
+target_link_libraries(uv ${uv_libraries})
 
-target_compile_definitions(_uv PRIVATE ${uv_defines})
-target_include_directories(_uv SYSTEM PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
-target_link_libraries(_uv ${uv_libraries})
-if (NOT USE_STATIC_LIBRARIES)
-  target_compile_definitions(_uv
-                             INTERFACE USING_UV_SHARED=1
-                             PRIVATE BUILDING_UV_SHARED=1)
-endif()
+add_library(uv_a STATIC ${uv_sources})
+target_compile_definitions(uv_a PRIVATE ${uv_defines})
+target_compile_options(uv_a PRIVATE ${uv_cflags})
+target_include_directories(uv_a PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
+target_link_libraries(uv_a ${uv_libraries})
 
 if(UNIX)
   # Now for some gibbering horrors from beyond the stars...
@@ -148,6 +145,7 @@ if(UNIX)
   string(REGEX MATCH [0-9]+[.][0-9]+[.][0-9]+ PACKAGE_VERSION "${configure_ac}")
   string(REGEX MATCH ^[0-9]+ UV_VERSION_MAJOR "${PACKAGE_VERSION}")
   # The version in the filename is mirroring the behaviour of autotools.
-  set_target_properties(_uv PROPERTIES VERSION ${UV_VERSION_MAJOR}.0.0
-                        SOVERSION ${UV_VERSION_MAJOR})
+  set_target_properties(uv PROPERTIES VERSION ${UV_VERSION_MAJOR}.0.0
+                      SOVERSION ${UV_VERSION_MAJOR})
 endif()
+

@@ -1,14 +1,13 @@
 #pragma once
 
-#include <cmath>
-#include <type_traits>
-
-#include <Core/TypeId.h>
-#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <cmath>
+#include <type_traits>
 
 
 namespace DB
@@ -60,7 +59,7 @@ class DataTypeDecimalBase : public IDataType
 public:
     using FieldType = T;
     using ColumnType = ColumnDecimal<T>;
-    static constexpr auto type_id = TypeToTypeIndex<T>;
+    static constexpr auto type_id = TypeId<T>;
 
     static constexpr bool is_parametric = true;
 
@@ -76,7 +75,7 @@ public:
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
+    TypeIndex getTypeId() const override { return TypeId<T>; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;

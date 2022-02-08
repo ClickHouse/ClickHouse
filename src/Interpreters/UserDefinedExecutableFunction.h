@@ -33,7 +33,7 @@ public:
         return lifetime;
     }
 
-    std::string getLoadableName() const override
+    const std::string & getLoadableName() const override
     {
         return configuration.name;
     }

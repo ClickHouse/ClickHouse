@@ -59,12 +59,8 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     auto create_function_query = std::make_shared<ASTCreateFunctionQuery>();
     node = create_function_query;
 
-    create_function_query->function_name = function_name;
-    create_function_query->children.push_back(function_name);
-
+    create_function_query->function_name = function_name->as<ASTIdentifier &>().name();
     create_function_query->function_core = function_core;
-    create_function_query->children.push_back(function_core);
-
     create_function_query->or_replace = or_replace;
     create_function_query->if_not_exists = if_not_exists;
     create_function_query->cluster = std::move(cluster_str);

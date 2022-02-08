@@ -4,7 +4,6 @@
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 #include <base/getThreadId.h>
@@ -12,7 +11,6 @@
 
 #include <csignal>
 #include <mutex>
-#include <sys/mman.h>
 
 
 namespace DB

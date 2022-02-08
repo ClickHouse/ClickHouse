@@ -315,7 +315,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->tryGet(part_path, part_znode))
         {
-            LOG_INFO(log, "Checking data of part {}.", part_name);
+            LOG_WARNING(log, "Checking data of part {}.", part_name);
 
             try
             {
@@ -359,7 +359,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                 String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
-                LOG_ERROR(log, fmt::runtime(message));
+                LOG_ERROR(log, message);
 
                 /// Delete part locally.
                 storage.forgetPartAndMoveToDetached(part, "broken");
@@ -378,7 +378,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
-            LOG_ERROR(log, fmt::runtime(message));
+            LOG_ERROR(log, message);
             storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }
@@ -465,8 +465,6 @@ void ReplicatedMergeTreePartCheckThread::run()
                 parts_queue.erase(selected);
             }
         }
-
-        storage.checkBrokenDisks();
 
         task->schedule();
     }

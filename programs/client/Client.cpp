@@ -286,7 +286,7 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
+                if (insert_ast && insert_ast->data)
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);

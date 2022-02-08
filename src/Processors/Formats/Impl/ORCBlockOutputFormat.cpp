@@ -526,7 +526,6 @@ void registerOutputFormatORC(FormatFactory & factory)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
     });
-    factory.markFormatHasNoAppendSupport("ORC");
 }
 
 }

@@ -1,4 +1,3 @@
-include(configure_config.cmake)
 configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 add_subdirectory(divide)
@@ -13,25 +12,29 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        ch_contrib::cityhash
-        ch_contrib::farmhash
+        ${BASE64_LIBRARY}
+        ${CITYHASH_LIBRARIES}
+        ${FARMHASH_LIBRARIES}
+        ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        ch_contrib::consistent_hashing
+        consistent-hashing
         dbms
-        ch_contrib::metrohash
-        ch_contrib::murmurhash
+        metrohash
+        murmurhash
 
     PRIVATE
-        ch_contrib::zlib
+        ${ZLIB_LIBRARIES}
         boost::filesystem
         divide_impl
 )
 
-if (TARGET OpenSSL::Crypto)
-    target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
+if (OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
+
+target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
@@ -54,46 +57,43 @@ else()
     message(STATUS "Generating debugger info for ClickHouse functions")
 endif()
 
-if (TARGET ch_contrib::icu)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::icu)
+if (USE_ICU)
+    target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
 
-if (TARGET ch_contrib::fastops)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::fastops)
+if (USE_FASTOPS)
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-if (TARGET ch_contrib::llvm)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::llvm)
+if (USE_EMBEDDED_COMPILER)
+    target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-if (TARGET ch_contrib::base64)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base64)
+if(USE_BASE64)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
 
-target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
+target_link_libraries(clickhouse_functions PRIVATE lz4)
 
-if (ENABLE_NLP)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::cld2)
+if (USE_H3)
+    target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
 endif()
 
-if (TARGET ch_contrib::h3)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
+target_link_libraries(clickhouse_functions PRIVATE hyperscan)
+
+if(USE_SIMDJSON)
+    target_link_libraries(clickhouse_functions PRIVATE simdjson)
 endif()
 
-if (TARGET ch_contrib::hyperscan)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hyperscan)
-endif()
-
-if (TARGET ch_contrib::simdjson)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::simdjson)
-endif()
-
-if (TARGET ch_contrib::rapidjson)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
+if(USE_RAPIDJSON)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
@@ -120,6 +120,9 @@ add_subdirectory(JSONPath)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
+
+# target_link_libraries(clickhouse_functions PRIVATE ${S2_LIBRARY})
+target_include_directories(clickhouse_functions SYSTEM PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
 
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)

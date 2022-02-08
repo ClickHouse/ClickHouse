@@ -7,8 +7,6 @@
 #include <random>
 #include <unordered_set>
 
-#include <base/sort.h>
-
 
 namespace DB
 {
@@ -112,7 +110,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    ::sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[
         entries.size() > storage_settings->max_replicated_logs_to_keep
@@ -445,7 +443,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         }
     }
 
-    ::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+    std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
 }
 
 
@@ -478,7 +476,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
-    ::sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
     entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());

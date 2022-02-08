@@ -39,7 +39,7 @@ public:
         const std::string & msg) override
     {
         LogsLevel db_level = static_cast<LogsLevel>(level_);
-        LOG_IMPL(log, db_level, LEVELS.at(db_level), fmt::runtime(msg));
+        LOG_IMPL(log, db_level, LEVELS.at(db_level), msg);
     }
 
     void set_level(int level_) override

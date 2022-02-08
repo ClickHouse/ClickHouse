@@ -1,5 +1,6 @@
 #include "ColumnVector.h"
 
+#include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
@@ -117,6 +118,7 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
+
 namespace
 {
     template <typename T>
@@ -156,9 +158,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -202,16 +204,16 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            ::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
         else
-            ::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
     }
 }
 
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
+    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (reverse)

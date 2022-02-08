@@ -285,7 +285,7 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 `WITH FILL` can be applied for fields with Numeric (all kinds of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
-When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
+When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
 Example of a query without `WITH FILL`:
@@ -398,87 +398,6 @@ Result:
 │ 1970-02-25 │ 1970-01-01 │          │
 │ 1970-03-02 │ 1970-01-01 │          │
 │ 1970-03-07 │ 1970-01-01 │          │
-│ 1970-03-12 │ 1970-01-08 │ original │
-└────────────┴────────────┴──────────┘
-```
-
-The following query uses the `INTERVAL` data type of 1 day for each data filled on column `d1`:
-
-``` sql
-SELECT
-    toDate((number * 10) * 86400) AS d1,
-    toDate(number * 86400) AS d2,
-    'original' AS source
-FROM numbers(10)
-WHERE (number % 3) = 1
-ORDER BY
-    d1 WITH FILL STEP INTERVAL 1 DAY,
-    d2 WITH FILL;
-```
-
-Result:
-```
-┌─────────d1─┬─────────d2─┬─source───┐
-│ 1970-01-11 │ 1970-01-02 │ original │
-│ 1970-01-12 │ 1970-01-01 │          │
-│ 1970-01-13 │ 1970-01-01 │          │
-│ 1970-01-14 │ 1970-01-01 │          │
-│ 1970-01-15 │ 1970-01-01 │          │
-│ 1970-01-16 │ 1970-01-01 │          │
-│ 1970-01-17 │ 1970-01-01 │          │
-│ 1970-01-18 │ 1970-01-01 │          │
-│ 1970-01-19 │ 1970-01-01 │          │
-│ 1970-01-20 │ 1970-01-01 │          │
-│ 1970-01-21 │ 1970-01-01 │          │
-│ 1970-01-22 │ 1970-01-01 │          │
-│ 1970-01-23 │ 1970-01-01 │          │
-│ 1970-01-24 │ 1970-01-01 │          │
-│ 1970-01-25 │ 1970-01-01 │          │
-│ 1970-01-26 │ 1970-01-01 │          │
-│ 1970-01-27 │ 1970-01-01 │          │
-│ 1970-01-28 │ 1970-01-01 │          │
-│ 1970-01-29 │ 1970-01-01 │          │
-│ 1970-01-30 │ 1970-01-01 │          │
-│ 1970-01-31 │ 1970-01-01 │          │
-│ 1970-02-01 │ 1970-01-01 │          │
-│ 1970-02-02 │ 1970-01-01 │          │
-│ 1970-02-03 │ 1970-01-01 │          │
-│ 1970-02-04 │ 1970-01-01 │          │
-│ 1970-02-05 │ 1970-01-01 │          │
-│ 1970-02-06 │ 1970-01-01 │          │
-│ 1970-02-07 │ 1970-01-01 │          │
-│ 1970-02-08 │ 1970-01-01 │          │
-│ 1970-02-09 │ 1970-01-01 │          │
-│ 1970-02-10 │ 1970-01-05 │ original │
-│ 1970-02-11 │ 1970-01-01 │          │
-│ 1970-02-12 │ 1970-01-01 │          │
-│ 1970-02-13 │ 1970-01-01 │          │
-│ 1970-02-14 │ 1970-01-01 │          │
-│ 1970-02-15 │ 1970-01-01 │          │
-│ 1970-02-16 │ 1970-01-01 │          │
-│ 1970-02-17 │ 1970-01-01 │          │
-│ 1970-02-18 │ 1970-01-01 │          │
-│ 1970-02-19 │ 1970-01-01 │          │
-│ 1970-02-20 │ 1970-01-01 │          │
-│ 1970-02-21 │ 1970-01-01 │          │
-│ 1970-02-22 │ 1970-01-01 │          │
-│ 1970-02-23 │ 1970-01-01 │          │
-│ 1970-02-24 │ 1970-01-01 │          │
-│ 1970-02-25 │ 1970-01-01 │          │
-│ 1970-02-26 │ 1970-01-01 │          │
-│ 1970-02-27 │ 1970-01-01 │          │
-│ 1970-02-28 │ 1970-01-01 │          │
-│ 1970-03-01 │ 1970-01-01 │          │
-│ 1970-03-02 │ 1970-01-01 │          │
-│ 1970-03-03 │ 1970-01-01 │          │
-│ 1970-03-04 │ 1970-01-01 │          │
-│ 1970-03-05 │ 1970-01-01 │          │
-│ 1970-03-06 │ 1970-01-01 │          │
-│ 1970-03-07 │ 1970-01-01 │          │
-│ 1970-03-08 │ 1970-01-01 │          │
-│ 1970-03-09 │ 1970-01-01 │          │
-│ 1970-03-10 │ 1970-01-01 │          │
-│ 1970-03-11 │ 1970-01-01 │          │
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
 ```

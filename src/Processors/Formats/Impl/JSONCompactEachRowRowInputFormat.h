@@ -19,7 +19,7 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class JSONCompactEachRowRowInputFormat : public RowInputFormatWithNamesAndTypes
 {
 public:
     JSONCompactEachRowRowInputFormat(
@@ -38,7 +38,7 @@ private:
     void syncAfterError() override;
 };
 
-class JSONCompactEachRowFormatReader final : public FormatWithNamesAndTypesReader
+class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
     JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_);
@@ -81,7 +81,6 @@ private:
     DataTypes readRowAndGetDataTypes() override;
 
     JSONCompactEachRowFormatReader reader;
-    bool first_row = true;
 };
 
 }

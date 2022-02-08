@@ -231,17 +231,9 @@ struct FormatSettings
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
     } capn_proto;
 
-    enum class MsgPackUUIDRepresentation
-    {
-        STR, // Output UUID as a string of 36 characters.
-        BIN, // Output UUID as 16-bytes binary.
-        EXT, // Output UUID as ExtType = 2
-    };
-
     struct
     {
         UInt64 number_of_columns = 0;
-        MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
 };
 

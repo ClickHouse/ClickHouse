@@ -1,10 +1,3 @@
-option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_ROCKSDB)
-  message (STATUS "Not using rocksdb")
-  return()
-endif()
-
 ## this file is extracted from `contrib/rocksdb/CMakeLists.txt`
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 list(APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
@@ -13,10 +6,6 @@ set(PORTABLE ON)
 ## always disable jemalloc for rocksdb by default
 ## because it introduces non-standard jemalloc APIs
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
-set(USE_SNAPPY OFF)
-if (TARGET ch_contrib::snappy)
-  set(USE_SNAPPY ON)
-endif()
 option(WITH_SNAPPY "build with SNAPPY" ${USE_SNAPPY})
 ## lz4, zlib, zstd is enabled in ClickHouse by default
 option(WITH_LZ4 "build with lz4" ON)
@@ -49,30 +38,35 @@ else()
     # but it does not have all the jemalloc files in include/...
     set(WITH_JEMALLOC ON)
   else()
-    if(WITH_JEMALLOC AND TARGET ch_contrib::jemalloc)
+    if(WITH_JEMALLOC)
       add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-      list(APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
+      list(APPEND THIRDPARTY_LIBS jemalloc)
     endif()
   endif()
 
   if(WITH_SNAPPY)
     add_definitions(-DSNAPPY)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
+    list(APPEND THIRDPARTY_LIBS snappy)
   endif()
 
   if(WITH_ZLIB)
     add_definitions(-DZLIB)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
+    list(APPEND THIRDPARTY_LIBS zlib)
   endif()
 
   if(WITH_LZ4)
     add_definitions(-DLZ4)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
+    list(APPEND THIRDPARTY_LIBS lz4)
   endif()
 
   if(WITH_ZSTD)
     add_definitions(-DZSTD)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
+    include_directories(${ZSTD_INCLUDE_DIR})
+    include_directories("${ZSTD_INCLUDE_DIR}/common")
+    include_directories("${ZSTD_INCLUDE_DIR}/dictBuilder")
+    include_directories("${ZSTD_INCLUDE_DIR}/deprecated")
+
+    list(APPEND THIRDPARTY_LIBS zstd)
   endif()
 endif()
 
@@ -544,8 +538,8 @@ if(WITH_FOLLY_DISTRIBUTED_MUTEX)
     "${ROCKSDB_SOURCE_DIR}/third-party/folly/folly/synchronization/WaitOptions.cpp")
 endif()
 
-add_library(_rocksdb STATIC ${SOURCES})
-add_library(ch_contrib::rocksdb ALIAS _rocksdb)
-target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
-# SYSTEM is required to overcome some issues
-target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+set(ROCKSDB_STATIC_LIB rocksdb)
+
+add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES})
+target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE
+  ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})

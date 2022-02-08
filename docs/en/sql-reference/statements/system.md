@@ -72,7 +72,7 @@ Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-mo
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+SYSTEM RELOAD MODELS
 ```
 
 ## RELOAD MODEL {#query_language-system-reload-model}
@@ -82,7 +82,7 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
+SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
@@ -92,8 +92,8 @@ Reloads all registered [executable user defined functions](../functions/index.md
 **Syntax**
 
 ```sql
-RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}

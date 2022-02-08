@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int UNSUPPORTED_PARAMETER;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -33,12 +34,9 @@ namespace ErrorCodes
   */
 
 
-class StringSearcherBase
+struct StringSearcherBase
 {
-public:
-    bool force_fallback = false;
 #ifdef __SSE2__
-protected:
     static constexpr auto n = sizeof(__m128i);
     const int page_size = ::getPageSize();
 
@@ -55,7 +53,7 @@ template <bool CaseSensitive, bool ASCII> class StringSearcher;
 
 /// Case-insensitive UTF-8 searcher
 template <>
-class StringSearcher<false, false> : public StringSearcherBase
+class StringSearcher<false, false> : private StringSearcherBase
 {
 private:
     using UTF8SequenceBuffer = uint8_t[6];
@@ -121,14 +119,11 @@ public:
                 size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, u_seq, sizeof(u_seq));
 
                 if (length_l != length_u)
-                    force_fallback = true;
+                    throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
             }
 
             l = l_seq[0];
             u = u_seq[0];
-
-            if (force_fallback)
-                return;
         }
 
 #ifdef __SSE4_1__
@@ -163,10 +158,7 @@ public:
 
                 /// @note Unicode standard states it is a rare but possible occasion
                 if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
-                {
-                    force_fallback = true;
-                    return;
-                }
+                    throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
             }
 
             cache_actual_len += src_len;
@@ -207,10 +199,9 @@ public:
             if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
                 break;
 
-            auto len = UTF8::seqLength(*haystack_pos);
+            /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
+            const auto len = UTF8::seqLength(*haystack_pos);
             haystack_pos += len;
-
-            len = UTF8::seqLength(*needle_pos);
             needle_pos += len;
         }
 
@@ -222,7 +213,7 @@ public:
     {
 
 #ifdef __SSE4_1__
-        if (pageSafe(pos) && !force_fallback)
+        if (pageSafe(pos))
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
             const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -271,7 +262,7 @@ public:
         while (haystack < haystack_end)
         {
 #ifdef __SSE4_1__
-            if (haystack + n <= haystack_end && pageSafe(haystack) && !force_fallback)
+            if (haystack + n <= haystack_end && pageSafe(haystack))
             {
                 const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                 const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
@@ -348,7 +339,7 @@ public:
 
 /// Case-insensitive ASCII searcher
 template <>
-class StringSearcher<false, true> : public StringSearcherBase
+class StringSearcher<false, true> : private StringSearcherBase
 {
 private:
     /// string to be searched for
@@ -550,7 +541,7 @@ public:
 
 /// Case-sensitive searcher (both ASCII and UTF-8)
 template <bool ASCII>
-class StringSearcher<true, ASCII> : public StringSearcherBase
+class StringSearcher<true, ASCII> : private StringSearcherBase
 {
 private:
     /// string to be searched for
@@ -734,7 +725,7 @@ public:
 // Any value outside of basic ASCII (>=128) is considered a non-separator symbol, hence UTF-8 strings
 // should work just fine. But any Unicode whitespace is not considered a token separtor.
 template <typename StringSearcher>
-class TokenSearcher : public StringSearcherBase
+class TokenSearcher
 {
     StringSearcher searcher;
     size_t needle_size;
@@ -818,7 +809,7 @@ using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStri
   * It is required that strings are zero-terminated.
   */
 
-struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
+struct LibCASCIICaseSensitiveStringSearcher
 {
     const char * const needle;
 
@@ -842,7 +833,7 @@ struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
     }
 };
 
-struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
+struct LibCASCIICaseInsensitiveStringSearcher
 {
     const char * const needle;
 

@@ -1,11 +1,8 @@
 #pragma once
 #include <base/StringRef.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/ArenaWithFreeLists.h>
 #include <unordered_map>
 #include <list>
 #include <atomic>
-#include <iostream>
 
 namespace DB
 {
@@ -13,12 +10,11 @@ namespace DB
 template<typename V>
 struct ListNode
 {
-    StringRef key;
+    std::string key;
     V value;
-
-    bool active_in_map{true};
-    bool free_key{false};
+    bool active_in_map;
 };
+
 
 template <class V>
 class SnapshotableHashTable
@@ -27,15 +23,11 @@ private:
 
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
-    using Mapped = typename List::iterator;
-    using IndexMap = HashMap<StringRef, Mapped>;
+    using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
 
     List list;
     IndexMap map;
     bool snapshot_mode{false};
-    /// Allows to avoid additional copies in updateValue function
-    size_t snapshot_up_to_size = 0;
-    ArenaWithFreeLists arena;
 
     uint64_t approximate_data_size{0};
 
@@ -113,68 +105,51 @@ private:
         }
     }
 
-    StringRef copyStringInArena(const std::string & value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size();
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data()), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
-
-        return updated_value;
-    }
-
-
 public:
 
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
+    using reverse_iterator = typename List::reverse_iterator;
+    using const_reverse_iterator = typename List::const_reverse_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
+    bool insert(const std::string & key, const V & value)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-
-        if (!it)
+        auto it = map.find(key);
+        if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
-
-            it->getMapped() = itr;
+            map.emplace(itr->key, itr);
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
-            return std::make_pair(it, true);
+            return true;
         }
 
-        return std::make_pair(it, false);
+        return false;
     }
+
 
     void insertOrReplace(const std::string & key, const V & value)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+        auto it = map.find(key);
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
-            it->getMapped() = itr;
+            map.emplace(itr->key, itr);
         }
         else
         {
-            auto list_itr = it->getMapped();
+            auto list_itr = it->second;
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, true};
+                ListElem elem{key, value, true};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
-                it->getMapped() = new_list_itr;
+                map.erase(it);
+                map.emplace(new_list_itr->key, new_list_itr);
             }
             else
             {
@@ -190,18 +165,16 @@ public:
         if (it == map.end())
             return false;
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
-            list_itr->free_key = true;
-            map.erase(it->getKey());
+            map.erase(it);
         }
         else
         {
-            map.erase(it->getKey());
-            arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
+            map.erase(it);
             list.erase(list_itr);
         }
 
@@ -214,62 +187,48 @@ public:
         return map.find(key) != map.end();
     }
 
-    const_iterator updateValue(StringRef key, ValueUpdater updater)
+    const_iterator updateValue(const std::string & key, ValueUpdater updater)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
+        auto it = map.find(key);
         assert(it != map.end());
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
 
         if (snapshot_mode)
         {
-            /// We in snapshot mode but updating some node which is already more
-            /// fresh than snapshot distance. So it will not participate in
-            /// snapshot and we don't need to copy it.
-            size_t distance = std::distance(list.begin(), list_itr);
-            if (distance < snapshot_up_to_size)
-            {
-                auto elem_copy = *(list_itr);
-                list_itr->active_in_map = false;
-                updater(elem_copy.value);
-                auto itr = list.insert(list.end(), elem_copy);
-                it->getMapped() = itr;
-                ret = itr;
-            }
-            else
-            {
-                updater(list_itr->value);
-                ret = list_itr;
-            }
+            auto elem_copy = *(list_itr);
+            list_itr->active_in_map = false;
+            map.erase(it);
+            updater(elem_copy.value);
+            auto itr = list.insert(list.end(), elem_copy);
+            map.emplace(itr->key, itr);
+            ret = itr;
         }
         else
         {
             updater(list_itr->value);
             ret = list_itr;
         }
-
-        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
+        updateDataSize(UPDATE_VALUE, key.size(), ret->value.sizeInBytes(), old_value_size);
         return ret;
     }
 
-    const_iterator find(StringRef key) const
+    const_iterator find(const std::string & key) const
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
-            return map_it->getMapped();
+            return map_it->second;
         return list.end();
     }
 
-
-    const V & getValue(StringRef key) const
+    const V & getValue(const std::string & key) const
     {
         auto it = map.find(key);
-        assert(it);
-        return it->getMapped()->value;
+        assert(it != map.end());
+        return it->second->value;
     }
 
     void clearOutdatedNodes()
@@ -280,39 +239,29 @@ public:
         {
             if (!itr->active_in_map)
             {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
-                if (itr->free_key)
-                    arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size(), itr->value.sizeInBytes(), 0);
                 itr = list.erase(itr);
             }
             else
-            {
-                assert(!itr->free_key);
                 itr++;
-            }
         }
     }
 
     void clear()
     {
-        map.clear();
-        for (auto itr = list.begin(); itr != list.end(); ++itr)
-            arena.free(const_cast<char *>(itr->key.data), itr->key.size);
         list.clear();
+        map.clear();
         updateDataSize(CLEAR, 0, 0, 0);
     }
 
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode()
     {
         snapshot_mode = true;
-        snapshot_up_to_size = up_to_size;
     }
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
-        snapshot_up_to_size = 0;
     }
 
     size_t size() const
@@ -330,15 +279,15 @@ public:
         return approximate_data_size;
     }
 
-    uint64_t keyArenaSize() const
-    {
-        return arena.size();
-    }
-
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
     iterator end() { return list.end(); }
     const_iterator end() const { return list.cend(); }
+
+    reverse_iterator rbegin() { return list.rbegin(); }
+    const_reverse_iterator rbegin() const { return list.crbegin(); }
+    reverse_iterator rend() { return list.rend(); }
+    const_reverse_iterator rend() const { return list.crend(); }
 };
 
 

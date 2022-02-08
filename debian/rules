@@ -96,9 +96,6 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	cd $(BUILDDIR) && ctest -j$(THREADS_COUNT) -V
 endif
 
-# Disable config.guess and config.sub update
-override_dh_update_autotools_config:
-
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
 	dh_clean # -X contrib

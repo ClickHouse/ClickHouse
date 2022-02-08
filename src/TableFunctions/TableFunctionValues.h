@@ -20,10 +20,7 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    static DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
-
-    ColumnsDescription structure;
-    bool has_structure_in_arguments;
+    String structure;
 };
 
 

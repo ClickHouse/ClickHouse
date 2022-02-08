@@ -5,9 +5,6 @@
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -22,8 +19,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Formats/MsgPackExtensionTypes.h>
-
 namespace DB
 {
 
@@ -32,8 +27,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), packer(out_), format_settings(format_settings_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_)
+    : IRowOutputFormat(header_, out_, params_), packer(out_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -169,42 +164,6 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             serializeField(*dict_column, dict_type, index);
             return;
         }
-        case TypeIndex::UUID:
-        {
-            const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
-            switch (format_settings.msgpack.output_uuid_representation)
-            {
-                case FormatSettings::MsgPackUUIDRepresentation::BIN:
-                {
-                    WriteBufferFromOwnString buf;
-                    writeBinary(uuid_column.getElement(row_num), buf);
-                    StringRef uuid_bin = buf.stringRef();
-                    packer.pack_bin(uuid_bin.size);
-                    packer.pack_bin_body(uuid_bin.data, uuid_bin.size);
-                    return;
-                }
-                case FormatSettings::MsgPackUUIDRepresentation::STR:
-                {
-                    WriteBufferFromOwnString buf;
-                    writeText(uuid_column.getElement(row_num), buf);
-                    StringRef uuid_text = buf.stringRef();
-                    packer.pack_str(uuid_text.size);
-                    packer.pack_bin_body(uuid_text.data, uuid_text.size);
-                    return;
-                }
-                case FormatSettings::MsgPackUUIDRepresentation::EXT:
-                {
-                    WriteBufferFromOwnString buf;
-                    UUID value = uuid_column.getElement(row_num);
-                    writeBinaryBigEndian(value.toUnderType().items[0], buf);
-                    writeBinaryBigEndian(value.toUnderType().items[1], buf);
-                    StringRef uuid_ext = buf.stringRef();
-                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUID));
-                    packer.pack_ext_body(uuid_ext.data, uuid_ext.size);
-                    return;
-                }
-            }
-        }
         default:
             break;
     }
@@ -227,9 +186,9 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
-            const FormatSettings & settings)
+            const FormatSettings &)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }

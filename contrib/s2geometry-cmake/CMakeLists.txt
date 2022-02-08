@@ -1,10 +1,3 @@
-option(ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_S2_GEOMETRY)
-    message(STATUS "Not using S2 geometry")
-    return()
-endif()
-
 set(S2_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/s2geometry/src")
 
 set(ABSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
@@ -115,17 +108,15 @@ set(S2_SRCS
 
 )
 
-add_library(_s2 ${S2_SRCS})
-add_library(ch_contrib::s2 ALIAS _s2)
+add_library(s2 ${S2_SRCS})
+set_property(TARGET s2 PROPERTY CXX_STANDARD 17)
 
-set_property(TARGET _s2 PROPERTY CXX_STANDARD 17)
-
-if (TARGET OpenSSL::SSL)
-    target_link_libraries(_s2 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
+if (OPENSSL_FOUND)
+    target_link_libraries(s2 PRIVATE ${OPENSSL_LIBRARIES})
 endif()
 
 # Copied from contrib/s2geometry/CMakeLists
-target_link_libraries(_s2 PRIVATE
+target_link_libraries(s2 PRIVATE
         absl::base
         absl::btree
         absl::config
@@ -147,9 +138,9 @@ target_link_libraries(_s2 PRIVATE
         absl::utility
         )
 
-target_include_directories(_s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
-target_include_directories(_s2 SYSTEM PUBLIC "${ABSL_SOURCE_DIR}")
+target_include_directories(s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
+target_include_directories(s2 SYSTEM PUBLIC "${ABSL_SOURCE_DIR}")
 
 if(M_LIBRARY)
-    target_link_libraries(_s2 PRIVATE ${M_LIBRARY})
+    target_link_libraries(s2 PRIVATE ${M_LIBRARY})
 endif()

@@ -157,11 +157,11 @@ struct ArrayAggregateImpl
                 return false;
 
             const AggregationType x = column_const->template getValue<Element>(); // NOLINT
-            const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
+            const auto & data = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
 
             typename ColVecResultType::MutablePtr res_column;
             if constexpr (is_decimal<Element>)
-                res_column = ColVecResultType::create(offsets.size(), column_typed->getScale());
+                res_column = ColVecResultType::create(offsets.size(), data.getScale());
             else
                 res_column = ColVecResultType::create(offsets.size());
 
@@ -185,7 +185,7 @@ struct ArrayAggregateImpl
                 {
                     if constexpr (is_decimal<Element>)
                     {
-                        res[i] = DecimalUtils::convertTo<ResultType>(x, column_typed->getScale());
+                        res[i] = DecimalUtils::convertTo<ResultType>(x, data.getScale());
                     }
                     else
                     {
@@ -210,11 +210,11 @@ struct ArrayAggregateImpl
                                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                         }
 
-                        auto result_scale = column_typed->getScale() * array_size;
+                        auto result_scale = data.getScale() * array_size;
                         if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                        res[i] = DecimalUtils::convertTo<ResultType>(product, result_scale);
+                        res[i] = DecimalUtils::convertTo<ResultType>(product, data.getScale() * array_size);
                     }
                     else
                     {
@@ -236,7 +236,7 @@ struct ArrayAggregateImpl
 
         typename ColVecResultType::MutablePtr res_column;
         if constexpr (is_decimal<Element>)
-            res_column = ColVecResultType::create(offsets.size(), column->getScale());
+            res_column = ColVecResultType::create(offsets.size(), data.getScale());
         else
             res_column = ColVecResultType::create(offsets.size());
 
@@ -309,7 +309,7 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<Element>)
                 {
                     aggregate_value = aggregate_value / AggregationType(count);
-                    res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, column->getScale());
+                    res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, data.getScale());
                 }
                 else
                 {
@@ -318,7 +318,7 @@ struct ArrayAggregateImpl
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
             {
-                auto result_scale = column->getScale() * count;
+                auto result_scale = data.getScale() * count;
 
                 if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);

@@ -155,7 +155,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
+        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -212,13 +212,14 @@ void KeeperStateMachine::create_snapshot(
             }
 
             {
-                /// Destroy snapshot with lock
+                /// Must do it with lock (clearing elements from list)
                 std::lock_guard lock(storage_and_responses_lock);
-                LOG_TRACE(log, "Clearing garbage after snapshot");
                 /// Turn off "snapshot mode" and clear outdate part of storage state
                 storage->clearGarbageAfterSnapshot();
-                LOG_TRACE(log, "Cleared garbage after snapshot");
+                /// Destroy snapshot with lock
                 snapshot.reset();
+                LOG_TRACE(log, "Cleared garbage after snapshot");
+
             }
         }
         catch (...)
@@ -401,20 +402,6 @@ uint64_t KeeperStateMachine::getApproximateDataSize() const
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getApproximateDataSize();
-}
-
-uint64_t KeeperStateMachine::getKeyArenaSize() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getArenaDataSize();
-}
-
-uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
-{
-    std::lock_guard lock(snapshots_lock);
-    if (latest_snapshot_buf)
-        return latest_snapshot_buf->size();
-    return 0;
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const

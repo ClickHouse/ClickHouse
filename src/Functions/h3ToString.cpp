@@ -3,7 +3,6 @@
 #if USE_H3
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -53,17 +51,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        if (!column)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                1,
-                getName());
-
-        const auto & data = column->getData();
-
+        const auto * col_hindex = arguments[0].column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -75,9 +63,9 @@ public:
         char * begin = reinterpret_cast<char *>(vec_res.data());
         char * pos = begin;
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt64 hindex = data[row];
+            const UInt64 hindex = col_hindex->getUInt(i);
 
             if (!isValidCell(hindex))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", hindex);
@@ -88,7 +76,7 @@ public:
             while (*pos != '\0')
                 pos++;
 
-            vec_offsets[row] = ++pos - begin;
+            vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
         return col_res;

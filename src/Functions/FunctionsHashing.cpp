@@ -37,7 +37,9 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionMurmurHash3_128>();
     factory.registerFunction<FunctionGccMurmurHash>();
 
+#if USE_XXHASH
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
+#endif
 }
 }

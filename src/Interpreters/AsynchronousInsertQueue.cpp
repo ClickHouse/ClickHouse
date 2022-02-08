@@ -24,16 +24,6 @@
 #include <base/logger_useful.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric PendingAsyncInsert;
-}
-
-namespace ProfileEvents
-{
-    extern const Event AsyncInsertQuery;
-}
-
 namespace DB
 {
 
@@ -233,9 +223,6 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     if (data->size > max_data_size)
         scheduleDataProcessingJob(it->first, std::move(data), getContext());
-
-    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
-    ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -450,8 +437,6 @@ try
     for (const auto & entry : data->entries)
         if (!entry->isFinished())
             entry->finish();
-
-    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
 }
 catch (const Exception & e)
 {
@@ -485,8 +470,6 @@ void AsynchronousInsertQueue::finishWithException(
             entry->finish(std::make_exception_ptr(exception));
         }
     }
-
-    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
 }
 
 }

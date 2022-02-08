@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 #include <IO/BufferBase.h>
 
 
@@ -104,14 +104,10 @@ public:
         ++pos;
     }
 
-    /// This method may be called before finalize() to tell there would not be any more data written.
-    /// Used does not have to call it, implementation should check it itself if needed.
-    ///
-    /// The idea is similar to prefetch. In case if all data is written, we can flush the buffer
-    /// and start sending data asynchronously. It may improve writing performance in case you have
-    /// multiple files to finalize. Mainly, for blob storage, finalization has high latency,
-    /// and calling preFinalize in a loop may parallelize it.
-    virtual void preFinalize() { next(); }
+    virtual void sync()
+    {
+        next();
+    }
 
     /// Write the last data.
     void finalize()
@@ -120,7 +116,7 @@ public:
             return;
 
         /// finalize() is often called from destructors.
-        LockMemoryExceptionInThread lock(VariableContext::Global);
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
         try
         {
             finalizeImpl();
@@ -132,13 +128,6 @@ public:
             finalized = true;
             throw;
         }
-    }
-
-    /// Wait for data to be reliably written. Mainly, call fsync for fd.
-    /// May be called after finalize() if needed.
-    virtual void sync()
-    {
-        next();
     }
 
 protected:

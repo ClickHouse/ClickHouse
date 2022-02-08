@@ -1,7 +1,6 @@
 #include <future>
 #include <Poco/Util/Application.h>
 
-#include <base/sort.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -2168,7 +2167,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     if (non_empty_data.size() > 1)
     {
         /// Sort the states in descending order so that the merge is more efficient (since all states are merged into the first).
-        ::sort(non_empty_data.begin(), non_empty_data.end(),
+        std::sort(non_empty_data.begin(), non_empty_data.end(),
             [](const AggregatedDataVariantsPtr & lhs, const AggregatedDataVariantsPtr & rhs)
             {
                 return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();

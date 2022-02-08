@@ -31,7 +31,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
 
     void truncate(
         const ASTPtr & query,
@@ -70,12 +70,11 @@ protected:
         ASTPtr partition_by = nullptr);
 
 private:
-    std::vector<const String> uris;
+    const String uri;
     String format_name;
     String compression_method;
     const bool distributed_processing;
     ASTPtr partition_by;
-    bool is_path_with_globs;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };
@@ -89,17 +88,6 @@ public:
     {
         public:
             DisclosedGlobIterator(ContextPtr context_, const String & uri_);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
-    };
-
-    class URISIterator
-    {
-        public:
-            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;
@@ -150,8 +138,6 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    /// onCancel and generate can be called concurrently
-    std::mutex reader_mutex;
     String current_path;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.

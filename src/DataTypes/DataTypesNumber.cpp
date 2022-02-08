@@ -86,10 +86,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
-    factory.registerAlias("SET", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
-    factory.registerAlias("YEAR", "UInt16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TIME", "Int64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);
 }
 
 }

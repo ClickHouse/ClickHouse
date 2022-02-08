@@ -604,9 +604,6 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
-void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
-
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
 {
@@ -1390,3 +1387,4 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
 void readJSONFieldIntoString(String & s, ReadBuffer & buf);
 
 }
+

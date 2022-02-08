@@ -15,7 +15,6 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
 #include <Common/config_version.h>
@@ -176,7 +175,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// Poco::Logger::get can allocate memory too
     tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
@@ -189,7 +188,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }

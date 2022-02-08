@@ -124,26 +124,13 @@ public:
 
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                /*
-                 * Some bug in sse arm64 implementation?
-                 * `base64Encode(repeat('a', 46))` returns wrong padding character
-                 */
-#if defined(__aarch64__)
-                    outlen = tb64senc(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#else
-                    outlen = _tb64e(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#endif
+                outlen = _tb64e(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
             }
             else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
                 if (srclen > 0)
                 {
-#if defined(__aarch64__)
-                   outlen = tb64sdec(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#else
-                   outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#endif
-
+                    outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                         throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }

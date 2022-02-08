@@ -134,23 +134,7 @@ Tuples should have the same type of the elements.
 
 -   The Hamming distance.
 
-Type: The result type is calculed the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
-
-``` sql
-SELECT
-    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
-    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
-    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
-    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
-    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
-```
-
-``` text
-┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
-│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
-└───────┴────────┴────────┴────────┴────────┘
-```
-
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
@@ -256,7 +240,6 @@ Result:
 ┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
 │ [('1',3),('2',2),('3',1)]             │
 └───────────────────────────────────────┘
-```
 
 ## tuplePlus {#tupleplus}
 

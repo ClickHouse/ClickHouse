@@ -13,7 +13,7 @@ struct FormatSettings;
 
 /** The stream for outputting data in the JSONCompact- formats.
   */
-class JSONCompactRowOutputFormat final : public JSONRowOutputFormat
+class JSONCompactRowOutputFormat : public JSONRowOutputFormat
 {
 public:
     JSONCompactRowOutputFormat(

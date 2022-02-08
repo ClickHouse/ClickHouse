@@ -40,6 +40,7 @@ StorageSQLite::StorageSQLite(
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
+    , global_context(context_)
     , sqlite_db(sqlite_db_)
     , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {

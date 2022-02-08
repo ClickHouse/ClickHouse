@@ -44,7 +44,7 @@ def get_image_name(check_name):
     else:
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
-def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
+def get_run_command(builds_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
     additional_options = ['--hung-check']
     additional_options.append('--print-time')
 
@@ -63,7 +63,6 @@ def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, 
     env_str = ' '.join(envs)
 
     return f"docker run --volume={builds_path}:/package_folder " \
-        f"--volume={repo_tests_path}:/usr/share/clickhouse-test " \
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server " \
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
 
@@ -168,8 +167,6 @@ if __name__ == "__main__":
     image_name = get_image_name(check_name)
     docker_image = get_image_with_version(reports_path, image_name)
 
-    repo_tests_path = os.path.join(repo_path, "tests")
-
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
@@ -187,7 +184,7 @@ if __name__ == "__main__":
     run_log_path = os.path.join(result_path, "runlog.log")
 
     additional_envs = get_additional_envs(check_name, run_by_hash_num, run_by_hash_total)
-    run_command = get_run_command(packages_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
+    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
     with TeePopen(run_command, run_log_path) as process:

@@ -15,7 +15,7 @@ class ReadBuffer;
 /// Each JSON object is parsed as a whole to string.
 /// This format can only parse a table with single field of type String.
 
-class JSONAsStringRowInputFormat final : public IRowInputFormat
+class JSONAsStringRowInputFormat : public IRowInputFormat
 {
 public:
     JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);

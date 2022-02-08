@@ -121,10 +121,6 @@ protected:
 
     IAST::QueryKind query_kind;
 
-    /// This field is unused in this class, but it
-    /// increments/decrements metric in constructor/destructor.
-    CurrentMetrics::Increment num_queries_increment;
-
 public:
 
     QueryStatus(

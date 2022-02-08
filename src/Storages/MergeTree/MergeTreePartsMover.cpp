@@ -113,7 +113,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
-                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
+                if (unreserved_space < required_maximum_available_space)
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
             }
         }
@@ -211,7 +211,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         String relative_path = part->relative_path;
         if (disk->exists(path_to_clone + relative_path))
         {
-            LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
+            LOG_WARNING(log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
         disk->createDirectories(path_to_clone);

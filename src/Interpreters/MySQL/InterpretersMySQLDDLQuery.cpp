@@ -108,9 +108,6 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_function->name = type_name_upper + " UNSIGNED";
             }
 
-            if (type_name_upper == "SET")
-                data_type_function->arguments.reset();
-
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
             /// Elements on a position further than 32767 are assigned negative values, starting with -32768.

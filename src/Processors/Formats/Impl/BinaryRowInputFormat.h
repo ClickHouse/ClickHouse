@@ -17,7 +17,7 @@ class ReadBuffer;
 
 /** A stream for inputting data in a binary line-by-line format.
   */
-class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class BinaryRowInputFormat : public RowInputFormatWithNamesAndTypes
 {
 public:
     BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
@@ -30,7 +30,7 @@ public:
     std::string getDiagnosticInfo() override { return {}; }
 };
 
-class BinaryFormatReader final : public FormatWithNamesAndTypesReader
+class BinaryFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);

@@ -25,8 +25,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
     auto lower_name = Poco::toLower(func.name);
 
-    /// sumIf, SumIf or sUMIf are valid function names, but sumIF or sumiF are not
-    if (lower_name != "sum" && (lower_name != "sumif" || !endsWith(func.name, "If")))
+    if (lower_name != "sum" && lower_name != "sumif")
         return;
 
     const auto & func_arguments = func.arguments->children;

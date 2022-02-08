@@ -15,7 +15,7 @@ Hello "world", 789 ,2016-01-03
  default,,
  default-eof,,' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --input_format_csv_empty_as_default=1 --query="INSERT INTO csv FORMAT CSV";
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d, s";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Europe/Moscow'), s String) ENGINE = Memory";

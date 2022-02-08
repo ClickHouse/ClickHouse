@@ -18,15 +18,13 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_storages_system
         clickhouse_table_functions
         string_utils
+        jemalloc
 
     ${LINK_RESOURCE_LIB}
 
     PUBLIC
         daemon
 )
-if (TARGET ch_contrib::jemalloc)
-    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
-endif()
 
 clickhouse_program_add(server)
 

@@ -64,45 +64,38 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-def get_counters(fname):
-    counters = {
-        "ERROR":   set([]),
-        "PASSED":  set([]),
-        "FAILED":  set([]),
-        "SKIPPED": set([]),
-    }
-
+def parse_test_results_output(fname):
+    read = False
+    description_output = []
     with open(fname, 'r') as out:
         for line in out:
-            line = line.strip()
-            # Example of log:
-            #
-            #     test_mysql_protocol/test.py::test_golang_client
-            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            #
-            # And only the line with test status should be matched
-            if not('.py::' in line and ' ' in line):
-                continue
+            if read and line.strip() and not line.startswith('=='):
+                description_output.append(line.strip())
+            if 'short test summary info' in line:
+                read = True
+    return description_output
 
+
+def get_counters(output):
+    counters = {
+        "ERROR": set([]),
+        "PASSED": set([]),
+        "FAILED": set([]),
+    }
+
+    for line in output:
+        if '.py' in line:
             line_arr = line.strip().split(' ')
-            if len(line_arr) < 2:
-                logging.debug("Strange line %s", line)
-                continue
-
-            # Lines like:
-            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            state = line_arr[-2]
-            test_name = line_arr[-1]
-
+            state = line_arr[0]
+            test_name = ' '.join(line_arr[1:])
+            if ' - ' in test_name:
+                test_name = test_name[:test_name.find(' - ')]
             if state in counters:
                 counters[state].add(test_name)
             else:
-                # will skip lines line:
-                #     30.76s call     test_host_ip_change/test.py::test_ip_change_drop_dns_cache
-                #     5.71s teardown  test_host_ip_change/test.py::test_user_access_ip_change[node1]
-                # and similar
-                logging.debug("Strange state in line %s", line)
-
+                logging.info("Strange line %s", line)
+        else:
+            logging.info("Strange line %s", line)
     return {k: list(v) for k, v in counters.items()}
 
 
@@ -466,12 +459,7 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            # -r -- show extra test summary:
-            # -f -- (f)ailed
-            # -E -- (E)rror
-            # -p -- (p)assed
-            # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
                 repo_path, self._get_runner_opts(), image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
             log_basename = test_group_str + "_" + str(i) + ".log"
@@ -502,9 +490,8 @@ class ClickhouseIntegrationTestsRunner:
 
             if os.path.exists(info_path):
                 extra_logs_names.append(info_basename)
-                new_counters = get_counters(info_path)
-                for state, tests in new_counters.items():
-                    logging.info("Tests with %s state (%s): %s", state, len(tests), tests)
+                lines = parse_test_results_output(info_path)
+                new_counters = get_counters(lines)
                 times_lines = parse_test_times(info_path)
                 new_tests_times = get_test_times(times_lines)
                 self._update_counters(counters, new_counters)
@@ -534,7 +521,6 @@ class ClickhouseIntegrationTestsRunner:
             for test in tests_in_group:
                 if (test not in counters["PASSED"] and
                     test not in counters["ERROR"] and
-                    test not in counters["SKIPPED"] and
                     test not in counters["FAILED"] and
                     '::' in test):
                     counters["ERROR"].append(test)

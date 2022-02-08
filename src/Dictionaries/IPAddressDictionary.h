@@ -69,8 +69,6 @@ public:
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
-    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
-
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
@@ -114,7 +112,6 @@ private:
             Decimal64,
             Decimal128,
             Decimal256,
-            DateTime64,
             Float32,
             Float64,
             UUID,
@@ -138,7 +135,6 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
-            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,

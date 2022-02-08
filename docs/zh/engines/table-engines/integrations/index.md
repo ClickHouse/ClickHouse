@@ -19,5 +19,3 @@ ClickHouse 提供了多种方式来与外部系统集成，包括表引擎。像
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
--   [SQLite](../../../engines/table-engines/integrations/sqlite.md)
--   [Hive](../../../engines/table-engines/integrations/hive.md)

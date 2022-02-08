@@ -127,7 +127,6 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
-            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
@@ -154,6 +153,9 @@ private:
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
+
+    template <typename T>
+    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
 
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 

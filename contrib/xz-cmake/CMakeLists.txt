@@ -97,7 +97,7 @@ endif ()
 find_package(Threads REQUIRED)
 
 
-add_library(_liblzma
+add_library(liblzma
     ${SRC_DIR}/src/common/mythread.h
     ${SRC_DIR}/src/common/sysdefs.h
     ${SRC_DIR}/src/common/tuklib_common.h
@@ -241,7 +241,7 @@ add_library(_liblzma
     ${SRC_DIR}/src/liblzma/simple/x86.c
 )
 
-target_include_directories(_liblzma SYSTEM PRIVATE
+target_include_directories(liblzma PRIVATE
     ${SRC_DIR}/src/liblzma/api
     ${SRC_DIR}/src/liblzma/common
     ${SRC_DIR}/src/liblzma/check
@@ -252,15 +252,12 @@ target_include_directories(_liblzma SYSTEM PRIVATE
     ${SRC_DIR}/src/liblzma/simple
     ${SRC_DIR}/src/common
 )
-target_include_directories(_liblzma SYSTEM BEFORE PUBLIC ${SRC_DIR}/src/liblzma/api)
 
-target_link_libraries(_liblzma Threads::Threads)
+target_link_libraries(liblzma Threads::Threads)
 
 # Put the tuklib functions under the lzma_ namespace.
-target_compile_definitions(_liblzma PRIVATE TUKLIB_SYMBOL_PREFIX=lzma_)
+target_compile_definitions(liblzma PRIVATE TUKLIB_SYMBOL_PREFIX=lzma_)
 
 if (ENABLE_SSE2)
-    target_compile_definitions(_liblzma PRIVATE HAVE_IMMINTRIN_H HAVE__MM_MOVEMASK_EPI8)
+    target_compile_definitions(liblzma PRIVATE HAVE_IMMINTRIN_H HAVE__MM_MOVEMASK_EPI8)
 endif()
-
-add_library(ch_contrib::xz ALIAS _liblzma)

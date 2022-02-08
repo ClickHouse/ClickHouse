@@ -3,6 +3,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+import time
+
 
 def fill_nodes(nodes, shard):
     for node in nodes:
@@ -57,25 +59,20 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
         # DROP_RANGE will be removed from the replication log and the first replica will be lost
         for i in range(20):
             node2.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(20 + i))
-
+        
         assert_eq_with_retry(node2, "SELECT value FROM system.zookeeper WHERE path='/clickhouse/tables/test1/replicated/replicas/node1' AND name='is_lost'", "1")
 
-        node2.wait_for_log_line("Will mark replica node1 as lost")
+        for i in range(30):
+            if node2.contains_in_log("Will mark replica node1 as lost"):
+                break
+            time.sleep(0.5)
 
         # the first replica will be cloned from the second
         pm.heal_all()
-        node2.wait_for_log_line("Sending part")
         assert_eq_with_retry(node1, "SELECT count(*) FROM test_table", node2.query("SELECT count(*) FROM test_table"))
 
         # ensure replica was cloned
         assert node1.contains_in_log("Will mimic node2")
-
-        # 2 options:
-        # - There wasn't a merge in node2. Then node1 should have cloned the 2 parts
-        # - There was a merge in progress. node1 might have cloned the new part but still has the original 2 parts
-        # in the replication queue until they are finally discarded with a message like:
-        #       `Skipping action for part 201908_40_40_0 because part 201908_21_40_4 already exists.`
-        #
-        # In any case after a short while the replication queue should be empty
-        assert_eq_with_retry(node1, "SELECT count() FROM system.replication_queue WHERE type != 'MERGE_PARTS'", "0")
-        assert_eq_with_retry(node2, "SELECT count() FROM system.replication_queue WHERE type != 'MERGE_PARTS'", "0")
+        # queue must be empty (except some merges that are possibly executing right now)
+        assert node1.query("SELECT count() FROM system.replication_queue WHERE type != 'MERGE_PARTS'") == "0\n"
+        assert node2.query("SELECT count() FROM system.replication_queue WHERE type != 'MERGE_PARTS'") == "0\n"

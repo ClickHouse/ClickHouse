@@ -1,4 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <base/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -987,8 +988,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachQueryIfNotDetached(););
                     if (thread_group)
-                        CurrentThread::attachToIfDetached(thread_group);
+                        CurrentThread::attachTo(thread_group);
 
                     process_part(part_index);
                 });

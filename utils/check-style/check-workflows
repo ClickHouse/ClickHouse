@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-GIT_ROOT=$(git rev-parse --show-cdup)
-act --list --directory="$GIT_ROOT" 1>/dev/null 2>&1 || act --list --directory="$GIT_ROOT" 2>&1
+act --list 1>/dev/null 2>&1 || act --list 2>&1
 
 actionlint

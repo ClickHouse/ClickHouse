@@ -192,9 +192,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     else
     {
         if (reverse)
-            ::sort(res.begin(), res.end(), greater(*this));
+            std::sort(res.begin(), res.end(), greater(*this));
         else
-            ::sort(res.begin(), res.end(), less(*this));
+            std::sort(res.begin(), res.end(), less(*this));
     }
 }
 

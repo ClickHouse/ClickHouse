@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
 
 
 /// Call this function on crash.

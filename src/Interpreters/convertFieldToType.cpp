@@ -61,7 +61,7 @@ static Field convertNumericTypeImpl(const Field & from)
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
 {
-    if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
+    if (from.getType() == Field::Types::UInt64)
         return convertNumericTypeImpl<UInt64, To>(from);
     if (from.getType() == Field::Types::Int64)
         return convertNumericTypeImpl<Int64, To>(from);

@@ -252,6 +252,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+
 ### Encryption Codecs {#create-query-encryption-codecs}
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
@@ -259,7 +260,6 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 Encryption codecs:
 
 -   `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode. 
-
 -   `CODEC('AES-256-GCM-SIV')` — Encrypts data with AES-256 in GCM-SIV mode. 
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
@@ -269,7 +269,7 @@ These codecs use a fixed nonce and encryption is therefore deterministic. This m
 
 !!! attention "Attention"
     If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
-
+    
 **Example**
 
 ```sql

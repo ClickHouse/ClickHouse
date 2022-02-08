@@ -6,11 +6,9 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <IO/WriteBufferFromString.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
-
-#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
@@ -18,7 +16,7 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
+using ChildrenSet = std::unordered_set<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -29,7 +27,6 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-
     struct Node
     {
         String data;
@@ -160,9 +157,9 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode()
     {
-        container.enableSnapshotMode(up_to_size);
+        container.enableSnapshotMode();
     }
 
     /// Turn off snapshot mode.
@@ -204,12 +201,6 @@ public:
     {
         return container.getApproximateDataSize();
     }
-
-    uint64_t getArenaDataSize() const
-    {
-        return container.keyArenaSize();
-    }
-
 
     uint64_t getTotalWatchesCount() const;
 

@@ -2,7 +2,6 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
@@ -30,7 +29,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/formatAST.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -40,7 +38,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -61,7 +58,6 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
 #include <base/EnumReflection.h>
-#include <base/demangle.h>
 
 #include <random>
 
@@ -197,7 +193,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
@@ -660,7 +656,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (context->query_trace_context.trace_id != UUID())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                    std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();

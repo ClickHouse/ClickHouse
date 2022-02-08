@@ -43,19 +43,16 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto & argument = arguments.front();
-
-        if (!isNumber(argument))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                argument->getName(),
-                getName());
+        const auto & arg = arguments.front();
+        if (!isNumber(arg))
+            throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         /// Integers are converted to Float64.
-        if (Impl::always_returns_float64 || !isFloat(argument))
+        if (Impl::always_returns_float64 || !isFloat(arg))
             return std::make_shared<DataTypeFloat64>();
         else
-            return argument;
+            return arg;
     }
 
     template <typename T, typename ReturnType>
@@ -125,7 +122,7 @@ private:
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
-        UInt32 scale = col->getScale();
+        UInt32 scale = src_data.getScale();
 
         auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();
@@ -158,10 +155,8 @@ private:
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of argument of function {}",
-                col.column->getName(),
-                getName());
+            throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN};
 
         return res;
     }
@@ -169,17 +164,19 @@ private:
 
 
 template <typename Name, Float64(Function)(Float64)>
-struct UnaryFunctionVectorized
+struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
     static constexpr bool always_returns_float64 = true;
 
     template <typename T>
-    static void execute(const T * __restrict src, Float64 * __restrict dst)
+    static void execute(const T * src, Float64 * dst)
     {
-        *dst = Function(static_cast<Float64>(*src));
+        dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
     }
 };
+
+#define UnaryFunctionVectorized UnaryFunctionPlain
 
 }

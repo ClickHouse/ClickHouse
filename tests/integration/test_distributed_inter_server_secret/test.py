@@ -87,17 +87,6 @@ def get_query_user_info(node, query_pattern):
         type = 'QueryFinish'
     """.format(query_pattern)).strip().split('\t')
 
-# @return -- [user, initial_user]
-def get_query_user_info_by_id(node, query_id):
-    node.query("SYSTEM FLUSH LOGS")
-    return node.query("""
-    SELECT user, initial_user
-    FROM system.query_log
-    WHERE
-        query_id = '{}' AND
-        type = 'QueryFinish'
-    """.format(query_id)).strip().split('\t')
-
 # @return -- settings
 def get_query_setting_on_shard(node, query_pattern, setting):
     node.query("SYSTEM FLUSH LOGS")
@@ -194,7 +183,6 @@ def test_secure_insert_buffer_async():
     # previous connection that was instantiated with "ro" user (using
     # interserver secret)
     assert not n1.contains_in_log('{' + query_id + '} <Trace> Connection (n2:9000): Connecting.')
-    assert get_query_user_info_by_id(n1, query_id) == ['default', 'default']
 
     # And before the bug was fixed this query will fail with the following error:
     #
@@ -202,18 +190,6 @@ def test_secure_insert_buffer_async():
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure_from_buffer')
     n1.query('OPTIMIZE TABLE dist_secure_buffer')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure_from_buffer')
-
-    # Check user from which the INSERT on the remote node will be executed
-    #
-    # Incorrect example:
-    #
-    #    {2c55669f-71ad-48fe-98fa-7b475b80718e} <Debug> executeQuery: (from 172.16.1.1:44636, user: ro) INSERT INTO default.data_from_buffer (key) VALUES
-    #
-    # Correct example:
-    #
-    #    {2c55669f-71ad-48fe-98fa-7b475b80718e} <Debug> executeQuery: (from 0.0.0.0:0, user: ) INSERT INTO default.data_from_buffer (key) VALUES
-    #
-    assert n2.contains_in_log('executeQuery: (from 0.0.0.0:0, user: ) INSERT INTO default.data_from_buffer (key) VALUES')
 
     assert int(n1.query('SELECT count() FROM dist_secure_from_buffer')) == 2
     n1.query('TRUNCATE TABLE data_from_buffer ON CLUSTER secure')

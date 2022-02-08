@@ -159,6 +159,7 @@ template <class Queue>
 class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
 {
 public:
+
     MergeTreeBackgroundExecutor(
         String name_,
         size_t threads_count_,
@@ -193,6 +194,7 @@ public:
     void wait();
 
 private:
+
     String name;
     size_t threads_count{0};
     size_t max_tasks_count{0};
@@ -208,7 +210,6 @@ private:
     std::condition_variable has_tasks;
     std::atomic_bool shutdown{false};
     ThreadPool pool;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 
 extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;

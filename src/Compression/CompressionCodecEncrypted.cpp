@@ -9,7 +9,7 @@
 #include <base/logger_useful.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
-#if USE_SSL
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <boost/algorithm/hex.hpp>
@@ -66,7 +66,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
 
 } // end of namespace DB
 
-#if USE_SSL
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 namespace DB
 {
 
@@ -513,7 +513,7 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 
 }
 
-#else /* USE_SSL */
+#else /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
 
 namespace DB
 {
@@ -551,7 +551,7 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
 
 }
 
-#endif /* USE_SSL */
+#endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
 
 namespace DB
 {

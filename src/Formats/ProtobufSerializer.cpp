@@ -36,7 +36,6 @@
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
 #   include <base/range.h>
-#   include <base/sort.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -2164,7 +2163,7 @@ namespace
             for (auto & desc : field_descs_)
                 field_infos.emplace_back(std::move(desc.column_indices), *desc.field_descriptor, std::move(desc.field_serializer));
 
-            ::sort(field_infos.begin(), field_infos.end(),
+            std::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
 
             for (size_t i : collections::range(field_infos.size()))
@@ -2644,7 +2643,7 @@ namespace
             missing_column_indices.clear();
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
-            ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
+            std::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
             boost::range::set_difference(collections::range(column_names.size()), used_column_indices_sorted,
                                          std::back_inserter(missing_column_indices));
 
@@ -2756,7 +2755,7 @@ namespace
             }
 
             /// Shorter suffixes first.
-            ::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
+            std::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
                       [](const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f1,
                          const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f2)
             {

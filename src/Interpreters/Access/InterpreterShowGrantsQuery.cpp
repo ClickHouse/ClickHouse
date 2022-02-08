@@ -4,8 +4,6 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
-#include <Access/CachedAccessChecking.h>
-#include <Access/ContextAccess.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -13,8 +11,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
-#include <base/sort.h>
 
 
 namespace DB
@@ -137,29 +135,19 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 
 std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
-    const auto & access = getContext()->getAccess();
-    const auto & access_control = getContext()->getAccessControl();
-
     const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
+    const auto & access_control = getContext()->getAccessControl();
     auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
-
-    CachedAccessChecking show_users(access, AccessType::SHOW_USERS);
-    CachedAccessChecking show_roles(access, AccessType::SHOW_ROLES);
-    bool throw_if_access_denied = !show_query.for_roles->all;
 
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
     {
         auto entity = access_control.tryRead(id);
-        if (!entity)
-            continue;
-        if ((id == access->getUserID() /* Any user can see his own grants */)
-            || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
-            || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
+        if (entity)
             entities.push_back(entity);
     }
 
-    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByTypeAndName{});
+    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
     return entities;
 }
 

@@ -1,16 +1,11 @@
 #pragma once
 #include <atomic>
 #include <vector>
-#include <map>
-#include <mutex>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
+#include <Interpreters/TextLog.h>
 
-namespace DB
-{
-    class TextLog;
-}
 
 namespace DB
 {

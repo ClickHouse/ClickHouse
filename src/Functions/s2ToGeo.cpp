@@ -21,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -58,7 +57,7 @@ public:
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                "Illegal type {} of argument {} of function {}. Must be Float64",
                 arg->getName(), 1, getName());
 
         DataTypePtr element = std::make_shared<DataTypeFloat64>();
@@ -68,16 +67,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        if (!col_id)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arguments[0].type->getName(),
-                1,
-                getName());
-
-        const auto & data_id = col_id->getData();
+        const auto * col_id = arguments[0].column.get();
 
         auto col_longitude = ColumnFloat64::create();
         auto col_latitude = ColumnFloat64::create();
@@ -90,7 +80,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto id = S2CellId(data_id[row]);
+            const auto id = S2CellId(col_id->getUInt(row));
 
             if (!id.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");

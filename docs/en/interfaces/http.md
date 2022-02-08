@@ -23,12 +23,10 @@ Web UI can be accessed here: `http://localhost:8123/play`.
 ![Web UI](../images/play.png)
 
 
-In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
+In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13.
 
 ``` bash
 $ curl 'http://localhost:8123/ping'
-Ok.
-$ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 

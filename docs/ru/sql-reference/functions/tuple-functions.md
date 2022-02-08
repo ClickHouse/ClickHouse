@@ -237,7 +237,6 @@ SELECT tupleToNameValuePairs(tuple(3, 2, 1));
 ┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
 │ [('1',3),('2',2),('3',1)]             │
 └───────────────────────────────────────┘
-```
 
 ## tuplePlus {#tupleplus}
 

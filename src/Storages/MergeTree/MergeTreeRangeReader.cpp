@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <base/range.h>
 #include <Interpreters/castColumn.h>

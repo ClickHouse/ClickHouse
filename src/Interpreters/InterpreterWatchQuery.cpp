@@ -16,7 +16,6 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Storages/IStorage.h>
 
 
 namespace DB

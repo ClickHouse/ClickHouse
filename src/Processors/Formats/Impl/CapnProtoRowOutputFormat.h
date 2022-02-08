@@ -23,7 +23,7 @@ private:
     WriteBuffer & out;
 };
 
-class CapnProtoRowOutputFormat final : public IRowOutputFormat
+class CapnProtoRowOutputFormat : public IRowOutputFormat
 {
 public:
     CapnProtoRowOutputFormat(

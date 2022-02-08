@@ -28,24 +28,4 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, Con
     return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
 }
 
-bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, ContextPtr context)
-{
-    ParserColumnDeclarationList parser;
-    const Settings & settings = context->getSettingsRef();
-
-    String error;
-    const char * start = structure.data();
-    const char * end = structure.data() + structure.size();
-    ASTPtr columns_list_raw = tryParseQuery(parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
-    if (!columns_list_raw)
-        return false;
-
-    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
-    if (!columns_list)
-        return false;
-
-    columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
-    return true;
-}
-
 }

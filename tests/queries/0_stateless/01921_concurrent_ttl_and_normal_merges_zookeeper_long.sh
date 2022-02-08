@@ -74,4 +74,5 @@ $CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i" &
 done
+
 wait

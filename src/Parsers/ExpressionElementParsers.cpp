@@ -1639,7 +1639,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 if (std::is_same_v<Collection, Tuple> && arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(std::move(arr));
+                literal = std::make_shared<ASTLiteral>(arr);
                 literal->begin = literal_begin;
                 literal->end = ++pos;
                 node = literal;

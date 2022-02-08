@@ -953,7 +953,7 @@ def parse_version(version):
     """
     Parse version string.
     """
-    return [int(x) for x in version.strip().split('.') if x.isnumeric()]
+    return [int(x) for x in version.strip().split('.')]
 
 
 if __name__ == '__main__':

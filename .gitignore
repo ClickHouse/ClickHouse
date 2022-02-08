@@ -13,7 +13,6 @@
 /build_*
 /build-*
 /tests/venv
-/obj-x86_64-linux-gnu/
 
 # logs
 *.log

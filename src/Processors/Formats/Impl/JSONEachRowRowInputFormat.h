@@ -18,7 +18,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat final : public IRowInputFormat
+class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(
@@ -95,7 +95,6 @@ private:
 
     bool json_strings;
     bool first_row = true;
-    bool data_in_square_brackets = false;
 };
 
 }

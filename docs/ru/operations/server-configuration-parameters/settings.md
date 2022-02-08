@@ -105,7 +105,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex from_env="ENVVAR"></key_hex>
+        <key_hex from_env="KEY"></key_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -118,7 +118,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <encryption_codecs>
     <aes_128_gcm_siv>
         <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env="ENVVAR"></key_hex>
+        <key_hex id="1" from_env=".."></key_hex>
         <current_key_id>1</current_key_id>
     </aes_128_gcm_siv>
 </encryption_codecs>

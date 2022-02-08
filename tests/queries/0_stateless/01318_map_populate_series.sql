@@ -4,7 +4,7 @@ create table map_test engine=TinyLog() as (select (number + 1) as n, ([1, number
 select mapPopulateSeries(map.1, map.2) from map_test;
 select mapPopulateSeries(map.1, map.2, toUInt64(3)) from map_test;
 select mapPopulateSeries(map.1, map.2, toUInt64(10)) from map_test;
-select mapPopulateSeries(map.1, map.2, 10) from map_test;
+select mapPopulateSeries(map.1, map.2, 1000) from map_test; -- { serverError 43 }
 select mapPopulateSeries(map.1, map.2, n) from map_test;
 select mapPopulateSeries(map.1, [11,22]) from map_test;
 select mapPopulateSeries([3, 4], map.2) from map_test;
@@ -31,6 +31,6 @@ select mapPopulateSeries([toInt64(-10), 2], [toInt64(1), 1], toInt64(-5)) as res
 -- empty
 select mapPopulateSeries(cast([], 'Array(UInt8)'), cast([], 'Array(UInt8)'), 5);
 
-select mapPopulateSeries(['1', '2'], [1, 1]) as res, toTypeName(res); -- { serverError 43 }
-select mapPopulateSeries([1, 2, 3], [1, 1]) as res, toTypeName(res); -- { serverError 36 }
-select mapPopulateSeries([1, 2], [1, 1, 1]) as res, toTypeName(res); -- { serverError 36 }
+select mapPopulateSeries(['1', '2'], [1,1]) as res, toTypeName(res); -- { serverError 43 }
+select mapPopulateSeries([1, 2, 3], [1,1]) as res, toTypeName(res); -- { serverError 42 }
+select mapPopulateSeries([1, 2], [1,1,1]) as res, toTypeName(res); -- { serverError 42 }

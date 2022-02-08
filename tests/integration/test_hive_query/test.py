@@ -29,7 +29,6 @@ def test_create_parquet_table(started_cluster):
     node = started_cluster.instances['h0_0_0']
     node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
-    DROP TABLE IF EXISTS default.demo_parquet;
     CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
     logging.info("create result {}".format(result))
@@ -40,7 +39,6 @@ def test_create_orc_table(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
-    DROP TABLE IF EXISTS default.demo_orc;
     CREATE TABLE default.demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day)
             """)
     logging.info("create result {}".format(result))
@@ -51,7 +49,6 @@ def test_create_text_table(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
-    DROP TABLE IF EXISTS default.demo_text;
     CREATE TABLE default.demo_text (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_text') PARTITION BY (tuple())
             """)
     logging.info("create result {}".format(result))
@@ -111,8 +108,7 @@ def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
     node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
-    DROP TABLE IF EXISTS default.demo_parquet;
-    CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+    CREATE TABLE IF NOT EXISTS default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
     result = node.query("""
     SELECT day, count(*) FROM default.demo_parquet group by day order by day

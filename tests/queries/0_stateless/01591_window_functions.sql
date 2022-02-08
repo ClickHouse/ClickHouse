@@ -13,10 +13,10 @@ select number, abs(number) over (partition by toString(intDiv(number, 3)) rows u
 select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
 
 -- no order by
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by value rows unbounded preceding) from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
 
 -- can add an alias after window spec
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by value rows unbounded preceding) q from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
 
 -- can't reference it yet -- the window functions are calculated at the
 -- last stage of select, after all other functions.
@@ -81,14 +81,14 @@ select sum(number) over w1, sum(number) over w2
 from numbers(10)
 window
     w1 as (rows unbounded preceding),
-    w2 as (partition by intDiv(number, 3) as value order by value rows unbounded preceding)
+    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
 ;
 
 -- FIXME both functions should use the same window, but they don't. Add an
 -- EXPLAIN test for this.
 select
     sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3) as value order by value rows unbounded preceding)
+    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
 from numbers(10)
 window
     w1 as (partition by intDiv(number, 3) rows unbounded preceding)

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <re2_st/re2.h>
-#include <re2_st/stringpiece.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
 #include <string>
 #include <vector>
 #include <Core/Block.h>
@@ -11,7 +11,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Formats/ParsedTemplateFormatString.h>
-
 
 namespace DB
 {
@@ -27,17 +26,17 @@ public:
     /// Return true if row was successfully parsed and row fields were extracted.
     bool parseRow(PeekableReadBuffer & buf);
 
-    re2_st::StringPiece getField(size_t index) { return matched_fields[index]; }
+    re2::StringPiece getField(size_t index) { return matched_fields[index]; }
     size_t getMatchedFieldsSize() const { return matched_fields.size(); }
     size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
 
 private:
-    const re2_st::RE2 regexp;
+    const RE2 regexp;
     // The vector of fields extracted from line using regexp.
-    std::vector<re2_st::StringPiece> matched_fields;
+    std::vector<re2::StringPiece> matched_fields;
     // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
-    std::vector<re2_st::RE2::Arg> re2_arguments;
-    std::vector<re2_st::RE2::Arg *> re2_arguments_ptrs;
+    std::vector<RE2::Arg> re2_arguments;
+    std::vector<RE2::Arg *> re2_arguments_ptrs;
     bool skip_unmatched;
 };
 
@@ -48,7 +47,7 @@ private:
 /// (according to format_regexp_escaping_rule setting). If the regexp did not match the line,
 /// if format_regexp_skip_unmatched is 1, the line is silently skipped, if the setting is 0, exception will be thrown.
 
-class RegexpRowInputFormat final : public IRowInputFormat
+class RegexpRowInputFormat : public IRowInputFormat
 {
 public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);

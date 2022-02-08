@@ -16,6 +16,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     ContextPtr global_context, const std::string & table_name,
     const std::string & compression_method_) const
 {
+    LOG_DEBUG(&Poco::Logger::get("TableFunctionFile"), "getStorage");
     // For `file` table function, we are going to use format settings from the
     // query context.
     StorageFile::CommonArguments args{
@@ -38,7 +39,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         size_t total_bytes_to_read = 0;
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);
+        return StorageFile::getTableStructureFromData(format, paths, compression_method, std::nullopt, context);
     }
 
     return parseColumnsListFromString(structure, context);

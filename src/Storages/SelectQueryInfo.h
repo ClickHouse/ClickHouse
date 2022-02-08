@@ -87,22 +87,19 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
-    SortDescription order_key_fixed_prefix_descr;
     SortDescription order_key_prefix_descr;
     int direction;
     UInt64 limit;
 
-    InputOrderInfo(
-        const SortDescription & order_key_fixed_prefix_descr_,
-        const SortDescription & order_key_prefix_descr_,
-        int direction_, UInt64 limit_)
-        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
-        , order_key_prefix_descr(order_key_prefix_descr_)
-        , direction(direction_), limit(limit_)
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
+
+    bool operator ==(const InputOrderInfo & other) const
     {
+        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator==(const InputOrderInfo &) const = default;
+    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
 class IMergeTreeDataPart;

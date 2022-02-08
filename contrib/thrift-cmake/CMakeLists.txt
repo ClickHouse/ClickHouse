@@ -1,10 +1,3 @@
-option(ENABLE_THRIFT "Enable Thrift" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_THRIFT)
-    message (STATUS "thrift disabled")
-    return()
-endif()
-
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp")
 set(thriftcpp_SOURCES
         "${LIBRARY_DIR}/src/thrift/TApplicationException.cpp"
@@ -89,7 +82,6 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build/cmake/config.h.in" "${CMAKE_CU
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(_thrift ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-add_library(ch_contrib::thrift ALIAS _thrift)
-target_include_directories(_thrift SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src" ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries (_thrift PUBLIC boost::headers_only)
+add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${THRIFT_INCLUDE_DIR}" ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries (${THRIFT_LIBRARY} PUBLIC boost::headers_only)

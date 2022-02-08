@@ -3,8 +3,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
 
 #include <vector>
 #include <atomic>

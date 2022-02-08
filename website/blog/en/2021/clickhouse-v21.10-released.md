@@ -2,7 +2,7 @@
 title: 'ClickHouse v21.10 Released'
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-v21-10/featured.jpg'
 date: '2021-10-14'
-author: 'Rich Raposa, Alexey Milovidov'
+author: '[Rich Raposa](https://github.com/rfraposa), [Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['company', 'community']
 ---
 

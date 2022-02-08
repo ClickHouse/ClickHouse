@@ -324,7 +324,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            LOG_WARNING(log, fmt::runtime(message));
+            LOG_WARNING(log, message);
         }
     }
 

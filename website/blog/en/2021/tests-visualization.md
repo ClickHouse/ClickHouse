@@ -2,7 +2,7 @@
 title: 'Decorating a Christmas Tree With the Help Of Flaky Tests'
 image: 'https://blog-images.clickhouse.com/en/2021/tests-visualization/tests.png'
 date: '2021-12-27'
-author: 'Alexey Milovidov'
+author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['tests', 'ci', 'flaky', 'christmas', 'visualization']
 ---
 

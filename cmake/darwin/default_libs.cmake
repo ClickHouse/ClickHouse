@@ -22,11 +22,15 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-include (cmake/cxx.cmake)
+include (cmake/find/cxx.cmake)
+
+add_library(global-group INTERFACE)
 
 target_link_libraries(global-group INTERFACE
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
 )
+
+link_libraries(global-group)
 
 # FIXME: remove when all contribs will get custom cmake lists
 install(

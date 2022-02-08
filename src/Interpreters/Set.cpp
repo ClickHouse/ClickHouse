@@ -25,9 +25,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
-#include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
 
 namespace DB
 {
@@ -407,7 +405,7 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
-    ::sort(indexes_mapping.begin(), indexes_mapping.end(),
+    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);

@@ -32,7 +32,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MySQL compatibility alias.
+    /// MysQL compatibility alias.
     factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();

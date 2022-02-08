@@ -1,8 +1,8 @@
 #include <Access/AccessRights.h>
 #include <base/logger_useful.h>
-#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/sort.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -101,7 +101,7 @@ namespace
         AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
-            ::sort(sorted.begin(), sorted.end());
+            boost::range::sort(sorted);
             AccessRightsElements res;
             res.reserve(sorted.size());
 

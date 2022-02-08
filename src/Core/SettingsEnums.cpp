@@ -130,10 +130,4 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"JSON", FormatSettings::EscapingRule::JSON},
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
-
-IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
-                       {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
-                        {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
-                        {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
-
 }

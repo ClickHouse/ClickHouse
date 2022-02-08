@@ -55,11 +55,7 @@ SELECT * FROM insert_select_testtable;
 └───┴───┴───┘
 ```
 
-In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default. It is also possible to use `DEFAULT` keyword to insert default values:
-
-``` sql
-INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
-```
+In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
 
 If a list of columns does not include all existing columns, the rest of the columns are filled with:
 

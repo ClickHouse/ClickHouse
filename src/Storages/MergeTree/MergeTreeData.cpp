@@ -21,7 +21,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -67,7 +66,7 @@
 #include <boost/algorithm/string/replace.hpp>
 
 #include <base/insertAtEnd.h>
-#include <base/sort.h>
+#include <base/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -264,13 +263,9 @@ MergeTreeData::MergeTreeData(
     /// Creating directories, if not exist.
     for (const auto & disk : getDisks())
     {
-        if (disk->isBroken())
-            continue;
-
         disk->createDirectories(relative_data_path);
         disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
         String current_version_file_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
-
         if (disk->exists(current_version_file_path))
         {
             if (!version_file.first.empty())
@@ -343,16 +338,6 @@ MergeTreeData::MergeTreeData(
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     return getContext()->getStoragePolicy(getSettings()->storage_policy);
-}
-
-bool MergeTreeData::supportsFinal() const
-{
-    return merging_params.mode == MergingParams::Collapsing
-        || merging_params.mode == MergingParams::Summing
-        || merging_params.mode == MergingParams::Aggregating
-        || merging_params.mode == MergingParams::Replacing
-        || merging_params.mode == MergingParams::Graphite
-        || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
@@ -1130,18 +1115,13 @@ void MergeTreeData::loadDataPartsFromDisk(
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously many ({} parts, {} in total) broken parts to remove while maximum allowed broken parts count is {}. You can change the maximum value "
-                        "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
-                        "(don't forget to return setting back to default value)",
-            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes), settings->max_suspicious_broken_parts);
+            "Suspiciously many ({}) broken parts to remove.",
+            suspicious_broken_parts);
 
     if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously big size ({} parts, {} in total) of all broken parts to remove while maximum allowed broken parts size is {}. "
-            "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
-            "section or in table settings in .sql file (don't forget to return setting back to default value)",
-            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-            formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
+            "Suspiciously big size ({}) of all broken parts to remove.",
+            formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes));
 }
 
 
@@ -1199,9 +1179,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken())
-                continue;
-
             if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -1222,9 +1199,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     std::mutex wal_init_lock;
     for (const auto & disk_ptr : disks)
     {
-        if (disk_ptr->isBroken())
-            continue;
-
         auto & disk_parts = disk_part_map[disk_ptr->getName()];
         auto & disk_wal_parts = disk_wal_part_map[disk_ptr->getName()];
 
@@ -1286,6 +1260,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         return;
     }
 
+
     DataPartsVector broken_parts_to_detach;
     DataPartsVector duplicate_parts_to_remove;
 
@@ -1295,9 +1270,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (!parts_from_wal.empty())
         loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal, part_lock);
-
-    for (auto & part : duplicate_parts_to_remove)
-        part->remove();
 
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -1356,6 +1328,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     calculateColumnAndSecondaryIndexSizesImpl();
 
+
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
 
@@ -1392,9 +1365,6 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
     /// Delete temporary directories older than a day.
     for (const auto & disk : getDisks())
     {
-        if (disk->isBroken())
-            continue;
-
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
@@ -1604,8 +1574,12 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
                 if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
+                    CurrentThread::attachTo(thread_group);
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
@@ -1637,7 +1611,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
     if (all_block_numbers_on_disk.empty())
         return 0;
 
-    ::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
+    std::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
     block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
     for (size_t i = 1; i < all_block_numbers_on_disk.size(); ++i)
     {
@@ -1668,14 +1642,12 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
         auto disk_ptr = *disk_it;
-        if (disk_ptr->isBroken())
-            continue;
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
             if (min_max_block_number && is_range_on_disk(min_max_block_number->first, min_max_block_number->second))
             {
-                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file {}", it->name());
+                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file " + it->name());
                 disk_ptr->removeFile(relative_data_path + it->name());
                 ++cleared_count;
             }
@@ -1752,9 +1724,6 @@ void MergeTreeData::dropAllData()
 
     for (const auto & disk : getDisks())
     {
-        if (disk->isBroken())
-            continue;
-
         try
         {
             disk->removeRecursive(relative_data_path);
@@ -1789,8 +1758,6 @@ void MergeTreeData::dropIfEmpty()
     {
         for (const auto & disk : getDisks())
         {
-            if (disk->isBroken())
-                continue;
             /// Non recursive, exception is thrown if there are more files.
             disk->removeFileIfExists(fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME);
             disk->removeDirectory(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
@@ -2459,12 +2426,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-bool MergeTreeData::renameTempPartAndAdd(
-    MutableDataPartPtr & part,
-    SimpleIncrement * increment,
-    Transaction * out_transaction,
-    MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2473,7 +2435,7 @@ bool MergeTreeData::renameTempPartAndAdd(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
+        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts, deduplication_log))
             return false;
     }
     if (!covered_parts.empty())
@@ -2485,13 +2447,8 @@ bool MergeTreeData::renameTempPartAndAdd(
 
 
 bool MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part,
-    SimpleIncrement * increment,
-    Transaction * out_transaction,
-    std::unique_lock<std::mutex> & lock,
-    DataPartsVector * out_covered_parts,
-    MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+    MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
+    std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts, MergeTreeDeduplicationLog * deduplication_log)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2553,7 +2510,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// deduplication.
     if (deduplication_log)
     {
-        const String block_id = part->getZeroLevelPartBlockID(deduplication_token);
+        String block_id = part->getZeroLevelPartBlockID();
         auto res = deduplication_log->addPart(block_id, part_info);
         if (!res.second)
         {
@@ -2596,13 +2553,11 @@ bool MergeTreeData::renameTempPartAndReplace(
             ++reduce_parts;
         }
 
+        decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
+
         modifyPartState(part_it, DataPartState::Active);
         addPartContributionToColumnAndSecondaryIndexSizes(part);
-
-        ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
-        ssize_t diff_rows = part->rows_count - reduce_rows;
-        ssize_t diff_parts = 1 - reduce_parts;
-        increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+        addPartContributionToDataVolume(part);
     }
 
     auto part_in_memory = asInMemoryPart(part);
@@ -3131,9 +3086,8 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Active);
 
-            ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
-            ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
-            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
+            removePartContributionToDataVolume(original_active_part);
+            addPartContributionToDataVolume(part_copy);
 
             auto disk = original_active_part->volume->getDisk();
             String marker_path = fs::path(original_active_part->getFullRelativePath()) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -4334,11 +4288,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
         }
-
-        ssize_t diff_bytes = add_bytes - reduce_bytes;
-        ssize_t diff_rows = add_rows - reduce_rows;
-        ssize_t diff_parts  = add_parts - reduce_parts;
-        data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+        data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
+        data.increaseDataVolume(add_bytes, add_rows, add_parts);
     }
 
     clear();
@@ -5171,23 +5122,6 @@ Strings MergeTreeData::getDataPaths() const
 }
 
 
-void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const
-{
-    if (data_part->volume && data_part->volume->getDisk()->isBroken())
-    {
-        auto disk = data_part->volume->getDisk();
-        auto parts = getDataParts();
-        LOG_WARNING(log, "Scanning parts to recover on broken disk {}.", disk->getName() + "@" + disk->getPath());
-        for (const auto & part : parts)
-        {
-            if (part->volume && part->volume->getDisk()->getName() == disk->getName())
-                broken_part_callback(part->name);
-        }
-    }
-    else
-        broken_part_callback(data_part->name);
-}
-
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
 {
     bool prefixed = false;
@@ -5740,14 +5674,21 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    decreaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
 }
 
-void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
+void MergeTreeData::increaseDataVolume(size_t bytes, size_t rows, size_t parts)
 {
     total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
     total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
     total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
+}
+
+void MergeTreeData::decreaseDataVolume(size_t bytes, size_t rows, size_t parts)
+{
+    total_active_size_bytes.fetch_sub(bytes, std::memory_order_acq_rel);
+    total_active_size_rows.fetch_sub(rows, std::memory_order_acq_rel);
+    total_active_size_parts.fetch_sub(parts, std::memory_order_acq_rel);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
@@ -5916,7 +5857,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             writeCString("\nbalancer: \n", log_str);
             for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
                 writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
-            LOG_DEBUG(log, fmt::runtime(log_str.str()));
+            LOG_DEBUG(log, log_str.str());
 
             if (ttl_infos)
                 reserved_space = tryReserveSpacePreferringTTLRules(

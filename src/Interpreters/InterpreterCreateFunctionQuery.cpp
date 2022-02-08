@@ -41,7 +41,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
-    auto function_name = create_function_query.getFunctionName();
+    auto & function_name = create_function_query.function_name;
 
     bool if_not_exists = create_function_query.if_not_exists;
     bool replace = create_function_query.or_replace;
@@ -60,33 +60,19 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     auto & lambda_function = function->as<ASTFunction &>();
     auto & lambda_function_expression_list = lambda_function.arguments->children;
 
-    if (lambda_function_expression_list.size() != 2)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
-
-    const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
-
-    if (!tuple_function_arguments || !tuple_function_arguments->arguments)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
+    const auto & tuple_function_arguments = lambda_function_expression_list.at(0)->as<ASTFunction &>();
 
     std::unordered_set<String> arguments;
 
-    for (const auto & argument : tuple_function_arguments->arguments->children)
+    for (const auto & argument : tuple_function_arguments.arguments->children)
     {
-        const auto * argument_identifier = argument->as<ASTIdentifier>();
-
-        if (!argument_identifier)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda argument must be identifier");
-
-        const auto & argument_name = argument_identifier->name();
+        const auto & argument_name = argument->as<ASTIdentifier>()->name();
         auto [_, inserted] = arguments.insert(argument_name);
         if (!inserted)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
     }
 
-    ASTPtr function_body = lambda_function_expression_list[1];
-    if (!function_body)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
-
+    ASTPtr function_body = lambda_function_expression_list.at(1);
     validateFunctionRecursiveness(function_body, name);
 }
 

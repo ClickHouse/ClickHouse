@@ -76,15 +76,9 @@ public:
     static Block getHeader(Block header, const SourcesInfoPtr & source_info)
     {
         if (source_info->need_path_column)
-            header.insert(
-                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                 "_path"});
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
         if (source_info->need_file_column)
-            header.insert(
-                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                 "_file"});
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
 
         return header;
     }
@@ -93,9 +87,9 @@ public:
     {
         ColumnsDescription columns_description{header.getNamesAndTypesList()};
         if (source_info->need_path_column)
-            columns_description.add({"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
+            columns_description.add({"_path", std::make_shared<DataTypeString>()});
         if (source_info->need_file_column)
-            columns_description.add({"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
+            columns_description.add({"_file", std::make_shared<DataTypeString>()});
         return columns_description;
     }
 
@@ -217,7 +211,7 @@ public:
                 /// Enrich with virtual columns.
                 if (source_info->need_path_column)
                 {
-                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                    auto column = DataTypeString().createColumnConst(num_rows, current_path);
                     columns.push_back(column->convertToFullColumnIfConst());
                 }
 
@@ -226,8 +220,7 @@ public:
                     size_t last_slash_pos = current_path.find_last_of('/');
                     auto file_name = current_path.substr(last_slash_pos + 1);
 
-                    auto column
-                        = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                    auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
                     columns.push_back(column->convertToFullColumnIfConst());
                 }
                 return Chunk(std::move(columns), num_rows);
@@ -640,9 +633,7 @@ SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetad
 
 NamesAndTypesList StorageHive::getVirtuals() const
 {
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+    return NamesAndTypesList{{"_path", std::make_shared<DataTypeString>()}, {"_file", std::make_shared<DataTypeString>()}};
 }
 
 void registerStorageHive(StorageFactory & factory)

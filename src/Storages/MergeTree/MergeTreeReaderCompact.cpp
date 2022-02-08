@@ -118,7 +118,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part);
+        storage.reportBrokenPart(data_part->name);
         throw;
     }
 }
@@ -175,7 +175,7 @@ size_t MergeTreeReaderCompact::readRows(
             catch (Exception & e)
             {
                 if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-                    storage.reportBrokenPart(data_part);
+                    storage.reportBrokenPart(data_part->name);
 
                 /// Better diagnostics.
                 e.addMessage("(while reading column " + column_from_part.name + ")");
@@ -183,7 +183,7 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (...)
             {
-                storage.reportBrokenPart(data_part);
+                storage.reportBrokenPart(data_part->name);
                 throw;
             }
         }

@@ -405,7 +405,7 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_TRACE(log_wrapper.get(), fmt::runtime(e.displayText()));
+        LOG_TRACE(log_wrapper.get(), e.displayText());
         return false;
     }
 

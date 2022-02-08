@@ -43,7 +43,7 @@ private:
     std::unique_ptr<AvroSerializerTraits> traits;
 };
 
-class AvroRowOutputFormat final : public IRowOutputFormat
+class AvroRowOutputFormat : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);

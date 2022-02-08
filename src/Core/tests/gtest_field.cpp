@@ -7,14 +7,14 @@ GTEST_TEST(Field, FromBool)
 {
     {
         Field f{false};
-        ASSERT_EQ(f.getType(), Field::Types::Bool);
+        ASSERT_EQ(f.getType(), Field::Types::UInt64);
         ASSERT_EQ(f.get<UInt64>(), 0);
         ASSERT_EQ(f.get<bool>(), false);
     }
 
     {
         Field f{true};
-        ASSERT_EQ(f.getType(), Field::Types::Bool);
+        ASSERT_EQ(f.getType(), Field::Types::UInt64);
         ASSERT_EQ(f.get<UInt64>(), 1);
         ASSERT_EQ(f.get<bool>(), true);
     }
@@ -22,7 +22,7 @@ GTEST_TEST(Field, FromBool)
     {
         Field f;
         f = false;
-        ASSERT_EQ(f.getType(), Field::Types::Bool);
+        ASSERT_EQ(f.getType(), Field::Types::UInt64);
         ASSERT_EQ(f.get<UInt64>(), 0);
         ASSERT_EQ(f.get<bool>(), false);
     }
@@ -30,7 +30,7 @@ GTEST_TEST(Field, FromBool)
     {
         Field f;
         f = true;
-        ASSERT_EQ(f.getType(), Field::Types::Bool);
+        ASSERT_EQ(f.getType(), Field::Types::UInt64);
         ASSERT_EQ(f.get<UInt64>(), 1);
         ASSERT_EQ(f.get<bool>(), true);
     }

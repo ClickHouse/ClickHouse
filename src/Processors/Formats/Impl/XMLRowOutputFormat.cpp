@@ -256,7 +256,6 @@ void registerOutputFormatXML(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");
-    factory.markFormatHasNoAppendSupport("XML");
 }
 
 }

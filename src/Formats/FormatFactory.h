@@ -93,10 +93,6 @@ private:
     /// The checker should return true if parallel parsing should be disabled.
     using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
 
-    /// Some formats can support append depending on settings.
-    /// The checker should return true if format support append.
-    using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
-
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings, ContextPtr context)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
@@ -110,7 +106,6 @@ private:
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
-        AppendSupportChecker append_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -172,14 +167,6 @@ public:
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
-    void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
-
-    /// If format always doesn't support append, you can use this method instead of
-    /// registerAppendSupportChecker with append_support_checker that always returns true.
-    void markFormatHasNoAppendSupport(const String & name);
-
-    bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
-
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
@@ -187,7 +174,6 @@ public:
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);
     String getFormatFromFileName(String file_name, bool throw_if_not_found = false);
-    String getFormatFromFileDescriptor(int fd);
 
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);

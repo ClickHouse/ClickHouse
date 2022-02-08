@@ -1,7 +1,5 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
-#include <base/sort.h>
-
 
 namespace DB
 {
@@ -20,7 +18,7 @@ EnumValues<T>::EnumValues(const Values & values_)
     if (values.empty())
         throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
 
-    ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
         return left.second < right.second;
     });

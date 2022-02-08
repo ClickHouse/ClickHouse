@@ -98,8 +98,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
-    writeText("min_session_timeout_ms=", buf);
-    write_int(uint64_t(coordination_settings->min_session_timeout_ms));
     writeText("session_timeout_ms=", buf);
     write_int(uint64_t(coordination_settings->session_timeout_ms));
     writeText("operation_timeout_ms=", buf);

@@ -10,7 +10,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/AccessControl.h>
 #include <base/range.h>
-#include <base/sort.h>
+#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
@@ -61,7 +61,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
         }
     }
 
-    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByTypeAndName{});
+    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
     return entities;
 }
 

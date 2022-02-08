@@ -238,7 +238,7 @@ public:
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 

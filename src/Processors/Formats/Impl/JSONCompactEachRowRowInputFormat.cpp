@@ -188,16 +188,6 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(ReadBuffer 
 
 DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
 {
-    if (first_row)
-        first_row = false;
-    else
-    {
-        skipWhitespaceIfAny(in);
-        /// ',' and ';' are possible between the rows.
-        if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
-            ++in.position();
-    }
-
     skipWhitespaceIfAny(in);
     if (in.eof())
         return {};

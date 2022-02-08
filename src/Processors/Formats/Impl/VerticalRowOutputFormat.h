@@ -15,7 +15,7 @@ class Context;
 /** Stream to output data in format "each value in separate row".
   * Usable to show few rows with many columns.
   */
-class VerticalRowOutputFormat final : public IRowOutputFormat
+class VerticalRowOutputFormat : public IRowOutputFormat
 {
 public:
     VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);

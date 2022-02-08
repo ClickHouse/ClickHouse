@@ -11,7 +11,6 @@
 #include <base/sort.h>
 #include <algorithm>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -204,7 +203,7 @@ void IColumn::updatePermutationImpl(
         limit, res, equal_ranges,
         [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; },
         [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) == 0; },
-        [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); },
+        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
         [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
 }
 

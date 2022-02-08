@@ -5,7 +5,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -412,11 +411,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String escaped_name = escapeForFileName(name);
     String mrk_path = part_path + escaped_name + marks_file_extension;
     String bin_path = part_path + escaped_name + DATA_FILE_EXTENSION;
-
-    /// Some columns may be removed because of ttl. Skip them.
-    if (!disk->exists(mrk_path))
-        return;
-
     auto mrk_in = disk->readFile(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(disk->readFile(bin_path));
     bool must_be_last = false;
@@ -520,7 +514,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
 }
 
-void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
@@ -553,19 +547,10 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksum
                 writeFinalMark(*it, offset_columns, serialize_settings.path);
         }
     }
-
-    for (auto & stream : column_streams)
-    {
-        stream.second->preFinalize();
-        stream.second->addToChecksums(checksums);
-    }
-}
-
-void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
-{
     for (auto & stream : column_streams)
     {
         stream.second->finalize();
+        stream.second->addToChecksums(checksums);
         if (sync)
             stream.second->sync();
     }
@@ -589,28 +574,16 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 
 }
 
-void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
-        fillDataChecksums(checksums);
+        finishDataSerialization(checksums, sync);
 
     if (settings.rewrite_primary_key)
-        fillPrimaryIndexChecksums(checksums);
+        finishPrimaryIndexSerialization(checksums, sync);
 
-    fillSkipIndicesChecksums(checksums);
-}
-
-void MergeTreeDataPartWriterWide::finish(bool sync)
-{
-    // If we don't have anything to write, skip finalization.
-    if (!columns_list.empty())
-        finishDataSerialization(sync);
-
-    if (settings.rewrite_primary_key)
-        finishPrimaryIndexSerialization(sync);
-
-    finishSkipIndicesSerialization(sync);
+    finishSkipIndicesSerialization(checksums, sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

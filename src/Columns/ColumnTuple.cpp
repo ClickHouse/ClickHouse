@@ -1,6 +1,5 @@
 #include <Columns/ColumnTuple.h>
 
-#include <base/sort.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
@@ -10,6 +9,9 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <base/sort.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
@@ -99,21 +101,17 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 Field ColumnTuple::operator[](size_t n) const
 {
-    Field res;
-    get(n, res);
-    return res;
+    return collections::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
+    Tuple tuple(tuple_size);
+    for (const auto i : collections::range(0, tuple_size))
+        columns[i]->get(n, tuple[i]);
 
-    res = Tuple();
-    Tuple & res_tuple = DB::get<Tuple &>(res);
-    res_tuple.reserve(tuple_size);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        res_tuple.push_back((*columns[i])[n]);
+    res = tuple;
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -385,9 +383,9 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
         limit = 0;
 
     if (limit)
-        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        ::sort(res.begin(), res.end(), less);
+        std::sort(res.begin(), res.end(), less);
 }
 
 void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
@@ -485,7 +483,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple min_tuple(tuple_size);
     Tuple max_tuple(tuple_size);
 
-    for (size_t i = 0; i < tuple_size; ++i)
+    for (const auto i : collections::range(0, tuple_size))
         columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
@@ -506,7 +504,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         if (tuple_size != rhs_tuple->columns.size())
             return false;
 
-        for (size_t i = 0; i < tuple_size; ++i)
+        for (const auto i : collections::range(0, tuple_size))
             if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
                 return false;
 

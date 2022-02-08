@@ -5,9 +5,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Storages/StorageInput.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 
 

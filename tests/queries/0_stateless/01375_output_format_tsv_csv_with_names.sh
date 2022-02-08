@@ -5,6 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
+    --input-format CSV
     -q 'SELECT number FROM numbers(2)'
 )
 

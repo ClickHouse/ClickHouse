@@ -47,7 +47,6 @@ private:
     /// Returns pointer to a newly created table if the restart was successful
     StoragePtr tryRestartReplica(const StorageID & replica, ContextMutablePtr context, bool need_ddl_guard = true);
 
-    void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);
     void syncReplica(ASTSystemQuery & query);
 
