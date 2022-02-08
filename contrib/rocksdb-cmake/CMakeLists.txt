@@ -72,11 +72,6 @@ else()
 
   if(WITH_ZSTD)
     add_definitions(-DZSTD)
-    include_directories(${ZSTD_INCLUDE_DIR})
-    include_directories("${ZSTD_INCLUDE_DIR}/common")
-    include_directories("${ZSTD_INCLUDE_DIR}/dictBuilder")
-    include_directories("${ZSTD_INCLUDE_DIR}/deprecated")
-
     list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
   endif()
 endif()

@@ -239,8 +239,11 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
 
     auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
+    {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
         assert_cast<PeekableReadBuffer *>(peekable_read_buffer_from_fd.get())->rollbackToCheckpoint();
+        has_peekable_read_buffer_from_fd = true;
+    }
     return columns;
 }
 
@@ -400,9 +403,15 @@ public:
         /// Note: AddingDefaultsBlockInputStream doesn't change header.
 
         if (need_path_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_path"});
         if (need_file_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_file"});
 
         return header;
     }
@@ -512,7 +521,7 @@ public:
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
                 {
-                    auto column = DataTypeString().createColumnConst(num_rows, current_path);
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
@@ -521,7 +530,7 @@ public:
                     size_t last_slash_pos = current_path.find_last_of('/');
                     auto file_name = current_path.substr(last_slash_pos + 1);
 
-                    auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
@@ -620,8 +629,16 @@ Pipe StorageFile::read(
                 return metadata_snapshot->getColumns();
         };
 
+        /// In case of reading from fd we have to check whether we have already created
+        /// the read buffer from it in Storage constructor (for schema inference) or not.
+        /// If yes, then we should use it in StorageFileSource. Atomic bool flag is needed
+        /// to prevent data race in case of parallel reads.
+        std::unique_ptr<ReadBuffer> read_buffer;
+        if (has_peekable_read_buffer_from_fd.exchange(false))
+            read_buffer = std::move(peekable_read_buffer_from_fd);
+
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(peekable_read_buffer_from_fd)));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1082,8 +1099,7 @@ void registerStorageFile(StorageFactory & factory)
 NamesAndTypesList StorageFile::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 }

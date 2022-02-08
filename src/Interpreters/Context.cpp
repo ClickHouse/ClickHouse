@@ -2692,6 +2692,19 @@ void Context::shutdown()
         }
     }
 
+    // Special volumes might also use disks that require shutdown.
+    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
+    {
+        if (volume)
+        {
+            auto & disks = volume->getDisks();
+            for (auto & disk : disks)
+            {
+                disk->shutdown();
+            }
+        }
+    }
+
     shared->shutdown();
 }
 

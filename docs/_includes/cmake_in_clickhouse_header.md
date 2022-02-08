@@ -22,7 +22,7 @@ cmake .. \
 
 1. ClickHouse's source CMake files (located in the root directory and in `/src`).
 2. Arch-dependent CMake files (located in `/cmake/*os_name*`).
-3. Libraries finders (search for contrib libraries, located in `/cmake/find`).
+3. Libraries finders (search for contrib libraries, located in `/contrib/*/CMakeLists.txt`).
 3. Contrib build CMake files (used instead of libraries' own CMake files, located in `/cmake/modules`)
 
 ## List of CMake flags

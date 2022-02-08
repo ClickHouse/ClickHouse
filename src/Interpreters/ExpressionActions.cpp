@@ -16,6 +16,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SettingsEnums.h>
 
@@ -735,7 +736,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     }
     else
     {
-        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
             if (input >= 0)
                 block.erase(input);

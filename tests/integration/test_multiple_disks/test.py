@@ -382,11 +382,17 @@ def test_round_robin(start_cluster, name, engine):
         used_disk = get_used_disks_for_table(node1, name)
         assert len(used_disk) == 1, 'More than one disk used for single insert'
 
+        # sleep is required because we order disks by their modification time, and if insert will be fast
+        # modification time of two disks will be equal, then sort will not provide deterministic results
+        time.sleep(5)
+
         node1.query_with_retry("insert into {} select * from numbers(10000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
 
         assert len(used_disks) == 2, 'Two disks should be used for two parts'
         assert used_disks[0] != used_disks[1], "Should write to different disks"
+
+        time.sleep(5)
 
         node1.query_with_retry("insert into {} select * from numbers(20000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
@@ -1109,8 +1115,7 @@ def test_simple_replication_and_moves(start_cluster):
         for task in tasks:
             task.get(timeout=60)
 
-        node1.query_with_retry("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
-        node2.query_with_retry("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
+        node1.query_with_retry("SYSTEM SYNC REPLICA ON CLUSTER test_cluster replicated_table_for_moves", timeout=5)
 
         node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
         node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
@@ -1133,8 +1138,7 @@ def test_simple_replication_and_moves(start_cluster):
         disks1 = get_used_disks_for_table(node1, "replicated_table_for_moves")
         disks2 = get_used_disks_for_table(node2, "replicated_table_for_moves")
 
-        node1.query("SYSTEM START MERGES")
-        node2.query("SYSTEM START MERGES")
+        node2.query("SYSTEM START MERGES ON CLUSTER test_cluster")
 
         set(disks1) == set(["jbod1", "external"])
         set(disks2) == set(["jbod1", "external"])
@@ -1519,6 +1523,24 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
+
+def test_no_merges_in_configuration_allow_from_query_with_reload_on_cluster(start_cluster):
+    try:
+        name = "test_no_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external_no_merges"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+            "SYSTEM START MERGES ON CLUSTER test_cluster ON VOLUME {}.external".format(policy),
+            "SYSTEM RELOAD CONFIG ON CLUSTER test_cluster"
+        ], 2, 1)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+    finally:
+        node1.query("SYSTEM STOP MERGES ON CLUSTER test_cluster ON VOLUME {}.external".format(policy))
 
 
 def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):

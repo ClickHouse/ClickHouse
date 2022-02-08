@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -676,7 +677,7 @@ NameSet ActionsDAG::foldActionsByProjection(
 
 void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
 {
-    std::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
+    ::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
     {
         return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
     });

@@ -55,7 +55,7 @@ private:
     std::stack<Info> info_stack;
 };
 
-class MsgPackRowInputFormat : public IRowInputFormat
+class MsgPackRowInputFormat final : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);

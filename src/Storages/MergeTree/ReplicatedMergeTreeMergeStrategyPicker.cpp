@@ -2,13 +2,14 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
-
 #include <base/types.h>
+#include <base/sort.h>
 #include <optional>
 #include <mutex>
 #include <city.h>
 #include <algorithm>
 #include <atomic>
+
 
 namespace DB
 {
@@ -125,7 +126,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     auto zookeeper = storage.getZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
 
-    std::sort(all_replicas.begin(), all_replicas.end());
+    ::sort(all_replicas.begin(), all_replicas.end());
 
     std::vector<String> active_replicas_tmp;
     int current_replica_index_tmp = -1;

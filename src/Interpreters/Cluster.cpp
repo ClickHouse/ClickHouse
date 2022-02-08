@@ -12,7 +12,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+
 
 namespace DB
 {
@@ -305,11 +307,11 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
     Poco::Util::AbstractConfiguration::Keys deleted_keys;
     if (old_config)
     {
-        std::sort(new_config_keys.begin(), new_config_keys.end());
+        ::sort(new_config_keys.begin(), new_config_keys.end());
 
         Poco::Util::AbstractConfiguration::Keys old_config_keys;
         old_config->keys(config_prefix, old_config_keys);
-        std::sort(old_config_keys.begin(), old_config_keys.end());
+        ::sort(old_config_keys.begin(), old_config_keys.end());
 
         std::set_difference(
             old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));

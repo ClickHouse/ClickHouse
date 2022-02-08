@@ -40,8 +40,10 @@ public:
 
     void load(const MergeTreeData & storage, const PartMetadataManagerPtr & manager);
 
-    void store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
-    void store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    /// Store functions return write buffer with written but not finalized data.
+    /// User must call finish() for returned object.
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 
     void assign(const MergeTreePartition & other) { value = other.value; }
 
