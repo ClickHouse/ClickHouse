@@ -74,9 +74,14 @@ MergedColumnOnlyOutputStream::fillChecksums(
     serialization_infos.replaceData(new_serialization_infos);
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+
+    auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
+    {
+        disk->removeFile(new_part->getFullRelativePath() + removed_file);
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
+    }
 
     new_part->setColumns(columns);
     new_part->setSerializationInfos(serialization_infos);

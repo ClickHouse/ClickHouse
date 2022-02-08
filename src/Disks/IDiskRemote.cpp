@@ -24,7 +24,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int FILE_ALREADY_EXISTS;
     extern const int PATH_ACCESS_DENIED;;
-    extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int BAD_FILE_TYPE;
 }
 
 
@@ -231,8 +232,11 @@ void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_p
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
+    if (!metadata_disk->exists(path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
+
     if (!metadata_disk->isFile(path))
-        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
+        throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
     try
     {
