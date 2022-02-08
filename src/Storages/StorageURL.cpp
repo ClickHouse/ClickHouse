@@ -83,6 +83,7 @@ IStorageURLBase::IStorageURLBase(
     setInMemoryMetadata(storage_metadata);
 }
 
+
 namespace
 {
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders(
@@ -477,16 +478,17 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     }
     else
     {
+        auto parsed_uri = Poco::URI(uri);
+        setCredentials(credentials, parsed_uri);
         read_buffer_creator = [&]()
         {
-            auto parsed_uri = Poco::URI(uri);
             return wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     parsed_uri,
                     Poco::Net::HTTPRequest::HTTP_GET,
                     nullptr,
                     ConnectionTimeouts::getHTTPTimeouts(context),
-                    Poco::Net::HTTPBasicCredentials{},
+                    credentials,
                     context->getSettingsRef().max_http_get_redirects,
                     DBMS_DEFAULT_BUFFER_SIZE,
                     context->getReadSettings(),
