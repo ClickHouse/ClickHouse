@@ -73,7 +73,7 @@ ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
-ENV TZ=UTC
+ENV TZ=Europe/Moscow
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 CMD sleep 1

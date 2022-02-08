@@ -60,5 +60,5 @@ clientPort=2181 \n\
 maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg
 RUN mkdir /zookeeper && chmod -R 777 /zookeeper
 
-ENV TZ=UTC
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
