@@ -78,7 +78,11 @@ MergedColumnOnlyOutputStream::fillChecksums(
     auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
     {
-        disk->removeFile(new_part->getFullRelativePath() + removed_file);
+        auto file_path = new_part->getFullRelativePath() + removed_file;
+        /// Can be called multiple times, don't need to remove file twice
+        if (disk->exists(file_path))
+            disk->removeFile(file_path);
+
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
     }
