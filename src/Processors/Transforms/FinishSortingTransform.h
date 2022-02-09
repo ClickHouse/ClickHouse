@@ -15,6 +15,7 @@ public:
         const Block & header,
         const SortDescription & description_sorted_,
         const SortDescription & description_to_sort_,
+        bool compile_sort_description,
         size_t max_merged_block_size_,
         UInt64 limit_);
 

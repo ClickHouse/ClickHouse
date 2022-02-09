@@ -21,6 +21,7 @@ public:
     MergeSortingTransform(
         const Block & header,
         const SortDescription & description_,
+        bool compile_sort_description_,
         size_t max_merged_block_size_,
         UInt64 limit_,
         size_t max_bytes_before_remerge_,

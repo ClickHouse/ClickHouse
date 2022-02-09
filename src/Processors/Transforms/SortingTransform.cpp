@@ -127,14 +127,16 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
     return Chunk(std::move(merged_columns), merged_rows);
 }
 
-
 SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,
-    size_t max_merged_block_size_, UInt64 limit_)
+    bool compile_sort_description_,
+    size_t max_merged_block_size_,
+    UInt64 limit_)
     : IProcessor({header}, {header})
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
+    , compile_sort_description(compile_sort_description_)
     , limit(limit_)
 {
     const auto & sample = inputs.front().getHeader();
@@ -154,6 +156,9 @@ SortingTransform::SortingTransform(
         }
     }
 
+    DataTypes sort_description_types;
+    sort_description_types.reserve(description.size());
+
     /// Remove constants from column_description and remap positions.
     SortDescription description_without_constants;
     description_without_constants.reserve(description.size());
@@ -161,11 +166,19 @@ SortingTransform::SortingTransform(
     {
         auto old_pos = header.getPositionByName(column_description.column_name);
         auto new_pos = map[old_pos];
+
         if (new_pos < num_columns)
+        {
+            auto type = sample.safeGetByPosition(old_pos).type;
+            sort_description_types.emplace_back(type);
             description_without_constants.push_back(column_description);
+        }
     }
 
     description.swap(description_without_constants);
+
+    if (compile_sort_description)
+        compileSortDescriptionIfNeeded(description, sort_description_types);
 }
 
 SortingTransform::~SortingTransform() = default;

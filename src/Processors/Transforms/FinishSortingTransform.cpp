@@ -24,9 +24,10 @@ FinishSortingTransform::FinishSortingTransform(
     const Block & header,
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
+    bool compile_sort_description_,
     size_t max_merged_block_size_,
     UInt64 limit_)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
+    : SortingTransform(header, description_to_sort_, compile_sort_description_, max_merged_block_size_, limit_)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))

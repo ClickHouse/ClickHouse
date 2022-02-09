@@ -2468,10 +2468,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // happens in case of `over ()`.
         if (!w.full_sort_description.empty() && (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1])))
         {
-
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 w.full_sort_description,
+                settings.compile_sort_description,
                 settings.max_block_size,
                 0 /* LIMIT */,
                 SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
@@ -2500,6 +2500,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
         query_plan.getCurrentDataStream(),
         input_sorting_info->order_key_prefix_descr,
         output_order_descr,
+        settings.compile_sort_description,
         settings.max_block_size,
         limit);
 
@@ -2530,6 +2531,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,
+        settings.compile_sort_description,
         settings.max_block_size,
         limit,
         SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
@@ -2558,7 +2560,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const So
     const Settings & settings = context->getSettingsRef();
 
     auto merging_sorted
-        = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
+        = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.compile_sort_description, settings.max_block_size, limit);
 
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));

@@ -14,6 +14,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     Block header_,
     size_t num_inputs,
     SortDescription description_,
+    bool compile_sort_descriptor,
     size_t max_block_size,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
@@ -22,11 +23,22 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
-    , has_collation(std::any_of(description.begin(), description.end(), [](const auto & descr) { return descr.collator != nullptr; }))
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
+    DataTypes sort_description_types;
+    sort_description_types.reserve(description.size());
+
+    /// Replace column names in description to positions.
+    for (auto & column_description : description)
+    {
+        has_collation |= column_description.collator != nullptr;
+        sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
+    }
+
+    if (compile_sort_descriptor)
+        compileSortDescriptionIfNeeded(description, sort_description_types);
 }
 
 void MergingSortedAlgorithm::addInput()
