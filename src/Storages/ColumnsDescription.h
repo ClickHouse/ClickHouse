@@ -146,9 +146,12 @@ public:
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
             throw Exception("Cannot find column " + column_name + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
+
+        removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
 
+        addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 

@@ -591,31 +591,20 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    auto names_of_objects = getNamesOfObjectColumns(metadata_snapshot->getColumns().getAllPhysical());
-    if (names_of_objects.empty())
+    if (!hasObjectColumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
         *getCluster(),
         StorageID{remote_database, remote_table},
-        names_of_objects,
+        metadata_snapshot->getColumns(),
         getContext());
 
-    assert(!snapshot_data->objects_by_shard.empty());
-
-    std::unordered_map<String, DataTypes> types_in_tables;
-    for (const auto & [_, columns] : snapshot_data->objects_by_shard)
-    {
-        for (const auto & column : columns)
-        {
-            assert(names_of_objects.count(column.name));
-            types_in_tables[column.name].push_back(column.type);
-        }
-    }
-
-    ColumnsDescription object_columns;
-    for (const auto & [name, types] : types_in_tables)
-        object_columns.add(ColumnDescription(name, getLeastCommonTypeForObject(types)));
+    auto object_columns = getObjectColumns(
+        snapshot_data->objects_by_shard.begin(),
+        snapshot_data->objects_by_shard.end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & shard_num_and_columns) { return shard_num_and_columns.second; });
 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }

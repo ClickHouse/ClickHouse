@@ -133,8 +133,6 @@ static auto extractVector(const std::vector<Tuple> & vec)
 
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns)
 {
-    std::cerr << "convertion to tuples columns: " << columns_list.toString() << ", block: " << block.dumpStructure() << ", extended_storage_columns: " << extended_storage_columns.toString();
-
     std::unordered_map<String, DataTypePtr> storage_columns_map;
     for (const auto & [name, type] : extended_storage_columns)
         storage_columns_map[name] = type;
@@ -288,6 +286,11 @@ NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
     return res;
 }
 
+bool hasObjectColumns(const ColumnsDescription & columns)
+{
+    return std::any_of(columns.begin(), columns.end(), [](const auto & column) { return isObject(column.type); });
+}
+
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns)
 {
     NamesAndTypesList subcolumns_list;
@@ -304,6 +307,21 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
     }
 
     columns_list.splice(columns_list.end(), std::move(subcolumns_list));
+}
+
+void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndTypesList & new_columns)
+{
+    for (const auto & new_column : new_columns)
+    {
+        auto object_column = object_columns.tryGetPhysical(new_column.name);
+        if (object_column && !object_column->type->equals(*new_column.type))
+        {
+            object_columns.modify(new_column.name, [&](auto & column)
+            {
+                column.type = getLeastCommonTypeForObject({object_column->type, new_column.type});
+            });
+        }
+    }
 }
 
 namespace

@@ -1287,6 +1287,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     if (num_parts == 0 && parts_from_wal.empty())
     {
         LOG_DEBUG(log, "There are no data parts");
+        object_columns = getObjectColumns(DataPartsVector{}, metadata_snapshot->getColumns());
         return;
     }
 
@@ -1358,6 +1359,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
+    auto range = getDataPartsStateRange(DataPartState::Active);
+    object_columns = getObjectColumns(range, metadata_snapshot->getColumns());
     calculateColumnAndSecondaryIndexSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
@@ -2603,6 +2606,12 @@ bool MergeTreeData::renameTempPartAndReplace(
         modifyPartState(part_it, DataPartState::Active);
         addPartContributionToColumnAndSecondaryIndexSizes(part);
 
+        if (covered_parts.empty())
+            updateObjectColumns(object_columns, (*part_it)->getColumns());
+        else
+            object_columns = getObjectColumns(
+                getDataPartsStateRange(DataPartState::Active), getInMemoryMetadataPtr()->getColumns());
+
         ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
         ssize_t diff_rows = part->rows_count - reduce_rows;
         ssize_t diff_parts = 1 - reduce_parts;
@@ -2646,11 +2655,13 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
 {
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
+    bool have_active_parts = false;
 
     for (const DataPartPtr & part : remove)
     {
         if (part->getState() == IMergeTreeDataPart::State::Active)
         {
+            have_active_parts = true;
             removePartContributionToColumnAndSecondaryIndexSizes(part);
             removePartContributionToDataVolume(part);
         }
@@ -2663,6 +2674,12 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
 
         if (isInMemoryPart(part) && getSettings()->in_memory_parts_enable_wal)
             getWriteAheadLog()->dropPart(part->name);
+    }
+
+    if (have_active_parts)
+    {
+        auto range = getDataPartsStateRange(DataPartState::Active);
+        object_columns = getObjectColumns(range, getInMemoryMetadataPtr()->getColumns());
     }
 }
 
@@ -3823,51 +3840,59 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
-    const DataPartStates & affordable_states, DataPartStateVector * out_states, bool require_projection_parts) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorUnlocked(
+    const DataPartStates & affordable_states,
+    DataPartStateVector * out_states,
+    bool require_projection_parts) const
 {
     DataPartsVector res;
     DataPartsVector buf;
+
+    for (auto state : affordable_states)
     {
-        auto lock = lockParts();
+        auto range = getDataPartsStateRange(state);
 
-        for (auto state : affordable_states)
+        if (require_projection_parts)
         {
-            auto range = getDataPartsStateRange(state);
-
-            if (require_projection_parts)
+            for (const auto & part : range)
             {
-                for (const auto & part : range)
-                {
-                    for (const auto & [_, projection_part] : part->getProjectionParts())
-                        res.push_back(projection_part);
-                }
-            }
-            else
-            {
-                std::swap(buf, res);
-                res.clear();
-                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
+                for (const auto & [_, projection_part] : part->getProjectionParts())
+                    res.push_back(projection_part);
             }
         }
-
-        if (out_states != nullptr)
+        else
         {
-            out_states->resize(res.size());
-            if (require_projection_parts)
-            {
-                for (size_t i = 0; i < res.size(); ++i)
-                    (*out_states)[i] = res[i]->getParentPart()->getState();
-            }
-            else
-            {
-                for (size_t i = 0; i < res.size(); ++i)
-                    (*out_states)[i] = res[i]->getState();
-            }
+            std::swap(buf, res);
+            res.clear();
+            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
+        }
+    }
+
+    if (out_states != nullptr)
+    {
+        out_states->resize(res.size());
+        if (require_projection_parts)
+        {
+            for (size_t i = 0; i < res.size(); ++i)
+                (*out_states)[i] = res[i]->getParentPart()->getState();
+        }
+        else
+        {
+            for (size_t i = 0; i < res.size(); ++i)
+                (*out_states)[i] = res[i]->getState();
         }
     }
 
     return res;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
+    const DataPartStates & affordable_states,
+    DataPartStateVector * out_states,
+    bool require_projection_parts) const
+{
+    auto lock = lockParts();
+    return getDataPartsVectorUnlocked(affordable_states, out_states, require_projection_parts);
 }
 
 MergeTreeData::DataPartsVector
@@ -4318,7 +4343,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             else
             {
                 total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
-                for (const DataPartPtr & covered_part : covered_parts)
+                for (const auto & covered_part : covered_parts)
                 {
                     covered_part->remove_time.store(current_time, std::memory_order_relaxed);
 
@@ -4328,6 +4353,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                     data.modifyPartState(covered_part, DataPartState::Outdated);
                     data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
                 }
+
                 reduce_parts += covered_parts.size();
 
                 add_bytes += part->getBytesOnDisk();
@@ -4337,6 +4363,17 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.modifyPartState(part, DataPartState::Active);
                 data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
+        }
+
+        if (reduce_parts)
+        {
+            auto range = data.getDataPartsStateRange(DataPartState::Active);
+            data.object_columns = getObjectColumns(range, data.getInMemoryMetadataPtr()->getColumns());
+        }
+        else
+        {
+            for (const auto & part : precommitted_parts)
+                updateObjectColumns(data.object_columns, part->getColumns());
         }
 
         ssize_t diff_bytes = add_bytes - reduce_bytes;
@@ -6036,49 +6073,28 @@ ReservationPtr MergeTreeData::balancedReservation(
     return reserved_space;
 }
 
-ColumnsDescription MergeTreeData::getObjectsDescription(const DataPartsVector & parts, const NameSet & object_names)
+ColumnsDescription MergeTreeData::getObjectColumns(
+    const DataPartsVector & parts, const ColumnsDescription & storage_columns)
 {
-    if (object_names.empty())
-        return {};
+    return DB::getObjectColumns(
+        parts.begin(), parts.end(),
+        storage_columns, [](const auto & part) { return part->getColumns(); });
+}
 
-    std::unordered_map<String, DataTypes> types_in_parts;
-
-    if (parts.empty())
-    {
-        for (const auto & name : object_names)
-            types_in_parts[name].push_back(std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt8>()},
-                Names{ColumnObject::COLUMN_NAME_DUMMY}));
-    }
-    else
-    {
-        for (const auto & part : parts)
-        {
-            const auto & part_columns = part->getColumns();
-            for (const auto & [name, type] : part_columns)
-            {
-                if (object_names.count(name))
-                    types_in_parts[name].push_back(type);
-            }
-        }
-    }
-
-    ColumnsDescription object_columns;
-    for (const auto & [name, types] : types_in_parts)
-        object_columns.add(ColumnDescription{name, getLeastCommonTypeForObject(types)});
-
-    return object_columns;
+ColumnsDescription MergeTreeData::getObjectColumns(
+    boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns)
+{
+    return DB::getObjectColumns(
+        range.begin(), range.end(),
+        storage_columns, [](const auto & part) { return part->getColumns(); });
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    snapshot_data->parts = getDataPartsVector();
 
-    auto object_columns = getObjectsDescription(
-        snapshot_data->parts,
-        getNamesOfObjectColumns(metadata_snapshot->getColumns().getAll()));
-
+    auto lock = lockParts();
+    snapshot_data->parts = getDataPartsVectorUnlocked({DataPartState::Active});
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 

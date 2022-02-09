@@ -437,13 +437,22 @@ public:
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
 
+    DataPartsVector getDataPartsVectorUnlocked(
+        const DataPartStates & affordable_states,
+        DataPartStateVector * out_states = nullptr,
+        bool require_projection_parts = false) const;
+
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
     DataPartsVector getDataPartsVector(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+        const DataPartStates & affordable_states,
+        DataPartStateVector * out_states = nullptr,
+        bool require_projection_parts = false) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+    DataPartsVector getAllDataPartsVector(
+        DataPartStateVector * out_states = nullptr,
+        bool require_projection_parts = false) const;
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
@@ -695,7 +704,10 @@ public:
         return column_sizes;
     }
 
-    static ColumnsDescription getObjectsDescription(const DataPartsVector & parts, const NameSet & object_names);
+    const ColumnsDescription & getObjectColumns() const { return object_columns; }
+
+    static ColumnsDescription getObjectColumns(
+        const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
@@ -987,6 +999,8 @@ protected:
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
+    ColumnsDescription object_columns;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1022,6 +1036,9 @@ protected:
         auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
         return {begin, end};
     }
+
+    static ColumnsDescription getObjectColumns(
+        boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const SelectQueryInfo & query_info, ContextPtr context, const DataPartsVector & parts) const;
