@@ -117,7 +117,7 @@ In addition, this column is not substituted when using an asterisk in a SELECT q
 `EPHEMERAL expr`
 
 Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement.
-Currently SELECT/INSERT invariant is not preserved for this type, i.e. set of fields obtained using `SELECT *` cannot be inserted back into the table using INSERT without specifying the list of columns.
+INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
 ### ALIAS {#alias}
 
