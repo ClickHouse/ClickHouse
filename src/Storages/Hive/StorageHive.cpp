@@ -103,6 +103,7 @@ public:
         String hdfs_namenode_url_,
         String format_,
         String compression_method_,
+        Block header_block_,
         Block sample_block_,
         ContextPtr context_,
         UInt64 max_block_size_,
@@ -114,6 +115,7 @@ public:
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
+        , header_block(header_block_)
         , sample_block(sample_block_)
         , to_read_block(sample_block_)
         , columns_description(getColumnsDescription(sample_block, source_info))
@@ -130,9 +132,16 @@ public:
         }
         if (!to_read_block.columns())
         {
-            auto & col = sample_block.getByPosition(0);
-            to_read_block.insert(0, col);
-            all_to_read_are_partition_columns = true;
+            for (size_t i = 0; i < header_block.columns(); ++i)
+            {
+                auto & col = header_block.getByPosition(i);
+                if (source_info->partition_name_types.contains(col.name))
+                    continue;
+                LOG_TRACE(&Poco::Logger::get("StorageHiveSource"), "insert column {}", col.name);
+                to_read_block.insert(0, col);
+                all_to_read_are_partition_columns = true;
+                break;
+            }
         }
         /// Initialize format settings
         format_settings.hive_text.input_field_names = text_input_field_names;
@@ -265,6 +274,7 @@ private:
     String format;
     String compression_method;
     UInt64 max_block_size;
+    Block header_block;
     Block sample_block;
     Block to_read_block;
     bool all_to_read_are_partition_columns = false;
@@ -448,6 +458,7 @@ Pipe StorageHive::read(
             hdfs_namenode_url,
             format_name,
             compression_method,
+            sample_block,
             to_read_block,
             context_,
             max_block_size,
