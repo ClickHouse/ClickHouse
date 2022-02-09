@@ -37,6 +37,7 @@ namespace ErrorCodes
 ///  - 'AddSecondsImpl::execute(UInt32, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(DateTime, ...) -> DateTime'
 ///  - 'AddSecondsImpl::execute(UInt16, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(Date, ...) -> DateTime'
 
+//TODO: pass info about current scale
 struct AddNanosecondsImpl
 {
     static constexpr auto name = "addNanoseconds";
@@ -47,10 +48,9 @@ struct AddNanosecondsImpl
         return {t.whole, t.fractional + delta};
     }
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
-        return {t, delta};
+        return t + delta;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -73,10 +73,9 @@ struct AddMicrosecondsImpl
         return {t.whole, t.fractional + delta};
     }
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
-        return {t, delta};
+        return t + delta;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -99,10 +98,9 @@ struct AddMillisecondsImpl
         return {t.whole, t.fractional + delta};
     }
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
-        return {t, delta};
+        return t + delta;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -332,6 +330,9 @@ struct SubtractIntervalImpl : public Transform
     }
 };
 
+struct SubtractNanosecondsImpl : SubtractIntervalImpl<AddNanosecondsImpl> { static constexpr auto name = "subtractNanoseconds"; };
+struct SubtractMicrosecondsImpl : SubtractIntervalImpl<AddMicrosecondsImpl> { static constexpr auto name = "subtractMicroseconds"; };
+struct SubtractMillisecondsImpl : SubtractIntervalImpl<AddMillisecondsImpl> { static constexpr auto name = "subtractMilliseconds"; };
 struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
 struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
 struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
@@ -540,6 +541,7 @@ public:
 
     /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
     /// e.g. addSeconds(Date, 1) => DateTime
+
     template <typename FieldType>
     using TransformExecuteReturnType = decltype(std::declval<TransformType<FieldType>>().execute(FieldType(), 0, std::declval<DateLUTImpl>()));
 
@@ -567,11 +569,32 @@ public:
             if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
             {
                 const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-                return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+
+                auto from_scale = datetime64_type.getScale();
+                auto scale = from_scale;
+
+                if (std::is_same_v<Transform, AddNanosecondsImpl>)
+                    scale = 9;
+                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
+                    scale = 6;
+                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
+                    scale = 3;
+
+                scale = std::max(scale, from_scale);
+
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
             else
             {
-                return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+                auto scale = DataTypeDateTime64::default_scale;
+
+                if (std::is_same_v<Transform, AddNanosecondsImpl>)
+                    scale = 9;
+                else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
+                    scale = 6;
+                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
+                    scale = 3;
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
         }
         else
