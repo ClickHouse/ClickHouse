@@ -84,7 +84,7 @@ public:
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
-	Ephemeral = 8,
+        Ephemeral = 8,
 
         AllPhysical = Ordinary | Materialized,
         All = AllPhysical | Aliases | Ephemeral,
