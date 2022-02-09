@@ -133,6 +133,8 @@ static auto extractVector(const std::vector<Tuple> & vec)
 
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns)
 {
+    std::cerr << "convertion to tuples columns: " << columns_list.toString() << ", block: " << block.dumpStructure() << ", extended_storage_columns: " << extended_storage_columns.toString();
+
     std::unordered_map<String, DataTypePtr> storage_columns_map;
     for (const auto & [name, type] : extended_storage_columns)
         storage_columns_map[name] = type;

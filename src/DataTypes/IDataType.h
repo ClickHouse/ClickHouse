@@ -82,8 +82,10 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
 
-    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+    ColumnPtr tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
@@ -309,7 +311,7 @@ private:
         const String & subcolumn_name,
         const SubstreamData & data,
         Ptr SubstreamData::*member,
-        bool throw_if_null = true) const;
+        bool throw_if_null) const;
 };
 
 
