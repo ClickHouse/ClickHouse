@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "
-INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/content-type.csv.gz', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(1000000) SETTINGS s3_min_upload_part_size = 10000, s3_truncate_on_insert = 1;
+INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/content-type.csv.gz', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(1000000) SETTINGS s3_max_single_part_upload_size = 10000, s3_truncate_on_insert = 1;
 "
 
 # strace -e trace=network,write -s1000 -f ~/work/ClickHouse/mc cat clickminio/test/content-type.csv.gz >/dev/null
