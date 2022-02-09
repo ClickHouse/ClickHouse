@@ -135,7 +135,11 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    auto target_metadata = getTargetTable()->getInMemoryMetadataPtr();
+    /// TODO: Find a way to support projections for StorageMaterializedView. Why do we use different
+    /// metadata for materialized view and target table? If they are the same, we can get rid of all
+    /// converting and use it just like a normal view.
+    query_info.ignore_projections = true;
+    const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata), query_info);
 }
 

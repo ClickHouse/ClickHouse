@@ -168,7 +168,7 @@ String getNameForSubstreamPath(
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
             if (escape_tuple_delimiter && it->escape_tuple_delimiter)
-                stream_name += escapeForFileName(".") + escapeForFileName(it->tuple_element_name);
+                stream_name += escapeForFileName("." + it->tuple_element_name);
             else
                 stream_name += "." + it->tuple_element_name;
         }

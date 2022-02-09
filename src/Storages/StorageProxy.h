@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
 
 
@@ -37,6 +38,8 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
+        /// TODO: Find a way to support projections for StorageProxy
+        info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata), info);
     }
