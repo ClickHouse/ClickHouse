@@ -68,7 +68,9 @@ public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     SortingTransform(const Block & header,
         const SortDescription & description_,
-        size_t max_merged_block_size_, UInt64 limit_);
+        bool compile_sort_description_,
+        size_t max_merged_block_size_,
+        UInt64 limit_);
 
     ~SortingTransform() override;
 
@@ -82,6 +84,7 @@ protected:
 
     SortDescription description;
     size_t max_merged_block_size;
+    bool compile_sort_description = false;
     UInt64 limit;
 
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.

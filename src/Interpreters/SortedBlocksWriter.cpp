@@ -132,10 +132,12 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
 
     if (pipeline.getNumStreams() > 1)
     {
+
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             sort_description,
+            true,
             rows_in_block);
 
         pipeline.addTransform(std::move(transform));
@@ -190,6 +192,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             pipeline.getHeader(),
                             pipeline.getNumStreams(),
                             sort_description,
+                            true,
                             rows_in_block);
 
                         pipeline.addTransform(std::move(transform));
@@ -222,6 +225,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             sort_description,
+            true,
             rows_in_block);
 
         pipeline.addTransform(std::move(transform));
@@ -303,6 +307,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 builder.getHeader(),
                 builder.getNumStreams(),
                 sort_description,
+                true,
                 num_rows);
 
             builder.addTransform(std::move(transform));

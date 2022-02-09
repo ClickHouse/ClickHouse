@@ -17,6 +17,7 @@ public:
         Block header_,
         size_t num_inputs,
         SortDescription description_,
+        bool compile_sort_descriptor,
         size_t max_block_size,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,

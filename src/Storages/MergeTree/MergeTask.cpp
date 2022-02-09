@@ -796,12 +796,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     ctx->blocks_are_granules_size = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     UInt64 merge_block_size = data_settings->merge_max_block_size;
+    bool compile_sort_description = global_ctx->data->getContext()->getSettingsRef().compile_sort_description;
 
     switch (ctx->merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, compile_sort_description, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
