@@ -13,7 +13,6 @@ cluster = ClickHouseCluster(__file__)
 
 def make_instance(name, cfg):
     return cluster.add_instance(name,
-        with_zookeeper=True,
         main_configs=['configs/remote_servers.xml', cfg],
         user_configs=['configs/users.xml'])
 # _n1/_n2 contains cluster with different <secret> -- should fail
