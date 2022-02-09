@@ -310,11 +310,7 @@ struct integer<Bits, Signed>::_impl
             return;
         }
 
-        const long double rhs_long_double = (static_cast<long double>(rhs) < 0)
-            ? -static_cast<long double>(rhs)
-            : rhs;
-
-        set_multiplier(self, rhs_long_double);
+        set_multiplier(self, rhs);
 
         if (rhs < 0)
             self = -self;
