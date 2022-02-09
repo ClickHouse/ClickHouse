@@ -195,30 +195,14 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
 
-    auto names_of_objects = getNamesOfObjectColumns(metadata_snapshot->getColumns().getAllPhysical());
-    if (names_of_objects.empty())
+    if (!hasObjectColumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
-    std::unordered_map<std::string_view, DataTypes> types_in_blocks;
-
-    if (snapshot_data->blocks->empty())
-    {
-        for (const auto & name : names_of_objects)
-            types_in_blocks[name].push_back(std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt8>()},
-                Names{ColumnObject::COLUMN_NAME_DUMMY}));
-    }
-    else
-    {
-        for (const auto & block : *snapshot_data->blocks)
-            for (const auto & elem : block)
-                if (names_of_objects.contains(elem.name))
-                    types_in_blocks[elem.name].push_back(elem.type);
-    }
-
-    ColumnsDescription object_columns;
-    for (const auto & [name, types] : types_in_blocks)
-        object_columns.add(ColumnDescription{String(name), getLeastCommonTypeForObject(types)});
+    auto object_columns = getObjectColumns(
+        snapshot_data->blocks->begin(),
+        snapshot_data->blocks->end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & block) { return block.getColumnsWithTypeAndName(); });
 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }

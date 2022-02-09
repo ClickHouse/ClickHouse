@@ -139,7 +139,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
-    auto object_columns = MergeTreeData::getObjectsDescription(global_ctx->future_part->parts, getNamesOfObjectColumns(global_ctx->storage_columns));
+    auto object_columns = MergeTreeData::getObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
 

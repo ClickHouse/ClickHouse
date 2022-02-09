@@ -152,7 +152,7 @@ ColumnsDescription getStructureOfRemoteTable(
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const Cluster & cluster,
     const StorageID & remote_table_id,
-    const NameSet & names_of_objects,
+    const ColumnsDescription & storage_columns,
     ContextPtr context)
 {
     const auto & shards_info = cluster.getShardsInfo();
@@ -188,10 +188,9 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto name = get<const String &>(name_col[i]);
                 auto type_name = get<const String &>(type_col[i]);
 
-                if (!names_of_objects.count(name))
-                    continue;
-
-                res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
+                auto storage_column = storage_columns.tryGetPhysical(name);
+                if (storage_column && isObject(storage_column->type))
+                    res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }
 

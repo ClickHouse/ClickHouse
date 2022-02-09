@@ -26,7 +26,7 @@ using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescripti
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const Cluster & cluster,
     const StorageID & remote_table_id,
-    const NameSet & names_of_objects,
+    const ColumnsDescription & storage_columns,
     ContextPtr context);
 
 }
