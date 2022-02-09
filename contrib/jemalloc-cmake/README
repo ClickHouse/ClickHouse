@@ -1,1 +1,3 @@
 It allows to integrate JEMalloc into CMake project.
+
+- Remove JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF because it's non standard.
