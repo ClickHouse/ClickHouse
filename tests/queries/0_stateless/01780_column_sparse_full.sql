@@ -43,7 +43,8 @@ SELECT '======';
 SELECT toUInt32(s) % 5 AS k, groupUniqArray(u % 4) FROM t_sparse_full WHERE s != '' GROUP BY k ORDER BY k;
 SELECT max(range(id % 10)[u]) FROM t_sparse_full;
 SELECT '======';
-SELECT id, u, s FROM remote('127.0.0.{1,2}', currentDatabase(), t_sparse_full) ORDER BY id LIMIT 5;
+-- SELECT id, u, s FROM remote('127.0.0.{1,2}', currentDatabase(), t_sparse_full) ORDER BY id LIMIT 5;
+SELECT 'remote';
 SELECT '======';
 SELECT sum(u) FROM t_sparse_full GROUP BY id % 3 AS k WITH TOTALS ORDER BY k;
 SELECT '======';
@@ -81,7 +82,7 @@ INNER JOIN t_sparse_full USING(u) ORDER BY id, u, s LIMIT 5;
 SELECT '======';
 
 SELECT id, u, s FROM (SELECT number * 2 AS u FROM numbers(10)) AS t1
-FULL JOIN t_sparse_full USING(u) ORDER BY id LIMIT 5;
+FULL JOIN t_sparse_full USING(u) ORDER BY id, u, s LIMIT 5;
 
 SELECT '======';
 
