@@ -14,19 +14,26 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     using punycode_uint = char32_t;
     constexpr punycode_uint maxint = -1;
 
-    enum {
+    enum
+    {
         punycode_success = 0,
         punycode_overflow = -1,
         punycode_big_output = -2,
         punycode_bad_input = -3
     };
 
-    enum {
+    enum
+    {
         base = 36,
         tmin = 1,
         tmax = 26,
@@ -37,15 +44,17 @@ namespace
         delimiter = 0x2D
     };
 
-    char encodeDigit(punycode_uint d, int flag) {
+    char encodeDigit(punycode_uint d, int flag)
+    {
         return d + 22 + 75 * (d < 26) - ((flag != 0) << 5);
         /* 0 ..25 map to ASCII a..z or A..Z */
         /* 26..35 map to ASCII 0..9         */
     }
 
-    unsigned int decodeDigit(int cp) {
+    unsigned int decodeDigit(int cp)
+    {
         return static_cast<unsigned int>((cp - 48 < 10 ? cp - 22 :  cp - 65 < 26 ?
-                                                                                cp - 65 : cp - 97 < 26 ? cp - 97 :  base));
+                                          cp - 65 : cp - 97 < 26 ? cp - 97 :  base));
     }
 
     punycode_uint adapt(punycode_uint delta,
@@ -84,7 +93,8 @@ namespace
         /* Handle the basic code points: */
         for (j = 0;  j < input_length;  ++j)
         {   /* basic(cp) tests whether cp is a basic code point: */
-            if (static_cast<punycode_uint>(input[j]) < 0x80) {
+            if (static_cast<punycode_uint>(input[j]) < 0x80)
+            {
                 if (max_out - out < 2)
                     return punycode_big_output;
                 output[out++] = static_cast<char>(input[j]);
@@ -125,7 +135,7 @@ namespace
             for (j = 0;  j < input_length;  ++j)
             {
                 /* Punycode does not need to check whether input[j] is basic: */
-                if (input[j] < n /* || basic(input[j]) */ )
+                if (input[j] < n)
                 {
                     if (++delta == 0) return punycode_overflow;
                 }
@@ -358,7 +368,7 @@ namespace
         return true;
     }
 
-    [[nodiscard]] std::string punycodeEncodeF(const std::string_view input)
+    [[nodiscard]] std::string punycodeEncode(const std::string_view input)
     {
         /* Extract the FQDN by selecting a substring between the first             */
         /* characters '://' and the first subsequent character' /,' if such exist  */
@@ -378,7 +388,7 @@ namespace
         return encoded_string;
     }
 
-    [[nodiscard]] std::string punycodeDecodeF(const std::string_view input)
+    [[nodiscard]] std::string punycodeDecode(const std::string_view input)
     {
         /* Extract the FQDN by selecting a substring between the first             */
         /* characters '://' and the first subsequent character' /,' if such exist  */
@@ -444,13 +454,12 @@ namespace
             res_offsets.assign(offsets);
 
             const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const std::string decoded_string = punycodeDecodeF(data_view);
-            for (size_t i = 0, size = decoded_string.size(); i < size; ++i)
-                res_data[i] = decoded_string[i];
+            const std::string decoded_string = punycodeDecode(data_view);
+            const size_t result_size {decoded_string.size()};
+            std::copy_n(decoded_string.cbegin(), result_size, &res_data[0]);
 
-            const size_t resul_size = decoded_string.size() + 1;
-            res_offsets[0] = resul_size;
-            res_data.resize(resul_size);
+            res_offsets[0] = result_size + 1;
+            res_data.resize(result_size + 1);
         }
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
@@ -471,13 +480,12 @@ namespace
             res_offsets.assign(offsets);
 
             const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const std::string encoded_string = punycodeEncodeF(data_view);
-            for (size_t i = 0, size = encoded_string.size(); i < size; ++i)
-                res_data[i] = encoded_string[i];
+            const std::string encoded_string = punycodeEncode(data_view);
+            const size_t result_size { encoded_string.size() };
+            std::copy_n(encoded_string.cbegin(), result_size, &res_data[0]);
 
-            const size_t resul_size = encoded_string.size() + 1;
-            res_offsets[0] = resul_size;
-            res_data.resize(resul_size);
+            res_offsets[0] = result_size + 1;
+            res_data.resize(result_size + 1);
         }
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
