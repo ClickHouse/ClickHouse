@@ -139,6 +139,10 @@ void WriteBufferFromS3::createMultipartUpload()
     Aws::S3::Model::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
+    req.SetContentType("binary/octet-stream");
+
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
@@ -226,6 +230,9 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     req.SetUploadId(multipart_upload_id);
     req.SetContentLength(temporary_buffer->tellp());
     req.SetBody(temporary_buffer);
+
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
+    req.SetContentType("binary/octet-stream");
 }
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
@@ -333,6 +340,9 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
     req.SetBody(temporary_buffer);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
+    req.SetContentType("binary/octet-stream");
 }
 
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
