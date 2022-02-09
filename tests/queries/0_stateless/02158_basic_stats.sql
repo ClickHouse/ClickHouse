@@ -70,6 +70,7 @@ LIMIT 1000000;
 
 SELECT sleep(1);
 
+-- test simple selectivity
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
@@ -77,8 +78,11 @@ EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b > 100;
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND b > 10000;
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND b < 10000;
+
+-- test 10000 < ? < 20000
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND b > 10000 AND b < 20000;
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND b < 10000 AND d < 20000;;
+
 
 
 DROP TABLE prewhere SYNC;

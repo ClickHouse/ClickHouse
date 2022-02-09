@@ -134,11 +134,11 @@ SELECT
     b,
     d
 FROM prewhere
-PREWHERE d < 10000
-WHERE (d < 10000) AND ((c > 0) AND (b > 10000) AND (b < 20000))
+PREWHERE (b > 10000) AND (b < 20000)
+WHERE ((b > 10000) AND (b < 20000)) AND ((c > 0) AND (d < 10000))
 SELECT
     b,
     d
 FROM prewhere
-PREWHERE b < 10000
-WHERE (b < 10000) AND ((c > 0) AND (d > 10000) AND (d < 20000))
+PREWHERE (d > 10000) AND (d < 20000)
+WHERE ((d > 10000) AND (d < 20000)) AND ((c > 0) AND (b < 10000))
