@@ -211,6 +211,66 @@ namespace
         }
     };
 
+    template <>
+    struct Transform<IntervalKind::Millisecond>
+    {
+        static constexpr auto name = function_name;
+
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(Int32, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+
+        static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+    };
+
+    template <>
+    struct Transform<IntervalKind::Microsecond>
+    {
+        static constexpr auto name = function_name;
+
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(Int32, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+
+        static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+    };
+
+    template <>
+    struct Transform<IntervalKind::Nanosecond>
+    {
+        static constexpr auto name = function_name;
+
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(Int32, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+
+        static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+
+        static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
+    };
+
 
 class FunctionToStartOfInterval : public IFunction
 {
@@ -263,7 +323,7 @@ public:
             if (first_argument_is_date && result_type_is_date)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
-                    "has the type DateTime",
+                    "has the type DateTime or DateTime64",
                         getName(), interval_type->getKind().toString());
         };
 
@@ -368,6 +428,12 @@ private:
 
         switch (interval_type->getKind())
         {
+            case IntervalKind::Nanosecond:
+                return execute<FromDataType, UInt32, IntervalKind::Nanosecond>(from, time_column, num_units, time_zone);
+            case IntervalKind::Microsecond:
+                return execute<FromDataType, UInt32, IntervalKind::Microsecond>(from, time_column, num_units, time_zone);
+            case IntervalKind::Millisecond:
+                return execute<FromDataType, UInt32, IntervalKind::Millisecond>(from, time_column, num_units, time_zone);
             case IntervalKind::Second:
                 return execute<FromDataType, UInt32, IntervalKind::Second>(from, time_column, num_units, time_zone);
             case IntervalKind::Minute:
@@ -399,7 +465,7 @@ private:
         auto & result_data = result->getData();
         result_data.resize(size);
 
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> || std::is_same_v<ToType, DataTypeDateTime64>)
         {
             const auto transform = TransformDateTime64<Transform<unit>>{from_datatype.getScale()};
             for (size_t i = 0; i != size; ++i)
