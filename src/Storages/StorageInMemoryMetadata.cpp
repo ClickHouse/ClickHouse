@@ -300,11 +300,21 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
 }
 
-Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
+Block StorageInMemoryMetadata::getSampleBlockInsertable() const
 {
     Block res;
 
     for (const auto & column : getColumns().getInsertable())
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
+Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().getOrdinary())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
