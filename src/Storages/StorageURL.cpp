@@ -483,7 +483,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         {
             auto parsed_uri = Poco::URI(uri);
             StorageURLSource::setCredentials(credentials, parsed_uri);
-            
+
             return wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     parsed_uri,
