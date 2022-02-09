@@ -27,6 +27,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <base/logger_useful.h>
 #include <algorithm>
+#include <Poco/URI.h>
 
 
 namespace DB
@@ -198,11 +199,13 @@ namespace
                         std::string user_info = request_uri.getUserInfo();
                         if (!user_info.empty())
                         {
-                            std::size_t n = user_info.find(':');
+                            std::string url_decoded_user_info;
+                            Poco::URI::decode(user_info, url_decoded_user_info);
+                            std::size_t n = url_decoded_user_info.find(':');
                             if (n != std::string::npos)
                             {
-                                credentials.setUsername(user_info.substr(0, n));
-                                credentials.setPassword(user_info.substr(n + 1));
+                                credentials.setUsername(url_decoded_user_info.substr(0, n));
+                                credentials.setPassword(url_decoded_user_info.substr(n + 1));
                             }
                         }
 
