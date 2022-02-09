@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_PARTITION_VALUE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 void SingleHiveTaskFilesCollector::setupArgs(const Arguments & args_)

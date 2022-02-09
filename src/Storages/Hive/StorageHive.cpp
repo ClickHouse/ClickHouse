@@ -47,7 +47,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
-    extern const int INVALID_PARTITION_VALUE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
 }
@@ -233,7 +232,7 @@ public:
                         continue;
                     auto column = types[i]->createColumnConst(num_rows, source_info->hive_files[current_idx]->getPartitionValues()[i]);
                     auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
-                    /* The original implemetation is :
+                    /* The original implementation is :
                      *     columns.insert(columns.begin() + previous_idx, column->convertToFullColumnIfConst());
                      * On profiling, We found that the cost of convertToFullColumnIfConst is too high. If we have confirmed that
                      * this column is const, there is no need to call this

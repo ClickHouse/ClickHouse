@@ -16,7 +16,6 @@
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/IHiveTaskPolicy.h>
-#include <Storages/Hive/IHiveTaskPolicy.h>
 
 namespace DB
 {

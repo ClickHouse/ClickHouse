@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_PARTITION_VALUE;
-    extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_NODE;
 }
 
@@ -354,10 +353,6 @@ void HiveTaskNodeHashFilesCollector::setupArgs(const Arguments & args_)
 void HiveTaskNodeHashFilesCollector::setupCallbackData(const String & data_)
 {
     stringToPackage(data_, task_metadata);
-    
-    //MarshallableTraceBuffer buf;
-    //buf << task_metadata;
-    //LOG_TRACE(logger, "callback data : {}", buf.str());
 }
 
 HiveFiles HiveTaskNodeHashFilesCollector::collectHiveFiles()
@@ -403,7 +398,7 @@ HiveTaskNodeHashFilesCollector::collectPartitionHiveFiles(const String & format_
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
     if (!reader->pull(block) || !block.rows())
-        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Could not parse parition values: {}", write_buf.str());
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Could not parse partition values: {}", write_buf.str());
 
     FieldVector fields(partition_name_and_types.size());
     for (size_t i = 0; i < partition_name_and_types.size(); ++i)

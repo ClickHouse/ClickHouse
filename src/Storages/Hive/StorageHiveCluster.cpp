@@ -62,9 +62,6 @@ Pipe StorageHiveCluster::read(
     size_t max_block_size_,
     unsigned num_streams_)
 {
-    /**
-     * @brief FIXEME: Not sure this is the right way to decide to create a StorageHive or a remote executor
-     */
     auto query_kind = context_->getClientInfo().query_kind;
     /*
     LOG_TRACE(
@@ -82,7 +79,7 @@ Pipe StorageHiveCluster::read(
     {
         auto iterate_callback_builder = HiveTaskPolicyFactory::instance().getIterateCallback(policy_name);
         if (!iterate_callback_builder)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow hive task policy : {}", policy_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive task policy : {}", policy_name);
 
         IHiveTaskIterateCallback::Arguments args
             = {.cluster_name = cluster_name,
@@ -142,7 +139,7 @@ Pipe StorageHiveCluster::read(
 
     auto files_collector = HiveTaskPolicyFactory::instance().getFilesCollector(policy_name);
     if (!files_collector)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow hive task policy : {}", policy_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive task policy : {}", policy_name);
     String task_resp = context_->getReadTaskCallback()();
     HiveTaskPackage task_package;
     stringToPackage(task_resp, task_package);

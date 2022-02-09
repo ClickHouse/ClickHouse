@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int NO_HIVEMETASTORE;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 const unsigned ThriftHiveMetastoreClientPool::max_connections = 16;
@@ -54,7 +53,7 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
     for (int i = 0 ; i < max_retry; ++i)
     {
         auto client = client_pool.get(get_client_timeout);
-        try 
+        try
         {
             client->get_table(*table, db_name, table_name);
             /// Query the latest partition info to check new change.
@@ -119,7 +118,7 @@ std::shared_ptr<Apache::Hadoop::Hive::Table> HiveMetastoreClient::getHiveTable(c
     for (int i = 0 ; i < max_retry; ++i)
     {
         auto client = client_pool.get(get_client_timeout);
-        try 
+        try
         {
             client->get_table(*table, db_name, table_name);
         }
