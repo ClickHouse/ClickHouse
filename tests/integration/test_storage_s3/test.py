@@ -929,18 +929,11 @@ def test_format_detection(started_cluster):
     result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(int(result) == 1)
 
-    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
-    assert(int(result) == 1)
-
-
     instance.query(f"create table parquet_table_s3 (x UInt64) engine=S3(s3_parquet2)")
     instance.query(f"insert into parquet_table_s3 select 1")
     result = instance.query(f"select * from s3(s3_parquet2)")
     assert(int(result) == 1)
 
     result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.parquet')")
-    assert(int(result) == 1)
-
-    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.parquet')")
     assert(int(result) == 1)
 
