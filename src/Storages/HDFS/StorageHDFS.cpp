@@ -172,23 +172,43 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     const String & compression_method,
     ContextPtr ctx)
 {
-    auto read_buffer_creator = [&]()
+    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
+    auto paths = getPathsList(path_from_uri, uri, ctx);
+
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-        auto paths = getPathsList(path_from_uri, uri, ctx);
-        if (paths.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-                "specify table structure manually",
-                format);
+        auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
+        {
+            read_buffer_creator_was_used = true;
 
-        auto compression = chooseCompressionMethod(paths[0], compression_method);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, paths[0], ctx->getGlobalContext()->getConfigRef()), compression);
-    };
+            if (paths.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+                    "specify table structure manually",
+                    format);
 
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+            auto compression = chooseCompressionMethod(path, compression_method);
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, ctx->getGlobalContext()->getConfigRef()), compression);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+           exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from hdfs files failed. Errors:\n{}", exception_messages);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
