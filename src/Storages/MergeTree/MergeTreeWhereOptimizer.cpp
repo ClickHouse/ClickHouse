@@ -1,4 +1,5 @@
 #include <memory>
+#include <unordered_map>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
+#include "Common/Exception.h"
 #include <Common/typeid_cast.h>
 #include "Core/Field.h"
 #include "Interpreters/StorageID.h"
@@ -30,6 +32,8 @@ namespace ErrorCodes
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
 static constexpr auto threshold = 2;
+static constexpr double EPS = 1e-9;
+static constexpr double RANK_CORRECTION = 1e9;
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -52,7 +56,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , stats(storage_->getStatisticsByPartitionPredicate(query_info, context))
     , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr)
 {
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeWhereOptimizer"), "kek = {}", storage_->getName());
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
@@ -165,29 +168,40 @@ static bool isConditionGoodNew(const ASTPtr & condition)
     return false;
 }
 
-static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & condition)
+std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptimizer::parseCondition(
+    const ASTPtr & condition) const
 {
     const auto * function = condition->as<ASTFunction>();
     if (!function)
-        return false;
+        return std::nullopt;
 
-    std::unordered_set<String> compare_funcs = {
-        "equals",
-        "notEquals",
-        "less",
-        "greater",
-        "greaterOrEquals",
-        "lessOrEquals",
+    static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
+        {"equals", ConditionDescription::Type::EQUAL},
+        {"notEquals", ConditionDescription::Type::NOT_EQUAL},
+        {"less", ConditionDescription::Type::LESS_OR_EQUAL},
+        {"greater", ConditionDescription::Type::GREATER_OR_EQUAL},
+        {"greaterOrEquals", ConditionDescription::Type::GREATER_OR_EQUAL},
+        {"lessOrEquals", ConditionDescription::Type::LESS_OR_EQUAL},
     };
     if (!compare_funcs.contains(function->name))
-        return 1;
+        return std::nullopt;
+
+    ConditionDescription::Type compare_type = compare_funcs.at(function->name);
 
     auto * left_arg = function->arguments->children.front().get();
     auto * right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
-    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>()) {
         std::swap(left_arg, right_arg);
+        static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type> compare_funcs_swap = {
+            {ConditionDescription::Type::EQUAL, ConditionDescription::Type::EQUAL},
+            {ConditionDescription::Type::NOT_EQUAL, ConditionDescription::Type::NOT_EQUAL},
+            {ConditionDescription::Type::LESS_OR_EQUAL, ConditionDescription::Type::GREATER_OR_EQUAL},
+            {ConditionDescription::Type::GREATER_OR_EQUAL, ConditionDescription::Type::LESS_OR_EQUAL},
+        };
+        compare_type = compare_funcs_swap.at(compare_type);
+    }
 
     const auto * ident = left_arg->as<ASTIdentifier>();
     if (ident)
@@ -196,44 +210,41 @@ static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & cond
         if (const auto * literal = right_arg->as<ASTLiteral>())
         {
             const auto & field = literal->value;
-
-            // everything is converted to float
-            if (function->name == "equals")
-            {
-                return stats->getDistributionStatistics()->estimateProbability(
-                    ident->getColumnName(),
-                    field,
-                    field).value_or(1);
-            }
-            else if (function->name == "notEquals")
-            {
-                return 1 - stats->getDistributionStatistics()->estimateProbability(
-                    ident->getColumnName(),
-                    field,
-                    field).value_or(0);
-            }
-            else if (function->name == "less" || function->name == "lessOrEquals")
-            {
-                return stats->getDistributionStatistics()->estimateProbability(
-                    ident->getColumnName(),
-                    {},
-                    field).value_or(1); 
-            }
-            else if (function->name == "greater" || function->name == "greaterOrEquals")
-            {
-                return stats->getDistributionStatistics()->estimateProbability(
-                    ident->getColumnName(),
-                    field,
-                    {}).value_or(1); 
-            }
-            else
-            {
-                return 1;
-            }
+            LOG_INFO(&Poco::Logger::get("TEST>>>"), "DESC column = {} type={} field={}", ident->getColumnName(), compare_type, field);
+            return ConditionDescription{ident->getColumnName(), compare_type, field};
         }
     }
 
-    return 1;
+    return std::nullopt;
+}
+
+double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::ConditionDescription> & condition_description) const
+{
+    if (!condition_description)
+        return 1;
+
+    switch  (condition_description->type) {
+    case ConditionDescription::Type::EQUAL:
+        return stats->getDistributionStatistics()->estimateProbability(
+            condition_description->identifier,
+            condition_description->constant,
+            condition_description->constant).value_or(1);
+    case ConditionDescription::Type::NOT_EQUAL:
+        return 1 - stats->getDistributionStatistics()->estimateProbability(
+            condition_description->identifier,
+            condition_description->constant,
+            condition_description->constant).value_or(0);
+    case ConditionDescription::Type::LESS_OR_EQUAL:
+        return stats->getDistributionStatistics()->estimateProbability(
+            condition_description->identifier,
+            {},
+            condition_description->constant).value_or(1);
+    case ConditionDescription::Type::GREATER_OR_EQUAL:
+        return stats->getDistributionStatistics()->estimateProbability(
+            condition_description->identifier,
+            condition_description->constant,
+            {}).value_or(1); 
+    }
 }
 
 static const ASTFunction * getAsTuple(const ASTPtr & node)
@@ -250,7 +261,7 @@ static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
     return false;
 };
 
-bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
+bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final, bool recurse_tuple) const
 {
     // TODO: support not only equals
     if (!func || func->name != "equals" || func->arguments->children.size() != 2)
@@ -280,22 +291,22 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunctio
 
         ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
         ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
-        analyzeImpl(res, func_node, is_final);
+        analyzeImpl(res, func_node, is_final, recurse_tuple);
     }
 
     return true;
 }
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final, bool recurse_tuple) const
 {
     const auto * func = node->as<ASTFunction>();
 
     if (func && func->name == "and")
     {
         for (const auto & elem : func->arguments->children)
-            analyzeImpl(res, elem, is_final);
+            analyzeImpl(res, elem, is_final, recurse_tuple);
     }
-    else if (tryAnalyzeTuple(res, func, is_final))
+    else if (tryAnalyzeTuple(res, func, is_final, recurse_tuple))
     {
         /// analyzed
     }
@@ -318,24 +329,26 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
+        
+        if (use_new_scoring) {
+            cond.description = parseCondition(node);
+            cond.selectivity = scoreSelectivity(cond.description);
+        }
 
         if (cond.viable)
         {
             if (!use_new_scoring)
             {
                 cond.good = isConditionGood(node);
+                cond.selectivity = 1;
                 cond.rank = 0;
-                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "USED OLD");
             }
             else
             {
                 cond.good = isConditionGoodNew(node);
-                cond.selectivity = scoreSelectivity(stats, node);
                 // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
                 // Cost per tuple = mean size of tuple = columns_size / count.
-                cond.rank = (1 - cond.selectivity) / cond.columns_size;
-                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "cond={} good={} rank={} size={} select={}",
-                    *cond.identifiers.begin(), cond.good, cond.rank, cond.columns_size, cond.selectivity);
+                cond.rank = (1 - cond.selectivity) * RANK_CORRECTION / cond.columns_size;
             }
         }
 
@@ -344,10 +357,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final, bool recurse_tuple) const
 {
     Conditions res;
-    analyzeImpl(res, expression, is_final);
+    analyzeImpl(res, expression, is_final, recurse_tuple);
     return res;
 }
 
@@ -372,13 +385,193 @@ ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions)
     return function;
 }
 
-
-void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
-{
+void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const {
     if (!select.where() || select.prewhere())
         return;
+    if (use_new_scoring) {
+        optimizeByRanks(select);
+    } else {
+        optimizeBySize(select);
+    }
+}
 
-    Conditions where_conditions = analyze(select.where(), select.final());
+bool MergeTreeWhereOptimizer::ColumnWithRank::operator<(const ColumnWithRank & other) const {
+    return rank < other.rank;
+}
+
+bool MergeTreeWhereOptimizer::ColumnWithRank::operator==(const ColumnWithRank & other) const {
+    return rank == other.rank;
+}
+
+std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::getSimpleColumns(
+    const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const {
+    std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
+    for (const auto & [column, conditions] : column_to_simple_conditions) {
+        double total_selectivity = 1;
+        // Conditions are connected using AND
+        // TODO: consider </> and =/!= separately
+        LOG_INFO(&Poco::Logger::get("TEST>>>"), "column = {}", column);
+        for (const auto & condition : conditions) {
+            total_selectivity *= condition.selectivity;
+            LOG_INFO(&Poco::Logger::get("TEST>>> selectivity"), "sel = {} cl = {}", condition.selectivity, condition.description->identifier);
+        }
+
+        // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
+        // rank = (1 - selectivity) / cost per tuple;
+        // Cost per tuple = mean size of tuple = columns_size / count.
+        rank_to_column.emplace_back(
+            -(1 - total_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+            total_selectivity,
+            column);
+    }
+    std::sort(std::begin(rank_to_column), std::end(rank_to_column));
+    return rank_to_column;
+}
+
+void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
+{
+    // TODO: better estimation for a < 10 OR b > 10 OR b < -100..
+    // TODO: basic support for tuples (a, b, c) < (d, e, f) => estimate a <= d and add to prewhere
+    Conditions where_conditions = analyze(select.where(), select.final(), false);
+    std::unordered_map<std::string, Conditions> column_to_simple_conditions;
+    Conditions complex_conditions;
+    for (const auto & condition : where_conditions) {
+        if (condition.viable && condition.description) {
+            column_to_simple_conditions[condition.description->identifier].push_back(condition);
+        } else {
+            complex_conditions.push_back(condition);
+        }
+    }
+    Conditions prewhere_conditions;
+    std::unordered_set<std::string> columns_in_prewhere;
+
+    UInt64 total_size_of_moved_conditions = 0;
+    UInt64 total_number_of_moved_columns = 0;
+
+    // First we'll move simple expressions (one column) while estimated amount of data get's lower. (only for conditions with selectivity estimates)
+    std::vector<ColumnWithRank> rank_to_column = getSimpleColumns(column_to_simple_conditions);
+
+    // Total data read = sum of prewhere columns + product of selectivities * sum of other columns.
+    // We are trying to minimize total data read from disk.
+    size_t prewhere_columns_size = 0;
+    size_t where_columns_size = total_size_of_queried_columns;
+    double prewhere_selectivity = 1;
+    LOG_INFO(&Poco::Logger::get("TEST"), "START totalsz = {} rtc ={}", where_columns_size, rank_to_column.size());
+    for (const auto & [rank, selectivity, column] : rank_to_column) {
+        LOG_INFO(&Poco::Logger::get("TEST???"), "rnk={} sel={} clm={} sz={}", rank, selectivity, column, getIdentifiersColumnSize({column}));
+    }
+    for (const auto & [rank, selectivity, column] : rank_to_column) {
+        const size_t column_size = getIdentifiersColumnSize({column});
+        const double current_loss = prewhere_columns_size + prewhere_selectivity * where_columns_size;
+        if (where_columns_size < column_size) {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "It's a bug: where_columns_size = {} < column_size = {}",
+                where_columns_size, column_size);
+        }
+        // We think that columns are independent.
+        const double predicted_loss = (prewhere_columns_size + column_size) + prewhere_selectivity * selectivity * (where_columns_size - column_size);
+        
+        LOG_INFO(&Poco::Logger::get("TEST"), "rnk={} sel={} clm={}", rank, selectivity, column);
+        LOG_INFO(&Poco::Logger::get("TEST"), "currloss = {} predloss ={}", current_loss, predicted_loss);
+
+        // don't stop if difference is small
+        if (current_loss + EPS < predicted_loss) {
+            break;   
+        }
+
+        prewhere_columns_size += column_size;
+        where_columns_size -= column_size;
+        prewhere_selectivity *= selectivity;
+
+        columns_in_prewhere.insert(column);
+
+        total_size_of_moved_conditions += column_size;
+        total_number_of_moved_columns += 1;
+    }
+
+    // Let's collect conditions that can be calculated in prewhere using columns_in_prewhere.
+    for (auto it = where_conditions.begin(); it != where_conditions.end();)
+    {
+        if (it->viable &&
+            std::all_of(
+                std::begin(it->identifiers),
+                std::end(it->identifiers),
+                [&columns_in_prewhere] (const auto & ident) {
+                    return columns_in_prewhere.contains(ident);
+                })) {
+            prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it++);
+        } else {
+            ++it;
+        }
+    }
+
+    // Now let's move other columns from smaller to bigger while totals are less than threasholds.
+    // Just repeat the old algorithm, but order conditions by ranks instead of only sizes.
+
+    /// Move condition and all other conditions depend on the same set of columns.
+    auto move_condition = [&](Conditions::iterator cond_it)
+    {
+        prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
+        total_size_of_moved_conditions += cond_it->columns_size;
+        total_number_of_moved_columns += cond_it->identifiers.size();
+
+        /// Move all other viable conditions that depend on the same set of columns.
+        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+        {
+            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->identifiers == cond_it->identifiers)
+                prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
+            else
+                ++jt;
+        }
+    };
+
+    /// TODO: use columns in expr
+    /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
+    while (!where_conditions.empty())
+    {
+        /// Move the best condition to PREWHERE if it is viable.
+        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
+
+        if (!it->viable)
+            break;
+
+        bool moved_enough = false;
+        if (total_size_of_queried_columns > 0)
+        {
+            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+            moved_enough = total_size_of_moved_conditions > 0
+                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+        }
+        else
+        {
+            /// Otherwise, use number of moved columns as a fallback.
+            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+            moved_enough = total_number_of_moved_columns > 0
+                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+        }
+
+        if (moved_enough)
+            break;
+
+        move_condition(it);
+    }
+
+    /// Nothing was moved.
+    if (prewhere_conditions.empty())
+        return;
+
+    /// Rewrite the SELECT query.
+
+    select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
+    select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
+
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+}
+
+void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
+{
+    Conditions where_conditions = analyze(select.where(), select.final(), true);
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;

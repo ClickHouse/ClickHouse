@@ -117,9 +117,6 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(const
 {
     if (empty())
         throw Exception("BlockTDigest is empty", ErrorCodes::LOGICAL_ERROR);
-    // TODO: t-digest grows O(log n)
-    // TODO: try ddsketch???
-
     double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)

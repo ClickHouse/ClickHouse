@@ -7,9 +7,11 @@
 #include <boost/noncopyable.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeStatistic.h>
+#include "base/types.h"
 
 #include <memory>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 
 
@@ -48,11 +50,37 @@ public:
 private:
     void optimize(ASTSelectQuery & select) const;
 
+    void optimizeBySize(ASTSelectQuery & select) const;
+    void optimizeByRanks(ASTSelectQuery & select) const;
+
+    // Description of simple expression (ident <=> lit).
+    // Used by new planner.
+    // TODO: support tuples
+    // TODO: support monotonic functions
+    struct ConditionDescription
+    {
+        enum class Type {
+            LESS_OR_EQUAL,
+            GREATER_OR_EQUAL,
+            EQUAL,
+            NOT_EQUAL,
+        };
+
+        String identifier;
+        Type type;
+        Field constant;
+    };
+
+    // Conditions 
     struct Condition
     {
         ASTPtr node;
         UInt64 columns_size = 0;
+        
         NameSet identifiers;
+
+        // TODO: support many identifiers (OR)
+        std::optional<ConditionDescription> description;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
@@ -79,11 +107,13 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const;
-    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
+    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final, bool recurse_tuple) const;
+    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final, bool recurse_tuple) const;
+
+    std::optional<ConditionDescription> parseCondition(const ASTPtr & condition) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
-    Conditions analyze(const ASTPtr & expression, bool is_final) const;
+    Conditions analyze(const ASTPtr & expression, bool is_final, bool recurse_tuple) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
@@ -113,6 +143,27 @@ private:
     bool cannotBeMoved(const ASTPtr & ptr, bool is_final) const;
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
+
+    struct ColumnWithRank {
+        ColumnWithRank(
+            double rank_,
+            double selectivity_,
+            std::string name_)
+            : rank(rank_)
+            , selectivity(selectivity_)
+            , name(name_) {
+        }
+
+        bool operator<(const ColumnWithRank & other) const;
+        bool operator==(const ColumnWithRank & other) const;
+
+        double rank;
+        double selectivity;
+        std::string name;
+    };
+
+    std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
+    double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
 
     using StringSet = std::unordered_set<std::string>;
 
