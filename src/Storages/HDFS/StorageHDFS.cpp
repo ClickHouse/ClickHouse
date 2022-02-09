@@ -258,9 +258,15 @@ Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool n
     auto header = metadata_snapshot->getSampleBlock();
     /// Note: AddingDefaultsBlockInputStream doesn't change header.
     if (need_path_column)
-        header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        header.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_path"});
     if (need_file_column)
-        header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        header.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_file"});
     return header;
 }
 
@@ -377,7 +383,7 @@ Chunk HDFSSource::generate()
         /// Enrich with virtual columns.
         if (need_path_column)
         {
-            auto column = DataTypeString().createColumnConst(num_rows, current_path);
+            auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
             columns.push_back(column->convertToFullColumnIfConst());
         }
 
@@ -386,7 +392,7 @@ Chunk HDFSSource::generate()
             size_t last_slash_pos = current_path.find_last_of('/');
             auto file_name = current_path.substr(last_slash_pos + 1);
 
-            auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
+            auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
             columns.push_back(column->convertToFullColumnIfConst());
         }
 
@@ -687,9 +693,8 @@ void registerStorageHDFS(StorageFactory & factory)
 NamesAndTypesList StorageHDFS::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 }

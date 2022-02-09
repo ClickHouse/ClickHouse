@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFile.h>
@@ -968,7 +969,9 @@ bool StorageFileLog::updateFileInfos()
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    return NamesAndTypesList{{"_filename", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
+    return NamesAndTypesList{
+        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_offset", std::make_shared<DataTypeUInt64>()}};
 }
 
 Names StorageFileLog::getVirtualColumnNames()

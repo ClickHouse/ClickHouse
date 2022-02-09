@@ -1184,8 +1184,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 executeAggregation(
                     query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                /// We need to reset input order info, so that executeOrder can't use  it
+                /// We need to reset input order info, so that executeOrder can't use it
                 query_info.input_order_info.reset();
+                if (query_info.projection)
+                    query_info.projection->input_order_info.reset();
             }
 
             // Now we must execute:
@@ -1933,6 +1935,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         // TODO Do we need a projection variant for this field?
+                        query,
                         analysis_result.order_by_elements_actions,
                         getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
@@ -1940,7 +1943,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.order_by_elements_actions, getSortDescription(query, context), query_info.syntax_analyzer_result);
+                        query,
+                        analysis_result.order_by_elements_actions,
+                        getSortDescription(query, context),
+                        query_info.syntax_analyzer_result);
                 }
             }
             else
@@ -1948,14 +1954,18 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 if (query_info.projection)
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        query,
                         query_info.projection->group_by_elements_actions,
-                        getSortDescriptionFromGroupBy(query),
+                        query_info.projection->group_by_elements_order_descr,
                         query_info.syntax_analyzer_result);
                 }
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query), query_info.syntax_analyzer_result);
+                        query,
+                        analysis_result.group_by_elements_actions,
+                        getSortDescriptionFromGroupBy(query),
+                        query_info.syntax_analyzer_result);
                 }
             }
 
