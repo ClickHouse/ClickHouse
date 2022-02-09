@@ -2,4 +2,3 @@ Here are pre-generated files from jemalloc on Linux x86_64.
 You can obtain these files by running ./autogen.sh inside jemalloc source directory.
 
 Removed JEMALLOC_PURGE_MADVISE_FREE because it's available only from Linux 4.5.
-Added JEMALLOC_CONFIG_MALLOC_CONF substitution
