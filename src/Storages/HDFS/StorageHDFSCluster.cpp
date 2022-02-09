@@ -2,17 +2,9 @@
 
 #if USE_HDFS
 
-#include <Common/Exception.h>
-#include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/UUID.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromS3.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -21,7 +13,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowBlockInputStreams.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
@@ -29,16 +20,13 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/StorageHDFSCluster.h>
-#include <base/logger_useful.h>
 
-#include <ios>
 #include <memory>
-#include <string>
-#include <thread>
-#include <cassert>
+
 
 namespace DB
 {
+
 StorageHDFSCluster::StorageHDFSCluster(
     String cluster_name_,
     const String & uri_,
