@@ -20,6 +20,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -413,6 +414,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     Block block_to_send = removeSuperfluousColumns(block);
@@ -456,6 +459,9 @@ void DistributedSink::writeSync(const Block & block)
 
     size_t num_shards = end - start;
 
+    span.add_attribute("clickhouse.start_shard", start);
+    span.add_attribute("clickhouse.end_shard", end);
+
     if (num_shards > 1)
     {
         auto current_selector = createSelector(block);
@@ -489,6 +495,7 @@ void DistributedSink::writeSync(const Block & block)
     catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription());
+        span.add_attribute(exception);
         throw;
     }
 
@@ -613,7 +620,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block_to_send, {path});
+            writeToShard(shard_info,block_to_send, {path});
         }
     }
     else
@@ -627,13 +634,16 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
-            writeToShard(block_to_send, dir_names);
+            writeToShard(shard_info, block_to_send, dir_names);
     }
 }
 
 
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+    span.add_attribute("db.statement", this->query_string);
+
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
@@ -645,8 +655,11 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 }
 
 
-void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
+void DistributedSink::writeToShard(const Cluster::ShardInfo& shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+    span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
+
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
@@ -713,7 +726,19 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
-            context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+
+            if(context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
+            {
+                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
+                auto client_info = context->getClientInfo();
+                client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            }
+            else
+            {
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            }
+
             writeVarUInt(block.rows(), header_buf);
             writeVarUInt(block.bytes(), header_buf);
             writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf); /// obsolete

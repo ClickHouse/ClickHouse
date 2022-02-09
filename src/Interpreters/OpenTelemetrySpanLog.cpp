@@ -150,6 +150,42 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
     }
 }
 
+void OpenTelemetrySpanHolder::add_attribute(const std::string& name, UInt32 value)
+{
+    if (trace_id == UUID())
+        return;
+
+    this->attribute_names.push_back(name);
+    this->attribute_values.push_back(std::to_string(value));
+}
+
+void OpenTelemetrySpanHolder::add_attribute(const std::string& name, const std::string& value)
+{
+    if (trace_id == UUID())
+        return;
+
+    this->attribute_names.push_back(name);
+    this->attribute_values.push_back(value);
+}
+
+void OpenTelemetrySpanHolder::add_attribute(const Exception & e)
+{
+    if (trace_id == UUID())
+        return;
+
+    this->attribute_names.push_back("clickhouse.exception");
+    this->attribute_values.push_back(getExceptionMessage(e, false));
+}
+
+void OpenTelemetrySpanHolder::add_attribute(std::exception_ptr e)
+{
+    if (trace_id == UUID() || e == nullptr)
+        return;
+
+    this->attribute_names.push_back("clickhouse.exception");
+    this->attribute_values.push_back(getExceptionMessage(e, false));
+}
+
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
