@@ -63,16 +63,7 @@ Pipe StorageHiveCluster::read(
     unsigned num_streams_)
 {
     auto query_kind = context_->getClientInfo().query_kind;
-    /*
-    LOG_TRACE(
-        logger,
-        "query kinkd: {}, processed stage: {}, query: {}"
-        "task iterate policy:{}",
-        query_kind,
-        processed_stage_,
-        queryToString(query_info_.query),
-        context_->getSettings().getString("hive_cluster_task_iterate_policy"));
-    */
+    
     auto policy_name = context_->getSettings().getString("hive_cluster_task_iterate_policy");
     // first stage. create remote executors pipeline
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -157,15 +148,6 @@ Pipe StorageHiveCluster::read(
     files_collector->setupArgs(args);
     auto files_collector_builder = [&files_collector]() { return files_collector; };
 
-
-    //const auto & client_info = context_->getClientInfo();
-    //LOG_TRACE(
-    //    logger,
-    //    "replica info. count_participating_replicas:{}, number_of_current_replica:{}",
-    //    client_info.count_participating_replicas,
-    //    client_info.number_of_current_replica);
-
-
     // second stage, create local hive storage reading pipeline
     auto local_storage_settings = std::make_unique<HiveSettings>();
     local_storage_settings->applyChanges(*storage_settings);
@@ -206,10 +188,6 @@ void registerStorageHiveCluster(StorageFactory & factory_)
                 hive_settings->loadFromQuery(*args.storage_def);
 
             ASTs engine_args = args.engine_args;
-            //for (const auto & ast : engine_args)
-            //{
-            //    LOG_TRACE(&Poco::Logger::get("StorageHiveCluster"), "engin arg: {}", ast->dumpTree());
-            //}
             if (engine_args.size() != 4)
                 throw Exception(
                     "StorageHiveCluster requires 3 parameters: cluster, hive metadata server url, hive database and hive table",
@@ -226,24 +204,6 @@ void registerStorageHiveCluster(StorageFactory & factory_)
             const String & hive_metastore_url = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-            /*
-            LOG_TRACE(
-                &Poco::Logger::get("StorageHiveCluster"),
-                "settings: {}. \n"
-                "cluster:{}, hive url:{}, database: {}, table: {}\n"
-                "database:{}, table:{}\n"
-                "columns: {}\n"
-                "partition by ast: {}",
-                hive_settings->toString(),
-                cluster_name,
-                hive_metastore_url,
-                hive_database,
-                hive_table,
-                args.table_id.getDatabaseName(),
-                args.table_id.getTableName(),
-                args.columns.toString(),
-                partition_by->dumpTree());
-            */
 
             return StorageHiveCluster::create(
                 cluster_name,
