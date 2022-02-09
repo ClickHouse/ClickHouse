@@ -63,6 +63,8 @@ public:
     /// checks (in zookeeper) if the picked replica finished the merge
     bool isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry);
 
+    bool isMergeFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry);
+
 private:
     StorageReplicatedMergeTree & storage;
 
