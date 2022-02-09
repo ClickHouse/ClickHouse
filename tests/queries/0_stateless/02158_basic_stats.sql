@@ -75,8 +75,8 @@ EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b < 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b > 100;
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 100 AND b > 100;
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 100 AND b < 100;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND b > 10000;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND b < 10000;
 
 
 DROP TABLE prewhere SYNC;
