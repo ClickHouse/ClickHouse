@@ -2,9 +2,13 @@
 #include <Common/Exception.h>
 
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -36,7 +40,7 @@ public:
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -62,12 +66,20 @@ protected:
         }
 
         const Block & src = (*data)[current_index];
-        Columns columns;
-        columns.reserve(column_names_and_types.size());
 
-        /// Add only required columns to `res`.
-        for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(src, elem));
+        Columns columns;
+        size_t num_columns = column_names_and_types.size();
+        columns.reserve(num_columns);
+
+        auto name_and_type = column_names_and_types.begin();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
+            ++name_and_type;
+        }
+
+        fillMissingColumns(columns, src.rows(), column_names_and_types, /*metadata_snapshot=*/ nullptr);
+        assert(std::all(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -101,7 +113,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
     {
     }
 
@@ -110,7 +122,15 @@ public:
     void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
-        metadata_snapshot->check(block, true);
+        storage_snapshot->metadata->check(block, true);
+        if (!storage_snapshot->object_columns.empty())
+        {
+            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
+            auto extended_storage_columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+            convertObjectsToTuples(columns, block, extended_storage_columns);
+        }
 
         if (storage.compress)
         {
@@ -151,7 +171,7 @@ private:
     Blocks new_blocks;
 
     StorageMemory & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 
@@ -170,6 +190,38 @@ StorageMemory::StorageMemory(
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->blocks = data.get();
+
+    auto names_of_objects = getNamesOfObjectColumns(metadata_snapshot->getColumns().getAllPhysical());
+    if (names_of_objects.empty())
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    std::unordered_map<std::string_view, DataTypes> types_in_blocks;
+
+    if (snapshot_data->blocks->empty())
+    {
+        for (const auto & name : names_of_objects)
+            types_in_blocks[name].push_back(std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt8>()},
+                Names{ColumnObject::COLUMN_NAME_DUMMY}));
+    }
+    else
+    {
+        for (const auto & block : *snapshot_data->blocks)
+            for (const auto & elem : block)
+                if (names_of_objects.contains(elem.name))
+                    types_in_blocks[elem.name].push_back(elem.type);
+    }
+
+    ColumnsDescription object_columns;
+    for (const auto & [name, types] : types_in_blocks)
+        object_columns.add(ColumnDescription{String(name), getLeastCommonTypeForObject(types)});
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
 
 Pipe StorageMemory::read(
     const Names & column_names,
@@ -181,6 +233,9 @@ Pipe StorageMemory::read(
     unsigned num_streams)
 {
     storage_snapshot->check(column_names);
+
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
+    auto current_data = snapshot_data.blocks;
 
     if (delay_read_for_global_subqueries)
     {
@@ -197,13 +252,12 @@ Pipe StorageMemory::read(
             storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [this](std::shared_ptr<const Blocks> & data_to_initialize)
+            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = data.get();
+                data_to_initialize = current_data;
             }));
     }
 
-    auto current_data = data.get();
     size_t size = current_data->size();
 
     if (num_streams > size)

@@ -1,11 +1,15 @@
 -- Tags: no-fasttest
 
+{% for engine in ["ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_3/t_json_3', 'r1') ORDER BY tuple()", "Memory"] -%}
+
 DROP TABLE IF EXISTS t_json_3;
 
 CREATE TABLE t_json_3(id UInt64, data JSON)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_3/t_json_3', 'r1') ORDER BY tuple();
+ENGINE = {{ engine }};
 
-SYSTEM STOP MERGES t_json_3;
+{% if 'MergeTree' in engine %}
+    SYSTEM STOP MERGES t_json_3;
+{% endif %}
 
 INSERT INTO t_json_3 FORMAT JSONEachRow {"id": 1, "data": {"k1": null}}, {"id": 2, "data": {"k1": "v1", "k2" : 2}};
 
@@ -23,21 +27,22 @@ SELECT id, `data.k1.k2`, `data.k1.k3` FROM t_json_3 ORDER BY id;
 INSERT INTO t_json_3 FORMAT JSONEachRow {"id": 3, "data": {"k1" : []}} {"id": 4, "data": {"k1" : []}};
 
 SELECT id, data, toTypeName(data) FROM t_json_3 ORDER BY id;
-
-SELECT name, column, type
-FROM system.parts_columns
-WHERE table = 't_json_3' AND database = currentDatabase() AND active AND column = 'data'
-ORDER BY name;
-
 SELECT id, data.k1.k2, data.k1.k3 FROM t_json_3 ORDER BY id;
 
-SYSTEM START MERGES t_json_3;
-OPTIMIZE TABLE t_json_3 FINAL;
+{% if 'MergeTree' in engine %}
+    SELECT name, column, type
+    FROM system.parts_columns
+    WHERE table = 't_json_3' AND database = currentDatabase() AND active AND column = 'data'
+    ORDER BY name;
 
-SELECT column, type
-FROM system.parts_columns
-WHERE table = 't_json_3' AND database = currentDatabase() AND active AND column = 'data'
-ORDER BY name;
+    SYSTEM START MERGES t_json_3;
+    OPTIMIZE TABLE t_json_3 FINAL;
+
+    SELECT column, type
+    FROM system.parts_columns
+    WHERE table = 't_json_3' AND database = currentDatabase() AND active AND column = 'data'
+    ORDER BY name;
+{% endif %}
 
 SELECT id, data.k1.k2, data.k1.k3 FROM t_json_3 ORDER BY id;
 
@@ -50,3 +55,5 @@ SELECT id, data, toTypeName(data) FROM t_json_3 ORDER BY id;
 SELECT id, data.k1.k2, data.k1.k3, data.k4 FROM t_json_3 ORDER BY id;
 
 DROP TABLE t_json_3;
+
+{% endfor -%}

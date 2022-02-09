@@ -5964,6 +5964,9 @@ ReservationPtr MergeTreeData::balancedReservation(
 
 ColumnsDescription MergeTreeData::getObjectsDescription(const DataPartsVector & parts, const NameSet & object_names)
 {
+    if (object_names.empty())
+        return {};
+
     std::unordered_map<String, DataTypes> types_in_parts;
 
     if (parts.empty())

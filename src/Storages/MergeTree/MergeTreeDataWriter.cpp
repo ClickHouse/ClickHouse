@@ -277,10 +277,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     Block & block = block_with_partition.block;
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot);
-    auto extended_storage_columns = storage_snapshot->getColumns(
-        GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-    convertObjectsToTuples(columns, block, extended_storage_columns);
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto extended_storage_columns = storage_snapshot->getColumns(
+            GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+        convertObjectsToTuples(columns, block, extended_storage_columns);
+    }
 
     static const String TMP_PREFIX = "tmp_insert_";
 

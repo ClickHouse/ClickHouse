@@ -29,6 +29,13 @@ public:
 
     size_t getSize() const { return data.get()->size(); }
 
+    struct SnapshotData : public StorageSnapshot::Data
+    {
+        std::shared_ptr<const Blocks> blocks;
+    };
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
