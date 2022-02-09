@@ -110,7 +110,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StorageMetadataPtr & metadata_snapshot) const
 {
     Block table_sample = metadata_snapshot->getSampleBlock();
-    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
+    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
     {
