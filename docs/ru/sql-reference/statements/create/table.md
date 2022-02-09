@@ -14,8 +14,8 @@ toc_title: "Таблица"
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -107,6 +107,13 @@ SELECT x, toTypeName(x) FROM t1;
 Материализованное выражение. Такой столбец не может быть указан при INSERT, то есть, он всегда вычисляется.
 При INSERT без указания списка столбцов, такие столбцы не рассматриваются.
 Также этот столбец не подставляется при использовании звёздочки в запросе SELECT. Это необходимо, чтобы сохранить инвариант, что дамп, полученный путём `SELECT *`, можно вставить обратно в таблицу INSERT-ом без указания списка столбцов.
+
+### EPHEMERAL {#ephemeral}
+
+`EPHEMERAL expr`
+
+Эфемерное выражение. Такой столбец не хранится в таблице и не может быть получен в запросе SELECT, но на него можно ссылаться в выражениях по умолчанию запроса CREATE.
+На данный момент инвариант SELECT/INSERT не поддерживается для этого типа, т.е. набор полей, полученный через `SELECT *` не может быть вставлен обратно в таблицу, используя INSERT без указания списка столбцов.
 
 ### ALIAS {#alias}
 
