@@ -1,26 +1,27 @@
-#include <memory>
-#include <unordered_map>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <base/map.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/typeid_cast.h>
+#include <Core/Field.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/StorageID.h>
+#include <memory>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
-#include <Interpreters/misc.h>
-#include "Common/Exception.h"
-#include <Common/typeid_cast.h>
-#include "Core/Field.h"
-#include "Interpreters/StorageID.h"
-#include "Storages/StorageMerge.h"
-#include <DataTypes/NestedUtils.h>
-#include <base/map.h>
 #include <Poco/Logger.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageMergeTree.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -34,6 +35,24 @@ namespace ErrorCodes
 static constexpr auto threshold = 2;
 static constexpr double EPS = 1e-9;
 static constexpr double RANK_CORRECTION = 1e9;
+
+namespace
+{
+    bool equals(const Field & lhs, const Field & rhs)
+    {
+        return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+    }
+ 
+    bool less(const Field & lhs, const Field & rhs)
+    {
+        return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+    }
+
+    bool lessOrEquals(const Field & lhs, const Field & rhs)
+    {
+        return less(lhs, rhs) && equals(lhs, rhs);
+    }
+}
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -407,21 +426,51 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
     const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const {
     std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
     for (const auto & [column, conditions] : column_to_simple_conditions) {
-        double total_selectivity = 1;
+        double min_selectivity = 1;
+        Field left_limit;
+        Field right_limit;
         // Conditions are connected using AND
-        // TODO: consider </> and =/!= separately
-        LOG_INFO(&Poco::Logger::get("TEST>>>"), "column = {}", column);
-        for (const auto & condition : conditions) {
-            total_selectivity *= condition.selectivity;
-            LOG_INFO(&Poco::Logger::get("TEST>>> selectivity"), "sel = {} cl = {}", condition.selectivity, condition.description->identifier);
+        for (const auto & condition : conditions)
+        {
+            switch (condition.description->type)
+            {
+            case ConditionDescription::Type::EQUAL:
+                min_selectivity = std::min(min_selectivity, condition.selectivity);
+                break;
+            case ConditionDescription::Type::NOT_EQUAL:
+                min_selectivity = std::min(min_selectivity, condition.selectivity);
+                break;
+            case ConditionDescription::Type::LESS_OR_EQUAL:
+                if (right_limit.isNull() || lessOrEquals(condition.description->constant, right_limit))
+                {
+                    right_limit = condition.description->constant;
+                }
+                break;
+            case ConditionDescription::Type::GREATER_OR_EQUAL:
+                if (left_limit.isNull() || lessOrEquals(left_limit, condition.description->constant))
+                {
+                    left_limit = condition.description->constant;
+                }
+                break; 
+            }
         }
+        min_selectivity = std::min(
+            min_selectivity,
+            stats->getDistributionStatistics()->estimateProbability(
+                column,
+                left_limit,
+                right_limit).value_or(1));
+
+        //LOG_INFO(&Poco::Logger::get("TEST^^^^^"), "clm={} mn_sel={} sel={} sz={} lft={} rght={}",
+        //    column, min_selectivity, conditions.front().selectivity, getIdentifiersColumnSize({column}),
+        //    left_limit, right_limit);
 
         // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
         // rank = (1 - selectivity) / cost per tuple;
         // Cost per tuple = mean size of tuple = columns_size / count.
         rank_to_column.emplace_back(
-            -(1 - total_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
-            total_selectivity,
+            -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+            min_selectivity,
             column);
     }
     std::sort(std::begin(rank_to_column), std::end(rank_to_column));
