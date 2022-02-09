@@ -35,12 +35,14 @@ public:
     ~RemoteInserter();
 
     const Block & getHeader() const { return header; }
+    UInt64 getServerRevision() const { return server_revision; }
 
 private:
     Connection & connection;
     String query;
     Block header;
     bool finished = false;
+    UInt64 server_revision;
 };
 
 }
