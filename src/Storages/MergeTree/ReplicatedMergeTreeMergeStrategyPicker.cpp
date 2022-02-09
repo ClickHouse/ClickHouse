@@ -14,12 +14,6 @@
 namespace DB
 {
 
-/// minimum interval (seconds) between checks if chosen replica finished the merge.
-static const auto RECHECK_MERGE_READYNESS_INTERVAL_SECONDS = 1;
-
-/// minimum interval (seconds) between checks if any replica finished the merge.
-static const auto RECHECK_MERGE_READYNESS_ANY_REPLICA_INTERVAL_SECONDS = 3;
-
 /// don't refresh state too often (to limit number of zookeeper ops)
 static const auto REFRESH_STATE_MINIMUM_INTERVAL_SECONDS = 3;
 
@@ -34,35 +28,13 @@ ReplicatedMergeTreeMergeStrategyPicker::ReplicatedMergeTreeMergeStrategyPicker(S
 
 bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry)
 {
-    /// those have only seconds resolution, so recheck period is quite rough
-    auto reference_timestamp = entry.last_postpone_time;
-    if (reference_timestamp == 0)
-        reference_timestamp = entry.create_time;
-
-    /// we don't want to check zookeeper too frequent
-    if (time(nullptr) - reference_timestamp >= RECHECK_MERGE_READYNESS_ANY_REPLICA_INTERVAL_SECONDS)
-    {
-        String dummy;
-        return !storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty();
-    }
-
-    return false;
+    String dummy;
+    return !storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty();
 }
 
 bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
 {
-    /// those have only seconds resolution, so recheck period is quite rough
-    auto reference_timestamp = entry.last_postpone_time;
-    if (reference_timestamp == 0)
-        reference_timestamp = entry.create_time;
-
-    /// we don't want to check zookeeper too frequent
-    if (time(nullptr) - reference_timestamp >= RECHECK_MERGE_READYNESS_INTERVAL_SECONDS)
-    {
-        return storage.checkReplicaHavePart(replica, entry.new_part_name);
-    }
-
-    return false;
+    return storage.checkReplicaHavePart(replica, entry.new_part_name);
 }
 
 
