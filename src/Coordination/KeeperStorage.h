@@ -52,6 +52,7 @@ public:
             size_bytes += sizeof(is_sequental);
             size_bytes += sizeof(stat);
             size_bytes += sizeof(seq_num);
+            children = std::make_shared<ChildType>();
         }
         /// Object memory size
         uint64_t sizeInBytes() const

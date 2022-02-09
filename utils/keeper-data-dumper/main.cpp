@@ -34,7 +34,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).data << std::endl;
 
-        for (const auto & child : value.children)
+        for (const auto & child : *value.children)
         {
             if (key == "/")
                 keys.push(key + child.toString());
