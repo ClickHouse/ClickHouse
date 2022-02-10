@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(getPort().getHeader().columns())
 {
     const auto & sample_block = getPort().getHeader();
     size_t num_columns = sample_block.columns();
