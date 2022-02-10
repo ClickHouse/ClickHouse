@@ -36,7 +36,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
     std::unordered_map<String, String> tables_create_query;
     for (const auto & fetch_table_name : fetch_tables)
     {
-        if (materialized_tables_list.size() > 0 && !materialized_tables_list.contains(fetch_table_name))
+        if (!materialized_tables_list.empty() && !materialized_tables_list.contains(fetch_table_name))
             continue;
 
         Block show_create_table_header{
