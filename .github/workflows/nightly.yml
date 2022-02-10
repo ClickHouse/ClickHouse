@@ -1,0 +1,73 @@
+name: NightlyBuilds
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
+"on":
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  DockerHubPushAarch64:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_images_check.py --suffix aarch64 --all
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images_aarch64
+          path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
+  DockerHubPushAmd64:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_images_check.py --suffix amd64 --all
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images_amd64
+          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
+  DockerHubPush:
+    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed aarch64 images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images_aarch64
+          path: ${{ runner.temp }}
+      - name: Download changed amd64 images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images_amd64
+          path: ${{ runner.temp }}
+      - name: Images check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/changed_images.json
