@@ -247,7 +247,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto settings = current_settings.get();
 
     /// Path to store new S3 object.
-    auto s3_path = getRandomASCIIString();
+    auto blob_name = getRandomASCIIString();
 
     std::optional<ObjectMetadata> object_metadata;
     if (settings->send_metadata)
@@ -256,11 +256,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         object_metadata = {
             {"path", path}
         };
-        s3_path = "r" + revisionToString(revision) + "-file-" + s3_path;
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
-              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
+              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
     /// FIXME -- thread pool lead to obscure segfaults
     /// ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
@@ -281,7 +281,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
-        remote_fs_root_path + s3_path,
+        remote_fs_root_path + blob_name,
         settings->s3_min_upload_part_size,
         settings->s3_upload_part_size_multiply_factor,
         settings->s3_upload_part_size_multiply_parts_count_threshold,
@@ -289,9 +289,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         std::move(object_metadata),
         buf_size /*, std::move(schedule) */);
 
-    auto create_metadata_callback = [this, path, s3_path, mode] (size_t count)
+    auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
-        readOrCreateUpdateAndStoreMetadata(path, mode, false, [s3_path, count] (Metadata & metadata) { metadata.addObject(s3_path, count); return true; });
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_name, count] (Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(create_metadata_callback), path);
