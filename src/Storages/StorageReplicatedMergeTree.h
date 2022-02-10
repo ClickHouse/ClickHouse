@@ -771,9 +771,14 @@ private:
     // Create table id if needed
     void createTableSharedID();
 
+
+    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
+
+    std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
+
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
     /// If somebody already holding the lock -- return std::nullopt.
-    std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk) override;
+    std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

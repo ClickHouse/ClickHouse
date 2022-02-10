@@ -5720,7 +5720,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 /// replica will actually move the part from disk to some
                 /// zero-copy storage other replicas will just fetch
                 /// metainformation.
-                if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part, disk); lock)
+                if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part->name, disk); lock)
                 {
                     cloned_part = parts_mover.clonePart(moving_part);
                     parts_mover.swapClonedPart(cloned_part);

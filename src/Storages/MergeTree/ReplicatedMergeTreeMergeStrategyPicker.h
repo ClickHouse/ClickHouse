@@ -5,9 +5,7 @@
 #include <mutex>
 #include <vector>
 #include <atomic>
-#include <unordered_set>
 #include <boost/noncopyable.hpp>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 
 namespace DB
 {
@@ -52,18 +50,14 @@ public:
 
     /// return true if execute_merges_on_single_replica_time_threshold feature is active
     /// and we may need to do a fetch (or postpone) instead of merge
-    bool shouldMergeMutateOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const;
-
-    /// return true if remote_fs_execute_merges_on_single_replica_time_threshold feature is active
-    /// and we may need to do a fetch (or postpone) instead of merge
-    bool shouldMergeMutateOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const;
+    bool shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     /// returns the replica name
     /// and it's not current replica should do the merge
-    std::optional<String> pickReplicaToExecuteMergeMutation(const ReplicatedMergeTreeLogEntryData & entry);
+    std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
-    /// Checks (in zookeeper) if some replica finished the merge
-    bool isMergeMutationFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry);
+    /// checks (in zookeeper) if the picked replica finished the merge
+    bool isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry);
 
 private:
     StorageReplicatedMergeTree & storage;
@@ -82,7 +76,6 @@ private:
     /// execute_merges_on_single_replica_time_threshold enabled
     int current_replica_index = -1;
     std::vector<String> active_replicas;
-    ActiveDataPartSet parts_on_active_replicas;
 
 };
 

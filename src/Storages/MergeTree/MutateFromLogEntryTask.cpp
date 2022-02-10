@@ -55,13 +55,10 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
-    std::optional<String> replica_to_execute_merge;
-    bool replica_to_execute_merge_picked = false;
-    if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplica(entry))
-    {
-        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
-        replica_to_execute_merge_picked = true;
 
+    if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    {
+        std::optional<String> replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         if (replica_to_execute_merge)
         {
             LOG_DEBUG(log,
@@ -79,26 +76,6 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     /// Can throw an exception.
     reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->volume);
 
-    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
-    {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
-        {
-            if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplicaShared(entry))
-            {
-                if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
-
-                if (replica_to_execute_merge)
-                {
-                    LOG_DEBUG(log,
-                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
-                        entry.new_part_name, replica_to_execute_merge.value());
-                    return {false, {}};
-                }
-            }
-        }
-    }
-
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
@@ -112,6 +89,28 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     future_mutated_part->part_info = new_part_info;
     future_mutated_part->updatePath(storage, reserved_space.get());
     future_mutated_part->type = source_part->getType();
+
+    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
+    {
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        {
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
+            {
+                LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download merged part", entry.new_part_name);
+                return {false, {}};
+            }
+
+            zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
+
+            if (!zero_copy_lock)
+            {
+                LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                return {false, {}};
+            }
+        }
+    }
+
 
     const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
@@ -178,6 +177,12 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         }
 
         throw;
+    }
+
+    if (zero_copy_lock)
+    {
+        LOG_DEBUG(log, "Removing zero-copy lock");
+        zero_copy_lock->lock->unlock();
     }
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
