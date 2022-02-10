@@ -313,17 +313,17 @@ void LocalServer::cleanup()
 }
 
 
-static bool checkIfStdinIsNotEmpty()
+static bool checkIfStdinIsRegularFile()
 {
     struct stat file_stat;
-    return fstat(STDIN_FILENO, &file_stat) == 0 && (S_ISREG(file_stat.st_mode) || S_ISFIFO(file_stat.st_mode));
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
     /// We can create initial table only when we have data for it
     /// in file or in stdin (we treat stdin as table data if we have query)
-    if (!config().has("table-file") && (!checkIfStdinIsNotEmpty() || !config().has("query")))
+    if (!config().has("table-file") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
