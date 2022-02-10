@@ -5,6 +5,7 @@
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -243,6 +244,25 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+
+    struct HostPort
+    {
+        String host;
+        std::optional<UInt16> port{};
+        friend std::istream & operator>>(std::istream & in, HostPort & hostPort)
+        {
+            String host_with_port;
+            in >> host_with_port;
+            DB::DNSResolver & resolver = DB::DNSResolver::instance();
+            std::pair<Poco::Net::IPAddress, std::optional<UInt16>>
+                host_and_port = resolver.resolveHostOrAddress(host_with_port);
+            hostPort.host = host_and_port.first.toString();
+            hostPort.port = host_and_port.second;
+
+            return in;
+        }
+    };
+    std::vector<HostPort> hosts_ports{};
 };
 
 }
