@@ -580,14 +580,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             {
             // ENGINE can be omitted if default_table_engine is set.
             // Need to check in Interpreter
-                if (columns_list)
+                if (!storage)
                 {
-                    auto columns = columns_list->as<ASTColumns &>();
-                    if (columns.primary_key)
-                    {
-                        auto storage_ast = std::make_shared<ASTStorage>();
-                        storage = storage_ast;
-                    }
+                    auto storage_ast = std::make_shared<ASTStorage>();
+                    storage = storage_ast;
                 }
             }
         }
