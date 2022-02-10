@@ -66,7 +66,7 @@ struct AggregateFunctionGroupSortedArrayDataBase
 
     void merge(const AggregateFunctionGroupSortedArrayDataBase & other)
     {
-        values.insert(other.values.begin(), other.values.end());
+        values.merge(Storage(other.values));
         narrowDown();
     }
 
