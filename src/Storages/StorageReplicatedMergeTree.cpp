@@ -7394,8 +7394,31 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings 
     return res;
 }
 
+bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk)
+{
+    auto path = getZeroCopyPartPath(part_name, disk);
+    if (path)
+    {
+        /// FIXME
+        auto lock_path = fs::path(*path) / "part_exclusive_lock";
+        if (getZooKeeper()->exists(lock_path))
+        {
+            return true;
+        }
+    }
 
-std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk)
+    return false;
+}
+
+std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const String & part_name, const DiskPtr & disk)
+{
+    if (!disk || !disk->supportZeroCopyReplication())
+        return std::nullopt;
+
+    return getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(), part_name, zookeeper_path)[0];
+}
+
+std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk)
 {
     if (!disk || !disk->supportZeroCopyReplication())
         return std::nullopt;
@@ -7404,8 +7427,7 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     if (!zookeeper)
         return std::nullopt;
 
-    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
-        part->name, zookeeper_path)[0];
+    String zc_zookeeper_path = *getZeroCopyPartPath(part_name, disk);
 
     /// Just recursively create ancestors for lock
     zookeeper->createAncestors(zc_zookeeper_path);

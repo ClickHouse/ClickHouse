@@ -14,6 +14,9 @@
 namespace DB
 {
 
+/// minimum interval (seconds) between checks if chosen replica finished the merge.
+static const auto RECHECK_MERGE_READYNESS_INTERVAL_SECONDS = 1;
+
 /// don't refresh state too often (to limit number of zookeeper ops)
 static const auto REFRESH_STATE_MINIMUM_INTERVAL_SECONDS = 3;
 
@@ -23,34 +26,32 @@ static const auto REFRESH_STATE_MAXIMUM_INTERVAL_SECONDS = 30;
 
 ReplicatedMergeTreeMergeStrategyPicker::ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , parts_on_active_replicas(storage_.format_version)
 {}
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::isMergeMutationFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry)
+bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
 {
-    std::lock_guard lock(mutex);
-    return !parts_on_active_replicas.getContainingPart(entry.new_part_name).empty();
+    /// those have only seconds resolution, so recheck period is quite rough
+    auto reference_timestamp = entry.last_postpone_time;
+    if (reference_timestamp == 0)
+        reference_timestamp = entry.create_time;
+
+    /// we don't want to check zookeeper too frequent
+    if (time(nullptr) - reference_timestamp >= RECHECK_MERGE_READYNESS_INTERVAL_SECONDS)
+    {
+        return storage.checkReplicaHavePart(replica, entry.new_part_name);
+    }
+
+    return false;
 }
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeMutateOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const
 {
     time_t threshold = execute_merges_on_single_replica_time_threshold;
     return (
         threshold > 0       /// feature turned on
-        && (entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS || entry.type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-        && entry.create_time + threshold > time(nullptr)          /// not too much time waited
-    );
-}
-
-
-bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeMutateOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const
-{
-    time_t threshold = remote_fs_execute_merges_on_single_replica_time_threshold;
-    return (
-        threshold > 0       /// feature turned on
-        && (entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS || entry.type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
 }
@@ -63,7 +64,7 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeMutateOnSingleReplicaSha
 /// nodes can pick different replicas to execute merge and wait for it (or to execute the same merge together)
 /// but that doesn't have a significant impact (in one case it will wait for the execute_merges_on_single_replica_time_threshold,
 /// in another just 2 replicas will do the merge)
-std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecuteMergeMutation(const ReplicatedMergeTreeLogEntryData & entry)
+std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry)
 {
     /// last state refresh was too long ago, need to sync up the replicas list
     if (time(nullptr) - last_refresh_time > REFRESH_STATE_MAXIMUM_INTERVAL_SECONDS)
@@ -118,17 +119,11 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     std::vector<String> active_replicas_tmp;
     int current_replica_index_tmp = -1;
-    ActiveDataPartSet active_parts_tmp(storage.format_version);
 
     for (const String & replica : all_replicas)
     {
-        auto replica_path = fs::path{storage.zookeeper_path} / "replicas" / replica;
-        if (zookeeper->exists(replica_path / "is_active"))
+        if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            Strings parts = zookeeper->getChildren(replica_path / "parts");
-            for (const auto & part : parts)
-                active_parts_tmp.add(part);
-
             active_replicas_tmp.push_back(replica);
             if (replica == storage.replica_name)
             {
@@ -159,7 +154,6 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;
-    parts_on_active_replicas = active_parts_tmp;
 }
 
 
