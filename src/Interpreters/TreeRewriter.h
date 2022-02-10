@@ -70,8 +70,12 @@ struct TreeRewriterResult
     /// Cache isRemote() call for storage, because it may be too heavy.
     bool is_remote_storage = false;
 
+    /// Rewrite _shard_num to shardNum()
+    bool has_virtual_shard_num = false;
+
     /// Results of scalar sub queries
     Scalars scalars;
+    Scalars local_scalars;
 
     explicit TreeRewriterResult(
         const NamesAndTypesList & source_columns_,

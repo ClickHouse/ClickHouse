@@ -57,6 +57,7 @@ Pipe readFinalFromNestedStorage(
 
     Pipe pipe = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
     pipe.addTableLock(lock);
+    pipe.addStorageHolder(nested_storage);
 
     if (!expressions->children.empty() && !pipe.empty())
     {

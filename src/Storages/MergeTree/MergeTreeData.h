@@ -43,6 +43,7 @@ class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 struct ZeroCopyLock;
 
@@ -391,6 +392,7 @@ public:
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
         DataPartsVector & normal_parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
     std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
@@ -492,7 +494,12 @@ public:
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
+    bool renameTempPartAndAdd(
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment = nullptr,
+        Transaction * out_transaction = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -502,9 +509,13 @@ public:
 
     /// Low-level version of previous one, doesn't lock mutex
     bool renameTempPartAndReplace(
-            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
-
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment,
+        Transaction * out_transaction,
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -595,6 +606,10 @@ public:
     {
         broken_part_callback(name);
     }
+
+    /// Same as above but has the ability to check all other parts
+    /// which reside on the same disk of the suspicious part.
+    void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
 
     /// TODO (alesap) Duplicate method required for compatibility.
     /// Must be removed.

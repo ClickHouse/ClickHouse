@@ -915,7 +915,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         processQuery(request, params, response, used_output, query_scope);
-        LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
+        if (request_credentials)
+            LOG_DEBUG(log, "Authentication in progress...");
+        else
+            LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {
