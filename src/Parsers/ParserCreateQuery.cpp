@@ -573,20 +573,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!storage_parse_result && !is_temporary)
         {
             if (s_as.ignore(pos, expected) && !table_function_p.parse(pos, as_table_function, expected))
-            {
                 return false;
-            }
-            else
-            {
-            // ENGINE can be omitted if default_table_engine is set.
-            // Need to check in Interpreter
-                if (!storage)
-                {
-                    auto storage_ast = std::make_shared<ASTStorage>();
-                    storage = storage_ast;
-                }
-            }
         }
+
+        /// Will set default table engine if Storage clause was not parsed
     }
     /** Create queries without list of columns:
       *  - CREATE|ATTACH TABLE ... AS ...
@@ -652,12 +642,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (comment)
         query->set(query->comment, comment);
 
-    if (query->storage && query->columns_list && query->columns_list->primary_key)
+    if (query->columns_list && query->columns_list->primary_key)
     {
-        if (query->storage->primary_key)
-        {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
             throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         query->storage->primary_key = query->columns_list->primary_key;
     }
 
