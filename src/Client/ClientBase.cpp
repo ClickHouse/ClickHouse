@@ -1801,19 +1801,21 @@ void ClientBase::readArguments(
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
             }
-            else if (startsWith(arg, "--host"))
+            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
             {
-                std::string host_arg = arg;
+                std::string host_arg;
                 /// --host host
-                if (arg == "--host"sv)
+                if (arg == "--host"sv || arg == "-h"sv)
                 {
-                    host_arg.push_back('=');
                     ++arg_num;
                     if (arg_num >= argc)
                         throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
                     arg = argv[arg_num];
+                    host_arg = "--host=";
                     host_arg.append(arg);
                 }
+                else
+                    host_arg = arg;
 
                 /// --port port1 --host host1
                 if (!prev_port_arg.empty())
