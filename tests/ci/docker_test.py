@@ -23,7 +23,11 @@ class TestDockerImageCheck(unittest.TestCase):
             "docker/docs/builder",
         }
         images = sorted(
-            list(di.get_changed_docker_images(pr_info, "/", self.docker_images_path))
+            list(
+                di.get_changed_docker_images(
+                    pr_info, di.get_images_dict("/", self.docker_images_path)
+                )
+            )
         )
         self.maxDiff = None
         expected = sorted(
