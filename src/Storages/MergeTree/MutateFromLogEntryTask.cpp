@@ -52,12 +52,52 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
         }
     }
 
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merge cluster-wise
+    std::optional<String> replica_to_execute_merge;
+    bool replica_to_execute_merge_picked = false;
+    if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplica(entry))
+    {
+        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
+        replica_to_execute_merge_picked = true;
+
+        if (replica_to_execute_merge)
+        {
+            LOG_DEBUG(log,
+                "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
+                entry.new_part_name, replica_to_execute_merge.value());
+
+            return {false, {}};
+        }
+    }
+
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
     commands = MutationCommands::create(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
     reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->volume);
+
+    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
+    {
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        {
+            if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplicaShared(entry))
+            {
+                if (!replica_to_execute_merge_picked)
+                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
+
+                if (replica_to_execute_merge)
+                {
+                    LOG_DEBUG(log,
+                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
+                        entry.new_part_name, replica_to_execute_merge.value());
+                    return {false, {}};
+                }
+            }
+        }
+    }
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);

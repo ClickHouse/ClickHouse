@@ -1205,7 +1205,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        bool should_execute_on_single_replica = merge_strategy_picker.shouldMergeOnSingleReplica(entry);
+        bool should_execute_on_single_replica = merge_strategy_picker.shouldMergeMutateOnSingleReplica(entry);
         if (!should_execute_on_single_replica)
         {
             /// Separate check. If we use only s3, check remote_fs_execute_merges_on_single_replica_time_threshold as well.
@@ -1216,19 +1216,19 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     only_s3_storage = false;
 
             if (!disks.empty() && only_s3_storage)
-                should_execute_on_single_replica = merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry);
+                should_execute_on_single_replica = merge_strategy_picker.shouldMergeMutateOnSingleReplicaShared(entry);
         }
 
         if (should_execute_on_single_replica)
         {
-            auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+            auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
 
             if (replica_to_execute_merge)
             {
-                if (!merge_strategy_picker.isMergeFinishedByAnyReplica(entry))
+                if (!merge_strategy_picker.isMergeMutationFinishedByAnyReplica(entry))
                 {
                     out_postpone_reason = fmt::format(
-                        "Not executing merge for the part {} because no one have executed it, waiting for {} to execute merge.",
+                        "Not executing merge/mutation for the part {} because no one have executed it, waiting for {} to execute merge.",
                         entry.new_part_name, replica_to_execute_merge.value());
                     LOG_DEBUG(log, fmt::runtime(out_postpone_reason));
                     return false;
