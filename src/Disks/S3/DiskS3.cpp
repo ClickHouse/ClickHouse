@@ -283,6 +283,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         bucket,
         metadata.remote_fs_root_path + s3_path,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
         buf_size,
@@ -338,6 +340,8 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
         bucket,
         remote_fs_root_path + key,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         metadata);
 
@@ -417,6 +421,8 @@ void DiskS3::saveSchemaVersion(const int & version)
         bucket,
         remote_fs_root_path + SCHEMA_VERSION_OBJECT,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size);
 
     writeIntText(version, buffer);
@@ -1076,6 +1082,8 @@ DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
+    size_t s3_upload_part_size_multiply_factor_,
+    size_t s3_upload_part_size_multiply_parts_count_threshold_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
     bool send_metadata_,
@@ -1085,6 +1093,8 @@ DiskS3Settings::DiskS3Settings(
     : client(client_)
     , s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
+    , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
+    , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
     , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
