@@ -142,3 +142,33 @@ SELECT
 FROM prewhere
 PREWHERE (d > 10000) AND (d < 20000)
 WHERE ((d > 10000) AND (d < 20000)) AND ((c > 0) AND (b < 10000))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE d < 10000
+WHERE (d < 10000) AND ((c > 0) AND (10000 <= b) AND ((b, d) > (10000, 10000)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE 10000 <= b
+WHERE (10000 <= b) AND ((c > 0) AND ((b, d) > (10000, 10000)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE 10000 <= b
+WHERE (10000 <= b) AND ((c > 0) AND ((10000, 10000) < (b, d)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE 10000 >= b
+WHERE (10000 >= b) AND ((c > 0) AND (d > 10000) AND ((b, d) < (10000, 10000)))
+SELECT
+    b,
+    d
+FROM prewhere
+PREWHERE b = 10000
+WHERE (b = 10000) AND ((c > 0) AND (d > 10000) AND (d = 10000))
