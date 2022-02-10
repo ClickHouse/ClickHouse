@@ -32,49 +32,60 @@ class TestDockerImageCheck(unittest.TestCase):
         self.maxDiff = None
         expected = sorted(
             [
-                di.DockerImage("docker/test/base", "clickhouse/test-base"),
-                di.DockerImage("docker/docs/builder", "clickhouse/docs-builder"),
+                di.DockerImage("docker/test/base", "clickhouse/test-base", False),
+                di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
+                    False,
                     "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/test/integration/base",
                     "clickhouse/integration-test",
+                    False,
                     "clickhouse/test-base",
                 ),
                 di.DockerImage(
-                    "docker/test/fuzzer", "clickhouse/fuzzer", "clickhouse/test-base"
+                    "docker/test/fuzzer",
+                    "clickhouse/fuzzer",
+                    False,
+                    "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/test/keeper-jepsen",
                     "clickhouse/keeper-jepsen-test",
+                    False,
                     "clickhouse/test-base",
                 ),
                 di.DockerImage(
                     "docker/docs/check",
                     "clickhouse/docs-check",
+                    False,
                     "clickhouse/docs-builder",
                 ),
                 di.DockerImage(
                     "docker/docs/release",
                     "clickhouse/docs-release",
+                    False,
                     "clickhouse/docs-builder",
                 ),
                 di.DockerImage(
                     "docker/test/stateful",
                     "clickhouse/stateful-test",
+                    False,
                     "clickhouse/stateless-test",
                 ),
                 di.DockerImage(
                     "docker/test/unit",
                     "clickhouse/unit-test",
+                    False,
                     "clickhouse/stateless-test",
                 ),
                 di.DockerImage(
                     "docker/test/stress",
                     "clickhouse/stress-test",
+                    False,
                     "clickhouse/stateful-test",
                 ),
             ]
@@ -96,13 +107,15 @@ class TestDockerImageCheck(unittest.TestCase):
 
     @patch("builtins.open")
     @patch("subprocess.Popen")
-    def test_build_and_push_one_image(self, mock_popen, mock_open):
+    @patch("platform.machine")
+    def test_build_and_push_one_image(self, mock_machine, mock_popen, mock_open):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
-        image = di.DockerImage("path", "name", gh_repo_path="")
+        image = di.DockerImage("path", "name", False, gh_repo_path="")
 
         result, _ = di.build_and_push_one_image(image, "version", True, True)
         mock_open.assert_called_once()
         mock_popen.assert_called_once()
+        mock_machine.assert_not_called()
         self.assertIn(
             "docker buildx build --builder default --build-arg FROM_TAG=version "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version --cache-from "
@@ -110,11 +123,15 @@ class TestDockerImageCheck(unittest.TestCase):
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
+        mock_open.reset_mock()
+        mock_popen.reset_mock()
+        mock_machine.reset_mock()
 
-        mock_open.reset()
-        mock_popen.reset()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
         result, _ = di.build_and_push_one_image(image, "version2", False, True)
+        mock_open.assert_called_once()
+        mock_popen.assert_called_once()
+        mock_machine.assert_not_called()
         self.assertIn(
             "docker buildx build --builder default --build-arg FROM_TAG=version2 "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
@@ -123,8 +140,14 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertTrue(result)
 
+        mock_open.reset_mock()
+        mock_popen.reset_mock()
+        mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
         result, _ = di.build_and_push_one_image(image, "version2", False, False)
+        mock_open.assert_called_once()
+        mock_popen.assert_called_once()
+        mock_machine.assert_not_called()
         self.assertIn(
             "docker buildx build --builder default "
             "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
@@ -133,13 +156,37 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertFalse(result)
 
+        mock_open.reset_mock()
+        mock_popen.reset_mock()
+        mock_machine.reset_mock()
+        only_amd64_image = di.DockerImage("path", "name", True)
+        mock_popen.return_value.__enter__.return_value.wait.return_value = 0
+
+        result, _ = di.build_and_push_one_image(only_amd64_image, "version", True, True)
+        mock_open.assert_called_once()
+        mock_popen.assert_called_once()
+        mock_machine.assert_called_once()
+        self.assertIn(
+            "docker pull ubuntu:20.04; docker tag ubuntu:20.04 name:version; "
+            "docker push name:version",
+            mock_popen.call_args.args,
+        )
+        self.assertTrue(result)
+        result, _ = di.build_and_push_one_image(
+            only_amd64_image, "version", False, True
+        )
+        self.assertIn(
+            "docker pull ubuntu:20.04; docker tag ubuntu:20.04 name:version; ",
+            mock_popen.call_args.args,
+        )
+
     @patch("docker_images_check.build_and_push_one_image")
     def test_process_image_with_parents(self, mock_build):
         mock_build.side_effect = lambda w, x, y, z: (True, f"{w.repo}_{x}.log")
-        im1 = di.DockerImage("path1", "repo1")
-        im2 = di.DockerImage("path2", "repo2", im1)
-        im3 = di.DockerImage("path3", "repo3", im2)
-        im4 = di.DockerImage("path4", "repo4", im1)
+        im1 = di.DockerImage("path1", "repo1", False)
+        im2 = di.DockerImage("path2", "repo2", False, im1)
+        im3 = di.DockerImage("path3", "repo3", False, im2)
+        im4 = di.DockerImage("path4", "repo4", False, im1)
         # We use list to have determined order of image builgings
         images = [im4, im1, im3, im2, im1]
         results = [

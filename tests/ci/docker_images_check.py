@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import time
@@ -23,7 +24,7 @@ NAME = "Push to Dockerhub (actions)"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
-ImagesDict = Dict[str, Dict[str, Union[str, List[str]]]]
+ImagesDict = Dict[str, dict]
 
 
 class DockerImage:
@@ -31,18 +32,24 @@ class DockerImage:
         self,
         path: str,
         repo: str,
+        only_amd64: bool,
         parent: Optional["DockerImage"] = None,
         gh_repo_path: str = GITHUB_WORKSPACE,
     ):
         self.path = path
         self.full_path = os.path.join(gh_repo_path, path)
         self.repo = repo
+        self.only_amd64 = only_amd64
         self.parent = parent
         self.built = False
 
     def __eq__(self, other) -> bool:  # type: ignore
         """Is used to check if DockerImage is in a set or not"""
-        return self.path == other.path and self.repo == self.repo
+        return (
+            self.path == other.path
+            and self.repo == self.repo
+            and self.only_amd64 == other.only_amd64
+        )
 
     def __lt__(self, other) -> bool:
         if not isinstance(other, DockerImage):
@@ -68,6 +75,7 @@ class DockerImage:
 
 
 def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
+    """Return images suppose to build on the current architecture host"""
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -103,6 +111,7 @@ def get_changed_docker_images(
         for f in files_changed:
             if f.startswith(dockerfile_dir):
                 name = image_description["name"]
+                only_amd64 = image_description.get("only_amd64", False)
                 logging.info(
                     "Found changed file '%s' which affects "
                     "docker image '%s' with path '%s'",
@@ -110,7 +119,7 @@ def get_changed_docker_images(
                     name,
                     dockerfile_dir,
                 )
-                changed_images.append(DockerImage(dockerfile_dir, name))
+                changed_images.append(DockerImage(dockerfile_dir, name, only_amd64))
                 break
 
     # The order is important: dependents should go later than bases, so that
@@ -125,9 +134,9 @@ def get_changed_docker_images(
                 dependent,
                 image,
             )
-            changed_images.append(
-                DockerImage(dependent, images_dict[dependent]["name"], image)
-            )
+            name = images_dict[dependent]["name"]
+            only_amd64 = images_dict[dependent].get("only_amd64", False)
+            changed_images.append(DockerImage(dependent, name, only_amd64, image))
         index += 1
         if index > 5 * len(images_dict):
             # Sanity check to prevent infinite loop.
@@ -168,12 +177,43 @@ def gen_versions(
     return versions, result_version
 
 
+def build_and_push_dummy_image(
+    image: DockerImage,
+    version_string: str,
+    push: bool,
+) -> Tuple[bool, str]:
+    dummy_source = "ubuntu:20.04"
+    logging.info("Building docker image %s as %s", image.repo, dummy_source)
+    build_log = os.path.join(
+        TEMP_PATH, f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}"
+    )
+    with open(build_log, "wb") as bl:
+        cmd = (
+            f"docker pull {dummy_source}; "
+            f"docker tag {dummy_source} {image.repo}:{version_string}; "
+        )
+        if push:
+            cmd += f"docker push {image.repo}:{version_string}"
+
+        logging.info("Docker command to run: %s", cmd)
+        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
+            retcode = proc.wait()
+
+        if retcode != 0:
+            return False, build_log
+
+    logging.info("Processing of %s successfully finished", image.repo)
+    return True, build_log
+
+
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
     push: bool,
     child: bool,
 ) -> Tuple[bool, str]:
+    if image.only_amd64 and platform.machine() not in ["amd64", "x86_64"]:
+        return build_and_push_dummy_image(image, version_string, push)
     logging.info(
         "Building docker image %s with version %s from path %s",
         image.repo,
