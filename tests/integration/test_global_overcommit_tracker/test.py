@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', main_configs=['configs/config.xml'])
+node = cluster.add_instance('node', main_configs=['configs/global_overcommit_tracker.xml'])
 
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
@@ -14,8 +14,8 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-TEST_QUERY_A = 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=1,memory_usage_overcommit_max_wait_microseconds=500'
-TEST_QUERY_B = 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=2,memory_usage_overcommit_max_wait_microseconds=500'
+TEST_QUERY_A = 'SELECT number FROM numbers(10000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=1'
+TEST_QUERY_B = 'SELECT number FROM numbers(10000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=2'
 
 def test_overcommited_is_killed():
     node.query("CREATE USER A")
@@ -31,13 +31,16 @@ def test_overcommited_is_killed():
 
     overcommited_killed = False
     for response in responses_A:
-        err = response.get_error()
+        _, err = response.get_answer_and_error()
         if "MEMORY_LIMIT_EXCEEDED" in err:
             overcommited_killed = True
+    finished = False
     for response in responses_B:
-        response.get_answer_and_error()
+        _, err = response.get_answer_and_error()
+        if err == "":
+            finished = True
 
-    assert overcommited_killed, "no overcommited task was killed"
+    assert overcommited_killed and finished, "no overcommited task was killed or all tasks are killed"
 
     node.query("DROP USER IF EXISTS A")
     node.query("DROP USER IF EXISTS B")
