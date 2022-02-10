@@ -3,14 +3,14 @@ toc_priority: 53
 toc_title: USE
 ---
 
-# USE 语句 {#use}
+# USE Statement {#use}
 
 ``` sql
 USE db
 ```
 
-用于设置会话的当前数据库。
+Lets you set the current database for the session.
 
-如果查询语句中没有在表名前面以加点的方式指明数据库名， 则用当前数据库进行搜索。
+The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
 
-使用 HTTP 协议时无法进行此查询，因为没有会话的概念。
+This query can’t be made when using the HTTP protocol, since there is no concept of a session.

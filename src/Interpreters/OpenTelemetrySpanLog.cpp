@@ -150,24 +150,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
     }
 }
 
-
-template <typename T>
-static T readHex(const char * data)
-{
-    T x{};
-
-    const char * end = data + sizeof(T) * 2;
-    while (data < end)
-    {
-        x *= 16;
-        x += unhex(*data);
-        ++data;
-    }
-
-    return x;
-}
-
-
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
@@ -185,7 +167,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
 
     const char * data = traceparent.data();
 
-    uint8_t version = readHex<uint8_t>(data);
+    uint8_t version = unhex2(data);
     data += 2;
 
     if (version != 0)
@@ -201,7 +183,8 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    UInt128 trace_id_128 = readHex<UInt128>(data);
+    UInt64 trace_id_higher_64 = unhexUInt<UInt64>(data);
+    UInt64 trace_id_lower_64 = unhexUInt<UInt64>(data + 16);
     data += 32;
 
     if (*data != '-')
@@ -211,7 +194,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    UInt64 span_id_64 = readHex<UInt64>(data);
+    UInt64 span_id_64 = unhexUInt<UInt64>(data);
     data += 16;
 
     if (*data != '-')
@@ -221,8 +204,11 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    this->trace_flags = readHex<UInt8>(data);
-    this->trace_id = trace_id_128;
+    this->trace_flags = unhex2(data);
+
+    // store the 128-bit trace id in big-endian order
+    this->trace_id.toUnderType().items[0] = trace_id_higher_64;
+    this->trace_id.toUnderType().items[1] = trace_id_lower_64;
     this->span_id = span_id_64;
     return true;
 }
@@ -232,11 +218,14 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
-    return fmt::format("00-{:032x}-{:016x}-{:02x}", __uint128_t(trace_id.toUnderType()),
-        span_id,
-        // This cast is needed because fmt is being weird and complaining that
-        // "mixing character types is not allowed".
-        static_cast<uint8_t>(trace_flags));
+    return fmt::format("00-{:016x}{:016x}-{:016x}-{:02x}",
+                       // Output the trace id in network byte order
+                       trace_id.toUnderType().items[0],
+                       trace_id.toUnderType().items[1],
+                       span_id,
+                       // This cast is needed because fmt is being weird and complaining that
+                       // "mixing character types is not allowed".
+                       static_cast<uint8_t>(trace_flags));
 }
 
 

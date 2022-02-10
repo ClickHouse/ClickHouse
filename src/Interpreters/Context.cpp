@@ -2650,6 +2650,19 @@ void Context::shutdown()
         }
     }
 
+    // Special volumes might also use disks that require shutdown.
+    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
+    {
+        if (volume)
+        {
+            auto & disks = volume->getDisks();
+            for (auto & disk : disks)
+            {
+                disk->shutdown();
+            }
+        }
+    }
+
     shared->shutdown();
 }
 
@@ -3135,6 +3148,7 @@ ReadSettings Context::getReadSettings() const
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
     res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
+    res.http_skip_not_found_url_for_globs = settings.http_skip_not_found_url_for_globs;
 
     res.mmap_cache = getMMappedFileCache().get();
 
