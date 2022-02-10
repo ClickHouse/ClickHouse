@@ -16,7 +16,7 @@ struct ListNode
     StringRef key;
     V value;
 
-    /// Monotonically increasing verison info for snapshot
+    /// Monotonically increasing version info for snapshot
     size_t version{0};
     bool active_in_map{true};
     bool free_key{false};
