@@ -159,7 +159,8 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
         {
-            if (!storage.findReplicaHavingPart(entry.new_part_name, true).empty())
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true).empty())
             {
                 LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
                 return {false, {}};
