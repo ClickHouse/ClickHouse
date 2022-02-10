@@ -9,7 +9,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -990,40 +989,9 @@ namespace
         assert(!pipeline);
         auto source = query_context->getInputFormat(
             input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+
         QueryPipelineBuilder builder;
         builder.init(Pipe(source));
-
-        /// Add default values if necessary.
-        if (ast)
-        {
-            if (insert_query)
-            {
-                auto table_id = StorageID::createEmpty();
-
-                if (insert_query->table_id)
-                {
-                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
-                }
-                else
-                {
-                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
-                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
-                }
-
-                if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
-                {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
-                    if (!columns.empty())
-                    {
-                        builder.addSimpleTransform([&](const Block & cur_header)
-                        {
-                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
-                        });
-                    }
-                }
-            }
-        }
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
