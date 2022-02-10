@@ -321,9 +321,7 @@ static bool checkIfStdinIsRegularFile()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    /// We can create initial table only when we have data for it
-    /// in file or in stdin (we treat stdin as table data if we have query)
-    if (!config().has("table-file") && (!checkIfStdinIsRegularFile() || !config().has("query")))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
