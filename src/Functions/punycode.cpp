@@ -245,6 +245,7 @@ namespace
 
     constexpr uint16_t domainMaxLength { 256 };
     constexpr uint16_t labelMaxLength { 64 };
+    constexpr std::array<char, 4> acePrefix { 'x', 'n', '-', '-'};
 
     template <uint16_t A, uint16_t B, class... Args>
     constexpr bool inRange(const Args &... param) noexcept
@@ -252,10 +253,10 @@ namespace
         return ((static_cast<char>(param) >= A && B >= static_cast<char>(param)) && ...);
     }
 
-    template <class... Args>
-    constexpr void append(std::string & str, const Args &... param) noexcept
+    template<typename... Args>
+    void insertToString(UInt8 * str, size_t & start, Args && ... args)
     {
-        (str.append(1, static_cast<char>(param)), ...);
+        ((str[start++] = args), ...);
     }
 
     constexpr bool isASCII(const uint32_t u32) noexcept
@@ -294,42 +295,45 @@ namespace
     bool isEncoded(const std::string_view input, size_t start) noexcept
     {
         return (input.length() >= (start + 4)) && (input[start] == 'x' ||input[start] == 'X') &&
-               (input[start + 1] == 'n' || input[start + 1] == 'N') &&
-               (input[start + 2] == '-' || input[start + 4] == '-');
+            (input[start + 1] == 'n' || input[start + 1] == 'N') &&
+            (input[start + 2] == '-' || input[start + 4] == '-');
     };
 
-    void appendUTF32ToString(const punycode_uint input[],
-                             const size_t start, const size_t end,
-                             std::string & out) noexcept
+    size_t appendUTF32ToString(const punycode_uint input[],
+                               const size_t start, const size_t end,
+                               UInt8 * decoded_string) noexcept
     {
+        size_t pos {0};
         for (size_t i = start; i < end; ++i)
         {
             const uint32_t u32 = input[i];
             if (u32 <= 0x7F)
             {
-                append(out, u32);
+                insertToString(decoded_string, pos, u32);
             }
             else if (u32 <= 0x7FF)
             {
-                append(out, (0xC0 | ((u32 >> 6) & 0x1F)), (0x80 | (u32 & 0x3F)));
+                insertToString(decoded_string, pos, (0xC0 | ((u32 >> 6) & 0x1F)), (0x80 | (u32 & 0x3F)));
             }
             else if (u32 <= 0xFFFF)
             {
-                append(out, (0xE0 | ((u32 >> 12) & 0x0F)), (0x80 | ((u32 >> 6) & 0x3F)),
-                            (0x80 | (u32 & 0x3F)));
+                insertToString(decoded_string, pos, (0xE0 | ((u32 >> 12) & 0x0F)),
+                               (0x80 | ((u32 >> 6) & 0x3F)), (0x80 | (u32 & 0x3F)));
             }
             else if (u32 <= 0x13FFFF)
             {
-                append(out, (0xF0 | ((u32 >> 18) & 0x07)), (0x80 | ((u32 >> 12) & 0x3F)),
-                            (0x80 | ((u32 >> 6) & 0x3F)), (0x80 | (u32 & 0x3F)));
+                insertToString(decoded_string, pos,(0xF0 | ((u32 >> 18) & 0x07)), (0x80 | ((u32 >> 12) & 0x3F)),
+                               (0x80 | ((u32 >> 6) & 0x3F)),(0x80 | (u32 & 0x3F)));
             }
         }
+        return pos;
     }
 
-    bool punycodeEncodeInternal(const std::u32string & input, std::string & encodedString) noexcept
+    size_t punycodeEncodeInternal(const std::u32string & input,
+                                  UInt8 * encoded_string) noexcept
     {
         char buf[labelMaxLength]{};
-        size_t prev{0}, length{0};
+        size_t prev{0}, length{0}, encoded_length {0};
         for (size_t size = input.size(), idx = 0; idx < size; ++idx)
         {
             if ('.' == input[idx])
@@ -337,17 +341,21 @@ namespace
                 if (!isASCIIStrUTF32(input, prev, idx))
                 {
                     const auto result_code = punycode_encode(input.data() + prev, idx - prev,
-                                                            buf, &(length = labelMaxLength));
+                                                             buf, &(length = labelMaxLength));
                     if (punycode_success != result_code)
-                        return false;
-                    encodedString.append("xn--").append(buf, length);
+                        return 0;
+
+                    std::copy_n(acePrefix.data(), acePrefix.size(), encoded_string + encoded_length);
+                    encoded_length += acePrefix.size();
+                    std::copy_n(buf, length, encoded_string + encoded_length);
+                    encoded_length += length;
                 }
                 else
                 {
-                    appendUTF32ToString(input.data(), prev, idx, encodedString);
+                    encoded_length += appendUTF32ToString(input.data(), prev, idx, encoded_string + encoded_length);
                 }
 
-                encodedString.append(1, '.');
+                encoded_string[encoded_length++] = '.';
                 // To skip '.' with prefix increment '++idx'
                 prev = ++idx;
             }
@@ -356,19 +364,24 @@ namespace
         if (!isASCIIStrUTF32(input, prev, input.size()))
         {
             const auto result_code = punycode_encode(input.data() + prev, input.length() - prev,
-                                                    buf, &(length = labelMaxLength));
+                                                     buf, &(length = labelMaxLength));
             if (punycode_success != result_code)
-                return false;
-            encodedString.append("xn--").append(buf, length);
+                return 0;
+
+            std::copy_n(acePrefix.data(), acePrefix.size(), encoded_string + encoded_length);
+            encoded_length += acePrefix.size();
+            std::copy_n(buf, length, encoded_string + encoded_length);
+            encoded_length += length;
         }
         else
         {
-            appendUTF32ToString(input.data(), prev, input.size(), encodedString);
+            encoded_length += appendUTF32ToString(input.data(), prev, input.size(), encoded_string + encoded_length);
         }
-        return true;
+        return encoded_length;
     }
 
-    [[nodiscard]] std::string punycodeEncode(const std::string_view input)
+    size_t punycodeEncode(const std::string_view input,
+                          UInt8 * encoded_string)
     {
         /* Extract the FQDN by selecting a substring between the first             */
         /* characters '://' and the first subsequent character' /,' if such exist  */
@@ -376,19 +389,21 @@ namespace
         start = std::string::npos == start ? 0 : start + 3;
         std::string::size_type last = input.find('/', start);
         last = std::string::npos == last ? input.size() : last;
+        std::copy_n(input.data(), start, encoded_string);
 
-        std::string encoded_string{input, 0, start};
-        encoded_string.reserve(domainMaxLength * sizeof(punycode_uint));
         const auto & s32
             = std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>{}.from_bytes((input.data() + start), (input.data() + last));
-        if (!punycodeEncodeInternal(s32, encoded_string))
+        size_t decoded_length = punycodeEncodeInternal(s32, encoded_string + start);
+        if (0 == decoded_length)
             throw std::runtime_error("Failed to encode");
-        encoded_string.append(input.size() > last ? 1 : 0, '/');
-        encoded_string.shrink_to_fit();
-        return encoded_string;
+        decoded_length += start;
+        if (input.size() > last)
+            encoded_string[decoded_length++] = '/';
+        return decoded_length;
     }
 
-    [[nodiscard]] std::string punycodeDecode(const std::string_view input)
+    size_t punycodeDecode(const std::string_view input,
+                          UInt8 * decoded_string)
     {
         /* Extract the FQDN by selecting a substring between the first             */
         /* characters '://' and the first subsequent character' /,' if such exist  */
@@ -396,11 +411,10 @@ namespace
         start = std::string::npos == start ? 0 : start + 3;
         std::string::size_type last = input.find('/', start);
         last = std::string::npos == last ? input.size() : last;
+        std::copy_n(input.data(), start, decoded_string);
 
-        std::string decoded_string(input, 0, start);
-        decoded_string.reserve(domainMaxLength);
         punycode_uint utf32_buffer[labelMaxLength]{};
-        size_t prev{start}, length{0};
+        size_t prev{start}, length{0}, decoded_length {start};
         for (size_t size = last, idx = start; idx < size; ++idx)
         {
             if ('.' == input[idx])
@@ -412,14 +426,15 @@ namespace
                                                              utf32_buffer, &(length = labelMaxLength));
                     if (punycode_success != result_code)
                         throw std::runtime_error("Failed to decode");
-                    appendUTF32ToString(utf32_buffer, 0, length, decoded_string);
+                    decoded_length += appendUTF32ToString(utf32_buffer, 0, length, decoded_string + decoded_length);
                 }
                 else
                 {
-                    decoded_string.append(input, prev, idx - prev);
+                    std::copy_n(input.data() + prev, idx - prev, decoded_string + decoded_length);
+                    decoded_length += idx - prev;
                 }
                 prev = ++idx; // Skip '.' with prefix increment
-                decoded_string.append(1, '.');
+                decoded_string[decoded_length++] = '.';
             }
         }
 
@@ -430,16 +445,17 @@ namespace
                                                      utf32_buffer, &(length = labelMaxLength));
             if (punycode_success != result_code)
                 throw std::runtime_error("Failed to decode");
-            appendUTF32ToString(utf32_buffer, 0, length, decoded_string);
+            decoded_length += appendUTF32ToString(utf32_buffer, 0, length, decoded_string + decoded_length);
         }
         else
         {
-            decoded_string.append(input, prev, last - prev);
+            std::copy_n(input.data() + prev, last - prev, decoded_string + decoded_length);
+            decoded_length += last - prev;
         }
 
-        decoded_string.append(input.size() > last ? 1 : 0, '/');
-        decoded_string.shrink_to_fit();
-        return decoded_string;
+        if (input.size() > last)
+            decoded_string[decoded_length++] = '/';
+        return decoded_length;
     }
 
     struct PunycodeDecode
@@ -454,10 +470,7 @@ namespace
             res_offsets.assign(offsets);
 
             const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const std::string decoded_string = punycodeDecode(data_view);
-            const size_t result_size {decoded_string.size()};
-            std::copy_n(decoded_string.cbegin(), result_size, &res_data[0]);
-
+            const size_t result_size = punycodeDecode(data_view, res_data.data());
             res_offsets[0] = result_size + 1;
             res_data.resize(result_size + 1);
         }
@@ -476,14 +489,11 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
-            res_data.resize(data.size() * 2);
+            res_data.resize(domainMaxLength * 4);
             res_offsets.assign(offsets);
 
             const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const std::string encoded_string = punycodeEncode(data_view);
-            const size_t result_size { encoded_string.size() };
-            std::copy_n(encoded_string.cbegin(), result_size, &res_data[0]);
-
+            const size_t result_size = punycodeEncode(data_view, res_data.data());
             res_offsets[0] = result_size + 1;
             res_data.resize(result_size + 1);
         }
