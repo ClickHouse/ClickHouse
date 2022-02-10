@@ -107,13 +107,14 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final, bool recurse_tuple) const;
-    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final, bool recurse_tuple) const;
+    bool tryAnalyzeTupleEquals(Conditions & res, const ASTFunction * func, bool is_final) const;
+    bool tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const;
+    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
     std::optional<ConditionDescription> parseCondition(const ASTPtr & condition) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
-    Conditions analyze(const ASTPtr & expression, bool is_final, bool recurse_tuple) const;
+    Conditions analyze(const ASTPtr & expression, bool is_final) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
@@ -164,6 +165,9 @@ private:
 
     std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
     double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
+
+    const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps() const;
+    const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString() const;
 
     using StringSet = std::unordered_set<std::string>;
 

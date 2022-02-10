@@ -187,6 +187,28 @@ static bool isConditionGoodNew(const ASTPtr & condition)
     return false;
 }
 
+const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
+{
+    static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type> compare_funcs_swap = {
+        {ConditionDescription::Type::EQUAL, ConditionDescription::Type::EQUAL},
+        {ConditionDescription::Type::NOT_EQUAL, ConditionDescription::Type::NOT_EQUAL},
+        {ConditionDescription::Type::LESS_OR_EQUAL, ConditionDescription::Type::GREATER_OR_EQUAL},
+        {ConditionDescription::Type::GREATER_OR_EQUAL, ConditionDescription::Type::LESS_OR_EQUAL},
+    };
+    return compare_funcs_swap;
+}
+
+const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, std::string>& MergeTreeWhereOptimizer::getCompareTypeToString() const
+{
+    static const std::unordered_map<ConditionDescription::Type, std::string> compare_type_to_string = {
+        {ConditionDescription::Type::EQUAL, "equals"},
+        {ConditionDescription::Type::NOT_EQUAL, "notEquals"},
+        {ConditionDescription::Type::LESS_OR_EQUAL, "lessOrEquals"},
+        {ConditionDescription::Type::GREATER_OR_EQUAL, "greaterOrEquals"},
+    };
+    return compare_type_to_string;
+}
+
 std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptimizer::parseCondition(
     const ASTPtr & condition) const
 {
@@ -213,13 +235,7 @@ std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptim
     /// try to ensure left_arg points to ASTIdentifier
     if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>()) {
         std::swap(left_arg, right_arg);
-        static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type> compare_funcs_swap = {
-            {ConditionDescription::Type::EQUAL, ConditionDescription::Type::EQUAL},
-            {ConditionDescription::Type::NOT_EQUAL, ConditionDescription::Type::NOT_EQUAL},
-            {ConditionDescription::Type::LESS_OR_EQUAL, ConditionDescription::Type::GREATER_OR_EQUAL},
-            {ConditionDescription::Type::GREATER_OR_EQUAL, ConditionDescription::Type::LESS_OR_EQUAL},
-        };
-        compare_type = compare_funcs_swap.at(compare_type);
+        compare_type = getCompareFuncsSwaps().at(compare_type);
     }
 
     const auto * ident = left_arg->as<ASTIdentifier>();
@@ -280,9 +296,8 @@ static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
     return false;
 };
 
-bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final, bool recurse_tuple) const
+bool MergeTreeWhereOptimizer::tryAnalyzeTupleEquals(Conditions & res, const ASTFunction * func, bool is_final) const
 {
-    // TODO: support not only equals
     if (!func || func->name != "equals" || func->arguments->children.size() != 2)
         return false;
 
@@ -310,22 +325,102 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunctio
 
         ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
         ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
-        analyzeImpl(res, func_node, is_final, recurse_tuple);
+        analyzeImpl(res, func_node, is_final);
     }
 
     return true;
 }
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final, bool recurse_tuple) const
+bool MergeTreeWhereOptimizer::tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const
+{
+    static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
+        {"equals", ConditionDescription::Type::EQUAL},
+        // notEquals
+        {"less", ConditionDescription::Type::LESS_OR_EQUAL},
+        {"greater", ConditionDescription::Type::GREATER_OR_EQUAL},
+        {"greaterOrEquals", ConditionDescription::Type::GREATER_OR_EQUAL},
+        {"lessOrEquals", ConditionDescription::Type::LESS_OR_EQUAL},
+    };
+
+    if (!func || !compare_funcs.contains(func->name) || func->arguments->children.size() != 2)
+        return false;
+
+    ConditionDescription::Type compare = compare_funcs.at(func->name);
+
+    Tuple tuple_lit;
+    const ASTFunction * tuple_other = nullptr;
+    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
+    {
+        tuple_other = getAsTuple(func->arguments->children[1]);
+    }
+    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
+    {
+        tuple_other = getAsTuple(func->arguments->children[0]);
+        compare = getCompareFuncsSwaps().at(compare);
+    }
+
+    if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size() || tuple_lit.empty())
+        return false;
+
+    if (compare == ConditionDescription::Type::EQUAL)
+    {
+        for (size_t i = 0; i < tuple_lit.size(); ++i)
+        {
+            const auto & child = tuple_other->arguments->children[i];
+            std::shared_ptr<IAST> fetch_sign_column = nullptr;
+            /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
+            if (const auto * child_func = getAsTuple(child))
+                fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+            else if (const auto * child_ident = child->as<ASTIdentifier>())
+                fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
+            else
+                return false;
+
+            ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
+            ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
+            analyzeImpl(res, func_node, is_final);
+        }
+
+        // (a, b) = (1, 2) was converted to a = 1 AND b = 2
+        return true;
+    }
+    else
+    {
+        const auto & child = tuple_other->arguments->children.front();
+        std::shared_ptr<IAST> fetch_sign_column = nullptr;
+        /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
+        if (const auto * child_func = getAsTuple(child))
+            fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+        else if (const auto * child_ident = child->as<ASTIdentifier>())
+            fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
+        else
+            return false;
+
+        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.front());
+        ASTPtr func_node = makeASTFunction(getCompareTypeToString().at(compare), fetch_sign_value, fetch_sign_column);
+        analyzeImpl(res, func_node, is_final);
+
+        // (a, b) < (1, 2) was converted to a <= 1.
+        // That's why we can't omit (a, b) < (1, 2) in where.
+        // Result will be a <= 1 AND (a, b) < (1, 2).
+        return false;
+    }
+}
+
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
     const auto * func = node->as<ASTFunction>();
 
     if (func && func->name == "and")
     {
         for (const auto & elem : func->arguments->children)
-            analyzeImpl(res, elem, is_final, recurse_tuple);
+            analyzeImpl(res, elem, is_final);
     }
-    else if (tryAnalyzeTuple(res, func, is_final, recurse_tuple))
+    else if (!use_new_scoring && tryAnalyzeTupleEquals(res, func, is_final))
+    {
+        /// analyzed
+    }
+    else if (use_new_scoring && tryAnalyzeTupleCompare(res, func, is_final))
     {
         /// analyzed
     }
@@ -376,10 +471,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final, bool recurse_tuple) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final) const
 {
     Conditions res;
-    analyzeImpl(res, expression, is_final, recurse_tuple);
+    analyzeImpl(res, expression, is_final);
     return res;
 }
 
@@ -407,9 +502,12 @@ ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions)
 void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const {
     if (!select.where() || select.prewhere())
         return;
-    if (use_new_scoring) {
+    if (use_new_scoring)
+    {
         optimizeByRanks(select);
-    } else {
+    }
+    else
+    {
         optimizeBySize(select);
     }
 }
@@ -461,10 +559,6 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 left_limit,
                 right_limit).value_or(1));
 
-        //LOG_INFO(&Poco::Logger::get("TEST^^^^^"), "clm={} mn_sel={} sel={} sz={} lft={} rght={}",
-        //    column, min_selectivity, conditions.front().selectivity, getIdentifiersColumnSize({column}),
-        //    left_limit, right_limit);
-
         // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
         // rank = (1 - selectivity) / cost per tuple;
         // Cost per tuple = mean size of tuple = columns_size / count.
@@ -479,15 +573,18 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
 
 void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 {
-    // TODO: better estimation for a < 10 OR b > 10 OR b < -100..
     // TODO: basic support for tuples (a, b, c) < (d, e, f) => estimate a <= d and add to prewhere
-    Conditions where_conditions = analyze(select.where(), select.final(), false);
+    Conditions where_conditions = analyze(select.where(), select.final());
     std::unordered_map<std::string, Conditions> column_to_simple_conditions;
     Conditions complex_conditions;
-    for (const auto & condition : where_conditions) {
-        if (condition.viable && condition.description) {
+    for (const auto & condition : where_conditions)
+    {
+        if (condition.viable && condition.description)
+        {
             column_to_simple_conditions[condition.description->identifier].push_back(condition);
-        } else {
+        }
+        else
+        {
             complex_conditions.push_back(condition);
         }
     }
@@ -506,13 +603,16 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     size_t where_columns_size = total_size_of_queried_columns;
     double prewhere_selectivity = 1;
     LOG_INFO(&Poco::Logger::get("TEST"), "START totalsz = {} rtc ={}", where_columns_size, rank_to_column.size());
-    for (const auto & [rank, selectivity, column] : rank_to_column) {
+    for (const auto & [rank, selectivity, column] : rank_to_column)
+    {
         LOG_INFO(&Poco::Logger::get("TEST???"), "rnk={} sel={} clm={} sz={}", rank, selectivity, column, getIdentifiersColumnSize({column}));
     }
-    for (const auto & [rank, selectivity, column] : rank_to_column) {
+    for (const auto & [rank, selectivity, column] : rank_to_column)
+    {
         const size_t column_size = getIdentifiersColumnSize({column});
         const double current_loss = prewhere_columns_size + prewhere_selectivity * where_columns_size;
-        if (where_columns_size < column_size) {
+        if (where_columns_size < column_size)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "It's a bug: where_columns_size = {} < column_size = {}",
@@ -525,7 +625,8 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         LOG_INFO(&Poco::Logger::get("TEST"), "currloss = {} predloss ={}", current_loss, predicted_loss);
 
         // don't stop if difference is small
-        if (current_loss + EPS < predicted_loss) {
+        if (current_loss + EPS < predicted_loss)
+        {
             break;   
         }
 
@@ -546,11 +647,15 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
             std::all_of(
                 std::begin(it->identifiers),
                 std::end(it->identifiers),
-                [&columns_in_prewhere] (const auto & ident) {
+                [&columns_in_prewhere] (const auto & ident)
+                {
                     return columns_in_prewhere.contains(ident);
-                })) {
+                }))
+        {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it++);
-        } else {
+        }
+        else
+        {
             ++it;
         }
     }
@@ -620,7 +725,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 
 void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
 {
-    Conditions where_conditions = analyze(select.where(), select.final(), true);
+    Conditions where_conditions = analyze(select.where(), select.final());
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;
