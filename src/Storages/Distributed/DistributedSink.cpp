@@ -621,7 +621,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(shard_info,block_to_send, {path});
+            writeToShard(shard_info, block_to_send, {path});
         }
     }
     else
