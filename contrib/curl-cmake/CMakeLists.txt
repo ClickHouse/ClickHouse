@@ -1,4 +1,7 @@
-if (NOT USE_INTERNAL_CURL)
+option (ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CURL)
+    message(STATUS "Not using curl")
     return()
 endif()
 
@@ -144,36 +147,24 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
 )
 
-add_library (curl ${SRCS})
+add_library (_curl ${SRCS})
 
-target_compile_definitions (curl PRIVATE
+target_compile_definitions (_curl PRIVATE
     HAVE_CONFIG_H
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
-target_include_directories (curl PUBLIC
+target_include_directories (_curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
 )
 
-target_link_libraries (curl PRIVATE ssl)
+target_link_libraries (_curl PRIVATE OpenSSL::SSL)
 
 # The library is large - avoid bloat (XXX: is it?)
-target_compile_options (curl PRIVATE -g0)
+target_compile_options (_curl PRIVATE -g0)
 
-# find_package(CURL) compatibility for the following packages that uses
-# find_package(CURL)/include(FindCURL):
-# - mariadb-connector-c
-# - aws-s3-cmake
-# - sentry-native
-set (CURL_FOUND ON CACHE BOOL "")
-set (CURL_ROOT_DIR ${LIBRARY_DIR} CACHE PATH "")
-set (CURL_INCLUDE_DIR "${LIBRARY_DIR}/include" CACHE PATH "")
-set (CURL_INCLUDE_DIRS "${LIBRARY_DIR}/include" CACHE PATH "")
-set (CURL_LIBRARY curl CACHE STRING "")
-set (CURL_LIBRARIES ${CURL_LIBRARY} CACHE STRING "")
-set (CURL_VERSION_STRING 7.67.0 CACHE STRING "")
-add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})
+add_library (ch_contrib::curl ALIAS _curl)

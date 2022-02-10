@@ -3,6 +3,7 @@ title: 'Yandex Opensources ClickHouse'
 image: 'https://blog-images.clickhouse.com/en/2016/yandex-opensources-clickhouse/main.jpg'
 date: '2016-06-15'
 tags: ['announcement', 'GitHub', 'license']
+author: 'Alexey Milovidov'
 ---
 
 Today [analytical DBMS ClickHouse](https://clickhouse.com/) initially developed internally at Yandex, became available to everyone. Source code is published on [GitHub](https://github.com/ClickHouse/ClickHouse) under Apache 2.0 license.

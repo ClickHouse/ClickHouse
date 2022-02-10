@@ -37,6 +37,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
@@ -314,24 +315,30 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
     auto table_structure = config().getString("table-structure", "auto");
-    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 
     String table_file;
+    String format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
-        table_file = quoteString(config().getString("table-file"));
+        auto file_name = config().getString("table-file");
+        table_file = quoteString(file_name);
+        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
+
+    auto data_format
+        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
 
     if (table_structure == "auto")
         table_structure = "";

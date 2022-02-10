@@ -1,18 +1,21 @@
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <numeric>
+#include <unordered_map>
+#include <unordered_set>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <Common/StringUtils/StringUtils.h>
+
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/StringUtils/StringUtils.h>
-
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -45,8 +48,8 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
     switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
     {
         case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
+        case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
         case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
-        case TypeIndex::DateTime64: return AttributeUnderlyingType::UInt64;
         default: break;
     }
 
@@ -379,7 +382,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
 void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix)
 {
-    const char * range_default_type = "Date";
+    static constexpr auto range_default_type = "Date";
+
     if (config.has(structure_prefix + ".range_min"))
         range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
 
@@ -392,7 +396,10 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
             "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
     }
 
-    if (range_min && range_max && !range_min->type->equals(*range_max->type))
+    if (!range_min)
+        return;
+
+    if (!range_min->type->equals(*range_max->type))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Dictionary structure 'range_min' and 'range_max' should have same type, "
@@ -402,15 +409,20 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
             range_max->type->getName());
     }
 
-    if (range_min && !range_min->type->isValueRepresentedByInteger())
+    WhichDataType range_type(range_min->type);
+
+    bool valid_range = range_type.isInt() || range_type.isUInt() || range_type.isDecimal() || range_type.isFloat() || range_type.isEnum()
+        || range_type.isDate() || range_type.isDate32() || range_type.isDateTime() || range_type.isDateTime64();
+
+    if (!valid_range)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
+            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
             " Actual 'range_min' and 'range_max' type is {}",
             range_min->type->getName());
     }
 
-    if ((range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
+    if (!range_min->expression.empty() || !range_max->expression.empty())
         has_expressions = true;
 }
 

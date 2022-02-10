@@ -66,5 +66,10 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
     }
 }
 
+void FieldVisitorWriteBinary::operator()(const bool & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(x), buf);
+}
+
 }
 

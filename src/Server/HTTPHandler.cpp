@@ -96,7 +96,6 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
 
-    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
 }
@@ -491,12 +490,9 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(
-            opentelemetry_traceparent, error))
+        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
         {
-            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                opentelemetry_traceparent, error);
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
@@ -919,7 +915,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         processQuery(request, params, response, used_output, query_scope);
-        LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
+        if (request_credentials)
+            LOG_DEBUG(log, "Authentication in progress...");
+        else
+            LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {

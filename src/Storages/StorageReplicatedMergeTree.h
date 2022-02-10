@@ -87,6 +87,7 @@ class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplica
 public:
     void startup() override;
     void shutdown() override;
+    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
@@ -282,6 +283,9 @@ public:
 
     static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
+    /// Check if there are new broken disks and enqueue part recovery tasks.
+    void checkBrokenDisks();
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -317,12 +321,15 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
 
     /// If true, the table is offline and can not be written to it.
-    std::atomic_bool is_readonly {false};
+    /// This flag is managed by RestartingThread.
+    std::atomic_bool is_readonly {true};
+    /// If nullopt - ZooKeeper is not available, so we don't know if there is table metadata.
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
-    bool has_metadata_in_zookeeper = true;
+    std::optional<bool> has_metadata_in_zookeeper;
 
     static constexpr auto default_zookeeper_name = "default";
     String zookeeper_name;
@@ -369,6 +376,9 @@ private:
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
+    std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
+
     int metadata_version = 0;
     /// Threads.
 
@@ -412,6 +422,9 @@ private:
 
     /// Global ID, synced via ZooKeeper between replicas
     UUID table_shared_id;
+
+    std::mutex last_broken_disks_mutex;
+    std::set<String> last_broken_disks;
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;

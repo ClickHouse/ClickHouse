@@ -1138,12 +1138,12 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
 
-    static void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataWithoutKey & res,
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1307,7 +1307,7 @@ private:
         NestedColumnsHolder & nested_columns_holder) const;
 
     void addSingleKeyToAggregateColumns(
-        const AggregatedDataVariants & data_variants,
+        AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
     void addArenasToAggregateColumns(

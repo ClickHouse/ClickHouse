@@ -55,6 +55,7 @@ void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
+void registerFunctionToBool(FunctionFactory &);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -116,6 +117,7 @@ void registerFunctions()
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
+    registerFunctionToBool(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

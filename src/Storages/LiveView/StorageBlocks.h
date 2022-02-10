@@ -10,7 +10,7 @@ namespace DB
 class StorageBlocks : public IStorage
 {
 /* Storage based on the prepared streams that already contain data blocks.
- * Used by Live Views to complete stored query based on the mergeable blocks.
+ * Used by Live and Window Views to complete stored query based on the mergeable blocks.
  */
 public:
     StorageBlocks(const StorageID & table_id_,
@@ -52,7 +52,6 @@ public:
     }
 
 private:
-    Block res_block;
     Pipes pipes;
     QueryProcessingStage::Enum to_stage;
 };
