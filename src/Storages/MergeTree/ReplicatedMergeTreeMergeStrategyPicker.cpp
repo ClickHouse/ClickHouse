@@ -27,30 +27,30 @@ ReplicatedMergeTreeMergeStrategyPicker::ReplicatedMergeTreeMergeStrategyPicker(S
 {}
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry)
+bool ReplicatedMergeTreeMergeStrategyPicker::isMergeMutationFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry)
 {
     std::lock_guard lock(mutex);
     return !parts_on_active_replicas.getContainingPart(entry.new_part_name).empty();
 }
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeMutateOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const
 {
     time_t threshold = execute_merges_on_single_replica_time_threshold;
     return (
         threshold > 0       /// feature turned on
-        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
+        && (entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS || entry.type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
 }
 
 
-bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeMutateOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const
 {
     time_t threshold = remote_fs_execute_merges_on_single_replica_time_threshold;
     return (
         threshold > 0       /// feature turned on
-        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
+        && (entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS || entry.type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
 }
@@ -63,7 +63,7 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaShared(co
 /// nodes can pick different replicas to execute merge and wait for it (or to execute the same merge together)
 /// but that doesn't have a significant impact (in one case it will wait for the execute_merges_on_single_replica_time_threshold,
 /// in another just 2 replicas will do the merge)
-std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry)
+std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecuteMergeMutation(const ReplicatedMergeTreeLogEntryData & entry)
 {
     /// last state refresh was too long ago, need to sync up the replicas list
     if (time(nullptr) - last_refresh_time > REFRESH_STATE_MAXIMUM_INTERVAL_SECONDS)

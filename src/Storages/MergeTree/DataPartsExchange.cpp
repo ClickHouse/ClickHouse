@@ -767,6 +767,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     {
         throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {}.", part_name, part_id, disk->getName());
     }
+
     LOG_DEBUG(log, "Downloading Part {} unique id {} metadata onto disk {}.",
         part_name, part_id, disk->getName());
 
@@ -835,6 +836,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
     new_data_part->storage.lockSharedData(*new_data_part);
+
+    LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
+        part_name, part_id, disk->getName());
 
     return new_data_part;
 }

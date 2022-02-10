@@ -49,9 +49,9 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     std::optional<String> replica_to_execute_merge;
     bool replica_to_execute_merge_picked = false;
 
-    if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplica(entry))
     {
-        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
         replica_to_execute_merge_picked = true;
 
         if (replica_to_execute_merge)
@@ -162,10 +162,10 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
         {
-            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry))
+            if (storage.merge_strategy_picker.shouldMergeMutateOnSingleReplicaShared(entry))
             {
                 if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMergeMutation(entry);
 
                 if (replica_to_execute_merge)
                 {
