@@ -53,13 +53,13 @@ bool ParseDDLTableIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     }
     else
     {
-        while(!pos->isEnd())
+        while (!pos->isEnd())
             ++ pos;
         node = std::make_shared<ASTLiteral>(Field(UInt64(1)));
         return true;
     }
     //skip parse the rest of sql
-    while(!pos->isEnd())
+    while (!pos->isEnd())
         ++ pos;
 
     auto table_id = table->as<ASTTableIdentifier>()->getTableId();
