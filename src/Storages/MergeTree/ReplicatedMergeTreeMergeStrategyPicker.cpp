@@ -23,18 +23,14 @@ static const auto REFRESH_STATE_MAXIMUM_INTERVAL_SECONDS = 30;
 
 ReplicatedMergeTreeMergeStrategyPicker::ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
+    , parts_on_active_replicas(storage_.format_version)
 {}
 
 
 bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry)
 {
-    String dummy;
-    return !storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty();
-}
-
-bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
-{
-    return storage.checkReplicaHavePart(replica, entry.new_part_name);
+    std::lock_guard lock(mutex);
+    return !parts_on_active_replicas.getContainingPart(entry.new_part_name).empty();
 }
 
 
@@ -122,11 +118,17 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     std::vector<String> active_replicas_tmp;
     int current_replica_index_tmp = -1;
+    ActiveDataPartSet active_parts_tmp(storage.format_version);
 
     for (const String & replica : all_replicas)
     {
-        if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
+        auto replica_path = fs::path{storage.zookeeper_path} / "replicas" / replica;
+        if (zookeeper->exists(replica_path / "is_active"))
         {
+            Strings parts = zookeeper->getChildren(replica_path / "parts");
+            for (const auto & part : parts)
+                active_parts_tmp.add(part);
+
             active_replicas_tmp.push_back(replica);
             if (replica == storage.replica_name)
             {
@@ -157,6 +159,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;
+    parts_on_active_replicas = active_parts_tmp;
 }
 
 

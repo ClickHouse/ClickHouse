@@ -1225,7 +1225,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             if (replica_to_execute_merge)
             {
-                if (!merge_strategy_picker.isMergeFinishedByReplica(*replica_to_execute_merge, entry) && !merge_strategy_picker.isMergeFinishedByAnyReplica(entry))
+                if (!merge_strategy_picker.isMergeFinishedByAnyReplica(entry))
                 {
                     out_postpone_reason = fmt::format(
                         "Not executing merge for the part {} because no one have executed it, waiting for {} to execute merge.",
