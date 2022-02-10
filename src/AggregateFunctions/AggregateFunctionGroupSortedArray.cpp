@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -46,9 +45,9 @@ namespace
     AggregateFunctionPtr
     createAggregateFunctionGroupSortedArrayTyped(const DataTypes & argument_types, const Array & params, UInt64 threshold)
     {
-#define DISPATCH(A, CLS, B) \
+#define DISPATCH(A, C, B) \
     if (which.idx == TypeIndex::A) \
-        return AggregateFunctionPtr(new CLS<B, expr_sorted, TColumnB, is_plain_b>(threshold, argument_types, params));
+        return AggregateFunctionPtr(new C<B, expr_sorted, TColumnB, is_plain_b>(threshold, argument_types, params));
 #define DISPATCH_NUMERIC(A) DISPATCH(A, AggregateFunctionGroupSortedArrayNumeric, A)
         WhichDataType which(argument_types[0]);
         FOR_NUMERIC_TYPES(DISPATCH_NUMERIC)
@@ -91,7 +90,7 @@ namespace
 
             threshold = k;
         }
-        else if (params.size() != 0)
+        else if (!params.empty())
         {
             throw Exception("Aggregate function " + name + " only supports 1 parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
@@ -110,7 +109,7 @@ namespace
                 DISPATCH2(Enum16, Int16)
 #undef DISPATCH
 #undef DISPATCH2
-                throw Exception("Invalid parameter type.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Invalid parameter type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
             else if (argument_types[1]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             {
