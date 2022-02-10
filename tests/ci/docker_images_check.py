@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import time
-from typing import List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -22,6 +22,8 @@ from stopwatch import Stopwatch
 NAME = "Push to Dockerhub (actions)"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
+
+ImagesDict = Dict[str, Dict[str, Union[str, List[str]]]]
 
 
 class DockerImage:
@@ -65,9 +67,7 @@ class DockerImage:
         return f"DockerImage(path={self.path},repo={self.repo},parent={self.parent})"
 
 
-def get_changed_docker_images(
-    pr_info: PRInfo, repo_path: str, image_file_path: str
-) -> Set[DockerImage]:
+def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -77,6 +77,13 @@ def get_changed_docker_images(
         logging.info(
             "Image file %s doesnt exists in repo %s", image_file_path, repo_path
         )
+
+    return images_dict
+
+
+def get_changed_docker_images(
+    pr_info: PRInfo, images_dict: ImagesDict
+) -> Set[DockerImage]:
 
     if not images_dict:
         return set()
@@ -291,9 +298,14 @@ def parse_args() -> argparse.Namespace:
         help="docker hub repository prefix",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="rebuild all images",
+    )
+    parser.add_argument(
         "--image-path",
         type=str,
-        action="append",
+        nargs="*",
         help="list of image paths to build instead of using pr_info + diff URL, "
         "e.g. 'docker/packager/binary'",
     )
@@ -336,15 +348,18 @@ def main():
         shutil.rmtree(TEMP_PATH)
     os.makedirs(TEMP_PATH)
 
-    if args.image_path:
+    images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
+
+    if args.all:
+        pr_info = PRInfo()
+        pr_info.changed_files = set(images_dict.keys())
+    elif args.image_path:
         pr_info = PRInfo()
         pr_info.changed_files = set(i for i in args.image_path)
     else:
         pr_info = PRInfo(need_changed_files=True)
 
-    changed_images = get_changed_docker_images(
-        pr_info, GITHUB_WORKSPACE, "docker/images.json"
-    )
+    changed_images = get_changed_docker_images(pr_info, images_dict)
     logging.info("Has changed images %s", ", ".join([im.path for im in changed_images]))
 
     image_versions, result_version = gen_versions(pr_info, args.suffix)
