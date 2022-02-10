@@ -25,6 +25,10 @@
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 #include <base/bit_cast.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/MySQL/ASTDDLTableIdentifier.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
@@ -164,6 +168,17 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     , settings(settings_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
+
+    if (!settings->materialized_mysql_tables_list.value.empty())
+    {
+        Names tables_list;
+        boost::split(tables_list, settings->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
+        for (String & table_name: tables_list)
+        {
+            boost::trim(table_name);
+            materialized_tables_list.insert(table_name);
+        }
+    }
 }
 
 void MaterializedMySQLSyncThread::synchronization()
@@ -434,7 +449,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
 
             checkMySQLVariables(connection, getContext()->getSettingsRef());
             std::unordered_map<String, String> need_dumping_tables;
-            metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables);
+            metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables, materialized_tables_list);
 
             if (!need_dumping_tables.empty())
             {
@@ -464,7 +479,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, materialized_tables_list, metadata.executed_gtid_set, metadata.binlog_checksum);
 
             setSynchronizationThreadException(nullptr);
             return true;
@@ -792,9 +807,23 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         auto query_context = createQueryContext(getContext());
         CurrentThread::QueryScope query_scope(query_context);
 
+        String query = query_event.query;
+        if (!materialized_tables_list.empty())
+        {
+            MySQLParser::ParseDDLTableIdentifier parser;
+            ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, query_context->getSettings().max_parser_depth);
+            if (const auto * table_identifier = ast->as<MySQLParser::ASTDDLTableIdentifier>())
+            {
+                if (!materialized_tables_list.contains(table_identifier->table))
+                {
+                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
+                    return;
+                }
+            }
+        }
         String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
         String event_database = query_event.schema == mysql_database_name ? database_name : "";
-        tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
+        tryToExecuteQuery(query_prefix + query, query_context, event_database, comment);
     }
     catch (Exception & exception)
     {
