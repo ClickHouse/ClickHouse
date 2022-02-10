@@ -5,14 +5,15 @@ toc_title: MaterializedMySQL
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
 
-!!! warning "Warning"
-    This is an experimental feature that should not be used in production.
+!!! warning "警告"
+    这是一个实验性的特性，不应该在生产中使用.
 
-Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
-ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
+创建ClickHouse数据库，包含MySQL中所有的表，以及这些表中的所有数据。
 
-## Creating a Database {#creating-a-database}
+ClickHouse服务器作为MySQL副本工作。它读取binlog并执行DDL和DML查询。
+
+## 创建数据库 {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -20,22 +21,23 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 [TABLE OVERRIDE table1 (...), TABLE OVERRIDE table2 (...)]
 ```
 
-**Engine Parameters**
+**引擎参数**
 
--   `host:port` — MySQL server endpoint.
--   `database` — MySQL database name.
--   `user` — MySQL user.
--   `password` — User password.
+-   `host:port` — MySQL 服务地址.
+-   `database` — MySQL 数据库名称.
+-   `user` — MySQL 用户名.
+-   `password` — MySQL 用户密码.
 
-**Engine Settings**
+**引擎配置**
 
--   `max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
--   `max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
--   `max_rows_in_buffers` — Maximum number of rows that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
--   `max_bytes_in_buffers` — Maximum number of bytes that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
--   `max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
--   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
--   `allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
+
+- `max_rows_in_buffer` — 允许在内存中缓存数据的最大行数(对于单个表和无法查询的缓存数据)。当超过这个数字时，数据将被物化。默认值:`65 505`。
+- `max_bytes_in_buffer` - 允许在内存中缓存数据的最大字节数(对于单个表和无法查询的缓存数据)。当超过这个数字时，数据将被物化。默认值: `1 048 576 `。
+- `max_rows_in_buffers` - 允许在内存中缓存数据的最大行数(用于数据库和无法查询的缓存数据)。当超过这个数字时，数据将被物化。默认值: `65 505`。
+- `max_bytes_in_buffers` - 允许在内存中缓存数据的最大字节数(用于数据库和无法查询的缓存数据)。当超过这个数字时，数据将被物化。默认值: `1 048 576`。
+- `max_flush_data_time ` - 允许数据在内存中缓存的最大毫秒数(对于数据库和无法查询的缓存数据)。当超过这个时间，数据将被物化。默认值: `1000`。
+- `max_wait_time_when_mysql_unavailable` - MySQL不可用时的重试间隔(毫秒)。负值禁用重试。默认值:`1000`。
+— `allows_query_when_mysql_lost `—允许在MySQL丢失时查询物化表。默认值:`0`(`false`)。
 
 ```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
@@ -44,26 +46,26 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-**Settings on MySQL-server Side**
+**MySQL服务器端配置**
 
-For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
+为了`MaterializedMySQL`的正确工作，有一些必须设置的`MySQL`端配置设置:
 
-- `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
-- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
+- `default_authentication_plugin = mysql_native_password `，因为 `MaterializedMySQL` 只能授权使用该方法。
+- `gtid_mode = on`，因为基于GTID的日志记录是提供正确的 `MaterializedMySQL`复制的强制要求。
 
-!!! attention "Attention"
-    While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
+!!! attention "注意"
+    当打开`gtid_mode`时，您还应该指定`enforce_gtid_consistency = on`。
 
-## Virtual Columns {#virtual-columns}
+## 虚拟列 {#virtual-columns}
 
-When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+当使用`MaterializeMySQL`数据库引擎时，[ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md)表与虚拟的`_sign`和`_version`列一起使用。
 
-- `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
-- `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
-    - `1` — Row is not deleted,
-    - `-1` — Row is deleted.
+- `_version` — 事务版本. 类型 [UInt64](../../sql-reference/data-types/int-uint.md).
+- `_sign` — 删除标记. 类型 [Int8](../../sql-reference/data-types/int-uint.md). 可能的值:
+    - `1` — 行没有删除,
+    - `-1` — 行已被删除.
 
-## Data Types Support {#data_types-support}
+## 支持的数据类型 {#data_types-support}
 
 | MySQL                   | ClickHouse                                                   |
 |-------------------------|--------------------------------------------------------------|
@@ -89,91 +91,77 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 | SET                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
-[Nullable](../../sql-reference/data-types/nullable.md) is supported.
+[Nullable](../../sql-reference/data-types/nullable.md) 已经被支持.
 
-The data of TIME type in MySQL is converted to microseconds in ClickHouse.
+MySQL中的Time 类型，会被ClickHouse转换成微秒来存储
 
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
+不支持其他类型。如果MySQL表包含此类类型的列，ClickHouse抛出异常"Unhandled data type"并停止复制。
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## 规范和推荐用法 {#specifics-and-recommendations}
 
-### Compatibility Restrictions {#compatibility-restrictions}
+### 兼容性限制 {#compatibility-restrictions}
 
-Apart of the data types limitations there are few restrictions comparing to `MySQL` databases, that should be resolved before replication will be possible:
+除了数据类型的限制之外，还有一些限制与`MySQL`数据库相比有所不同，这应该在复制之前解决:
 
-- Each table in `MySQL` should contain `PRIMARY KEY`.
-
-- Replication for tables, those are containing rows with `ENUM` field values out of range (specified in `ENUM` signature) will not work.
+- `MySQL` 中的每个表都应该包含 `PRIMARY KEY`。
+- 对于表的复制，那些包含 `ENUM` 字段值超出范围的行(在 `ENUM` 签名中指定)将不起作用。
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
+MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
 
-### Data Replication {#data-replication}
 
-`MaterializedMySQL` does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
+### 数据复制 {#data-replication}
 
-- MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
+MaterializedMySQL不支持直接的 `INSERT`， `DELETE` 和 `UPDATE` 查询。然而，它们在数据复制方面得到了支持:
 
-- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`.
+- MySQL `INSERT`查询被转换为`_sign=1`的INSERT查询。
+- MySQL `DELETE`查询被转换为`INSERT`，并且`_sign=-1`。
+- 如果主键被修改了，MySQL的 `UPDATE` 查询将被转换为 `INSERT` 带 `_sign=1`  和INSERT 带有_sign=-1;如果主键没有被修改，则转换为`INSERT`和`_sign=1`。
 
-- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1` if the primary key has been changed, or
-  `INSERT` with `_sign=1` if not.
+###  MaterializedMySQL 数据表查询 {#select}
 
-### Selecting from MaterializedMySQL Tables {#select}
+`SELECT` 查询从 `MaterializedMySQL`表有一些细节:
 
-`SELECT` query from `MaterializedMySQL` tables has some specifics:
+ - 如果在SELECT查询中没有指定`_version`，则 [FINAL](../../sql-reference/statements/select/from.md#select-from- FINAL)修饰符被使用，所以只有带有 `MAX(_version)`的行会返回每个主键值。
 
-- If `_version` is not specified in the `SELECT` query, the
-  [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used, so only rows with
-  `MAX(_version)` are returned for each primary key value.
+ - 如果在SELECT查询中没有指定 `_sign`，则默认使用 `WHERE _sign=1 `。所以被删除的行不是
+包含在结果集中。
 
-- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not
-  included into the result set.
+ - 结果包括列注释，以防MySQL数据库表中存在这些列注释。
 
-- The result includes columns comments in case they exist in MySQL database tables.
+### 索引转换 {#index-conversion}
 
-### Index Conversion {#index-conversion}
+在ClickHouse表中，MySQL的 `PRIMARY KEY` 和 `INDEX` 子句被转换为 `ORDER BY` 元组。
 
-MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
+ClickHouse只有一个物理排序，由 `order by` 条件决定。要创建一个新的物理排序，请使用[materialized views](../../sql-reference/statements/create/view.md#materialized)。
 
-ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use
-[materialized views](../../sql-reference/statements/create/view.md#materialized).
+**注意**
 
-**Notes**
+- `_sign=-1` 的行不会被物理地从表中删除。
+- 级联 `UPDATE/DELETE` 查询不支持 `MaterializedMySQL` 引擎，因为他们在 MySQL binlog中不可见的
+— 复制很容易被破坏。
+— 禁止对数据库和表进行手工操作。
+- `MaterializedMySQL` 受[optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)设置的影响。当MySQL服务器中的一个表发生变化时，数据会合并到 `MaterializedMySQL` 数据库中相应的表中。
 
-- Rows with `_sign=-1` are not deleted physically from the tables.
-- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine, as they are not visible in the
-  MySQL binlog.
-- Replication can be easily broken.
-- Manual operations on database and tables are forbidden.
-- `MaterializedMySQL` is affected by the [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)
-  setting. Data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL
-  server changes.
+### 表重写 {#table-overrides}
 
-### Table Overrides {#table-overrides}
+表覆盖可用于自定义ClickHouse DDL查询，从而允许您对应用程序进行模式优化。这对于控制分区特别有用，分区对MaterializedMySQL的整体性能非常重要。
 
-Table overrides can be used to customize the ClickHouse DDL queries, allowing you to make schema optimizations for your
-application. This is especially useful for controlling partitioning, which is important for the overall performance of
-MaterializedMySQL.
+这些是你可以对MaterializedMySQL表重写的模式转换操作:
 
-These are the schema conversion manipulations you can do with table overrides for MaterializedMySQL:
-
- * Modify column type. Must be compatible with the original type, or replication will fail. For example,
-   you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
- * Modify [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
- * Modify [column compression codec](../../sql-reference/statements/create/table/#codecs).
- * Add [ALIAS columns](../../sql-reference/statements/create/table/#alias).
- * Add [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
- * Add [projections](../table-engines/mergetree-family/mergetree/#projections). Note that projection optimizations are
-   disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
-   `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
-   may be more useful in this case.
- * Modify [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
- * Modify [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
- * Modify [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
- * Add [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
- * Add [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 修改列类型。必须与原始类型兼容，否则复制将失败。例如，可以将`UInt32`列修改为`UInt64`，不能将 `String` 列修改为 `Array(String)`。
+ * 修改 [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * 修改 [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * 增加 [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * 增加 [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * 增加 [projections](../table-engines/mergetree-family/mergetree/#projections). 
+ 请注意，当使用 `SELECT ... FINAL ` (MaterializedMySQL默认是这样做的) 时，预测优化是被禁用的，所以这里是受限的， `INDEX ... TYPE hypothesis `[在v21.12的博客文章中描述]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)可能在这种情况下更有用。
+ * 修改 [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * 修改 [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 修改 [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 增加 [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 增加 [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
@@ -192,7 +180,7 @@ CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
 ), ...]
 ```
 
-Example:
+示例:
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
@@ -212,24 +200,20 @@ TABLE OVERRIDE table2 (
 )
 ```
 
-The `COLUMNS` list is sparse; existing columns are modified as specified, extra ALIAS columns are added. It is not
-possible to add ordinary or MATERIALIZED columns.  Modified columns with a different type must be assignable from the
-original type. There is currently no validation of this or similar issues when the `CREATE DATABASE` query executes, so
-extra care needs to be taken.
 
-You may specify overrides for tables that do not exist yet.
+`COLUMNS`列表是稀疏的;根据指定修改现有列，添加额外的ALIAS列。不可能添加普通列或实体化列。具有不同类型的已修改列必须可从原始类型赋值。在执行`CREATE DATABASE` 查询时，目前还没有验证这个或类似的问题，因此需要格外小心。
 
-!!! warning "Warning"
-    It is easy to break replication with table overrides if not used with care. For example:
-    
-    * If an ALIAS column is added with a table override, and a column with the same name is later added to the source
-	    MySQL table, the converted ALTER TABLE query in ClickHouse will fail and replication stops.
-    * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
-      `ORDER BY` or `PARTITION BY`. This will cause CREATE TABLE queries that will fail, also causing replication to stop.
+您可以为还不存在的表指定重写。
 
-## Examples of Use {#examples-of-use}
+!!! warning "警告"
+    如果使用时不小心，很容易用表重写中断复制。例如:
 
-Queries in MySQL:
+    * 如果一个ALIAS列被添加了一个表覆盖，并且一个具有相同名称的列后来被添加到源MySQL表，在ClickHouse中转换后的ALTER table查询将失败并停止复制。
+    * 目前可以添加引用可空列的覆盖，而非空列是必需的，例如 `ORDER BY` 或 `PARTITION BY`。这将导致CREATE TABLE查询失败，也会导致复制停止。
+
+## 使用示例 {#examples-of-use}
+
+ MySQL 查询语句:
 
 ``` sql
 mysql> CREATE DATABASE db;
@@ -247,9 +231,9 @@ mysql> SELECT * FROM test;
 └───┴─────┴──────┘
 ```
 
-Database in ClickHouse, exchanging data with the MySQL server:
+ClickHouse中的数据库，与MySQL服务器交换数据:
 
-The database and the table created:
+创建的数据库和表:
 
 ``` sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***');
@@ -262,7 +246,7 @@ SHOW TABLES FROM mysql;
 └──────┘
 ```
 
-After inserting data:
+数据插入之后：
 
 ``` sql
 SELECT * FROM mysql.test;
@@ -275,7 +259,7 @@ SELECT * FROM mysql.test;
 └───┴────┘
 ```
 
-After deleting data, adding the column and updating:
+删除数据后，添加列并更新:
 
 ``` sql
 SELECT * FROM mysql.test;
@@ -287,4 +271,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
