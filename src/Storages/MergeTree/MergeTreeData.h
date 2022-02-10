@@ -1223,6 +1223,8 @@ private:
         MutableDataPartsVector & parts_from_wal,
         DataPartsLock & part_lock);
 
+    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
+
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr &, const DiskPtr &) { return std::nullopt; }
