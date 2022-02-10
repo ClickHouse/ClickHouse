@@ -107,4 +107,5 @@ check_replication_consistency "alter_table_" "count(), sum(a), sum(b), round(sum
 for i in {0..9}; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" 2>&1 | grep "was not completely removed from ZooKeeper" &
 done
+
 wait

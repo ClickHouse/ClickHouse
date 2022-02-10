@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -601,8 +602,8 @@ NameSet ActionsDAG::foldActionsByProjection(
     std::unordered_set<const Node *> visited_nodes;
     std::unordered_set<std::string_view> visited_index_names;
     std::stack<Node *> stack;
-    std::vector<const ColumnWithTypeAndName *> missing_input_from_projection_keys;
 
+    /// Record all needed index nodes to start folding.
     for (const auto & node : index)
     {
         if (required_columns.find(node->result_name) != required_columns.end() || node->result_name == predicate_column_name)
@@ -613,6 +614,9 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// If some required columns are not in any index node, try searching from all projection key
+    /// columns. If still missing, return empty set which means current projection fails to match
+    /// (missing columns).
     if (add_missing_keys)
     {
         for (const auto & column : required_columns)
@@ -635,6 +639,7 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// Traverse the DAG from root to leaf. Substitute any matched node with columns in projection_block_for_keys.
     while (!stack.empty())
     {
         auto * node = stack.top();
@@ -663,10 +668,12 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// Clean up unused nodes after folding.
     std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
     std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 
+    /// Calculate the required columns after folding.
     NameSet next_required_columns;
     for (const auto & input : inputs)
         next_required_columns.insert(input->result_name);
@@ -676,7 +683,7 @@ NameSet ActionsDAG::foldActionsByProjection(
 
 void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
 {
-    std::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
+    ::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
     {
         return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
     });

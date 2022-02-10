@@ -5,6 +5,7 @@
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -136,7 +137,13 @@ private:
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
+    void updateSuggest(const ASTCreateQuery & ast_create);
+
+    void initQueryIdFormats();
+
 protected:
+    static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;
@@ -144,6 +151,8 @@ protected:
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
+
+    std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
@@ -235,6 +244,25 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+
+    struct HostPort
+    {
+        String host;
+        std::optional<UInt16> port{};
+        friend std::istream & operator>>(std::istream & in, HostPort & hostPort)
+        {
+            String host_with_port;
+            in >> host_with_port;
+            DB::DNSResolver & resolver = DB::DNSResolver::instance();
+            std::pair<Poco::Net::IPAddress, std::optional<UInt16>>
+                host_and_port = resolver.resolveHostOrAddress(host_with_port);
+            hostPort.host = host_and_port.first.toString();
+            hostPort.port = host_and_port.second;
+
+            return in;
+        }
+    };
+    std::vector<HostPort> hosts_ports{};
 };
 
 }

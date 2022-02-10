@@ -164,10 +164,18 @@ DiskPtr StoragePolicy::getAnyDisk() const
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " has no volumes. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (volumes[0]->getDisks().empty())
-        throw Exception("Volume " + backQuote(name) + "." + backQuote(volumes[0]->getName()) + " has no disks. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+    for (const auto & volume : volumes)
+    {
+        if (volume->getDisks().empty())
+            throw Exception("Volume '" + volume->getName() + "' has no disks. It's a bug", ErrorCodes::LOGICAL_ERROR);
+        for (const auto & disk : volume->getDisks())
+        {
+            if (!disk->isBroken())
+                return disk;
+        }
+    }
 
-    return volumes[0]->getDisks()[0];
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "All disks in storage policy {} are broken", name);
 }
 
 
@@ -233,6 +241,10 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
             }
         }
     }
+    if (!max_disk)
+        throw Exception(
+            "There is no space on any disk in storage policy: " + name + ". It's likely all disks are broken",
+            ErrorCodes::NOT_ENOUGH_SPACE);
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {

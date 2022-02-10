@@ -37,7 +37,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
     Exception(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
     {}
 
     struct CreateFromPocoTag {};
@@ -55,7 +55,7 @@ public:
     template <typename ...Args>
     void addMessage(const std::string& format, Args&&... args)
     {
-        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
+        extendedMessage(fmt::format(fmt::runtime(format), std::forward<Args>(args)...));
     }
 
     void addMessage(const std::string& message)
@@ -119,7 +119,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
     {}
 
 

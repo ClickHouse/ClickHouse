@@ -158,12 +158,6 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::hasKeys(const Colum
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
 
-    if (attributes.empty())
-    {
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        return result;
-    }
-
     size_t keys_found = 0;
 
     for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
@@ -753,9 +747,14 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     ColumnsWithTypeAndName key_columns;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    {
+        auto keys_column = getColumnFromPODArray(std::move(keys));
+        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    }
     else
+    {
         key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+    }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);

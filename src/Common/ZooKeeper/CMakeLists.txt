@@ -12,12 +12,6 @@ target_link_libraries (clickhouse_common_zookeeper
     PRIVATE
         string_utils
 )
-# To avoid circular dependency from interpreters.
-if (OS_DARWIN)
-    target_link_libraries (clickhouse_common_zookeeper PRIVATE -Wl,-undefined,dynamic_lookup)
-else()
-    target_link_libraries (clickhouse_common_zookeeper PRIVATE -Wl,--unresolved-symbols=ignore-all)
-endif()
 
 # for examples -- no logging (to avoid extra dependencies)
 add_library(clickhouse_common_zookeeper_no_log ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})

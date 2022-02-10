@@ -9,6 +9,7 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <base/scope_guard_safe.h>
 #include <base/unit.h>
 #include <base/FnTraits.h>
 
@@ -262,14 +263,32 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
 
+    ScheduleFunc schedule = [pool = &getThreadPoolWriter()](auto callback)
+    {
+        pool->scheduleOrThrow([callback = std::move(callback), thread_group = CurrentThread::getGroup()]()
+        {
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+            callback();
+        });
+    };
+
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
         metadata.remote_fs_root_path + s3_path,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size);
+        buf_size,
+        std::move(schedule));
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
@@ -321,6 +340,8 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
         bucket,
         remote_fs_root_path + key,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         metadata);
 
@@ -400,6 +421,8 @@ void DiskS3::saveSchemaVersion(const int & version)
         bucket,
         remote_fs_root_path + SCHEMA_VERSION_OBJECT,
         settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size);
 
     writeIntText(version, buffer);
@@ -999,6 +1022,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             if (metadata_disk->exists(to_path))
                 metadata_disk->removeRecursive(to_path);
 
+            createDirectories(directoryPath(to_path));
             metadata_disk->moveDirectory(from_path, to_path);
         }
     }
@@ -1058,6 +1082,8 @@ DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
+    size_t s3_upload_part_size_multiply_factor_,
+    size_t s3_upload_part_size_multiply_parts_count_threshold_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
     bool send_metadata_,
@@ -1067,6 +1093,8 @@ DiskS3Settings::DiskS3Settings(
     : client(client_)
     , s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
+    , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
+    , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
     , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)

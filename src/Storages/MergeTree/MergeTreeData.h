@@ -24,7 +24,6 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
-#include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
@@ -44,6 +43,7 @@ class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 struct ZeroCopyLock;
 
@@ -392,6 +392,7 @@ public:
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
         DataPartsVector & normal_parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
     std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
@@ -411,15 +412,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsFinal() const override
-    {
-        return merging_params.mode == MergingParams::Collapsing
-            || merging_params.mode == MergingParams::Summing
-            || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing
-            || merging_params.mode == MergingParams::Graphite
-            || merging_params.mode == MergingParams::VersionedCollapsing;
-    }
+    bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -450,7 +443,7 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
             ContextPtr context, PartsTemporaryRename & renamed_parts);
@@ -501,7 +494,12 @@ public:
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
+    bool renameTempPartAndAdd(
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment = nullptr,
+        Transaction * out_transaction = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -511,9 +509,13 @@ public:
 
     /// Low-level version of previous one, doesn't lock mutex
     bool renameTempPartAndReplace(
-            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
-
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment,
+        Transaction * out_transaction,
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -604,6 +606,10 @@ public:
     {
         broken_part_callback(name);
     }
+
+    /// Same as above but has the ability to check all other parts
+    /// which reside on the same disk of the suspicious part.
+    void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
 
     /// TODO (alesap) Duplicate method required for compatibility.
     /// Must be removed.
@@ -1159,9 +1165,7 @@ private:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
-    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
-    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
-
+    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
     std::atomic<size_t> total_active_size_bytes = 0;

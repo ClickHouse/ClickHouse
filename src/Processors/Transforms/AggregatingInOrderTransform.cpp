@@ -121,7 +121,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
-            params->aggregator.executeOnIntervalWithoutKeyImpl(variants.without_key, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
+            params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
 
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
 
@@ -255,6 +255,8 @@ void AggregatingInOrderTransform::generate()
         res.getByPosition(i + res_key_columns.size()).column = std::move(res_aggregate_columns[i]);
 
     to_push_chunk = convertToChunk(res);
+    if (!to_push_chunk.getNumRows())
+        return;
 
     /// Clear arenas to allow to free them, when chunk will reach the end of pipeline.
     /// It's safe clear them here, because columns with aggregate functions already holds them.

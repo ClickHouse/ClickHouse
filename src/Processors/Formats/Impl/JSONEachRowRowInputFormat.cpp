@@ -318,8 +318,23 @@ std::unordered_map<String, DataTypePtr> JSONEachRowSchemaReader::readRowAndGetNa
     {
         skipBOMIfExists(in);
         skipWhitespaceIfAny(in);
-        checkChar('[', in);
+        if (checkChar('[', in))
+            data_in_square_brackets = true;
         first_row = false;
+    }
+    else
+    {
+        skipWhitespaceIfAny(in);
+        /// If data is in square brackets then ']' means the end of data.
+        if (data_in_square_brackets && checkChar(']', in))
+            return {};
+
+        /// ';' means end of data.
+        if (checkChar(';', in))
+            return {};
+
+        /// There may be optional ',' between rows.
+        checkChar(',', in);
     }
 
     skipWhitespaceIfAny(in);

@@ -467,6 +467,10 @@ class TestCase:
             for build_flag in args.build_flags:
                 if 'no-' + build_flag in tags:
                     return FailureReason.BUILD
+            for tag in tags:
+                tag = tag.replace('-', '_')
+                if tag.startswith('use_') and tag not in args.build_flags:
+                    return FailureReason.BUILD
 
         return None
 
@@ -1068,6 +1072,11 @@ def collect_build_flags(args):
     value = int(clickhouse_execute(args, "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"))
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
+
+    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1');")
+    for use_flag in use_flags.strip().splitlines():
+        use_flag = use_flag.decode().lower()
+        result.append(use_flag)
 
     return result
 
