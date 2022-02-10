@@ -94,7 +94,6 @@ class HttpProcessor(SimpleHTTPRequestHandler):
     def do_GET(self):
         self._set_headers()
         self.wfile.write(SERVER_JSON_RESPONSE.encode())
-	return
 
     def log_message(self, format, *args):
         return
