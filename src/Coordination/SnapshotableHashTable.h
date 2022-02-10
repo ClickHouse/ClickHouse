@@ -36,7 +36,8 @@ private:
     /// Allows to avoid additional copies in updateValue function
     size_t snapshot_up_to_size = 0;
     ArenaWithFreeLists arena;
-    std::vector<Mapped> snapshot_invalid_iters{100000};
+    /// Collect invalid iterators to avoid traversing the whole list
+    std::vector<Mapped> snapshot_invalid_iters;
 
     uint64_t approximate_data_size{0};
 
@@ -197,9 +198,9 @@ public:
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
+            snapshot_invalid_iters.push_back(list_itr);
             list_itr->free_key = true;
             map.erase(it->getKey());
-            snapshot_invalid_iters.push_back(list_itr);
         }
         else
         {
@@ -238,11 +239,11 @@ public:
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;
+                snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
                 auto itr = list.insert(list.end(), elem_copy);
                 it->getMapped() = itr;
                 ret = itr;
-                snapshot_invalid_iters.push_back(list_itr);
             }
             else
             {
