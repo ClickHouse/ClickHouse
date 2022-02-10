@@ -780,7 +780,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.as_table_function)
         return;
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view)
+    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
+        return;
+
+    if (create.is_materialized_view && create.to_table_id)
         return;
 
     if (create.temporary)
