@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -754,14 +755,19 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.as_table_function)
         return;
 
-    if (create.storage || create.is_dictionary || create.isView())
-    {
-        if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
-    }
+    if (create.temporary && create.storage && !create.storage->engine)
+        throw Exception("Storage is defined without ENGINE for temprorary table.", ErrorCodes::LOGICAL_ERROR);
 
-    if (create.temporary && !create.storage)
+    if (create.temporary && create.storage && create.storage->engine)
+    {   
+        if (create.storage->engine->name == "Memory")
+            return;
+
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
+    }
+        
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -771,7 +777,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         create.set(create.storage, storage_ast);
         return;
     }
-    else if (!create.as_table.empty())
+    
+    if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -819,17 +826,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (!create.storage)
         create.set(create.storage, std::make_shared<ASTStorage>());
 
-    if (getContext()->getSettingsRef().default_table_engine.value != DefaultTableEngine::None)
+    if (!create.storage->engine && getContext()->getSettingsRef().default_table_engine.value != DefaultTableEngine::None)
     {
-
-        if (!create.storage->engine)
-        {
-            auto engine_ast = std::make_shared<ASTFunction>();
-            auto default_table_engine = getContext()->getSettingsRef().default_table_engine.value;
-            engine_ast->name = getTableEngineName(default_table_engine);
-            engine_ast->no_empty_args = true;
-            create.storage->set(create.storage->engine, engine_ast);
-        }
+        auto engine_ast = std::make_shared<ASTFunction>();
+        auto default_table_engine = getContext()->getSettingsRef().default_table_engine.value;
+        engine_ast->name = getTableEngineName(default_table_engine);
+        engine_ast->no_empty_args = true;
+        create.storage->set(create.storage->engine, engine_ast);
     }
 }
 
