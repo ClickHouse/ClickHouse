@@ -94,6 +94,7 @@ class HttpProcessor(SimpleHTTPRequestHandler):
     def do_GET(self):
         self._set_headers()
         self.wfile.write(SERVER_JSON_RESPONSE.encode())
+	return
 
     def log_message(self, format, *args):
         return
@@ -119,8 +120,8 @@ def start_server(requests_amount):
 #####################################################################
 
 def test_select():
-    server_url = 'http://{}:{}'.format(HTTP_SERVER_HOST, HTTP_SERVER_PORT)
-    query = 'SELECT * FROM url(\'{}\',\'JSONAsString\');'.format(server_url)
+    global HTTP_SERVER_URL_STR
+    query = 'SELECT * FROM url(\'{}\',\'JSONAsString\');'.format(HTTP_SERVER_URL_STR)
     check_answers(query, EXPECTED_ANSWER)
 
 def main():
