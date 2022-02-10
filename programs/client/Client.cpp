@@ -1040,7 +1040,7 @@ void Client::addOptions(OptionsDescription & options_description)
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
     options_description.hosts_and_ports_description->add_options()
         ("host,h", po::value<String>()->default_value("localhost"),
-         "list of server hosts. List elements are separated by a space."
+         "Server hostname. Multiple hosts can be passed via multiple arguments"
          "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'")
          ("port",  po::value<UInt16>()->default_value(DBMS_DEFAULT_PORT), "server ports")
     ;
