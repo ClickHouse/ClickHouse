@@ -1031,7 +1031,7 @@ namespace MySQLReplication
             return false;
         }
         auto table_map = table_maps.at(table_id);
-        return table_map->schema == replicate_do_db;
+        return (table_map->schema == replicate_do_db) && (replicate_tables.empty() || replicate_tables.contains(table_map->table));
     }
 }
 

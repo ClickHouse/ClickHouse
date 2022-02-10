@@ -563,6 +563,7 @@ namespace MySQLReplication
         Position getPosition() const override { return position; }
         BinlogEventPtr readOneEvent() override { return event; }
         void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
+        void setReplicateTables(std::unordered_set<String> tables) { replicate_tables = std::move(tables); }
         void setGTIDSets(GTIDSets sets) override { position.gtid_sets = std::move(sets); }
         void setChecksumSignatureLength(size_t checksum_signature_length_) override { checksum_signature_length = checksum_signature_length_; }
 
@@ -570,6 +571,7 @@ namespace MySQLReplication
         Position position;
         BinlogEventPtr event;
         String replicate_do_db;
+        std::unordered_set<String> replicate_tables;
         std::map<UInt64, std::shared_ptr<TableMapEvent> > table_maps;
         size_t checksum_signature_length = 4;
 

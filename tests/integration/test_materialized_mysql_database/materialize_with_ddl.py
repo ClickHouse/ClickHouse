@@ -1183,3 +1183,33 @@ def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, m
                 "\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n" +
                 "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786" +
                 "\t2021\t-3020399000000\t-46798000001\t000000000101000000D55C6E30D4095E40DCF0BBE996493E40\t11\t3\t22\tvarbinary\tGREEN\n")
+
+
+def materialized_database_settings_materialized_mysql_tables_list(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("CREATE DATABASE test_database")
+    mysql_node.query("CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    mysql_node.query("INSERT INTO test_database.a VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO test_database.a VALUES(2, 'bar')")
+    # table b(not in materialized_mysql_tables_list) can be skip
+    mysql_node.query("CREATE TABLE test_database.b (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse') SETTINGS materialized_mysql_tables_list = ' a,c'".format(service_name))
+
+    check_query(clickhouse_node, "SELECT name from system.tables where database = 'test_database' FORMAT TSV", "a\n")
+    check_query(clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n")
+
+    # mysql data(binlog) can be skip
+    mysql_node.query("INSERT INTO test_database.b VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO test_database.b VALUES(2, 'bar')")
+
+    mysql_node.query("CREATE TABLE test_database.c (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    mysql_node.query("INSERT INTO test_database.c VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO test_database.c VALUES(2, 'bar')")
+
+    check_query(clickhouse_node, "SELECT name from system.tables where database = 'test_database' FORMAT TSV", "a\tc\n")
+    check_query(clickhouse_node, "SELECT COUNT() FROM test_database.c FORMAT TSV", "2\n")
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
