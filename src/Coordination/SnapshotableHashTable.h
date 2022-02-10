@@ -16,6 +16,8 @@ struct ListNode
     StringRef key;
     V value;
 
+    /// Monotonically increasing verison info for snapshot
+    size_t version{0};
     bool active_in_map{true};
     bool free_key{false};
 };
@@ -34,7 +36,8 @@ private:
     IndexMap map;
     bool snapshot_mode{false};
     /// Allows to avoid additional copies in updateValue function
-    size_t snapshot_up_to_size = 0;
+    size_t current_version{0};
+    size_t snapshot_up_to_version{0};
     ArenaWithFreeLists arena;
 
     uint64_t approximate_data_size{0};
@@ -137,8 +140,8 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(key), value, true};
-            auto itr = list.insert(list.end(), elem);
+            ListElem elem{copyStringInArena(key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -159,8 +162,8 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
-            auto itr = list.insert(list.end(), elem);
+            ListElem elem{copyStringInArena(key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -171,9 +174,9 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, true};
+                ListElem elem{list_itr->key, value, current_version};
                 list_itr->active_in_map = false;
-                auto new_list_itr = list.insert(list.end(), elem);
+                auto new_list_itr = list.insert(list.end(), std::move(elem));
                 it->getMapped() = new_list_itr;
             }
             else
@@ -230,13 +233,13 @@ public:
             /// We in snapshot mode but updating some node which is already more
             /// fresh than snapshot distance. So it will not participate in
             /// snapshot and we don't need to copy it.
-            size_t distance = std::distance(list.begin(), list_itr);
-            if (distance < snapshot_up_to_size)
+            if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;
                 updater(elem_copy.value);
-                auto itr = list.insert(list.end(), elem_copy);
+                elem_copy.version = current_version;
+                auto itr = list.insert(list.end(), std::move(elem_copy));
                 it->getMapped() = itr;
                 ret = itr;
             }
@@ -302,17 +305,16 @@ public:
         updateDataSize(CLEAR, 0, 0, 0);
     }
 
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode(size_t version)
     {
         snapshot_mode = true;
-        snapshot_up_to_size = up_to_size;
+        snapshot_up_to_version = version;
+        ++current_version;
     }
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
-        snapshot_up_to_size = 0;
     }
 
     size_t size() const
@@ -320,9 +322,9 @@ public:
         return map.size();
     }
 
-    size_t snapshotSize() const
+    std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
-        return list.size();
+        return std::make_pair(list.size(), current_version);
     }
 
     uint64_t getApproximateDataSize() const
