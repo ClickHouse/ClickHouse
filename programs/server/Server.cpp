@@ -921,9 +921,12 @@ if (ThreadFuzzer::instance().isEffective())
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            UInt64 max_overcommit_wait_time = config->getUInt64("memory_usage_overcommit_max_wait_microseconds", 0);
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
+            if (config->has("global_memory_usage_overcommit_max_wait_microseconds"))
+            {
+                UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 0);
+                global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
+            }
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
