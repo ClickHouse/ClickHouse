@@ -12,6 +12,6 @@ $CLICKHOUSE_LOCAL -q "select * from table" < data.jsoneachrow
 
 rm data.jsoneachrow
 
-echo -e "1\t2\t3" | $CLICKHOUSE_LOCAL -q "desc table table"
-echo -e "1\t2\t3" | $CLICKHOUSE_LOCAL -q "select * from table"
+echo -e "1\t2\t3" | $CLICKHOUSE_LOCAL -q "desc table table" --file=-
+echo -e "1\t2\t3" | $CLICKHOUSE_LOCAL -q "select * from table" --file=-
 
