@@ -5,7 +5,9 @@
 #include <mutex>
 #include <vector>
 #include <atomic>
+#include <unordered_set>
 #include <boost/noncopyable.hpp>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 
 namespace DB
 {
@@ -60,9 +62,7 @@ public:
     /// and it's not current replica should do the merge
     std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
-    /// checks (in zookeeper) if the picked replica finished the merge
-    bool isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry);
-
+    /// Checks (in zookeeper) if some replica finished the merge
     bool isMergeFinishedByAnyReplica(const ReplicatedMergeTreeLogEntryData & entry);
 
 private:
@@ -82,6 +82,7 @@ private:
     /// execute_merges_on_single_replica_time_threshold enabled
     int current_replica_index = -1;
     std::vector<String> active_replicas;
+    ActiveDataPartSet parts_on_active_replicas;
 
 };
 
