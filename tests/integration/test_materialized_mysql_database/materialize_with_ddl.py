@@ -1208,7 +1208,7 @@ def materialized_database_settings_materialized_mysql_tables_list(clickhouse_nod
     mysql_node.query("INSERT INTO test_database.c VALUES(1, 'foo')")
     mysql_node.query("INSERT INTO test_database.c VALUES(2, 'bar')")
 
-    check_query(clickhouse_node, "SELECT name from system.tables where database = 'test_database' FORMAT TSV", "a\tc\n")
+    check_query(clickhouse_node, "SELECT name from system.tables where database = 'test_database' FORMAT TSV", "a\nc\n")
     check_query(clickhouse_node, "SELECT COUNT() FROM test_database.c FORMAT TSV", "2\n")
 
     clickhouse_node.query("DROP DATABASE test_database")
