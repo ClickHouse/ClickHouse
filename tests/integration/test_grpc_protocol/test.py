@@ -204,6 +204,19 @@ def test_totals_and_extremes():
     assert query("SELECT x, y FROM t") == "1\t2\n2\t4\n3\t2\n3\t3\n3\t4\n"
     assert query_and_get_extremes("SELECT x, y FROM t", settings={"extremes": "1"}) == "1\t2\n3\t4\n"
 
+def test_get_query_details():
+    result = list(query_no_errors("CREATE TABLE t (a UInt8) ENGINE = Memory"))[0]
+    assert result.output_format == ''
+    assert result.output == b''
+    #
+    result = list(query_no_errors("SELECT 'a', 1", query_id = '', output_format = 'TabSeparated'))[0]
+    assert result.output_format == 'TabSeparated'
+    assert result.output == b'a\t1\n'
+    #
+    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow"))[0]
+    assert result.output_format == 'JSONEachRow'
+    assert result.output == b'{"x":"a","1":1}\n'
+
 def test_errors_handling():
     e = query_and_get_error("")
     #print(e)
@@ -232,6 +245,7 @@ def test_progress():
   read_bytes: 16
   total_rows_to_read: 8
 }
+output_format: "TabSeparated"
 , output: "0\\t0\\n1\\t0\\n"
 , progress {
   read_rows: 2

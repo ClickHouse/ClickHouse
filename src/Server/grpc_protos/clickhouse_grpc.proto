@@ -187,7 +187,11 @@ message Exception {
 
 // Result of execution of a query which is sent back by the ClickHouse server to the client.
 message Result {
-   // Output of the query, represented in the `output_format` or in a format specified in `query`.
+   // The format in which `output`, `totals` and `extremes` are written.
+   // It's either the same as `output_format` specified in `QueryInfo` or the format specified in the query itself.
+   string output_format = 9;
+
+   // Output of the query, represented in the `output_format`.
    bytes output = 1;
    bytes totals = 2;
    bytes extremes = 3;

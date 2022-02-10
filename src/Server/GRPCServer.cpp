@@ -642,6 +642,7 @@ namespace
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
 
+        void addOutputFormatToResult();
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
@@ -1189,6 +1190,8 @@ namespace
                 return true;
             };
 
+            addOutputFormatToResult();
+
             Block block;
             while (check_for_cancel())
             {
@@ -1437,6 +1440,11 @@ namespace
         }
 
         return false;
+    }
+
+    void Call::addOutputFormatToResult()
+    {
+        *result.mutable_output_format() = output_format;
     }
 
     void Call::addProgressToResult()
