@@ -296,19 +296,16 @@ public:
             arena.free(const_cast<char *>(itr->key.data), itr->key.size);
         list.clear();
         updateDataSize(CLEAR, 0, 0, 0);
-        snapshot_invalid_iters.clear();
     }
 
     void enableSnapshotMode(size_t up_to_size)
     {
         snapshot_mode = true;
         snapshot_up_to_size = up_to_size;
-        snapshot_invalid_iters.clear();
     }
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
         snapshot_up_to_size = 0;
     }
