@@ -98,9 +98,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
                                                              config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
-    auto create_metadata_callback = [this, path, mode, hdfs_path] (size_t count)
+    auto create_metadata_callback = [this, path, mode, file_name] (size_t count)
     {
-        readOrCreateUpdateAndStoreMetadata(path, mode, false, [hdfs_path, count] (Metadata & metadata) { metadata.addObject(hdfs_path, count); return true; });
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
     };
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(
