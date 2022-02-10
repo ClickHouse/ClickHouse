@@ -461,6 +461,7 @@ void DistributedSink::writeSync(const Block & block)
 
     span.add_attribute("clickhouse.start_shard", start);
     span.add_attribute("clickhouse.end_shard", end);
+    span.add_attribute("db.statement", this->query_string);
 
     if (num_shards > 1)
     {
