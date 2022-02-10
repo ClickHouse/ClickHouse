@@ -879,9 +879,10 @@ SinkToStoragePtr StorageFile::write(
             path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
 
+            std::error_code error_code;
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
                 && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
-                && fs::file_size(paths.back()) != 0)
+                && fs::file_size(paths.back(), error_code) != 0 && !error_code)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)
                 {
