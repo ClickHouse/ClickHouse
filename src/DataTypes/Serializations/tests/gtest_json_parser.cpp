@@ -70,7 +70,7 @@ static void check(
     {
         paths_str.push_back(path.getPath());
         paths_is_nested.emplace_back();
-        for (size_t i = 0; i < path.getNumParts(); ++i)
+        for (size_t i = 0; i < path.getParts().size(); ++i)
             paths_is_nested.back().push_back(path.isNested(i));
     }
 

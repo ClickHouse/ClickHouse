@@ -1286,8 +1286,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (num_parts == 0 && parts_from_wal.empty())
     {
+        resetObjectColumnsFromActiveParts(part_lock);
         LOG_DEBUG(log, "There are no data parts");
-        object_columns = getObjectColumns(DataPartsVector{}, metadata_snapshot->getColumns());
         return;
     }
 
@@ -1359,8 +1359,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    auto range = getDataPartsStateRange(DataPartState::Active);
-    object_columns = getObjectColumns(range, metadata_snapshot->getColumns());
+    resetObjectColumnsFromActiveParts(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
@@ -2609,8 +2608,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         if (covered_parts.empty())
             updateObjectColumns(object_columns, (*part_it)->getColumns());
         else
-            object_columns = getObjectColumns(
-                getDataPartsStateRange(DataPartState::Active), getInMemoryMetadataPtr()->getColumns());
+            resetObjectColumnsFromActiveParts(lock);
 
         ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
         ssize_t diff_rows = part->rows_count - reduce_rows;
@@ -2652,18 +2650,18 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     return covered_parts;
 }
 
-void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
+void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
 {
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
-    bool have_active_parts = false;
+    bool removed_active_part = false;
 
     for (const DataPartPtr & part : remove)
     {
         if (part->getState() == IMergeTreeDataPart::State::Active)
         {
-            have_active_parts = true;
             removePartContributionToColumnAndSecondaryIndexSizes(part);
             removePartContributionToDataVolume(part);
+            removed_active_part = true;
         }
 
         if (part->getState() == IMergeTreeDataPart::State::Active || clear_without_timeout)
@@ -2676,16 +2674,14 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
             getWriteAheadLog()->dropPart(part->name);
     }
 
-    if (have_active_parts)
-    {
-        auto range = getDataPartsStateRange(DataPartState::Active);
-        object_columns = getObjectColumns(range, getInMemoryMetadataPtr()->getColumns());
-    }
+    if (removed_active_part)
+        resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
 void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
 {
     auto lock = lockParts();
+    bool removed_active_part = false;
 
     for (const auto & part : remove)
     {
@@ -2693,10 +2689,16 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
         if (it_part == data_parts_by_info.end())
             throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
 
+        if (part->getState() == IMergeTreeDataPart::State::Active)
+            removed_active_part = true;
+
         modifyPartState(part, IMergeTreeDataPart::State::Temporary);
         /// Erase immediately
         data_parts_indexes.erase(it_part);
     }
+
+    if (removed_active_part)
+        resetObjectColumnsFromActiveParts(lock);
 }
 
 void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
@@ -2789,8 +2791,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
     return parts_to_remove;
 }
 
-void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
-restore_covered)
+void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
 {
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->relative_path, part_to_detach->name);
@@ -2798,6 +2799,8 @@ restore_covered)
         LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->relative_path, prefix, part_to_detach->name);
 
     auto lock = lockParts();
+    bool removed_active_part = false;
+    bool restored_active_part = false;
 
     auto it_part = data_parts_by_info.find(part_to_detach->info);
     if (it_part == data_parts_by_info.end())
@@ -2810,7 +2813,9 @@ restore_covered)
     {
         removePartContributionToDataVolume(part);
         removePartContributionToColumnAndSecondaryIndexSizes(part);
+        removed_active_part = true;
     }
+
     modifyPartState(it_part, DataPartState::Deleting);
 
     part->renameToDetached(prefix);
@@ -2860,6 +2865,7 @@ restore_covered)
                     addPartContributionToColumnAndSecondaryIndexSizes(*it);
                     addPartContributionToDataVolume(*it);
                     modifyPartState(it, DataPartState::Active); // iterator is not invalidated here
+                    restored_active_part = true;
                 }
 
                 pos = (*it)->info.max_block + 1;
@@ -2891,6 +2897,7 @@ restore_covered)
                 addPartContributionToColumnAndSecondaryIndexSizes(*it);
                 addPartContributionToDataVolume(*it);
                 modifyPartState(it, DataPartState::Active);
+                restored_active_part = true;
             }
 
             pos = (*it)->info.max_block + 1;
@@ -2910,6 +2917,9 @@ restore_covered)
             LOG_ERROR(log, "The set of parts restored in place of {} looks incomplete. There might or might not be a data loss.{}", part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
         }
     }
+
+    if (removed_active_part || restored_active_part)
+        resetObjectColumnsFromActiveParts(lock);
 }
 
 
@@ -4365,16 +4375,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             }
         }
 
-        if (reduce_parts)
-        {
-            auto range = data.getDataPartsStateRange(DataPartState::Active);
-            data.object_columns = getObjectColumns(range, data.getInMemoryMetadataPtr()->getColumns());
-        }
-        else
+        if (reduce_parts == 0)
         {
             for (const auto & part : precommitted_parts)
                 updateObjectColumns(data.object_columns, part->getColumns());
         }
+        else
+            data.resetObjectColumnsFromActiveParts(parts_lock);
 
         ssize_t diff_bytes = add_bytes - reduce_bytes;
         ssize_t diff_rows = add_rows - reduce_rows;
@@ -6087,6 +6094,12 @@ ColumnsDescription MergeTreeData::getObjectColumns(
     return DB::getObjectColumns(
         range.begin(), range.end(),
         storage_columns, [](const auto & part) { return part->getColumns(); });
+}
+
+void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lock*/)
+{
+    auto range = getDataPartsStateRange(DataPartState::Active);
+    object_columns = getObjectColumns(range, getInMemoryMetadataPtr()->getColumns());
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
