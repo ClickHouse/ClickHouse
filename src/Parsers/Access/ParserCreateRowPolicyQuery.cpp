@@ -29,24 +29,24 @@ namespace
         });
     }
 
-    bool parseAsRestrictiveOrPermissive(IParserBase::Pos & pos, Expected & expected, bool & is_restrictive)
+    bool parseAsKind(IParserBase::Pos & pos, Expected & expected, RowPolicyKind & kind)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"AS"}.ignore(pos, expected))
                 return false;
 
-            if (ParserKeyword{"RESTRICTIVE"}.ignore(pos, expected))
+            for (auto current_kind : collections::range(RowPolicyKind::MAX))
             {
-                is_restrictive = true;
-                return true;
+                const std::string_view & kind_name = RowPolicyKindInfo::get(current_kind).name;
+                if (ParserKeyword{kind_name.data()}.ignore(pos, expected))
+                {
+                    kind = current_kind;
+                    return true;
+                }
             }
 
-            if (!ParserKeyword{"PERMISSIVE"}.ignore(pos, expected))
-                return false;
-
-            is_restrictive = false;
-            return true;
+            return false;
         });
     }
 
@@ -243,7 +243,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String cluster = std::exchange(names->cluster, "");
 
     String new_short_name;
-    std::optional<bool> is_restrictive;
+    std::optional<RowPolicyKind> kind;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters;
 
     while (true)
@@ -251,12 +251,12 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (alter && (names->full_names.size() == 1) && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
             continue;
 
-        if (!is_restrictive)
+        if (!kind)
         {
-            bool new_is_restrictive;
-            if (parseAsRestrictiveOrPermissive(pos, expected, new_is_restrictive))
+            RowPolicyKind new_kind;
+            if (parseAsKind(pos, expected, new_kind))
             {
-                is_restrictive = new_is_restrictive;
+                kind = new_kind;
                 continue;
             }
         }
@@ -291,7 +291,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->new_short_name = std::move(new_short_name);
-    query->is_restrictive = is_restrictive;
+    query->kind = kind;
     query->filters = std::move(filters);
     query->roles = std::move(roles);
 
