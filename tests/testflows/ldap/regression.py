@@ -4,16 +4,17 @@ from testflows.core import *
 
 append_path(sys.path, "..")
 
-from helpers.common import Pool, join
 from helpers.argparser import argparser
 
 @TestModule
 @Name("ldap")
 @ArgumentParser(argparser)
-def regression(self, local, clickhouse_binary_path, parallel=None, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
     """ClickHouse LDAP integration regression module.
     """
-    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
+    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "clickhouse_version": clickhouse_version}
+
+    self.context.clickhouse_version = clickhouse_version
 
     if stress is not None:
         self.context.stress = stress

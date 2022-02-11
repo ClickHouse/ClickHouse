@@ -37,20 +37,28 @@ xfails = {
     RQ_SRS_007_LDAP_Authentication("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
     """ClickHouse integration with LDAP regression module.
     """
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
+    self.context.clickhouse_version = clickhouse_version
+
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
+
+    from platform import processor as current_cpu
+
+    folder_name = os.path.basename(current_dir())
+    if current_cpu() == 'aarch64':
+        env = f"{folder_name}_env_arm64"
+    else:
+        env = f"{folder_name}_env"
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
-            docker_compose_project_dir=os.path.join(current_dir(), "ldap_authentication_env")) as cluster:
+            docker_compose_project_dir=os.path.join(current_dir(), env)) as cluster:
         self.context.cluster = cluster
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))
