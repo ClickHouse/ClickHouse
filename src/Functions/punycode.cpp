@@ -3,9 +3,9 @@
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include "Poco/Unicode.h"
 
 #include <string_view>
-
 #include <codecvt>
 #include <locale>
 #include <chrono>
@@ -246,6 +246,7 @@ namespace
     constexpr uint16_t domainMaxLength { 256 };
     constexpr uint16_t labelMaxLength { 64 };
     constexpr std::array<char, 4> acePrefix { 'x', 'n', '-', '-'};
+    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter {};
 
     template <uint16_t A, uint16_t B, class... Args>
     constexpr bool inRange(const Args &... param) noexcept
@@ -391,8 +392,8 @@ namespace
         last = std::string::npos == last ? input.size() : last;
         std::copy_n(input.data(), start, encoded_string);
 
-        const auto & s32
-            = std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>{}.from_bytes((input.data() + start), (input.data() + last));
+        auto s32 = converter.from_bytes((input.data() + start), (input.data() + last));
+        std::for_each(s32.begin(), s32.end(), [](auto & ch) { ch = Poco::Unicode::toLower(ch);});
         size_t decoded_length = punycodeEncodeInternal(s32, encoded_string + start);
         if (0 == decoded_length)
             throw std::runtime_error("Failed to encode");
