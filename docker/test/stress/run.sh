@@ -267,5 +267,5 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 # Default filename is 'core.PROCESS_ID'
 for core in core.*; do
     pigz $core
-    mv $core.gz /output/
+    mv $core.gz /test_output/
 done
