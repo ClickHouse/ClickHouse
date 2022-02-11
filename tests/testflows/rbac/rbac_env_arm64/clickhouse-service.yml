@@ -2,8 +2,8 @@ version: '2.3'
 
 services:
   clickhouse:
-    image: clickhouse/integration-test
-    init: true
+    image: registry.gitlab.com/altinity-public/container-images/test/clickhouse-integration-test:21.12
+    privileged: true
     expose:
       - "9000"
       - "9009"
@@ -16,9 +16,9 @@ services:
       - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/users.xml:/etc/clickhouse-server/users.xml"
       - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
       - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
-    entrypoint: bash -c "tail -f /dev/null"
+    entrypoint: bash -c "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
     healthcheck:
-      test: echo 1
+      test: clickhouse client --query='select 1'
       interval: 10s
       timeout: 10s
       retries: 3
