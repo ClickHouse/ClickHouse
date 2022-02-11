@@ -36,6 +36,8 @@ private:
     /// Allows to avoid additional copies in updateValue function
     size_t snapshot_up_to_size = 0;
     ArenaWithFreeLists arena;
+    /// Collect invalid iterators to avoid traversing the whole list
+    std::vector<Mapped> snapshot_invalid_iters;
 
     uint64_t approximate_data_size{0};
 
@@ -175,6 +177,7 @@ public:
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
                 it->getMapped() = new_list_itr;
+                snapshot_invalid_iters.push_back(list_itr);
             }
             else
             {
@@ -195,6 +198,7 @@ public:
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
+            snapshot_invalid_iters.push_back(list_itr);
             list_itr->free_key = true;
             map.erase(it->getKey());
         }
@@ -235,6 +239,7 @@ public:
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;
+                snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
                 auto itr = list.insert(list.end(), elem_copy);
                 it->getMapped() = itr;
@@ -274,23 +279,15 @@ public:
 
     void clearOutdatedNodes()
     {
-        auto start = list.begin();
-        auto end = list.end();
-        for (auto itr = start; itr != end;)
+        for (auto & itr: snapshot_invalid_iters)
         {
-            if (!itr->active_in_map)
-            {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
-                if (itr->free_key)
-                    arena.free(const_cast<char *>(itr->key.data), itr->key.size);
-                itr = list.erase(itr);
-            }
-            else
-            {
-                assert(!itr->free_key);
-                itr++;
-            }
+            assert(!itr->active_in_map);
+            updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
+            if (itr->free_key)
+                arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+            list.erase(itr);
         }
+        snapshot_invalid_iters.clear();
     }
 
     void clear()
@@ -310,7 +307,6 @@ public:
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
         snapshot_up_to_size = 0;
     }
