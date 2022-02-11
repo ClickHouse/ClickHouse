@@ -41,13 +41,20 @@ namespace
         DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<T>()); }
     };
 
+    template <template <typename, bool, typename, bool> class AggregateFunctionTemplate, typename TColumnA, bool expr_sorted, typename TColumnB, bool is_plain_b, typename... TArgs>
+    AggregateFunctionPtr
+    createAggregateFunctionGroupArraySortedTypedFinal(TArgs && ... args)
+    {
+        return AggregateFunctionPtr(new AggregateFunctionTemplate<TColumnA, expr_sorted, TColumnB, is_plain_b>(std::forward<TArgs>(args)...));
+    }
+
     template <bool expr_sorted = false, typename TColumnB = UInt64, bool is_plain_b = false>
     AggregateFunctionPtr
     createAggregateFunctionGroupArraySortedTyped(const DataTypes & argument_types, const Array & params, UInt64 threshold)
     {
 #define DISPATCH(A, C, B) \
     if (which.idx == TypeIndex::A) \
-        return AggregateFunctionPtr(new C<B, expr_sorted, TColumnB, is_plain_b>(threshold, argument_types, params));
+        return createAggregateFunctionGroupArraySortedTypedFinal<C, B, expr_sorted, TColumnB, is_plain_b>(threshold, argument_types, params);
 #define DISPATCH_NUMERIC(A) DISPATCH(A, AggregateFunctionGroupArraySortedNumeric, A)
         WhichDataType which(argument_types[0]);
         FOR_NUMERIC_TYPES(DISPATCH_NUMERIC)
