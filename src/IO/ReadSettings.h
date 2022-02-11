@@ -82,6 +82,7 @@ struct ReadSettings
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
+    bool http_skip_not_found_url_for_globs = true;
 
     /// Set to true for MergeTree tables to make sure
     /// that last position (offset in compressed file) is always passed.
