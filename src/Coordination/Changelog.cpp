@@ -10,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <base/logger_useful.h>
-#include <libnuraft/log_entry.hxx>
 
 
 namespace DB
