@@ -148,6 +148,7 @@ info signals
 continue
 gcore
 backtrace full
+thread apply all backtrace full
 info registers
 disassemble /s
 up
