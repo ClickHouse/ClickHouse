@@ -63,7 +63,7 @@ Pipe StorageHiveCluster::read(
     unsigned num_streams_)
 {
     auto query_kind = context_->getClientInfo().query_kind;
-    
+
     auto policy_name = context_->getSettings().getString("hive_cluster_task_iterate_policy");
     // first stage. create remote executors pipeline
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
