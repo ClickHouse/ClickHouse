@@ -991,7 +991,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
+        auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
