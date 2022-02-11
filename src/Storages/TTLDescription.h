@@ -118,6 +118,9 @@ struct TTLTableDescription
 
     static TTLTableDescription getTTLForTableFromAST(
         const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+
+    /// Parse description from string
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
 };
 
 }

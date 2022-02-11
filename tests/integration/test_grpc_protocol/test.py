@@ -177,13 +177,13 @@ def test_insert_query_delimiter():
     assert query("SELECT a FROM t ORDER BY a") == "1\n5\n234\n"
 
 def test_insert_default_column():
-    query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100, c String DEFAULT 'c') ENGINE = Memory")
+    query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100 - a, c String DEFAULT 'c') ENGINE = Memory")
     query("INSERT INTO t (c, a) VALUES ('x',1),('y',2)")
     query("INSERT INTO t (a) FORMAT TabSeparated", input_data="3\n4\n")
-    assert query("SELECT * FROM t ORDER BY a") == "1\t100\tx\n" \
-                                                  "2\t100\ty\n" \
-                                                  "3\t100\tc\n" \
-                                                  "4\t100\tc\n"
+    assert query("SELECT * FROM t ORDER BY a") == "1\t99\tx\n" \
+                                                  "2\t98\ty\n" \
+                                                  "3\t97\tc\n" \
+                                                  "4\t96\tc\n"
 
 def test_insert_splitted_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
@@ -257,7 +257,7 @@ def test_progress():
 }
 ]"""
 
-def test_session():
+def test_session_settings():
     session_a = "session A"
     session_b = "session B"
     query("SET custom_x=1", session_id=session_a)
@@ -267,8 +267,21 @@ def test_session():
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_a) == "1\t2\n"
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_b) == "3\t4\n"
 
+def test_session_temp_tables():
+    session_a = "session A"
+    session_b = "session B"
+    query("CREATE TEMPORARY TABLE my_temp_table(a Int8)", session_id=session_a)
+    query("INSERT INTO my_temp_table VALUES (10)", session_id=session_a)
+    assert query("SELECT * FROM my_temp_table", session_id=session_a) == "10\n"
+    query("CREATE TEMPORARY TABLE my_temp_table(a Int8)", session_id=session_b)
+    query("INSERT INTO my_temp_table VALUES (20)", session_id=session_b)
+    assert query("SELECT * FROM my_temp_table", session_id=session_b) == "20\n"
+    assert query("SELECT * FROM my_temp_table", session_id=session_a) == "10\n"
+
 def test_no_session():
     e = query_and_get_error("SET custom_x=1")
+    assert "There is no session" in e.display_text
+    e = query_and_get_error("CREATE TEMPORARY TABLE my_temp_table(a Int8)")
     assert "There is no session" in e.display_text
 
 def test_input_function():
@@ -360,22 +373,14 @@ def test_cancel_while_generating_output():
         output += result.output
     assert output == b'0\t0\n1\t0\n2\t0\n3\t0\n'
 
-def test_result_compression():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000000)",
-                                               result_compression=clickhouse_grpc_pb2.Compression(algorithm=clickhouse_grpc_pb2.CompressionAlgorithm.GZIP,
-                                                                                                  level=clickhouse_grpc_pb2.CompressionLevel.COMPRESSION_HIGH))
-    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    result = stub.ExecuteQuery(query_info)
-    assert result.output == (b'0\n')*1000000
-
 def test_compressed_output():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", output_compression_type="lz4")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.output) == (b'0\n')*1000
 
 def test_compressed_output_streaming():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(100000)", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(100000)", output_compression_type="lz4")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     d_context = lz4.frame.create_decompression_context()
     data = b''
@@ -385,7 +390,7 @@ def test_compressed_output_streaming():
     assert data == (b'0\n')*100000
 
 def test_compressed_output_gzip():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="gzip", compression_level=6)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", output_compression_type="gzip", output_compression_level=6)
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
     assert gzip.decompress(result.output) == (b'0\n')*1000
@@ -394,10 +399,10 @@ def test_compressed_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT sum(x), y FROM t GROUP BY y WITH TOTALS", compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT sum(x), y FROM t GROUP BY y WITH TOTALS", output_compression_type="lz4")
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.totals) == b'12\t0\n'
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT x, y FROM t", settings={"extremes": "1"}, compression_type="lz4")
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT x, y FROM t", settings={"extremes": "1"}, output_compression_type="lz4")
     result = stub.ExecuteQuery(query_info)
     assert lz4.frame.decompress(result.extremes) == b'1\t2\n3\t4\n'
 
@@ -410,7 +415,7 @@ def test_compressed_insert_query_streaming():
     d2 = data[sz1:sz1+sz2]
     d3 = data[sz1+sz2:]
     def send_query_info():
-        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t VALUES", input_data=d1, compression_type="lz4", next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t VALUES", input_data=d1, input_compression_type="lz4", next_query_info=True)
         yield clickhouse_grpc_pb2.QueryInfo(input_data=d2, next_query_info=True)
         yield clickhouse_grpc_pb2.QueryInfo(input_data=d3)
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
@@ -431,3 +436,24 @@ def test_compressed_external_table():
                             b"3\tCarl\n"\
                             b"4\tDaniel\n"\
                             b"5\tEthan\n"
+
+def test_transport_compression():
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000000)", transport_compression_type='gzip', transport_compression_level=3)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == (b'0\n')*1000000
+
+def test_opentelemetry_context_propagation():
+    trace_id = "80c190b5-9dc1-4eae-82b9-6c261438c817"
+    parent_span_id = 123
+    trace_state = "some custom state"
+    trace_id_hex = trace_id.replace("-", "")
+    parent_span_id_hex = f'{parent_span_id:0>16X}'
+    metadata = [("traceparent", f"00-{trace_id_hex}-{parent_span_id_hex}-01"), ("tracestate", trace_state)]
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 1")
+    result = stub.ExecuteQuery(query_info, metadata=metadata)
+    assert result.output == b"1\n"
+    node.query("SYSTEM FLUSH LOGS")
+    assert node.query(f"SELECT attribute['db.statement'], attribute['clickhouse.tracestate'] FROM system.opentelemetry_span_log "
+                      f"WHERE trace_id='{trace_id}' AND parent_span_id={parent_span_id}") == "SELECT 1\tsome custom state\n"
