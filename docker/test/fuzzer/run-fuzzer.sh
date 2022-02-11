@@ -185,6 +185,7 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
+gcore
 backtrace full
 info locals
 info registers
@@ -397,5 +398,14 @@ th { cursor: pointer; }
 EOF
     ;&
 esac
+
+mkdir -p /test_output
+
+# Core dumps (see gcore)
+# Default filename is 'core.PROCESS_ID'
+for core in core.*; do
+    pigz $core
+    mv $core.gz /test_output/
+done
 
 exit $task_exit_code
