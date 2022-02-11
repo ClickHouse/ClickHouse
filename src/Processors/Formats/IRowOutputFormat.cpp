@@ -15,7 +15,8 @@ IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, con
     , types(header.getDataTypes())
     , params(params_)
 {
-    serializations.reserve(types.size());
+    num_columns = types.size();
+    serializations.reserve(num_columns);
     for (const auto & type : types)
         serializations.push_back(type->getDefaultSerialization());
 }
@@ -68,8 +69,6 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)

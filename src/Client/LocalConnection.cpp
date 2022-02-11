@@ -74,6 +74,8 @@ void LocalConnection::sendQuery(
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
         query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
     }
+    if (!current_database.empty())
+        query_context->setCurrentDatabase(current_database);
 
     CurrentThread::QueryScope query_scope_holder(query_context);
 
@@ -427,9 +429,9 @@ void LocalConnection::getServerVersion(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::setDefaultDatabase(const String &)
+void LocalConnection::setDefaultDatabase(const String & database)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    current_database = database;
 }
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
