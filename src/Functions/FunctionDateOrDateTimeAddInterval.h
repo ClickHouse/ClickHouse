@@ -43,15 +43,17 @@ struct AddNanosecondsImpl
     static constexpr auto name = "addNanoseconds";
 
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        Int64 multiplier = std::pow(10, 9 - scale);
-        return {t.whole + (t.fractional * multiplier + delta) / 1000000000, (t.fractional * multiplier + delta) % 1000000000};
+//        auto dt = DataTypeDateTime64(scale);
+//        Int64 multiplier = std::pow(10, 9 - scale);
+        auto div_result = std::div(t.fractional + delta, static_cast<Int64>(1000000000));
+        return {t.whole + div_result.quot, div_result.rem};
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        return t + delta;
+        return t;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
@@ -71,19 +73,20 @@ struct AddMicrosecondsImpl
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
     {
+        Int64 multiplier = std::pow(10, std::abs(6 - scale));
         if (scale <= 6)
         {
-            Int64 multiplier = std::pow(10, 6 - scale);
-            return {t.whole + (t.fractional * multiplier + delta) / 1000000, (t.fractional * multiplier + delta) % 1000000};
+            return {t.whole * multiplier + (t.fractional * multiplier + delta) / static_cast<Int64>(10e6 / multiplier),
+                    (t.fractional * multiplier + delta) % static_cast<Int64>(10e6 / multiplier)};
         } else {
-            Int64 multiplier = std::pow(10, scale - 6);
-            return {t.whole + (t.fractional + delta * multiplier) / 1000000, (t.fractional + delta * multiplier) % 1000000};
+            return {t.whole + (t.fractional + delta * multiplier) / static_cast<Int64>(10e6 / multiplier),
+                    (t.fractional + delta * multiplier) % static_cast<Int64>(10e6 / multiplier)};
         }
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        return t + delta;
+        return t;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
@@ -103,19 +106,20 @@ struct AddMillisecondsImpl
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
     {
+        Int64 multiplier = std::pow(10, std::abs(3 - scale));
         if (scale <= 3)
         {
-            Int64 multiplier = std::pow(10, 3 - scale);
-            return {t.whole + (t.fractional * multiplier + delta) / 1000, (t.fractional * multiplier + delta) % 1000};
+            return {t.whole * multiplier + (t.fractional * multiplier + delta) / static_cast<Int64>(1000 / multiplier),
+                    (t.fractional * multiplier + delta) % static_cast<Int64>(1000 / multiplier)};
         } else {
-            Int64 multiplier = std::pow(10, scale - 3);
-            return {t.whole + (t.fractional + delta * multiplier) / 1000, (t.fractional + delta * multiplier) % 1000};
+            return {t.whole + (t.fractional + delta * multiplier) / static_cast<Int64>(1000 / multiplier),
+                    (t.fractional + delta * multiplier) % static_cast<Int64>(1000 / multiplier)};
         }
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        return t + delta;
+        return t;
     }
     static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
