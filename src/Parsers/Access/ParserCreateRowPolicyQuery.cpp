@@ -274,8 +274,8 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
+    parseToRoles(pos, expected, attach_mode, to_roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
@@ -293,7 +293,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->new_short_name = std::move(new_short_name);
     query->kind = kind;
     query->filters = std::move(filters);
-    query->roles = std::move(roles);
+    query->to_roles = std::move(to_roles);
 
     return true;
 }
