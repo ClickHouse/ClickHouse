@@ -256,21 +256,21 @@ def test_reload_users_xml_by_timer():
 def test_introspection():
     policies = [
         ["another ON mydb.filtered_table1", "another", "mydb", "filtered_table1",
-         "6068883a-0e9d-f802-7e22-0144f8e66d3c", "users.xml", "1", 0, 0, "['another']", "[]"],
+         "6068883a-0e9d-f802-7e22-0144f8e66d3c", "users.xml", "1", "permissive", 0, "['another']", "[]"],
         ["another ON mydb.filtered_table2", "another", "mydb", "filtered_table2",
-         "c019e957-c60b-d54e-cc52-7c90dac5fb01", "users.xml", "1", 0, 0, "['another']", "[]"],
+         "c019e957-c60b-d54e-cc52-7c90dac5fb01", "users.xml", "1", "permissive", 0, "['another']", "[]"],
         ["another ON mydb.filtered_table3", "another", "mydb", "filtered_table3",
-         "4cb080d0-44e8-dbef-6026-346655143628", "users.xml", "1", 0, 0, "['another']", "[]"],
+         "4cb080d0-44e8-dbef-6026-346655143628", "users.xml", "1", "permissive", 0, "['another']", "[]"],
         ["another ON mydb.local", "another", "mydb", "local", "5b23c389-7e18-06bf-a6bc-dd1afbbc0a97", "users.xml",
-         "a = 1", 0, 0, "['another']", "[]"],
+         "a = 1", "permissive", 0, "['another']", "[]"],
         ["default ON mydb.filtered_table1", "default", "mydb", "filtered_table1",
-         "9e8a8f62-4965-2b5e-8599-57c7b99b3549", "users.xml", "a = 1", 0, 0, "['default']", "[]"],
+         "9e8a8f62-4965-2b5e-8599-57c7b99b3549", "users.xml", "a = 1", "permissive", 0, "['default']", "[]"],
         ["default ON mydb.filtered_table2", "default", "mydb", "filtered_table2",
-         "cffae79d-b9bf-a2ef-b798-019c18470b25", "users.xml", "a + b < 1 or c - d > 5", 0, 0, "['default']", "[]"],
+         "cffae79d-b9bf-a2ef-b798-019c18470b25", "users.xml", "a + b < 1 or c - d > 5", "permissive", 0, "['default']", "[]"],
         ["default ON mydb.filtered_table3", "default", "mydb", "filtered_table3",
-         "12fc5cef-e3da-3940-ec79-d8be3911f42b", "users.xml", "c = 1", 0, 0, "['default']", "[]"],
+         "12fc5cef-e3da-3940-ec79-d8be3911f42b", "users.xml", "c = 1", "permissive", 0, "['default']", "[]"],
         ["default ON mydb.local", "default", "mydb", "local", "cdacaeb5-1d97-f99d-2bb0-4574f290629c", "users.xml", "1",
-         0, 0, "['default']", "[]"]
+         "permissive", 0, "['default']", "[]"]
     ]
     assert node.query("SELECT * from system.row_policies ORDER BY short_name, database, table") == TSV(policies)
 

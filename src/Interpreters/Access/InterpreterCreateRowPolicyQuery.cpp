@@ -29,8 +29,8 @@ namespace
         else if (query.names->full_names.size() == 1)
             policy.setFullName(query.names->full_names.front());
 
-        if (query.is_restrictive)
-            policy.setRestrictive(*query.is_restrictive);
+        if (query.kind)
+            policy.setKind(*query.kind);
 
         for (const auto & [filter_type, filter] : query.filters)
             policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
