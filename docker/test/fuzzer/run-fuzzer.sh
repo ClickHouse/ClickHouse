@@ -313,6 +313,11 @@ quit
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
+
+    if test -f core.*; then
+        pigz core.*
+        mv core.*.gz core.gz
+    fi
 }
 
 case "$stage" in
@@ -344,6 +349,10 @@ case "$stage" in
     time fuzz
     ;&
 "report")
+CORE_LINK=''
+if [ -f core.gz ]; then
+    CORE_LINK='<a href="core.gz">core.gz</a>'
+fi
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -385,6 +394,7 @@ th { cursor: pointer; }
 <a href="fuzzer.log">fuzzer.log</a>
 <a href="server.log">server.log</a>
 <a href="main.log">main.log</a>
+${CORE_LINK}
 </p>
 <table>
 <tr><th>Test name</th><th>Test status</th><th>Description</th></tr>
@@ -396,14 +406,5 @@ th { cursor: pointer; }
 EOF
     ;&
 esac
-
-mkdir -p /test_output
-
-# Core dumps (see gcore)
-# Default filename is 'core.PROCESS_ID'
-for core in core.*; do
-    pigz $core
-    mv $core.gz /test_output/
-done
 
 exit $task_exit_code
