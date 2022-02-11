@@ -118,6 +118,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (!create->is_dictionary)
         create->attach = true;
 
+//    create->columns_list->c
+
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
     create->database.reset();

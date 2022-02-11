@@ -176,7 +176,7 @@
          - users without password have readonly access.
          See also: https://www.shodan.io/search?query=clickhouse
       -->
-    <!-- <listen_host>::</listen_host> -->
+    <listen_host>::</listen_host>
 
 
     <!-- Same for hosts without support for IPv6: -->
