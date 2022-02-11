@@ -414,7 +414,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
@@ -642,7 +642,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
     span.add_attribute("db.statement", this->query_string);
 
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
@@ -658,7 +658,7 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 
 void DistributedSink::writeToShard(const Cluster::ShardInfo& shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__ );
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
     span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
 
     const auto & settings = context->getSettingsRef();
@@ -728,7 +728,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo& shard_info, const B
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
-            if(context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
+            if (context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
