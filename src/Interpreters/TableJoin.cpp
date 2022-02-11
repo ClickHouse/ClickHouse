@@ -468,8 +468,8 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
 
     NameToNameMap left_key_column_rename;
     NameToNameMap right_key_column_rename;
-    auto left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, left_key_column_rename);
-    auto right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, right_key_column_rename);
+    auto left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, left_key_column_rename, forceNullableLeft());
+    auto right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, right_key_column_rename, forceNullableRight());
 
     forAllKeys(clauses, [&](auto & left_key, auto & right_key)
     {
@@ -548,29 +548,76 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     return !left_type_map.empty();
 }
 
-ActionsDAGPtr TableJoin::applyKeyConvertToTable(
-    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename) const
-{
-    bool has_some_to_do = false;
 
+/// @param func - process column, returns true if type was changed
+static ActionsDAGPtr makeConvertingDag(
+    const ColumnsWithTypeAndName & cols_src,
+    std::function<bool(ColumnWithTypeAndName &)> func,
+    NameToNameMap * key_column_rename,
+    bool add_cols)
+{
     ColumnsWithTypeAndName cols_dst = cols_src;
+    bool has_some_to_do = false;
     for (auto & col : cols_dst)
     {
-        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        if (func(col))
         {
-            has_some_to_do = true;
-            col.type = it->second;
             col.column = nullptr;
+            has_some_to_do = true;
         }
     }
     if (!has_some_to_do)
         return nullptr;
 
-    /// Returns converting actions for tables that need to be performed before join
-    auto dag = ActionsDAG::makeConvertingActions(
-        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !hasUsing(), &key_column_rename);
+    return ActionsDAG::makeConvertingActions(
+        cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, add_cols, key_column_rename);
+}
 
-    return dag;
+ActionsDAGPtr TableJoin::applyKeyConvertToTable(
+    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+    bool make_nullable) const
+{
+    auto dag1 = makeConvertingDag(
+        cols_src,
+        [&type_mapping](auto & col)
+        {
+            if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+            {
+                col.type = it->second;
+                return true;
+            }
+            return false;
+        },
+        &key_column_rename, !hasUsing());
+
+    if (!make_nullable)
+        return dag1;
+
+    NameSet added_cols;
+    for (const auto & t : key_column_rename)
+        added_cols.insert(t.second);
+
+    auto dag2 = makeConvertingDag(
+        dag1 ? dag1->getResultColumns() : cols_src,
+        [&added_cols, this](auto & col)
+        {
+            if (added_cols.contains(col.name) && !hasUsing())
+                return false;
+            if (!col.type->canBeInsideNullable())
+                return false;
+            col.type = makeNullable(col.type);
+            return true;
+        },
+        nullptr, false);
+
+    if (dag1 && dag2)
+        return ActionsDAG::merge(std::move(*dag1), std::move(*dag2));
+    else if (dag1)
+        return dag1;
+    else if (dag2)
+        return dag2;
+    else
+        return nullptr;
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)

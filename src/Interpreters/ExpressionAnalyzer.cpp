@@ -301,7 +301,7 @@ NamesAndTypesList ExpressionAnalyzer::analyzeJoin(ActionsDAGPtr & actions, const
     }
 
     NamesAndTypesList result_columns = src_columns;
-    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns,false);
+    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, false);
     return result_columns;
 }
 
