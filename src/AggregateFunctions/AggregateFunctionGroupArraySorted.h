@@ -55,7 +55,7 @@ size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, 
         //Starting from the highest values and we look for the immediately lower than the given one
         for (cur = current_max; cur > 0; cur--)
         {
-            if (!(data[i] < data[results[cur - 1]]))
+            if (data[i] > data[results[cur - 1]])
                 break;
         }
 
