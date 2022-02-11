@@ -333,6 +333,7 @@ std::string LocalServer::getInitialCreateTableQuery()
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
+        std::cerr << file_name << "\n";
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 

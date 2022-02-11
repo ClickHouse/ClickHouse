@@ -446,9 +446,15 @@ class TestCase:
         return testcase_args
 
     def configure_test_settings(self, client_options):
+        if self.tags and 'no-random-settings' in self.tags:
+            return client_options
+
         return client_options + " --" + " --".join(self.random_settings)
 
     def add_info_about_settings(self, description):
+        if self.tags and 'no-random-settings' in self.tags:
+            return description
+
         return description + "\n" + "Settings used in the test: " + "--" + " --".join(self.random_settings) + "\n"
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
