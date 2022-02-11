@@ -29,9 +29,11 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
 
     const auto message = fmt::format(
         "The signature of table function {} could be the following:\n" \
+        " - url\n"
         " - url, format\n" \
         " - url, format, structure\n" \
         " - url, format, structure, compression_method\n" \
+        " - url, access_key_id, secret_access_key, format\n"
         " - url, access_key_id, secret_access_key, format, structure\n" \
         " - url, access_key_id, secret_access_key, format, structure, compression_method",
         getName());
@@ -62,7 +64,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     }
     else
     {
-        if (args.size() < 3 || args.size() > 6)
+        if (args.empty() || args.size() > 6)
             throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & arg : args)
@@ -146,6 +148,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     S3::URI s3_uri (uri);
     UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+    UInt64 upload_part_size_multiply_factor = context->getSettingsRef().s3_upload_part_size_multiply_factor;
+    UInt64 upload_part_size_multiply_parts_count_threshold = context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold;
     UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
     UInt64 max_connections = context->getSettingsRef().s3_max_connections;
 
@@ -161,6 +165,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         s3_configuration->format,
         max_single_read_retries,
         min_upload_part_size,
+        upload_part_size_multiply_factor,
+        upload_part_size_multiply_parts_count_threshold,
         max_single_part_upload_size,
         max_connections,
         getActualTableStructure(context),
