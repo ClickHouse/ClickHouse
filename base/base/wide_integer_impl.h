@@ -288,7 +288,7 @@ struct integer<Bits, Signed>::_impl
         }
         else
         {
-            if (!boost::multiprecision::isfinite(t))
+            if (!boost::isfinite(t))
             {
                 self = 0;
                 return;
