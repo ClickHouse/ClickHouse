@@ -119,6 +119,9 @@ bool canBecomeNullable(const DataTypePtr & type)
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
+    if (type->isNullable())
+        return type;
+
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
     {
         const auto & dict_type = low_cardinality_type->getDictionaryType();
@@ -425,10 +428,13 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
         DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
-            throw Exception("Type mismatch of columns to JOIN by: "
-                            + key_names_left[i] + " " + left_type->getName() + " at left, "
-                            + key_names_right[i] + " " + right_type->getName() + " at right",
-                            ErrorCodes::TYPE_MISMATCH);
+        {
+            throw DB::Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch of columns to JOIN by: {} {} at left, {} {} at right",
+                key_names_left[i], left_type->getName(),
+                key_names_right[i], right_type->getName());
+        }
     }
 }
 

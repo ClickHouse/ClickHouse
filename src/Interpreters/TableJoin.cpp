@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -25,6 +26,8 @@
 
 #include <base/logger_useful.h>
 #include <algorithm>
+#include <string>
+#include <vector>
 
 
 namespace DB
@@ -471,6 +474,31 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
     auto left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, left_key_column_rename, forceNullableLeft());
     auto right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, right_key_column_rename, forceNullableRight());
 
+    {
+        auto log_actions = [](const String & side, const ActionsDAGPtr & dag)
+        {
+            if (dag)
+            {
+                std::vector<std::string> input_cols;
+                for (const auto & col : dag->getRequiredColumns())
+                    input_cols.push_back(col.name + ": " + col.type->getName());
+
+                std::vector<std::string> output_cols;
+                for (const auto & col : dag->getResultColumns())
+                    output_cols.push_back(col.name + ": " + col.type->getName());
+
+                LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: [{}] -> [{}]",
+                    side, fmt::join(input_cols, ", "), fmt::join(output_cols, ", "));
+            }
+            else
+            {
+                LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: empty", side);
+            }
+        };
+        log_actions("Left", left_converting_actions);
+        log_actions("Right", right_converting_actions);
+    }
+
     forAllKeys(clauses, [&](auto & left_key, auto & right_key)
     {
         renameIfNeeded(left_key, left_key_column_rename);
@@ -482,10 +510,18 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
+    if (strictness() == ASTTableJoin::Strictness::Asof)
+    {
+        if (clauses.size() != 1)
+            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        if (right.back().type->isNullable())
+            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     if (!left_type_map.empty() || !right_type_map.empty())
-        return true;
+        return;
 
     NameToTypeMap left_types;
     for (const auto & col : left)
@@ -544,8 +580,6 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
             formatTypeMap(left_type_map, left_types),
             formatTypeMap(right_type_map, right_types));
     }
-
-    return !left_type_map.empty();
 }
 
 
@@ -574,7 +608,9 @@ static ActionsDAGPtr makeConvertingDag(
 }
 
 ActionsDAGPtr TableJoin::applyKeyConvertToTable(
-    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+    const ColumnsWithTypeAndName & cols_src,
+    const NameToTypeMap & type_mapping,
+    NameToNameMap & key_column_rename,
     bool make_nullable) const
 {
     auto dag1 = makeConvertingDag(
@@ -603,9 +639,7 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
         {
             if (added_cols.contains(col.name) && !hasUsing())
                 return false;
-            if (!col.type->canBeInsideNullable())
-                return false;
-            col.type = makeNullable(col.type);
+            col.type = JoinCommon::convertTypeToNullable(col.type);
             return true;
         },
         nullptr, false);

@@ -306,9 +306,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
             if (key_columns.size() <= 1)
                 throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
 
-            if (right_table_keys.getByName(key_names_right.back()).type->isNullable())
-                throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-
             size_t asof_size;
             asof_type = AsofRowRefs::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
