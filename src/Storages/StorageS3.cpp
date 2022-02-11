@@ -302,40 +302,42 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
-    if (!reader)
-        return {};
-
-    Chunk chunk;
-    if (reader->pull(chunk))
+    while (true)
     {
-        UInt64 num_rows = chunk.getNumRows();
+        if (!reader || isCancelled())
+            break;
 
-        if (with_path_column)
-            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                .createColumnConst(num_rows, file_path)
-                                ->convertToFullColumnIfConst());
-        if (with_file_column)
+        Chunk chunk;
+        if (reader->pull(chunk))
         {
-            size_t last_slash_pos = file_path.find_last_of('/');
-            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
-                                ->convertToFullColumnIfConst());
+            UInt64 num_rows = chunk.getNumRows();
+
+            if (with_path_column)
+                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                    .createColumnConst(num_rows, file_path)
+                                    ->convertToFullColumnIfConst());
+            if (with_file_column)
+            {
+                size_t last_slash_pos = file_path.find_last_of('/');
+                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                    .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
+                                    ->convertToFullColumnIfConst());
+            }
+
+            return chunk;
         }
 
-        return chunk;
+        {
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
+
+            if (!initialize())
+                break;
+        }
     }
-
-    {
-        std::lock_guard lock(reader_mutex);
-        reader.reset();
-        pipeline.reset();
-        read_buf.reset();
-
-        if (!initialize())
-            return {};
-    }
-
-    return generate();
+    return {};
 }
 
 static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
