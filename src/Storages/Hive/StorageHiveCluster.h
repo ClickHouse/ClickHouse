@@ -55,6 +55,6 @@ private:
 
     Poco::Logger * logger = &Poco::Logger::get("StorageHiveCluster");
 };
-} // namespace DB
+}
 
 #endif

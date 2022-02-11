@@ -45,5 +45,5 @@ private:
 
 void registerHiveTaskPolices();
 
-} // namespace DB
+}
 #endif

@@ -140,5 +140,5 @@ private:
 
     HiveFiles collectPartitionHiveFiles(const String & format_name_, const HiveTaskPartitionInfo & partition_info_);
 };
-} // namespace DB
+}
 #endif

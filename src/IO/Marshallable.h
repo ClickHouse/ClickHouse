@@ -485,4 +485,4 @@ void stringToPackage(const String & input, M & m)
 }
 
 
-} // namespace DB
+}

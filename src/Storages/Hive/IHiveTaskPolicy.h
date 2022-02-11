@@ -84,6 +84,6 @@ public:
 };
 using HiveTaskFilesCollectorBuilder = std::function<std::shared_ptr<IHiveTaskFilesCollector>()>;
 
-} // namespace DB
+}
 
 #endif

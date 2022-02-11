@@ -208,7 +208,8 @@ public:
                 builder.init(Pipe(input_format));
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header) {
+                    builder.addSimpleTransform([&](const Block & header)
+                    {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                     });
                 }
@@ -482,7 +483,8 @@ void registerStorageHive(StorageFactory & factory)
 {
     factory.registerStorage(
         "Hive",
-        [](const StorageFactory::Arguments & args) {
+        [](const StorageFactory::Arguments & args)
+        {
             bool have_settings = args.storage_def->settings;
             std::unique_ptr<HiveSettings> hive_settings = std::make_unique<HiveSettings>();
             if (have_settings)

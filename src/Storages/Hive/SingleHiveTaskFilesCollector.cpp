@@ -1,18 +1,18 @@
 #include <Storages/Hive/SingleHiveTaskFilesCollector.h>
 #if USE_HIVE
-#include <mutex>
-#include <Core/Field.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Parsers/ASTFunction.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/Pipe.h>
-#include <base/logger_useful.h>
-#include <Common/ErrorCodes.h>
-#include <Common/ThreadPool.h>
+#    include <mutex>
+#    include <Core/Field.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <Interpreters/ExpressionAnalyzer.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/Formats/IInputFormat.h>
+#    include <QueryPipeline/Pipe.h>
+#    include <base/logger_useful.h>
+#    include <Common/ErrorCodes.h>
+#    include <Common/ThreadPool.h>
 namespace DB
 {
 
@@ -77,7 +77,8 @@ HiveFiles SingleHiveTaskFilesCollector::collectHiveFiles()
     {
         for (const auto & partition : partitions)
         {
-            thread_pool.scheduleOrThrowOnError([&]() {
+            thread_pool.scheduleOrThrowOnError([&]()
+            {
                 auto hive_files_in_partition
                     = collectHiveFilesFromPartition(partition, *args.query_info, hive_table_metadata, hdfs_fs, args.context);
                 if (!hive_files_in_partition.empty())
@@ -239,5 +240,5 @@ HiveFilePtr SingleHiveTaskFilesCollector::createHiveFileIfNeeded(
     }
     return hive_file;
 }
-} // namespace DB
+}
 #endif

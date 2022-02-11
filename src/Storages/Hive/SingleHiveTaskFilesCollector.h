@@ -42,5 +42,5 @@ private:
         const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_, SelectQueryInfo & query_info_, ContextPtr context_);
 };
 
-} // namespace DB
+}
 #endif

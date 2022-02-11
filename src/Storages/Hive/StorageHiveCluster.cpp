@@ -181,7 +181,8 @@ void registerStorageHiveCluster(StorageFactory & factory_)
 {
     factory_.registerStorage(
         "HiveCluster",
-        [](const StorageFactory::Arguments & args) {
+        [](const StorageFactory::Arguments & args)
+        {
             bool have_settings = args.storage_def->settings;
             std::unique_ptr<HiveSettings> hive_settings = std::make_unique<HiveSettings>();
             if (have_settings)
@@ -223,6 +224,6 @@ void registerStorageHiveCluster(StorageFactory & factory_)
             .supports_sort_order = true,
         });
 }
-} // namespace  DB
+}
 
 #endif

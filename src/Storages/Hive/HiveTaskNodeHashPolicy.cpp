@@ -39,7 +39,8 @@ std::shared_ptr<TaskIterator> HiveTaskNodeHashIterateCallback::buildCallback(con
     package.policy_name = HIVE_TASK_NODE_HASH_POLICY;
     packageToString(iter->second, package.data);
 
-    auto callback = [package]() {
+    auto callback = [package]()
+    {
         String data;
         packageToString(package, data);
         return data;
@@ -108,7 +109,8 @@ std::vector<HiveTaskFileInfo> HiveTaskNodeHashIterateCallback::collectHiveFiles(
     {
         for (const auto & partition : partitions)
         {
-            thread_pool.scheduleOrThrowOnError([&]() {
+            thread_pool.scheduleOrThrowOnError([&]()
+            {
                 auto hive_files_in_partition
                     = collectHiveFilesFromPartition(partition, *args.query_info, hive_table_metadata, hdfs_fs, args.context);
                 if (!hive_files_in_partition.empty())
@@ -286,7 +288,8 @@ Cluster::Addresses HiveTaskNodeHashIterateCallback::getSortedShardAddresses() co
             addresses.emplace_back(node);
         }
     }
-    std::sort(std::begin(addresses), std::end(addresses), [](const Cluster::Address & a, const Cluster::Address & b) {
+    std::sort(std::begin(addresses), std::end(addresses), [](const Cluster::Address & a, const Cluster::Address & b)
+    {
         return a.host_name > b.host_name && a.port > b.port;
     });
     return addresses;
@@ -431,5 +434,5 @@ void registerHiveTaskNodeHashPolicy(HiveTaskPolicyFactory & factory_)
     factory_.registerBuilders(HIVE_TASK_NODE_HASH_POLICY, iterate_callback_builder, files_collector_builder);
 }
 
-} // namespace DB
+}
 #endif

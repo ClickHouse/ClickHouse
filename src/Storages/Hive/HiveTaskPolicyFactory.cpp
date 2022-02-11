@@ -30,5 +30,5 @@ void registerHiveTaskPolices()
     registerHiveTaskNodeHashPolicy(HiveTaskPolicyFactory::instance());
 }
 
-} // namespace DB
+}
 #endif
