@@ -1292,8 +1292,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 key_expr_type_not_null = key_expr_type;
 
             bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
-                || ((isInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                    && (isInteger(const_type) || isDateTime(const_type))); /// Integers and DateTime are accurately compared without cast.
+                || ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
+                    && (isNativeInteger(const_type) || isDateTime(const_type))); /// Native integers and DateTime are accurately compared without cast.
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
