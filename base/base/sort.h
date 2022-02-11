@@ -48,8 +48,7 @@ using ComparatorWrapper = DebugLessComparator<Comparator>;
 template <typename RandomIt>
 void shuffle(RandomIt first, RandomIt last)
 {
-    static pcg64 rng(getThreadId());
-
+    static thread_local pcg64 rng(getThreadId());
     std::shuffle(first, last, rng);
 }
 
