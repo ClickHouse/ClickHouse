@@ -69,7 +69,7 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
     auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
