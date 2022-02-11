@@ -20,10 +20,10 @@ namespace
     }
 
 
-    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsKind(RowPolicyKind kind, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
-                      << (is_restrictive ? "restrictive" : "permissive");
+                      << RowPolicyKindInfo::get(kind).name;
     }
 
 
@@ -156,8 +156,8 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, settings);
 
-    if (is_restrictive)
-        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
+    if (kind)
+        formatAsKind(*kind, settings);
 
     formatForClauses(filters, alter, settings);
 

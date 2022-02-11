@@ -190,8 +190,8 @@ namespace
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
-        if (policy.isRestrictive())
-            query->is_restrictive = policy.isRestrictive();
+        if (policy.getKind() != RowPolicyKind::PERMISSIVE)
+            query->kind = policy.getKind();
 
         for (auto type : collections::range(RowPolicyFilterType::MAX))
         {

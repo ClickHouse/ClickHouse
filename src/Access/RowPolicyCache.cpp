@@ -20,9 +20,9 @@ namespace
     class FiltersMixer
     {
     public:
-        void add(const ASTPtr & filter, bool is_restrictive)
+        void add(const ASTPtr & filter, RowPolicyKind kind)
         {
-            if (is_restrictive)
+            if (kind == RowPolicyKind::RESTRICTIVE)
                 restrictions.push_back(filter);
             else
                 permissions.push_back(filter);
@@ -224,7 +224,7 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
                 auto & mixer = mixers[key];
                 mixer.database_and_table_name = info.database_and_table_name;
                 if (match)
-                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
+                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.getKind());
             }
         }
     }

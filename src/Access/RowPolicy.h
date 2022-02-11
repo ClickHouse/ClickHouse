@@ -29,17 +29,9 @@ struct RowPolicy : public IAccessEntity
     /// for user or available for modification.
     std::array<String, static_cast<size_t>(RowPolicyFilterType::MAX)> filters;
 
-    /// Sets that the policy is permissive.
-    /// A row is only accessible if at least one of the permissive policies passes,
-    /// in addition to all the restrictive policies.
-    void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
-    bool isPermissive() const { return !isRestrictive(); }
-
-    /// Sets that the policy is restrictive.
-    /// A row is only accessible if at least one of the permissive policies passes,
-    /// in addition to all the restrictive policies.
-    void setRestrictive(bool restrictive_ = true) { restrictive = restrictive_; }
-    bool isRestrictive() const { return restrictive; }
+    /// Sets the kind of the policy, it affects how row policies are applied.
+    void setKind(RowPolicyKind kind_) { kind = kind_; }
+    RowPolicyKind getKind() const { return kind; }
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
@@ -53,7 +45,7 @@ private:
     void setName(const String &) override;
 
     RowPolicyName full_name;
-    bool restrictive = false;
+    RowPolicyKind kind = RowPolicyKind::PERMISSIVE;
 };
 
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
