@@ -22,19 +22,32 @@ namespace
     public:
         void add(const ASTPtr & filter, RowPolicyKind kind)
         {
-            if (kind == RowPolicyKind::RESTRICTIVE)
-                restrictions.push_back(filter);
+            if (kind == RowPolicyKind::PERMISSIVE)
+            {
+                setPermissiveFiltersExist();
+                permissive_filters.push_back(filter);
+            }
             else
-                permissions.push_back(filter);
+            {
+                restrictive_filters.push_back(filter);
+            }
+        }
+
+        void setPermissiveFiltersExist()
+        {
+            permissive_filters_exist = true;
         }
 
         ASTPtr getResult() &&
         {
-            /// Process permissive filters.
-            restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
+            if (permissive_filters_exist)
+            {
+                /// Process permissive filters.
+                restrictive_filters.push_back(makeASTForLogicalOr(std::move(permissive_filters)));
+            }
 
             /// Process restrictive filters.
-            auto result = makeASTForLogicalAnd(std::move(restrictions));
+            auto result = makeASTForLogicalAnd(std::move(restrictive_filters));
 
             bool value;
             if (tryGetLiteralBool(result.get(), value) && value)
@@ -44,8 +57,9 @@ namespace
         }
 
     private:
-        ASTs permissions;
-        ASTs restrictions;
+        ASTs permissive_filters;
+        bool permissive_filters_exist = false;
+        ASTs restrictive_filters;
     };
 }
 
@@ -223,6 +237,11 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
                 key.filter_type = filter_type;
                 auto & mixer = mixers[key];
                 mixer.database_and_table_name = info.database_and_table_name;
+                if (policy.getKind() == RowPolicyKind::PERMISSIVE)
+                {
+                    /// We call setPermissiveFiltersExist() even if the current user doesn't match to the current policy's TO clause.
+                    mixer.mixer.setPermissiveFiltersExist();
+                }
                 if (match)
                     mixer.mixer.add(info.parsed_filters[filter_type_i], policy.getKind());
             }
