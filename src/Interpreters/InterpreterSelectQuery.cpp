@@ -64,8 +64,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
 #include <Functions/IFunction.h>
@@ -315,6 +316,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (!has_input && !storage)
     {
         storage = joined_tables.getLeftTableStorage();
+        // Mark uses_view_source if the returned storage is the same as the one saved in viewSource
+        uses_view_source |= storage && storage == context->getViewSource();
         got_storage_from_query = true;
     }
 
@@ -352,6 +355,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
+        if (auto view_source = context->getViewSource())
+        {
+            // If we are using a virtual block view to replace a table and that table is used
+            // inside the JOIN then we need to update uses_view_source accordingly so we avoid propagating scalars that we can't cache
+            const auto & storage_values = static_cast<const StorageValues &>(*view_source);
+            auto tmp_table_id = storage_values.getStorageID();
+            for (const auto & t : joined_tables.tablesWithColumns())
+                uses_view_source |= (t.table.database == tmp_table_id.database_name && t.table.table == tmp_table_id.table_name);
+        }
 
         if (storage && joined_tables.isLeftTableSubquery())
         {
@@ -367,7 +379,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
         if (interpreter_subquery)
+        {
             source_header = interpreter_subquery->getSampleBlock();
+            uses_view_source |= interpreter_subquery->usesViewSource();
+        }
     }
 
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
@@ -405,9 +420,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setFinal();
 
         /// Save scalar sub queries's results in the query context
-        /// But discard them if the Storage has been modified
-        /// In an ideal situation we would only discard the scalars affected by the storage change
-        if (!options.only_analyze && context->hasQueryContext() && !context->getViewSource())
+        /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 
@@ -495,6 +509,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
+            uses_view_source |= interpreter_subquery->usesViewSource();
         }
 
         required_columns = syntax_analyzer_result->requiredSourceColumns();
@@ -1196,8 +1211,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             {
                 executeAggregation(
                     query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                /// We need to reset input order info, so that executeOrder can't use  it
+                /// We need to reset input order info, so that executeOrder can't use it
                 query_info.input_order_info.reset();
+                if (query_info.projection)
+                    query_info.projection->input_order_info.reset();
             }
 
             // Now we must execute:
@@ -1966,7 +1983,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         query_info.projection->group_by_elements_actions,
-                        getSortDescriptionFromGroupBy(query),
+                        query_info.projection->group_by_elements_order_descr,
                         query_info.syntax_analyzer_result);
                 }
                 else

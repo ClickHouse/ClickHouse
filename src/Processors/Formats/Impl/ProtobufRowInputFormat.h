@@ -26,7 +26,7 @@ class ProtobufSerializer;
   * INSERT INTO table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowInputFormat : public IRowInputFormat
+class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
     ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
