@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <boost/lockfree/spsc_queue.hpp>
 #include <libnuraft/nuraft.hxx>
 #include <city.h>
 #include <optional>
@@ -142,6 +144,9 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description);
 
+    /// Clean useless log files in a background thread
+    void cleanLogThread();
+
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
@@ -160,6 +165,11 @@ private:
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
+    /// For compaction, queue of delete not used logs
+    /// 128 is enough, even if log is not removed, it's not a problem
+    boost::lockfree::spsc_queue<std::string> del_log_q{128};
+    ThreadFromGlobalPool clean_log_thread;
+    std::atomic_bool shutdown_clean_thread{false};
 };
 
 }
