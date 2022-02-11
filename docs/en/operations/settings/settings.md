@@ -2304,7 +2304,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
@@ -2315,7 +2315,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
