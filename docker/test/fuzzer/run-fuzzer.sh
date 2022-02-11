@@ -187,14 +187,11 @@ info signals
 continue
 gcore
 backtrace full
-info locals
 info registers
 disassemble /s
 up
-info locals
 disassemble /s
 up
-info locals
 disassemble /s
 p \"done\"
 detach
