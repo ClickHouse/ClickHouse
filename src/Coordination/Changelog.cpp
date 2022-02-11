@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <base/logger_useful.h>
+#include <libnuraft/log_entry.hxx>
 
 
 namespace DB
@@ -298,6 +299,8 @@ Changelog::Changelog(
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
+
+    clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -586,7 +589,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            std::filesystem::remove(itr->second.path);
+            del_log_q.push(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
         else /// Files are ordered, so all subsequent should exist
@@ -710,10 +713,30 @@ Changelog::~Changelog()
     try
     {
         flush();
+        shutdown_clean_thread.store(true);
+        clean_log_thread.join();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void Changelog::cleanLogThread()
+{
+    while (!shutdown_clean_thread.load())
+    {
+        std::string path;
+        if (del_log_q.pop(path))
+        {
+            std::error_code ec;
+            if (std::filesystem::remove(path, ec))
+                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
+            else
+                LOG_WARNING(log, "Failed to remove changelog {} after compaction: {}", path, ec.message());
+        }
+        else
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
 }
 
