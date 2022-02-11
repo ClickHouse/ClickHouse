@@ -221,7 +221,10 @@ class DictionaryStructure(object):
             val = field.default_value_for_get
             if isinstance(val, str):
                 val = "'" + val + "'"
-            default_value_for_get = ', to{type}({value})'.format(type=field.field_type, value=val)
+            if field.field_type in ('DateTime',):
+                default_value_for_get = ', to{type}({value}, \'UTC\')'.format(type=field.field_type, value=val)
+            else:
+                default_value_for_get = ', to{type}({value})'.format(type=field.field_type, value=val)
         else:
             or_default_expr = ''
             default_value_for_get = ''
@@ -242,7 +245,7 @@ class DictionaryStructure(object):
         else:
             what = "Get"
 
-        return "dict{what}{field_type}{or_default}('{dict_name}'{field_name}{key_expr}{date_expr}{def_for_get})".format(
+        expr = "dict{what}{field_type}{or_default}('{dict_name}'{field_name}{key_expr}{date_expr}{def_for_get})".format(
             what=what,
             field_type=field_type,
             dict_name=dict_name,
@@ -252,6 +255,11 @@ class DictionaryStructure(object):
             or_default=or_default_expr,
             def_for_get=default_value_for_get,
         )
+
+        if field.field_type in ('DateTime', ) and "Get" in what:
+            expr = "toTimeZone({}, 'UTC')".format(expr)
+
+        return expr
 
     def get_get_expressions(self, dict_name, field, row):
         return [
