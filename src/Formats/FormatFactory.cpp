@@ -129,6 +129,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
