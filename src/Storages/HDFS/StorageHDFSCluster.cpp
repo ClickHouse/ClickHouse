@@ -69,7 +69,7 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
     auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
@@ -138,9 +138,8 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 NamesAndTypesList StorageHDFSCluster::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 

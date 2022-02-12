@@ -13,8 +13,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -159,7 +159,7 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
             entities.push_back(entity);
     }
 
-    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
+    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByTypeAndName{});
     return entities;
 }
 
