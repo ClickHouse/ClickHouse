@@ -1,5 +1,8 @@
 #!/usr/bin/expect -f
 
+# Temporarily export expect logs into /test_output -- should get along with other artefacts into ci
+exp_internal -f /test_output/clickhouse_local_merge_tree_debug.log 0;
+
 log_user 0
 set timeout 20
 match_max 100000
