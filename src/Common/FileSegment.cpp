@@ -376,4 +376,19 @@ String FileSegment::stateToString(FileSegment::State state)
     }
 }
 
+String FileSegmentsHolder::toString()
+{
+    std::lock_guard lock(mutex);
+
+    String ranges;
+    for (const auto & file_segment : file_segments)
+    {
+        if (!ranges.empty())
+            ranges += ", ";
+        ranges += file_segment->range().toString();
+    }
+    return ranges;
+}
+
+
 }

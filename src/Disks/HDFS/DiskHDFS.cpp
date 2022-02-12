@@ -79,7 +79,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(path, config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(path, config, remote_fs_root_path, metadata, read_settings);
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }

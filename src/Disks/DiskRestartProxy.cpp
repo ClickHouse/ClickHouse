@@ -26,6 +26,8 @@ public:
 
     void setReadUntilEnd() override { impl->setReadUntilEnd(); }
 
+    String getInfoForLog() override { return impl->getInfoForLog(); }
+
 private:
     ReadLock lock;
 };

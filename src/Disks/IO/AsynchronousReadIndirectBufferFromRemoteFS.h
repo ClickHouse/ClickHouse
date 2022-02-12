@@ -48,6 +48,8 @@ public:
 
     void setReadUntilEnd() override;
 
+    String getInfoForLog() override;
+
 private:
     bool nextImpl() override;
 
