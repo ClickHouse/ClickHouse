@@ -43,12 +43,11 @@ struct AddNanosecondsImpl
     static constexpr auto name = "addNanoseconds";
 
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-//        auto dt = DataTypeDateTime64(scale);
-//        Int64 multiplier = std::pow(10, 9 - scale);
-        auto div_result = std::div(t.fractional + delta, static_cast<Int64>(1000000000));
-        return {t.whole + div_result.quot, div_result.rem};
+        Int64 multiplier = std::pow(10, 9 - scale);
+        auto div_result = std::div(t.fractional * multiplier + delta, static_cast<Int64>(10e9));
+        return {t.whole / multiplier + div_result.quot, div_result.rem};
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = 0)
