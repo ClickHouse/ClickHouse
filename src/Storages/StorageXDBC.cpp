@@ -27,19 +27,19 @@ StorageXDBC::StorageXDBC(
     const StorageID & table_id_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
-    const ColumnsDescription & columns_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     const String & comment,
     ContextPtr context_,
     const BridgeHelperPtr bridge_helper_)
-    /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(
         "",
         context_,
         table_id_,
         IXDBCBridgeHelper::DEFAULT_FORMAT,
         getFormatSettings(context_),
-        columns_,
-        ConstraintsDescription{},
+        std::move(columns_),
+        std::move(constraints_),
         comment,
         "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
@@ -174,6 +174,7 @@ namespace
                 engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,
+                args.constraints,
                 args.comment,
                 args.getContext(),
                 bridge_helper);
