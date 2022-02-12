@@ -19,6 +19,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/config.h>
+#include <Common/config_version.h>
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
@@ -290,6 +291,18 @@ namespace detail
                                 "must be http_max_tries >= 1 (current is {}) and "
                                 "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
                                 settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
+
+            // Configure User-Agent if it not already set.
+            const std::string user_agent = "User-Agent";
+            auto iter = std::find_if(http_header_entries.begin(), http_header_entries.end(), [&user_agent](const HTTPHeaderEntry & entry)
+            {
+                return std::get<0>(entry) == user_agent;
+            });
+
+            if (iter == http_header_entries.end())
+            {
+                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
+            }
 
             if (!delay_initialization)
             {
