@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
     if len(args.suffixes) < 2:
-        raise parser.error("more than two --suffix should be given")
+        parser.error("more than two --suffix should be given")
 
     return args
 
@@ -81,6 +81,7 @@ def strip_suffix(suffix: str, images: Images) -> Images:
 
 
 def check_sources(to_merge: Dict[str, Images]) -> Images:
+    """get a dict {arch1: Images, arch2: Images}"""
     result = {}  # type: Images
     first_suffix = ""
     for suffix, images in to_merge.items():
