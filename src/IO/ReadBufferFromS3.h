@@ -60,6 +60,8 @@ public:
 
     Range getRemainingReadRange() const override { return Range{ .left = static_cast<size_t>(offset), .right = read_until_position }; }
 
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 

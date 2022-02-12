@@ -27,6 +27,10 @@ public:
 
     off_t getPosition() override;
 
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
+
+    String getInfoForLog() override;
+
 private:
     void initialize(size_t offset, size_t size);
 
@@ -45,10 +49,10 @@ private:
 
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
-    bool checkForPartialDownload();
 
     Poco::Logger * log;
     FileCache::Key key;
+    String path;
     FileCachePtr cache;
     ReadSettings settings;
 
@@ -84,6 +88,8 @@ private:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
     }
+
+    size_t first_offset = 0;
 };
 
 }

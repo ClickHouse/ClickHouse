@@ -59,6 +59,12 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 }
 
 
+String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
+{
+    return impl->getInfoForLog();
+}
+
+
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
     /**

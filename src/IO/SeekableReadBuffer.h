@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 class SeekableReadBuffer : public ReadBuffer
 {
 public:
@@ -32,6 +38,10 @@ public:
      * @return Offset from the begin of the underlying buffer / file corresponds to the buffer current position.
      */
     virtual off_t getPosition() = 0;
+
+    virtual String getInfoForLog() { return ""; }
+
+    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
