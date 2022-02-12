@@ -10,7 +10,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     const Poco::URI & uri,
     const std::string & method,
     const std::string & content_type,
-    const CompressionMethod compression_method,
+    const std::string & content_encoding,
     const ConnectionTimeouts & timeouts,
     size_t buffer_size_)
     : WriteBufferFromOStream(buffer_size_)
@@ -25,9 +25,8 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
         request.set("Content-Type", content_type);
     }
 
-    std::string encoding = toContentEncodingName(compression_method);
-    if (!encoding.empty())
-        request.set("Content-Encoding", encoding);
+    if (!content_encoding.empty())
+        request.set("Content-Encoding", content_encoding);
 
     LOG_TRACE((&Poco::Logger::get("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
