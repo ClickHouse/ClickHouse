@@ -1317,7 +1317,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert = global_context->getSettings().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
@@ -1929,7 +1929,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Output of help message.
     if (options.count("help")
-        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
+        || (options.count("host") && options["host"].as<std::vector<HostPort>>()[0].host == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
         exit(0);

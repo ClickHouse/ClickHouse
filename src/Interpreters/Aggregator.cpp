@@ -855,12 +855,18 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
 
 void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
-    AggregatedDataWithoutKey & res,
+    AggregatedDataVariants & data_variants,
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena)
+    Arena * arena) const
 {
+    /// `data_variants` will destroy the states of aggregate functions in the destructor
+    data_variants.aggregator = this;
+    data_variants.init(AggregatedDataVariants::Type::without_key);
+
+    AggregatedDataWithoutKey & res = data_variants.without_key;
+
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
@@ -1623,15 +1629,32 @@ Block Aggregator::prepareBlockAndFill(
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(
-    const AggregatedDataVariants & data_variants,
+    AggregatedDataVariants & data_variants,
     MutableColumns & aggregate_columns) const
 {
-    const auto & data = data_variants.without_key;
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    auto & data = data_variants.without_key;
+
+    size_t i = 0;
+    try
     {
-        auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
-        column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
+        for (i = 0; i < params.aggregates_size; ++i)
+        {
+            auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+            column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
+        }
     }
+    catch (...)
+    {
+        /// Rollback
+        for (size_t rollback_i = 0; rollback_i < i; ++rollback_i)
+        {
+            auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[rollback_i]);
+            column_aggregate_func.getData().pop_back();
+        }
+        throw;
+    }
+
+    data = nullptr;
 }
 
 void Aggregator::addArenasToAggregateColumns(
