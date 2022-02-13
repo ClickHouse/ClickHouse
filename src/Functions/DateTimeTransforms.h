@@ -323,7 +323,12 @@ struct ToStartOfMillisecondImpl
         // for DateTime64 value of -123.456789:
         // -123456789 - (1000 + (-789)) = -123457000
 
-        if (scale_multiplier <= 1000){
+        if (scale_multiplier == 1000)
+        {
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000)
+        {
             return datetime64 * (1000 / scale_multiplier);
         }
         else
@@ -361,7 +366,12 @@ struct ToStartOfMicrosecondImpl
     {
         // @see ToStartOfMillisecondImpl
 
-        if (scale_multiplier <= 1000000){
+        if (scale_multiplier == 1000000)
+        {
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000000)
+        {
             return datetime64 * (1000000 / scale_multiplier);
         }
         else
@@ -398,10 +408,12 @@ struct ToStartOfNanosecondImpl
     static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
     {
         // @see ToStartOfMillisecondImpl
-        if (scale_multiplier == 1000000000){
+        if (scale_multiplier == 1000000000)
+        {
             return datetime64;
         }
-        else if (scale_multiplier <= 1000000000){
+        else if (scale_multiplier <= 1000000000)
+        {
             return datetime64 * (1000000000 / scale_multiplier);
         }
         else
