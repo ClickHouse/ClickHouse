@@ -53,6 +53,7 @@ void registerFunctionH3CellAreaM2(FunctionFactory &);
 void registerFunctionH3CellAreaRads2(FunctionFactory &);
 void registerFunctionH3NumHexagons(FunctionFactory &);
 void registerFunctionH3PointDistM(FunctionFactory &);
+void registerFunctionH3PointDistKm(FunctionFactory &);
 
 #endif
 
@@ -120,6 +121,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3CellAreaRads2(factory);
     registerFunctionH3NumHexagons(factory);
     registerFunctionH3PointDistM(factory);
+    registerFunctionH3PointDistKm(factory);
 #endif
 
 #if USE_S2_GEOMETRY
