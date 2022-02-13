@@ -7,8 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -132,7 +132,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
             ast->names.emplace_back(::DB::toString(id));
-        boost::range::sort(ast->names);
+        ::sort(ast->names.begin(), ast->names.end());
     }
 
     if (!except_ids.empty())
@@ -140,7 +140,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
             ast->except_names.emplace_back(::DB::toString(except_id));
-        boost::range::sort(ast->except_names);
+        ::sort(ast->except_names.begin(), ast->except_names.end());
     }
 
     return ast;
@@ -161,7 +161,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
             if (name)
                 ast->names.emplace_back(std::move(*name));
         }
-        boost::range::sort(ast->names);
+        ::sort(ast->names.begin(), ast->names.end());
     }
 
     if (!except_ids.empty())
@@ -173,7 +173,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
             if (except_name)
                 ast->except_names.emplace_back(std::move(*except_name));
         }
-        boost::range::sort(ast->except_names);
+        ::sort(ast->except_names.begin(), ast->except_names.end());
     }
 
     return ast;

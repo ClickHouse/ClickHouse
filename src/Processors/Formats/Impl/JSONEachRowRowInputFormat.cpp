@@ -356,6 +356,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     });
 
     factory.registerFileExtension("ndjson", "JSONEachRow");
+    factory.registerFileExtension("jsonl", "JSONEachRow");
 
     factory.registerInputFormat("JSONStringsEachRow", [](
         ReadBuffer & buf,

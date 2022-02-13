@@ -150,6 +150,7 @@
     },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
+        "only_amd64": true,
         "dependent": [
             "docker/docs/check",
             "docker/docs/release"

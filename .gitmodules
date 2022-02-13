@@ -263,3 +263,6 @@
 	path = contrib/BLAKE3
 	url = https://github.com/BoloniniD/BLAKE3.git
 	branch = RustFFI-compat
+[submodule "contrib/minizip-ng"]
+	path = contrib/minizip-ng
+	url = https://github.com/zlib-ng/minizip-ng
