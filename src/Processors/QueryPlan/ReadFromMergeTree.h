@@ -111,7 +111,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const StorageID getStorageID() const { return data.getStorageID(); }
+    StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
@@ -132,7 +132,6 @@ public:
 private:
     const MergeTreeReaderSettings reader_settings;
 
-    MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;
     Names virt_column_names;
 
@@ -167,22 +166,22 @@ private:
     ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache, bool has_limit_below_one_block);
 
     Pipe spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts_with_ranges,
+        RangesInDataParts parts_with_ranges,
         const Names & column_names);
 
     Pipe spreadMarkRangesAmongStreamsWithOrder(
-        RangesInDataParts && parts_with_ranges,
+        RangesInDataParts parts_with_ranges,
         const Names & column_names,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
+        RangesInDataParts parts,
         const Names & column_names,
         ActionsDAGPtr & out_projection);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    void checkAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     std::optional<MergeTreeReadTaskCallback> read_task_callback;

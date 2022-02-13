@@ -85,7 +85,6 @@ ReadFromMergeTree::ReadFromMergeTree(
         data_.getPartitionValueType(),
         virt_column_names_)})
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
-    , prepared_parts(std::move(parts_))
     , real_column_names(std::move(real_column_names_))
     , virt_column_names(std::move(virt_column_names_))
     , data(data_)
@@ -102,7 +101,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , sample_factor_column_queried(sample_factor_column_queried_)
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(log_)
-    , analyzed_result_ptr(analyzed_result_ptr_)
+    , analyzed_result_ptr(std::move(analyzed_result_ptr_))
 {
     if (sample_factor_column_queried)
     {
@@ -110,6 +109,11 @@ ReadFromMergeTree::ReadFromMergeTree(
         /// Other virtual columns are added by MergeTreeBaseSelectProcessor.
         auto type = std::make_shared<DataTypeFloat64>();
         output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
+    }
+
+    if (!analyzed_result_ptr)
+    {
+        analyzed_result_ptr = selectRangesToRead(std::move(parts_)); 
     }
 
     if (enable_parallel_reading)
@@ -254,10 +258,10 @@ Pipe ReadFromMergeTree::read(
     size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache)
 {
     if (read_type == ReadType::Default && max_streams > 1)
-        return readFromPool(parts_with_range, required_columns, max_streams,
+        return readFromPool(std::move(parts_with_range), required_columns, max_streams,
                             min_marks_for_concurrent_read, use_uncompressed_cache);
 
-    auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache, 0);
+    auto pipe = readInOrder(std::move(parts_with_range), required_columns, read_type, use_uncompressed_cache, 0);
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.
@@ -338,7 +342,7 @@ struct PartRangesReadInfo
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
-    RangesInDataParts && parts_with_ranges,
+    RangesInDataParts parts_with_ranges,
     const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
@@ -370,7 +374,7 @@ static ActionsDAGPtr createProjection(const Block & header)
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
-    RangesInDataParts && parts_with_ranges,
+    RangesInDataParts parts_with_ranges,
     const Names & column_names,
     ActionsDAGPtr & out_projection,
     const InputOrderInfoPtr & input_order_info)
@@ -446,7 +450,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         ///  and assign a stream to read from it.
         while (need_marks > 0 && !parts_with_ranges.empty())
         {
-            RangesInDataPart part = parts_with_ranges.back();
+            RangesInDataPart part = std::move(parts_with_ranges.back());
             parts_with_ranges.pop_back();
             size_t & marks_in_part = info.sum_marks_in_parts.back();
 
@@ -502,7 +506,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
             new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
-
         auto read_type = input_order_info->direction == 1
                        ? ReadFromMergeTree::ReadType::InOrder
                        : ReadFromMergeTree::ReadType::InReverseOrder;
@@ -661,7 +664,7 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges,
+    RangesInDataParts parts_with_ranges,
     const Names & column_names,
     ActionsDAGPtr & out_projection)
 {
@@ -982,18 +985,16 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
+void ReadFromMergeTree::checkAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(prepared_parts);
-    if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
-        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
-
-    return std::get<ReadFromMergeTree::AnalysisResult>(result_ptr->result);
+    if (std::holds_alternative<std::exception_ptr>(analyzed_result_ptr->result))
+        std::rethrow_exception(std::move(std::get<std::exception_ptr>(analyzed_result_ptr->result)));
 }
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto result = getAnalysisResult();
+    checkAnalysisResult();
+    auto result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -1194,7 +1195,8 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
-    auto result = getAnalysisResult();
+    checkAnalysisResult();
+    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
     std::string prefix(format_settings.offset, format_settings.indent_char);
     format_settings.out << prefix << "ReadType: " << readTypeToString(result.read_type) << '\n';
 
@@ -1207,7 +1209,8 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto result = getAnalysisResult();
+    checkAnalysisResult();
+    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
     map.add("Read Type", readTypeToString(result.read_type));
     if (!result.index_stats.empty())
     {
@@ -1218,8 +1221,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
-    auto result = getAnalysisResult();
-    auto index_stats = std::move(result.index_stats);
+    checkAnalysisResult();
+    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+    const auto & index_stats = result.index_stats;
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!index_stats.empty())
@@ -1270,8 +1274,9 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    auto result = getAnalysisResult();
-    auto index_stats = std::move(result.index_stats);
+    checkAnalysisResult();
+    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+    const auto & index_stats = result.index_stats;
 
     if (!index_stats.empty())
     {

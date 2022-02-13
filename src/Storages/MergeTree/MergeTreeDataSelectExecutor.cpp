@@ -796,7 +796,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         IndexStat stat;
 
         DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
+            : index(std::move(index_)), condition(std::move(condition_))
         {
         }
     };
