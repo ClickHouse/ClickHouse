@@ -2,10 +2,12 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
-#include <pcg_random.hpp>
 #include <unordered_set>
+
+#include <base/sort.h>
 
 
 namespace DB
@@ -62,7 +64,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        storage.clearOldTemporaryDirectories(storage.merger_mutator, storage.getSettings()->temporary_directories_lifetime.totalSeconds());
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -110,7 +112,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    std::sort(entries.begin(), entries.end());
+    ::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[
         entries.size() > storage_settings->max_replicated_logs_to_keep
@@ -443,7 +445,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         }
     }
 
-    std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+    ::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
 }
 
 
@@ -476,7 +478,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
-    std::sort(entries.begin(), entries.end());
+    ::sort(entries.begin(), entries.end());
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
     entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());

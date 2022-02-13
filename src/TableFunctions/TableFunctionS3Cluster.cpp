@@ -1,13 +1,11 @@
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Cluster.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,7 +19,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 
 #include "registerTableFunctions.h"
 
@@ -112,6 +109,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         /// Actually this parameters are not used
         UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
         UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+        UInt64 upload_part_size_multiply_factor = context->getSettingsRef().s3_upload_part_size_multiply_factor;
+        UInt64 upload_part_size_multiply_parts_count_threshold = context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold;
         UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = context->getSettingsRef().s3_max_connections;
         storage = StorageS3::create(
@@ -122,6 +121,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             format,
             max_single_read_retries,
             min_upload_part_size,
+            upload_part_size_multiply_factor,
+            upload_part_size_multiply_parts_count_threshold,
             max_single_part_upload_size,
             max_connections,
             getActualTableStructure(context),

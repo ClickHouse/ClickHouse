@@ -7,12 +7,14 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <base/EnumReflection.h>
+
 #include <Core/Field.h>
+#include <Core/TypeId.h>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <common/EnumReflection.h>
-#include <Core/TypeId.h>
+
 
 #if defined(__GNUC__)
     /// GCC mistakenly warns about the names in enum class.
@@ -26,7 +28,7 @@ using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
 // We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
 // The first can be done by defining AttributeUnderlyingType enum values to TypeIndex values and then performing
 // a enum_cast.
-// The second can be achieved by using ReverseTypeId
+// The second can be achieved by using TypeIndexToType
 #define map_item(__T) __T = static_cast<TypeIndexUnderlying>(TypeIndex::__T)
 
 enum class AttributeUnderlyingType : TypeIndexUnderlying
@@ -35,6 +37,7 @@ enum class AttributeUnderlyingType : TypeIndexUnderlying
     map_item(UInt8), map_item(UInt16), map_item(UInt32), map_item(UInt64), map_item(UInt128), map_item(UInt256),
     map_item(Float32), map_item(Float64),
     map_item(Decimal32), map_item(Decimal64), map_item(Decimal128), map_item(Decimal256),
+    map_item(DateTime64),
 
     map_item(UUID), map_item(String), map_item(Array)
 };
@@ -73,7 +76,7 @@ template <AttributeUnderlyingType type>
 struct DictionaryAttributeType
 {
     /// Converts @c type to it underlying type e.g. AttributeUnderlyingType::UInt8 -> UInt8
-    using AttributeType = ReverseTypeId<
+    using AttributeType = TypeIndexToType<
         static_cast<TypeIndex>(
             static_cast<TypeIndexUnderlying>(type))>;
 };
@@ -120,6 +123,7 @@ struct DictionaryStructure final
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
+    DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
 
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
@@ -129,7 +133,6 @@ struct DictionaryStructure final
     size_t getKeysSize() const;
 
     std::string getKeyDescription() const;
-    bool isKeySizeFixed() const;
 
 private:
     /// range_min and range_max have to be parsed before this function call

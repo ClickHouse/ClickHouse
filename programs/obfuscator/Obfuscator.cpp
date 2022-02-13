@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
@@ -24,14 +24,14 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <common/StringRef.h>
-#include <common/DateLUT.h>
-#include <common/bit_cast.h>
+#include <base/StringRef.h>
+#include <Common/DateLUT.h>
+#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <memory>
@@ -1160,7 +1160,7 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
+        Pipe pipe(context->getInputFormat(input_format, file_in, header, max_block_size));
 
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
@@ -1189,7 +1189,7 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
+        Pipe pipe(context->getInputFormat(input_format, file_in, header, max_block_size));
 
         if (processed_rows + source_rows > limit)
         {
@@ -1199,23 +1199,25 @@ try
             });
         }
 
-        QueryPipeline pipeline(std::move(pipe));
+        QueryPipeline in_pipeline(std::move(pipe));
 
-        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
+        auto output = context->getOutputFormatParallelIfPossible(output_format, file_out, header);
+        QueryPipeline out_pipeline(std::move(output));
 
-        PullingPipelineExecutor executor(pipeline);
+        PullingPipelineExecutor in_executor(in_pipeline);
+        PushingPipelineExecutor out_executor(out_pipeline);
 
-        output->writePrefix();
         Block block;
-        while (executor.pull(block))
+        out_executor.start();
+        while (in_executor.pull(block))
         {
             Columns columns = obfuscator.generate(block.getColumns());
-            output->write(header.cloneWithColumns(columns));
+            out_executor.push(header.cloneWithColumns(columns));
             processed_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
-        output->writeSuffix();
+        out_executor.finish();
 
         obfuscator.updateSeed();
     }

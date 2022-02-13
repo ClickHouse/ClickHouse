@@ -23,7 +23,7 @@ chmod a+x ./hardware.sh
 ./hardware.sh
 ```
 
-3. Copy the output and send it to clickhouse-feedback@yandex-team.com
+3. Copy the output and send it to feedback@clickhouse.com
 
 All the results are published here: https://clickhouse.com/benchmark/hardware/
 
@@ -35,9 +35,9 @@ Alternatively you can perform benchmark in the following steps.
 1.  ssh to the server and download the binary with wget:
 ```bash
 # For amd64:
-wget https://builds.clickhouse.tech/master/amd64/clickhouse
+wget https://builds.clickhouse.com/master/amd64/clickhouse
 # For aarch64:
-wget https://builds.clickhouse.tech/master/aarch64/clickhouse
+wget https://builds.clickhouse.com/master/aarch64/clickhouse
 # Then do:
 chmod a+x clickhouse
 ```
@@ -49,7 +49,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/cl
 ```
 3.  Download test data according to the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 ```bash
-wget https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+wget https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz
 tar xvf hits_100m_obfuscated_v1.tar.xz -C .
 mv hits_100m_obfuscated_v1/* .
 ```

@@ -1,14 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#    include "config_core.h"
-#endif
-
+#include "config_formats.h"
+#include "config_core.h"
 
 #if USE_MSGPACK
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
@@ -44,6 +42,7 @@ public:
     bool end_map_key();
     bool start_map_value();
     bool end_map_value();
+    bool visit_ext(const char * value, uint32_t size);
 
     /// This function will be called if error occurs in parsing
     [[noreturn]] void parse_error(size_t parsed_offset, size_t error_offset);
@@ -62,17 +61,35 @@ class MsgPackRowInputFormat : public IRowInputFormat
 public:
     MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);
+
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+
     bool readObject();
 
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
     msgpack::detail::parse_helper<MsgPackVisitor> parser;
     const DataTypes data_types;
+};
+
+class MsgPackSchemaReader : public IRowSchemaReader
+{
+public:
+    MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+
+private:
+    msgpack::object_handle readObject();
+    DataTypePtr getDataType(const msgpack::object & object);
+    DataTypes readRowAndGetDataTypes() override;
+
+    PeekableReadBuffer buf;
+    UInt64 number_of_columns;
 };
 
 }

@@ -4,7 +4,8 @@
 #include <algorithm>
 #include <climits>
 #include <AggregateFunctions/ReservoirSampler.h>
-#include <common/types.h>
+#include <base/types.h>
+#include <base/sort.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -258,7 +259,9 @@ private:
     {
         if (sorted)
             return;
-        std::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+        /// In order to provide deterministic result we must sort by value and hash
+        ::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs < rhs; });
         sorted = true;
     }
 

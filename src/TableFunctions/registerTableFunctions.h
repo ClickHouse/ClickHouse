@@ -1,9 +1,7 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
@@ -28,6 +26,7 @@ void registerTableFunctionCOS(TableFunctionFactory & factory);
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
+void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);
@@ -48,6 +47,8 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
+
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

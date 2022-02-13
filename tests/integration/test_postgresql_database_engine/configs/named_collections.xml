@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <postgres1>
             <user>postgres</user>
@@ -20,4 +20,4 @@
             <database>postgres</database>
         </postgres3>
     </named_collections>
-</yandex>
+</clickhouse>

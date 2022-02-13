@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB

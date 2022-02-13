@@ -53,7 +53,7 @@ void CompressionCodecFactory::validateCodec(
 
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -100,12 +100,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::StreamCallbackWithType callback = [&](
-                        const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+                    ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
+                        assert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
-                            result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
+                            const auto & last_type = substream_path.back().data.type;
+                            result_codec = getImpl(codec_family_name, codec_arguments, last_type.get());
 
                             /// Case for column Tuple, which compressed with codec which depends on data type, like Delta.
                             /// We cannot substitute parameters for such codecs.
@@ -115,8 +116,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         }
                     };
 
-                    ISerialization::SubstreamPath stream_path;
-                    column_type->enumerateStreams(column_type->getDefaultSerialization(), callback, stream_path);
+                    ISerialization::SubstreamPath path;
+                    column_type->getDefaultSerialization()->enumerateStreams(path, callback, column_type);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());

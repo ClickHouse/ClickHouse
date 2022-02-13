@@ -1,7 +1,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -9,7 +9,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -19,9 +19,20 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
+#include <base/logger_useful.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric PendingAsyncInsert;
+}
+
+namespace ProfileEvents
+{
+    extern const Event AsyncInsertQuery;
+}
 
 namespace DB
 {
@@ -222,6 +233,9 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     if (data->size > max_data_size)
         scheduleDataProcessingJob(it->first, std::move(data), getContext());
+
+    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -407,13 +421,19 @@ try
     }
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> buffer;
+    std::unique_ptr<ReadBuffer> last_buffer;
     for (const auto & entry : data->entries)
     {
-        buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
+        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+
+        /// Keep buffer, because it still can be used
+        /// in destructor, while resetting buffer at next iteration.
+        last_buffer = std::move(buffer);
     }
+
+    format->addBuffer(std::move(last_buffer));
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
     size_t total_bytes = chunk.bytes();
@@ -430,6 +450,8 @@ try
     for (const auto & entry : data->entries)
         if (!entry->isFinished())
             entry->finish();
+
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
 }
 catch (const Exception & e)
 {
@@ -463,6 +485,8 @@ void AsynchronousInsertQueue::finishWithException(
             entry->finish(std::make_exception_ptr(exception));
         }
     }
+
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
 }
 
 }

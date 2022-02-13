@@ -15,7 +15,7 @@ This dataset can be obtained in two ways:
 Downloading data:
 
 ``` bash
-echo https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip | xargs -P10 wget --no-check-certificate --continue
+wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip
 ```
 
 Creating a table:
@@ -149,7 +149,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.com/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -393,7 +393,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-You can also play with the data in Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
+You can also play with the data in Playground, [example](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
 
 This performance test was created by Vadim Tkachenko. See:
 

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <postgres1>
             <user>postgres</user>
@@ -30,4 +30,4 @@
             <table>test_replicas</table>
         </postgres4>
     </named_collections>
-</yandex>
+</clickhouse>

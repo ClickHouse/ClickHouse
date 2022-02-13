@@ -1,9 +1,6 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/RemoteInserter.h>
+#include <Formats/NativeReader.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -12,10 +9,11 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -134,6 +132,7 @@ namespace
 
     struct DistributedHeader
     {
+        UInt64 revision = 0;
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
@@ -168,9 +167,8 @@ namespace
             /// Read the parts of the header.
             ReadBufferFromString header_buf(header_data);
 
-            UInt64 initiator_revision;
-            readVarUInt(initiator_revision, header_buf);
-            if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
+            readVarUInt(distributed_header.revision, header_buf);
+            if (DBMS_TCP_PROTOCOL_VERSION < distributed_header.revision)
             {
                 LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
             }
@@ -179,7 +177,7 @@ namespace
             distributed_header.insert_settings.read(header_buf);
 
             if (header_buf.hasPendingData())
-                distributed_header.client_info.read(header_buf, initiator_revision);
+                distributed_header.client_info.read(header_buf, distributed_header.revision);
 
             if (header_buf.hasPendingData())
             {
@@ -190,10 +188,12 @@ namespace
 
             if (header_buf.hasPendingData())
             {
-                NativeBlockInputStream header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                NativeReader header_block_in(header_buf, distributed_header.revision);
                 distributed_header.block_header = header_block_in.read();
                 if (!distributed_header.block_header)
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
+                            in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
             }
 
             /// Add handling new data here, for example:
@@ -266,23 +266,22 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, const DistributedHeader & distributed_header, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        block_in.readPrefix();
+        NativeReader block_in(decompressing_in, distributed_header.revision);
 
         while (Block block = block_in.read())
         {
-            ConvertingBlockInputStream convert(
-                std::make_shared<OneBlockInputStream>(block),
-                remote.getHeader(),
-                ConvertingBlockInputStream::MatchColumnsMode::Name);
-            auto adopted_block = convert.read();
-            remote.write(adopted_block);
-        }
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                block.cloneEmpty().getColumnsWithTypeAndName(),
+                remote.getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
 
-        block_in.readSuffix();
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            converting_actions->execute(block);
+            remote.write(block);
+        }
     }
 
     void writeRemoteConvert(
@@ -307,7 +306,7 @@ namespace
         {
             LOG_TRACE(log, "Processing batch {} with old format (no header)", in.getFileName());
 
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
@@ -317,14 +316,20 @@ namespace
                 "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
                 remote.getHeader().dumpStructure(), distributed_header.block_header.dumpStructure());
 
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
         /// If connection does not use compression, we have to uncompress the data.
         if (!compression_expected)
         {
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
+            return;
+        }
+
+        if (distributed_header.revision != remote.getServerRevision())
+        {
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
@@ -335,7 +340,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= std::numeric_limits<uint64_t>::max())
+        if (d >= double(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -908,7 +913,7 @@ public:
     {
         std::unique_ptr<ReadBufferFromFile> in;
         std::unique_ptr<CompressedReadBuffer> decompressing_in;
-        std::unique_ptr<NativeBlockInputStream> block_in;
+        std::unique_ptr<NativeReader> block_in;
 
         Poco::Logger * log = nullptr;
 
@@ -918,12 +923,11 @@ public:
         {
             in = std::make_unique<ReadBufferFromFile>(file_name);
             decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
-            block_in = std::make_unique<NativeBlockInputStream>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
             log = &Poco::Logger::get("DirectoryMonitorSource");
 
-            readDistributedHeader(*in, log);
+            auto distributed_header = readDistributedHeader(*in, log);
+            block_in = std::make_unique<NativeReader>(*decompressing_in, distributed_header.revision);
 
-            block_in->readPrefix();
             first_block = block_in->read();
         }
 
@@ -956,10 +960,7 @@ protected:
 
         auto block = data.block_in->read();
         if (!block)
-        {
-            data.block_in->readSuffix();
             return {};
-        }
 
         size_t num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
@@ -1047,8 +1048,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
-                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-                block_in.readPrefix();
+                NativeReader block_in(decompressing_in, distributed_header.revision);
 
                 while (Block block = block_in.read())
                 {
@@ -1058,7 +1058,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     if (!header)
                         header = block.cloneEmpty();
                 }
-                block_in.readSuffix();
             }
         }
         catch (const Exception & e)

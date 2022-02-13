@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>

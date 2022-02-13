@@ -115,9 +115,9 @@ void DiskDecorator::listFiles(const String & path, std::vector<String> & file_na
 
 std::unique_ptr<ReadBufferFromFileBase>
 DiskDecorator::readFile(
-    const String & path, const ReadSettings & settings, size_t estimated_size) const
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    return delegate->readFile(path, settings, estimated_size);
+    return delegate->readFile(path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -149,6 +149,11 @@ void DiskDecorator::removeRecursive(const String & path)
 void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
 {
     delegate->removeSharedFile(path, keep_s3);
+}
+
+void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+{
+    delegate->removeSharedFiles(files, keep_in_remote_fs);
 }
 
 void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)

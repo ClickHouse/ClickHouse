@@ -1,7 +1,7 @@
 #include "SQLiteUtils.h"
 
 #if USE_SQLITE
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -20,7 +20,7 @@ void processSQLiteError(const String & message, bool throw_on_error)
     if (throw_on_error)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, message);
     else
-        LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), message);
+        LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
 }
 
 

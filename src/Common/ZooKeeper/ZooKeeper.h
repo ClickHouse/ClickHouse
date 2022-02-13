@@ -7,7 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -274,7 +274,7 @@ public:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
 
-    void finalize();
+    void finalize(const String & reason);
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
@@ -379,4 +379,11 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
+
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
+String extractZooKeeperName(const String & path);
+
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
 }

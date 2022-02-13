@@ -418,6 +418,10 @@ def test_predefined_connection_configuration(started_cluster):
     ''')
     assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
 
+    assert 'Connection pool cannot have zero size' in node1.query_and_get_error("SELECT count() FROM mysql(mysql1, table='test_table', connection_pool_size=0)")
+    assert 'Connection pool cannot have zero size' in node1.query_and_get_error("SELECT count() FROM mysql(mysql4)")
+    assert int(node1.query("SELECT count() FROM mysql(mysql4, connection_pool_size=1)")) == 100
+
 
 # Regression for (k, v) IN ((k, v))
 def test_mysql_in(started_cluster):
@@ -445,6 +449,38 @@ def test_mysql_in(started_cluster):
     node1.query("SELECT * FROM {} WHERE (id) IN (1, 2)".format(table_name))
     node1.query("SELECT * FROM {} WHERE (id, name) IN ((1, 'name_1'))".format(table_name))
     node1.query("SELECT * FROM {} WHERE (id, name) IN ((1, 'name_1'),(1, 'name_1'))".format(table_name))
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+def test_mysql_null(started_cluster):
+    table_name = 'test_mysql_in'
+    node1.query(f'DROP TABLE IF EXISTS {table_name}')
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            CREATE TABLE `clickhouse`.`{}` (
+            `id` int(11) NOT NULL,
+            `money` int NULL default NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """.format(table_name))
+
+    node1.query('''
+        CREATE TABLE {}
+        (
+            id UInt32,
+            money Nullable(UInt32)
+        )
+        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')
+        '''.format(table_name, table_name)
+    )
+
+    node1.query("INSERT INTO {} (id, money) SELECT number, if(number%2, NULL, 1) from numbers(10) ".format(table_name))
+
+    assert int(node1.query("SELECT count() FROM {} WHERE money IS NULL SETTINGS external_table_strict_query=1".format(table_name))) == 5
+    assert int(node1.query("SELECT count() FROM {} WHERE money IS NOT NULL SETTINGS external_table_strict_query=1".format(table_name))) == 5
 
     drop_mysql_table(conn, table_name)
     conn.close()

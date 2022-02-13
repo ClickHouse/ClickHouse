@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -52,7 +52,6 @@ struct DecCompareInt
     using TypeB = Type;
 };
 
-///
 template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
     bool _actual = is_decimal<A> || is_decimal<B>>
 class DecimalComparison

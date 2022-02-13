@@ -1,13 +1,12 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <optional>
 #include <stack>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <base/sort.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -239,7 +238,9 @@ public:
         const IDataType * type_ptr = &type;
         Field left_mut = left;
         Field right_mut = right;
-        Monotonicity result(true, true, true);
+
+        Monotonicity result = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {
@@ -322,6 +323,16 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
+static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
+{
+    const ActionsDAG::Node * node_no_alias = node;
+
+    while (node_no_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_no_alias = node_no_alias->children[0];
+
+    return node_no_alias;
+}
+
 static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
@@ -334,7 +345,9 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     {
         for (const auto & child : node.children)
         {
-            if (lazy_executed_nodes.contains(child))
+            const ActionsDAG::Node * child_no_alias = removeAliasIfNecessary(child);
+
+            if (lazy_executed_nodes.contains(child_no_alias))
                 return false;
         }
     }
@@ -564,7 +577,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     /** Sort nodes before compilation using their children size to avoid compiling subexpression before compile parent expression.
       * This is needed to avoid compiling expression more than once with different names because of compilation order.
       */
-    std::sort(nodes_to_compile.begin(), nodes_to_compile.end(), [&](const Node * lhs, const Node * rhs) { return node_to_data[lhs].children_size > node_to_data[rhs].children_size; });
+    ::sort(nodes_to_compile.begin(), nodes_to_compile.end(), [&](const Node * lhs, const Node * rhs)
+    {
+        return node_to_data[lhs].children_size > node_to_data[rhs].children_size;
+    });
 
     for (auto & node : nodes_to_compile)
     {

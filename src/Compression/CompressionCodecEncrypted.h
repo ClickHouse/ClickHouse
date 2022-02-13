@@ -1,9 +1,8 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <string_view>
 #include <unordered_map>
-#include <common/types.h>
+#include <base/types.h>
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/MultiVersion.h>
@@ -134,5 +133,3 @@ private:
 };
 
 }
-
-#endif /* NOT Arcadia_build */

@@ -45,7 +45,8 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
-        COMMENT_TABLE
+        COMMENT_TABLE,
+        REMOVE_SAMPLE_BY,
     };
 
     /// Which property user wants to remove from column

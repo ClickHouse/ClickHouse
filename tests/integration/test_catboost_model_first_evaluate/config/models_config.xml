@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <catboost_dynamic_library_path>/etc/clickhouse-server/model/libcatboostmodel.so</catboost_dynamic_library_path>
     <models_config>/etc/clickhouse-server/model/model_config.xml</models_config>
-</yandex>
+</clickhouse>

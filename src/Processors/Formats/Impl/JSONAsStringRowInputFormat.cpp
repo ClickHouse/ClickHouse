@@ -2,7 +2,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -14,8 +14,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
-    IRowInputFormat(header_, in_, std::move(params_)), buf(*in)
+JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
+    : JSONAsStringRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+
+JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_) :
+    IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_))
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -31,113 +34,113 @@ JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, Re
 void JSONAsStringRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
+    buf->reset();
 }
 
 void JSONAsStringRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
+    skipBOMIfExists(*buf);
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == '[')
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof() && *buf->position() == '[')
     {
-        ++buf.position();
+        ++buf->position();
         data_in_square_brackets = true;
     }
 }
 
 void JSONAsStringRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceIfAny(*buf);
     if (data_in_square_brackets)
     {
-        assertChar(']', buf);
-        skipWhitespaceIfAny(buf);
+        assertChar(']', *buf);
+        skipWhitespaceIfAny(*buf);
     }
-    if (!buf.eof() && *buf.position() == ';')
+    if (!buf->eof() && *buf->position() == ';')
     {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
+        ++buf->position();
+        skipWhitespaceIfAny(*buf);
     }
-    assertEOF(buf);
+    assertEOF(*buf);
 }
 
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t balance = 0;
     bool quotes = false;
 
-    if (*buf.position() != '{')
+    if (*buf->position() != '{')
         throw Exception("JSON object must begin with '{'.", ErrorCodes::INCORRECT_DATA);
 
-    ++buf.position();
+    ++buf->position();
     ++balance;
 
     char * pos;
 
     while (balance)
     {
-        if (buf.eof())
+        if (buf->eof())
             throw Exception("Unexpected end of file while parsing JSON object.", ErrorCodes::INCORRECT_DATA);
 
         if (quotes)
         {
-            pos = find_first_symbols<'"', '\\'>(buf.position(), buf.buffer().end());
-            buf.position() = pos;
-            if (buf.position() == buf.buffer().end())
+            pos = find_first_symbols<'"', '\\'>(buf->position(), buf->buffer().end());
+            buf->position() = pos;
+            if (buf->position() == buf->buffer().end())
                 continue;
-            if (*buf.position() == '"')
+            if (*buf->position() == '"')
             {
                 quotes = false;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '\\')
+            else if (*buf->position() == '\\')
             {
-                ++buf.position();
-                if (!buf.eof())
+                ++buf->position();
+                if (!buf->eof())
                 {
-                    ++buf.position();
+                    ++buf->position();
                 }
             }
         }
         else
         {
-            pos = find_first_symbols<'"', '{', '}', '\\'>(buf.position(), buf.buffer().end());
-            buf.position() = pos;
-            if (buf.position() == buf.buffer().end())
+            pos = find_first_symbols<'"', '{', '}', '\\'>(buf->position(), buf->buffer().end());
+            buf->position() = pos;
+            if (buf->position() == buf->buffer().end())
                 continue;
-            if (*buf.position() == '{')
+            if (*buf->position() == '{')
             {
                 ++balance;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '}')
+            else if (*buf->position() == '}')
             {
                 --balance;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '\\')
+            else if (*buf->position() == '\\')
             {
-                ++buf.position();
-                if (!buf.eof())
+                ++buf->position();
+                if (!buf->eof())
                 {
-                    ++buf.position();
+                    ++buf->position();
                 }
             }
-            else if (*buf.position() == '"')
+            else if (*buf->position() == '"')
             {
                 quotes = true;
-                ++buf.position();
+                ++buf->position();
             }
         }
     }
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    char * end = buf.position();
-    buf.rollbackToCheckpoint();
-    column.insertData(buf.position(), end - buf.position());
-    buf.position() = end;
+    buf->makeContinuousMemoryFromCheckpointToPos();
+    char * end = buf->position();
+    buf->rollbackToCheckpoint();
+    column.insertData(buf->position(), end - buf->position());
+    buf->position() = end;
 }
 
 bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -145,35 +148,41 @@ bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     if (!allow_new_rows)
         return false;
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof())
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof())
     {
-        if (!data_in_square_brackets && *buf.position() == ';')
+        if (!data_in_square_brackets && *buf->position() == ';')
         {
             /// ';' means the end of query, but it cannot be before ']'.
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *buf.position() == ']')
+        else if (data_in_square_brackets && *buf->position() == ']')
         {
             /// ']' means the end of query.
             return allow_new_rows = false;
         }
     }
 
-    if (!buf.eof())
+    if (!buf->eof())
         readJSONObject(*columns[0]);
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == ',')
-        ++buf.position();
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof() && *buf->position() == ',')
+        ++buf->position();
+    skipWhitespaceIfAny(*buf);
 
-    return !buf.eof();
+    return !buf->eof();
 }
 
-void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
+void JSONAsStringRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    factory.registerInputFormatProcessor("JSONAsString", [](
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+void registerInputFormatJSONAsString(FormatFactory & factory)
+{
+    factory.registerInputFormat("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -185,12 +194,20 @@ void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+}
+
+void registerJSONAsStringSchemaReader(FormatFactory & factory)
+{
+    factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
+    {
+        return std::make_shared<JSONAsStringExternalSchemaReader>();
+    });
 }
 
 }

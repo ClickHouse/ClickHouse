@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/logger_useful.h>
+
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -16,7 +17,9 @@ class StorageFileBlockOutputStream;
 
 class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageFile>;
+friend struct shared_ptr_helper<StorageFile>;
+friend class PartitionedStorageFileSink;
+
 public:
     std::string getName() const override { return "File"; }
 
@@ -66,6 +69,17 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool isColumnOriented() const;
 
+    bool supportsPartitionBy() const override { return true; }
+
+    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
+
+    static ColumnsDescription getTableStructureFromFile(
+        const String & format,
+        const std::vector<String> & paths,
+        const String & compression_method,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
@@ -81,6 +95,8 @@ protected:
 
 private:
     explicit StorageFile(CommonArguments args);
+
+    void setStorageMetadata(CommonArguments args);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -104,6 +120,16 @@ private:
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
+
+    String path_for_partitioned_write;
+
+    bool is_path_with_globs = false;
+
+    /// These buffers are needed for schema inference when data source
+    /// is file descriptor. See getTableStructureFromFileDescriptor.
+    std::unique_ptr<ReadBuffer> read_buffer_from_fd;
+    std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
+    std::atomic<bool> has_peekable_read_buffer_from_fd = false;
 };
 
 }

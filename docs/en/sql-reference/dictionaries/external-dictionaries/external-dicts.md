@@ -26,7 +26,7 @@ The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tabl
 The dictionary configuration file has the following format:
 
 ``` xml
-<yandex>
+<clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
@@ -38,7 +38,7 @@ The dictionary configuration file has the following format:
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
     </dictionary>
 
-</yandex>
+</clickhouse>
 ```
 
 You can [configure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md) any number of dictionaries in the same file.

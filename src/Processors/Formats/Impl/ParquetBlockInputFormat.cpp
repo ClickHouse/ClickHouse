@@ -13,7 +13,8 @@
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+
 
 namespace DB
 {
@@ -39,9 +40,13 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
 
     if (!file_reader)
         prepareReader();
+
+    if (is_stopped)
+        return {};
 
     if (row_group_current >= row_group_total)
         return res;
@@ -55,6 +60,13 @@ Chunk ParquetBlockInputFormat::generate()
     ++row_group_current;
 
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+
+    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+    /// Otherwise fill the missing columns with zero values of its type.
+    if (format_settings.defaults_for_omitted_fields)
+        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+            for (const auto & column_idx : missing_columns)
+                block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
 
@@ -65,6 +77,12 @@ void ParquetBlockInputFormat::resetParser()
     file_reader.reset();
     column_indices.clear();
     row_group_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
@@ -90,16 +108,32 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     return 1;
 }
 
+static void getFileReaderAndSchema(
+    ReadBuffer & in,
+    std::unique_ptr<parquet::arrow::FileReader> & file_reader,
+    std::shared_ptr<arrow::Schema> & schema,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
+{
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped);
+    if (is_stopped)
+        return;
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
+}
+
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
+    std::shared_ptr<arrow::Schema> schema;
+    getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
+    if (is_stopped)
+        return;
+
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
-    std::shared_ptr<arrow::Schema> schema;
-    THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
-
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
+    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
     if (format_settings.parquet.import_nested)
@@ -122,9 +156,23 @@ void ParquetBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorParquet(FormatFactory &factory)
+ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
 {
-    factory.registerInputFormatProcessor(
+}
+
+NamesAndTypesList ParquetSchemaReader::readSchema()
+{
+    std::unique_ptr<parquet::arrow::FileReader> file_reader;
+    std::shared_ptr<arrow::Schema> schema;
+    std::atomic<int> is_stopped = 0;
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, "Parquet");
+    return header.getNamesAndTypesList();
+}
+
+void registerInputFormatParquet(FormatFactory & factory)
+{
+    factory.registerInputFormat(
             "Parquet",
             [](ReadBuffer &buf,
                 const Block &sample,
@@ -136,6 +184,17 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
     factory.markFormatAsColumnOriented("Parquet");
 }
 
+void registerParquetSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader(
+        "Parquet",
+        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        {
+            return std::make_shared<ParquetSchemaReader>(buf, settings);
+        }
+        );
+}
+
 }
 
 #else
@@ -143,9 +202,11 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorParquet(FormatFactory &)
+void registerInputFormatParquet(FormatFactory &)
 {
 }
+
+void registerParquetSchemaReader(FormatFactory &) {}
 }
 
 #endif

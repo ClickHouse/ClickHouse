@@ -1,11 +1,11 @@
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTIdentifier.h>
 

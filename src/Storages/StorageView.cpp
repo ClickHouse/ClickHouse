@@ -4,9 +4,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -14,7 +16,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -138,7 +140,8 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.

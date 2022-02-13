@@ -16,6 +16,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SettingsEnums.h>
 
@@ -158,8 +159,8 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty())
         lazy_execution_info.can_be_lazy_executed = false;
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
@@ -735,7 +736,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     }
     else
     {
-        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
             if (input >= 0)
                 block.erase(input);
@@ -1056,11 +1057,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     /// That's an input columns we need.
     NameSet required_names = required_output_;
-    for (const auto & name : analyzed_join->keyNamesLeft())
+    for (const auto & name : analyzed_join->getAllNames(JoinTableSide::Left))
         required_names.emplace(name);
 
-    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
-        required_names.emplace(extra_condition_column->getColumnName());
+    for (const auto & onexpr : analyzed_join->getClauses())
+        if (const auto & cond_name = onexpr.condColumnNames().first; !cond_name.empty())
+            required_names.emplace(cond_name);
 
     for (const auto & column : required_columns)
     {

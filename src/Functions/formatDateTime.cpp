@@ -14,8 +14,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <common/DateLUTImpl.h>
-#include <common/find_symbols.h>
+#include <Common/DateLUTImpl.h>
+#include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 
 #include <type_traits>
@@ -440,7 +440,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = vec.getScale();
+            scale = times->getScale();
         }
 
         auto col_res = ColumnString::create();

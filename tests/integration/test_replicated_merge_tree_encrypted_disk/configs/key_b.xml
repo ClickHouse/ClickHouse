@@ -1,0 +1,9 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_encrypted>
+                <key>bbbbbbbbbbbbbbbb</key>
+            </disk_encrypted>
+        </disks>
+    </storage_configuration>
+</clickhouse>

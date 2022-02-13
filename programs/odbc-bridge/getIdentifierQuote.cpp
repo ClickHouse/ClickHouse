@@ -2,7 +2,7 @@
 
 #if USE_ODBC
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <sql.h>
 #include <sqlext.h>
 

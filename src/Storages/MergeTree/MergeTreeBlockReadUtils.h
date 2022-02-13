@@ -14,7 +14,7 @@ struct MergeTreeReadTask;
 struct MergeTreeBlockSizePredictor;
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-using MergeTreeBlockSizePredictorPtr = std::unique_ptr<MergeTreeBlockSizePredictor>;
+using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
 
 
 /** If some of the requested columns are not in the part,
@@ -59,8 +59,6 @@ struct MergeTreeReadTask
         const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
         const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
         MergeTreeBlockSizePredictorPtr && size_predictor_);
-
-    virtual ~MergeTreeReadTask();
 };
 
 struct MergeTreeReadTaskColumns
@@ -78,8 +76,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info,
-    bool check_columns);
+    const PrewhereInfoPtr & prewhere_info);
 
 struct MergeTreeBlockSizePredictor
 {

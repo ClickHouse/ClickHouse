@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>

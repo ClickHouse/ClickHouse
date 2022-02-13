@@ -1,7 +1,7 @@
 #include <Storages/System/StorageSystemZeros.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>

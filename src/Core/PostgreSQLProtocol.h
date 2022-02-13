@@ -6,7 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
@@ -825,7 +825,7 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
-    virtual Authentication::Type getType() const = 0;
+    virtual AuthenticationType getType() const = 0;
 
     virtual ~AuthenticationMethod() = default;
 };
@@ -842,9 +842,9 @@ public:
         return setPassword(user_name, "", session, mt, address);
     }
 
-    Authentication::Type getType() const override
+    AuthenticationType getType() const override
     {
-        return Authentication::Type::NO_PASSWORD;
+        return AuthenticationType::NO_PASSWORD;
     }
 };
 
@@ -873,9 +873,9 @@ public:
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
     }
 
-    Authentication::Type getType() const override
+    AuthenticationType getType() const override
     {
-        return Authentication::Type::PLAINTEXT_PASSWORD;
+        return AuthenticationType::PLAINTEXT_PASSWORD;
     }
 };
 
@@ -883,7 +883,7 @@ class AuthenticationManager
 {
 private:
     Poco::Logger * log = &Poco::Logger::get("AuthenticationManager");
-    std::unordered_map<Authentication::Type, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
     AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
@@ -900,7 +900,7 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        const Authentication::Type user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
+        const AuthenticationType user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
         if (type_to_method.find(user_auth_type) != type_to_method.end())
         {
             type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);

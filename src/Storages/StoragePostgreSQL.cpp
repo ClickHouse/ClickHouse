@@ -1,12 +1,13 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
+#include <base/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,7 +22,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <IO/WriteHelpers.h>
@@ -64,6 +64,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
+    , log(&Poco::Logger::get("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -89,6 +90,7 @@ Pipe StoragePostgreSQL::read(
     String query = transformQueryForExternalDatabase(
         query_info_, metadata_snapshot->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
+    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names_)
@@ -388,7 +390,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
     StoragePostgreSQLConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
         configuration.set(common_configuration);
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
@@ -396,7 +398,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "on_conflict")
-                configuration.on_conflict = arg_value.safeGet<String>();
+                configuration.on_conflict = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."

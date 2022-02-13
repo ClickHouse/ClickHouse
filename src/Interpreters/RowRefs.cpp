@@ -1,7 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/typeid_cast.h>
 #include <Common/ColumnsHashing.h>
 #include <Columns/IColumn.h>

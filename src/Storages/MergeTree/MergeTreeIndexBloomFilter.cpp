@@ -2,18 +2,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <common/types.h>
-#include <common/bit_cast.h>
-#include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeArray.h>
+#include <base/types.h>
+#include <base/bit_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
-#include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -68,7 +63,7 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
         }
     }
 
-    return true;
+    return false;
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const

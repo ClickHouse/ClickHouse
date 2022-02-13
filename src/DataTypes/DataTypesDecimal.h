@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
-#include <common/extended_types.h>
+#include <base/arithmeticOverflow.h>
+#include <base/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -38,7 +38,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
 

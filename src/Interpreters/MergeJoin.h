@@ -7,7 +7,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
@@ -36,7 +36,7 @@ public:
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:
     friend class NotJoinedMerge;
@@ -117,6 +117,8 @@ private:
     const size_t max_files_to_merge;
 
     Names lowcard_right_keys;
+
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

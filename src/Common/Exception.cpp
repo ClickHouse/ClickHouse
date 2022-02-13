@@ -4,22 +4,21 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
+#include <base/demangle.h>
+#include <base/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -177,7 +176,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// Poco::Logger::get can allocate memory too
     tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
@@ -190,7 +189,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }
@@ -208,8 +207,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
-        ReadableSize(fs.f_blocks * fs.f_bsize),
-        ReadableSize(fs.f_bavail * fs.f_bsize),
+        ReadableSize(fs.f_blocks * fs.f_frsize),
+        ReadableSize(fs.f_bavail * fs.f_frsize),
         formatReadableQuantity(fs.f_files),
         formatReadableQuantity(fs.f_favail),
         mount_point);

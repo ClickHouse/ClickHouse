@@ -3,8 +3,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
+
 
 namespace ProfileEvents
 {
@@ -59,6 +61,40 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
+void ColumnFunction::insertFrom(const IColumn & src, size_t n)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertFrom(*src_func.captured_columns[i].column, n);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    ++size_;
+}
+
+void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertRangeFrom(*src_func.captured_columns[i].column, start, length);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    size_ += length;
+}
+
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (size_ != filt.size())
@@ -93,14 +129,7 @@ void ColumnFunction::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
-    if (limit == 0)
-        limit = size_;
-    else
-        limit = std::min(size_, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation (" + toString(perm.size()) + ") is less than required ("
-                        + toString(limit) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+    limit = getLimitForPermutation(size(), perm.size(), limit);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)

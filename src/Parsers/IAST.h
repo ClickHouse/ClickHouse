@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -157,7 +157,23 @@ public:
             set(field, child);
     }
 
-    void reset(IAST *& field);
+    template <typename T>
+    void reset(T * & field)
+    {
+        if (field == nullptr)
+            return;
+
+        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
+        {
+           return p.get() == field;
+        });
+
+        if (child == children.end())
+            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+
+        children.erase(child);
+        field = nullptr;
+    }
 
     /// Convert to a string.
 
@@ -229,10 +245,23 @@ public:
 
     void cloneChildren();
 
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
+    enum class QueryKind : uint8_t
+    {
+        None = 0,
+        Alter,
+        Create,
+        Drop,
+        Grant,
+        Insert,
+        Rename,
+        Revoke,
+        SelectIntersectExcept,
+        Select,
+        System,
+    };
+    /// Return QueryKind of this AST query.
+    virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
-public:
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;

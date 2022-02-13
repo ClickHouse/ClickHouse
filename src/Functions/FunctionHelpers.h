@@ -108,8 +108,8 @@ struct FunctionArgumentDescriptor
 {
     const char * argument_name;
 
-    bool (* type_validator_func)(const IDataType &);
-    bool (* column_validator_func)(const IColumn &);
+    std::function<bool (const IDataType &)> type_validator_func;
+    std::function<bool (const IColumn &)> column_validator_func;
 
     const char * expected_type_description;
 
@@ -155,8 +155,9 @@ void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithType
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
-
 /// Check if two types are equal
+bool areTypesEqual(const IDataType & lhs, const IDataType & rhs);
+
 bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs);
 
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.

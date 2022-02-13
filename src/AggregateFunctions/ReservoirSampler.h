@@ -3,7 +3,8 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <common/types.h>
+#include <base/types.h>
+#include <base/sort.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,7 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 #include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -237,6 +239,7 @@ private:
 
     UInt64 genRandom(size_t lim)
     {
+        assert(lim > 0);
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(rng.max()))
             return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
@@ -249,7 +252,7 @@ private:
         if (sorted)
             return;
         sorted = true;
-        std::sort(samples.begin(), samples.end(), Comparer());
+        ::sort(samples.begin(), samples.end(), Comparer());
     }
 
     template <typename ResultType>

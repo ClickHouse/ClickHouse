@@ -1,16 +1,14 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
+#include "config_formats.h"
 
 namespace DB
 {
 
 void registerStorageLog(StorageFactory & factory);
-void registerStorageTinyLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageNull(StorageFactory & factory);
@@ -28,6 +26,7 @@ void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
+void registerStorageWindowView(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -36,6 +35,11 @@ void registerStorageCOS(StorageFactory & factory);
 
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
+
+#if USE_HIVE
+void registerStorageHive(StorageFactory & factory);
+#endif
+
 #endif
 
 void registerStorageODBC(StorageFactory & factory);
@@ -68,6 +72,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
+#if USE_FILELOG
+void registerStorageFileLog(StorageFactory & factory);
+#endif
+
 #if USE_SQLITE
 void registerStorageSQLite(StorageFactory & factory);
 #endif
@@ -78,7 +86,6 @@ void registerStorages()
     auto & factory = StorageFactory::instance();
 
     registerStorageLog(factory);
-    registerStorageTinyLog(factory);
     registerStorageStripeLog(factory);
     registerStorageMergeTree(factory);
     registerStorageNull(factory);
@@ -96,6 +103,7 @@ void registerStorages()
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
+    registerStorageWindowView(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
@@ -104,6 +112,11 @@ void registerStorages()
 
     #if USE_HDFS
     registerStorageHDFS(factory);
+
+    #if USE_HIVE
+    registerStorageHive(factory);
+    #endif
+
     #endif
 
     registerStorageODBC(factory);
@@ -117,6 +130,10 @@ void registerStorages()
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);
+    #endif
+
+    #if USE_FILELOG
+    registerStorageFileLog(factory);
     #endif
 
     #if USE_AMQPCPP

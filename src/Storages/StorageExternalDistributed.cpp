@@ -6,17 +6,16 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -160,9 +159,8 @@ StorageExternalDistributed::StorageExternalDistributed(
         }
         else
         {
-            Poco::URI uri(url_description);
             shard = std::make_shared<StorageURL>(
-                uri, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
+                url_description, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
 
             LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
         }
@@ -234,7 +232,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table engine URL", name);
@@ -274,13 +272,13 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             ExternalDataSourceConfiguration configuration;
             if (auto named_collection = getExternalDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
             {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
+                auto [common_configuration, storage_specific_args, _] = named_collection.value();
                 configuration.set(common_configuration);
 
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table function URL", name);

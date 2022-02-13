@@ -5,7 +5,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <common/errnoToString.h>
+#include <Common/MemorySanitizer.h>
+#include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
 #include <unistd.h>
@@ -29,6 +30,8 @@
         #define SYS_preadv2 286
     #elif defined(__ppc64__)
         #define SYS_preadv2 380
+    #elif defined(__riscv)
+        #define SYS_preadv2 286
     #else
         #error "Unsupported architecture"
     #endif
@@ -75,6 +78,9 @@ ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
 
 std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request request)
 {
+    /// If size is zero, then read() cannot be distinguished from EOF
+    assert(request.size);
+
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 
 #if defined(__linux__)
@@ -111,7 +117,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (!res)
             {
                 /// The file has ended.
-                promise.set_value(0);
+                promise.set_value({0, 0});
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
@@ -151,6 +157,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             else
             {
                 bytes_read += res;
+                __msan_unpoison(request.buf, res);
             }
         }
 
@@ -169,7 +176,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-            promise.set_value(bytes_read);
+            promise.set_value({bytes_read, 0});
             return future;
         }
     }
@@ -212,7 +219,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        return bytes_read;
+        return Result{ .size = bytes_read, .offset = 0 };
     });
 
     auto future = task->get_future();

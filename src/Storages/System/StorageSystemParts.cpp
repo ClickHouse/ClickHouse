@@ -30,6 +30,9 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>()},
         {"modification_time",                           std::make_shared<DataTypeDateTime>()},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>()},
         {"refcount",                                    std::make_shared<DataTypeUInt32>()},
@@ -98,6 +101,7 @@ void StorageSystemParts::processNextStorage(
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize secondary_indexes_size = part->getTotalSeconaryIndicesSize();
 
         size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])
@@ -113,7 +117,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -126,6 +130,12 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(columns_size.data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.marks);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 

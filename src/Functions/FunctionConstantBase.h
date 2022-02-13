@@ -12,18 +12,9 @@ template<typename Derived, typename T, typename ColumnT>
 class FunctionConstantBase : public IFunction
 {
 public:
-
-    /// For server-level constants (uptime(), version(), etc)
-    explicit FunctionConstantBase(ContextPtr context, T && constant_value_)
-        : is_distributed(context->isDistributed())
-        , constant_value(std::forward<T>(constant_value_))
-    {
-    }
-
-    /// For real constants (pi(), e(), etc)
-    explicit FunctionConstantBase(const T & constant_value_)
-        : is_distributed(false)
-        , constant_value(constant_value_)
+    template <typename U>
+    explicit FunctionConstantBase(U && constant_value_, bool is_distributed_ = false)
+        : constant_value(std::forward<U>(constant_value_)), is_distributed(is_distributed_)
     {
     }
 
@@ -56,8 +47,8 @@ public:
     }
 
 private:
-    bool is_distributed;
     const T constant_value;
+    bool is_distributed;
 };
 
 }

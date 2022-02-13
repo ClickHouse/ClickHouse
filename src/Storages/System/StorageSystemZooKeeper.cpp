@@ -15,7 +15,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 

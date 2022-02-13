@@ -15,13 +15,9 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -32,7 +28,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/interpolate.h>
@@ -46,18 +41,9 @@
 
 #include <boost/algorithm/string/replace.hpp>
 
-namespace ProfileEvents
-{
-    extern const Event MergedRows;
-    extern const Event MergedUncompressedBytes;
-    extern const Event MergesTimeMilliseconds;
-    extern const Event Merge;
-}
-
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
-    extern const Metric PartMutation;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
 
 namespace DB
@@ -77,33 +63,34 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 ///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size_)
-    : data(data_), background_pool_size(background_pool_size_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
+MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_)
+    : data(data_), max_tasks_count(max_tasks_count_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
 }
 
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 {
-    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
+    size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool);
+    return getMaxSourcePartsSizeForMerge(max_tasks_count, scheduled_tasks_count);
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const
 {
-    if (pool_used > pool_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used = {} > pool_size = {}", pool_used, pool_size);
+    if (scheduled_tasks_count > max_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: invalid argument passed to \
+            getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}", scheduled_tasks_count, max_count);
 
-    size_t free_entries = pool_size - pool_used;
+    size_t free_entries = max_count - scheduled_tasks_count;
     const auto data_settings = data.getSettings();
 
     /// Always allow maximum size if one or less pool entries is busy.
     /// One entry is probably the entry where this function is executed.
     /// This will protect from bad settings.
     UInt64 max_size = 0;
-    if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+    if (scheduled_tasks_count <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
         max_size = interpolateExponential(
@@ -118,14 +105,14 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
 {
     const auto data_settings = data.getSettings();
-    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
+    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
     /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (busy_threads_in_pool <= 1
-        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (occupied <= 1
+        || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
@@ -327,7 +314,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
+    }
 
     if (!final && parts.size() == 1)
     {
@@ -341,6 +332,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
+        if (out_disable_reason)
+            *out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
         return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
@@ -425,7 +418,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -439,8 +432,9 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        prefix,
+        suffix,
         &data,
+        this,
         &merges_blocker,
         &ttl_merges_blocker);
 }
@@ -670,27 +664,55 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 }
 
 
-NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+std::pair<NamesAndTypesList, SerializationInfoByName>
+MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList storage_columns,
+    const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_removes)
 {
-    /// In compact parts we read all columns, because they all stored in a
-    /// single file
-    if (!isWidePart(source_part))
-        return updated_header.getNamesAndTypesList();
-
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
+    NameToNameMap renamed_columns_from_to;
+    ColumnsDescription part_columns(source_part->getColumns());
+
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        /// If we don't have this column in source part, than we don't need to materialize it
+        if (!part_columns.has(command.column_name))
+            continue;
+
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
+
         if (command.type == MutationCommand::RENAME_COLUMN)
+        {
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+            renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+        }
     }
+
+    bool is_wide_part = isWidePart(source_part);
+    SerializationInfoByName new_serialization_infos;
+    for (const auto & [name, info] : serialization_infos)
+    {
+        if (is_wide_part && removed_columns.count(name))
+            continue;
+
+        auto it = renamed_columns_from_to.find(name);
+        if (it != renamed_columns_from_to.end())
+            new_serialization_infos.emplace(it->second, info);
+        else
+            new_serialization_infos.emplace(name, info);
+    }
+
+    /// In compact parts we read all columns, because they all stored in a
+    /// single file
+    if (!is_wide_part)
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos};
+
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
@@ -717,18 +739,9 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             }
             else
             {
-                bool was_renamed = false;
-                bool was_removed = removed_columns.count(it->name);
-
                 /// Check that this column was renamed to some other name
-                for (const auto & [rename_to, rename_from] : renamed_columns_to_from)
-                {
-                    if (rename_from == it->name)
-                    {
-                        was_renamed = true;
-                        break;
-                    }
-                }
+                bool was_renamed = renamed_columns_from_to.count(it->name);
+                bool was_removed = removed_columns.count(it->name);
 
                 /// If we want to rename this column to some other name, than it
                 /// should it's previous version should be dropped or removed
@@ -736,7 +749,6 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
-
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
@@ -748,7 +760,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
     }
 
-    return storage_columns;
+    return {storage_columns, new_serialization_infos};
 }
 
 
@@ -770,5 +782,11 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+
+bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
+{
+    std::lock_guard lock(tmp_parts_lock);
+    return tmp_parts.contains(basename);
+}
 
 }

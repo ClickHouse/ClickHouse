@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -14,7 +14,7 @@ class StorageSystemAsynchronousInserts final :
     public IStorageSystemOneBlock<StorageSystemAsynchronousInserts>
 {
 public:
-    std::string getName() const override { return "AsynchronousInserts"; }
+    std::string getName() const override { return "SystemAsynchronousInserts"; }
     static NamesAndTypesList getNamesAndTypes();
 
 protected:

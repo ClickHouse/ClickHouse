@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
@@ -20,7 +20,6 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 
 public:
     ReadBufferFromRabbitMQConsumer(
-            ChannelPtr consumer_channel_,
             RabbitMQHandler & event_handler_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
@@ -37,7 +36,7 @@ public:
         UInt64 delivery_tag;
         String channel_id;
 
-        AckTracker() : delivery_tag(0), channel_id("") {}
+        AckTracker() = default;
         AckTracker(UInt64 tag, String id) : delivery_tag(tag), channel_id(id) {}
     };
 
@@ -75,12 +74,6 @@ public:
     auto getMessageID() const { return current.message_id; }
     auto getTimestamp() const { return current.timestamp; }
 
-    void initialize()
-    {
-        if (!initialized)
-            setupChannel();
-    }
-
 private:
     bool nextImpl() override;
 
@@ -105,9 +98,6 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
-
-    /// Has initial setup after constructor been made?
-    bool initialized = false;
 };
 
 }

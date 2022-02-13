@@ -1,24 +1,24 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
+#include <IO/WriteBufferFromString.h>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
+
+#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
 
-using namespace DB;
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = std::unordered_set<std::string>;
+using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -29,7 +29,6 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    int64_t session_id_counter{1};
 
     struct Node
     {
@@ -39,6 +38,22 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{};
+        uint64_t size_bytes; // save size to avoid calculate every time
+
+        Node()
+        {
+            size_bytes = sizeof(size_bytes);
+            size_bytes += data.size();
+            size_bytes += sizeof(acl_id);
+            size_bytes += sizeof(is_sequental);
+            size_bytes += sizeof(stat);
+            size_bytes += sizeof(seq_num);
+        }
+        /// Object memory size
+        uint64_t sizeInBytes() const
+        {
+            return size_bytes;
+        }
     };
 
     struct ResponseForSession
@@ -46,7 +61,6 @@ public:
         int64_t session_id;
         Coordination::ZooKeeperResponsePtr response;
     };
-
     using ResponsesForSessions = std::vector<ResponseForSession>;
 
     struct RequestForSession
@@ -76,9 +90,12 @@ public:
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    SessionAndAuth session_and_auth;
-
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
+
+public:
+    int64_t session_id_counter{1};
+
+    SessionAndAuth session_and_auth;
 
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
@@ -143,9 +160,9 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode()
+    void enableSnapshotMode(size_t up_to_size)
     {
-        container.enableSnapshotMode();
+        container.enableSnapshotMode(up_to_size);
     }
 
     /// Turn off snapshot mode.
@@ -176,6 +193,42 @@ public:
     {
         return session_expiry_queue.getExpiredSessions();
     }
+
+    /// Introspection functions mostly used in 4-letter commands
+    uint64_t getNodesCount() const
+    {
+        return container.size();
+    }
+
+    uint64_t getApproximateDataSize() const
+    {
+        return container.getApproximateDataSize();
+    }
+
+    uint64_t getArenaDataSize() const
+    {
+        return container.keyArenaSize();
+    }
+
+
+    uint64_t getTotalWatchesCount() const;
+
+    uint64_t getWatchedPathsCount() const
+    {
+        return watches.size() + list_watches.size();
+    }
+
+    uint64_t getSessionsWithWatchesCount() const;
+
+    uint64_t getSessionWithEphemeralNodesCount() const
+    {
+        return ephemerals.size();
+    }
+    uint64_t getTotalEphemeralNodesCount() const;
+
+    void dumpWatches(WriteBufferFromOwnString & buf) const;
+    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
+    void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 };
 
 using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;

@@ -282,6 +282,7 @@ def test_postgres_schema(started_cluster):
     cursor.execute('INSERT INTO test_schema.test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
+    DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
     SOURCE(POSTGRESQL(
@@ -311,6 +312,7 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute('INSERT INTO test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
+    DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
     SOURCE(POSTGRESQL(NAME postgres1))
@@ -367,6 +369,29 @@ def test_predefined_connection_configuration(started_cluster):
     ''')
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert(int(result.strip()) == 99)
+
+
+def test_bad_configuration(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+
+    node1.query('''
+    DROP DICTIONARY IF EXISTS postgres_dict;
+    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(POSTGRESQL(
+        port 5432
+        host 'postgres1'
+        user  'postgres'
+        password 'mysecretpassword'
+        dbbb 'clickhouse'
+        table 'test_schema.test_table'))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    ''')
+
+    node1.query_and_get_error("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(1))")
+    assert node1.contains_in_log('Unexpected key `dbbb`')
 
 
 if __name__ == '__main__':

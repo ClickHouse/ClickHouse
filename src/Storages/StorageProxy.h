@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Processors/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -37,6 +38,8 @@ public:
         const StorageMetadataPtr &,
         SelectQueryInfo & info) const override
     {
+        /// TODO: Find a way to support projections for StorageProxy
+        info.ignore_projections = true;
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
@@ -91,7 +94,7 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
         IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());

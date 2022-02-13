@@ -20,6 +20,8 @@ public:
     MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
+    UInt64 getPriority() override { return priority; }
+
 protected:
     /// Both return false if we can't execute merge.
     std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
@@ -38,6 +40,8 @@ private:
 
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
+
+    UInt64 priority{0};
 
     MergeTaskPtr merge_task;
 };

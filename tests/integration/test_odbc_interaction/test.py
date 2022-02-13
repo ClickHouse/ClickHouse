@@ -338,6 +338,8 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')")
     node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+    node1.exec_in_container(["ss", "-K", "dport", "postgresql"], privileged=True, user='root')
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
@@ -554,7 +556,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000))
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000), retry_count=100)
 
     def node_insert_select(_):
         for i in range(5):
@@ -564,7 +566,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2))
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2), retry_count=100)
 
     node1.query('DROP TABLE test_pg_table;')
     cursor.execute('DROP TABLE clickhouse.test_pg_table;')
@@ -627,4 +629,3 @@ def test_odbc_long_text(started_cluster):
     cursor.execute("""insert into clickhouse.test_long_text (flen, field1) values (400000, '{}')""".format(long_text));
     result = node1.query("select field1 from test_long_text where flen=400000;")
     assert(result.strip() == long_text)
-

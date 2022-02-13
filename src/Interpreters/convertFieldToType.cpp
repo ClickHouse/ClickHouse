@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -60,7 +61,7 @@ static Field convertNumericTypeImpl(const Field & from)
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
 {
-    if (from.getType() == Field::Types::UInt64)
+    if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
         return convertNumericTypeImpl<UInt64, To>(from);
     if (from.getType() == Field::Types::Int64)
         return convertNumericTypeImpl<Int64, To>(from);
@@ -203,6 +204,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
+        }
+
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
@@ -210,7 +217,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
             const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
@@ -378,11 +385,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
         }
-        if (!in_buffer.eof())
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint);

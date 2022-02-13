@@ -92,8 +92,8 @@ ClickHouseサーバーにいくつかのサンプルデータを入れてみま�
 ### テーブルデータのダウンロードと展開 {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 展開されたファイルのサイズは約10GBです。

@@ -1,7 +1,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -43,6 +43,9 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+
+    if (!executor->checkTimeLimitSoft())
+        return false;
 
     if (!executor->executeStep(&has_data_flag))
         return false;
@@ -118,7 +121,7 @@ Block PullingPipelineExecutor::getExtremesBlock()
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
-BlockStreamProfileInfo & PullingPipelineExecutor::getProfileInfo()
+ProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
     return pulling_format->getProfileInfo();
 }

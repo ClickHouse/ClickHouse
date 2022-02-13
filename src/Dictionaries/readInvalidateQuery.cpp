@@ -1,5 +1,5 @@
 #include "readInvalidateQuery.h"
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>

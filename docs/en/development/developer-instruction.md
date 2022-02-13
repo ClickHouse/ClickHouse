@@ -65,7 +65,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone https://github.com/ClickHouse/ClickHouse.git
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -79,7 +79,7 @@ After successfully running this command you will be able to pull updates from th
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -92,16 +92,16 @@ Working with submodules in git could be painful. Next commands will help to mana
 The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -124,10 +124,6 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     brew install cmake ninja
 
 Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
-
-## Optional External Libraries {#optional-external-libraries}
-
-ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
 ## C++ Compiler {#c-compiler}
 
@@ -157,6 +153,8 @@ While inside the `build` directory, configure your build by running CMake. Befor
 
     export CC=clang CXX=clang++
     cmake ..
+
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-13 CXX=clang++-13`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -241,7 +239,7 @@ Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib
 
 Writing tests: https://clickhouse.com/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
 
 ## Test Data {#test-data}
 
@@ -249,8 +247,8 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

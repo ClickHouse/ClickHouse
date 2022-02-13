@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Util/Application.h>
 #include <IO/Operators.h>
 
@@ -102,7 +102,7 @@ public:
     ~DebugASTLog()
     {
         if constexpr (_enable)
-            LOG_DEBUG(log, buf.str());
+            LOG_DEBUG(log, fmt::runtime(buf.str()));
     }
 
     WriteBuffer * stream() { return (_enable ? &buf : nullptr); }

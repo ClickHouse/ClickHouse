@@ -345,7 +345,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toTimeZone = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toTimeZone](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#totimezone)\n'
+        '[ClickHouse] SHALL support correct operation of the [toTimeZone](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#totimezone)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -361,7 +361,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYear = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyear)\n'
+        '[ClickHouse] SHALL support correct operation of the [toYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyear)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -377,7 +377,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toQuarter = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toQuarter](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toquarter)\n'
+        '[ClickHouse] SHALL support correct operation of the [toQuarter](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toquarter)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -393,7 +393,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMonth = Requirement
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tomonth)\n'
+        '[ClickHouse] SHALL support correct operation of the [toMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tomonth)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -409,7 +409,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfYear = Require
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toDayOfYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofyear)\n'
+        '[ClickHouse] SHALL support correct operation of the [toDayOfYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofyear)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -425,7 +425,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfMonth = Requir
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toDayOfMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofmonth)\n'
+        '[ClickHouse] SHALL support correct operation of the [toDayOfMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofmonth)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -441,7 +441,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toDayOfWeek = Require
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toDayOfWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofweek)\n'
+        '[ClickHouse] SHALL support correct operation of the [toDayOfWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofweek)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -457,7 +457,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toHour = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toHour](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tohour)\n'
+        '[ClickHouse] SHALL support correct operation of the [toHour](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tohour)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -473,7 +473,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMinute = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tominute)\n'
+        '[ClickHouse] SHALL support correct operation of the [toMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tominute)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -489,7 +489,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toSecond = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toSecond](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tosecond)\n'
+        '[ClickHouse] SHALL support correct operation of the [toSecond](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tosecond)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -505,7 +505,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toUnixTimestamp = Req
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toUnitTimestamp](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#to-unix-timestamp)\n'
+        '[ClickHouse] SHALL support correct operation of the [toUnitTimestamp](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#to-unix-timestamp)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         'Timestamp value expected to be negative when DateTime64 value is prior to `1970-01-01` and positine otherwise.\n'
         '\n'
@@ -522,7 +522,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfYear = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofyear)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofyear)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -538,7 +538,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfISOYear = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfISOYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofisoyear)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfISOYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofisoyear)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -554,7 +554,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfQuarter = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfQuarter](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofquarter)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfQuarter](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofquarter)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -570,7 +570,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfMonth = Requ
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofmonth)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofmonth)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -586,7 +586,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toMonday = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toMonday](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tomonday)\n'
+        '[ClickHouse] SHALL support correct operation of the [toMonday](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tomonday)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -602,7 +602,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfWeek = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofweektmode)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofweektmode)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -618,7 +618,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfDay = Requir
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfDay](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofday)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfDay](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofday)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -634,7 +634,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfHour = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfHour](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofhour)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfHour](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofhour)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -650,7 +650,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfMinute = Req
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofminute)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofminute)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -666,7 +666,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfSecond = Req
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfSecond](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofsecond)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfSecond](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofsecond)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -682,7 +682,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFiveMinute =
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfFiveMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoffiveminute)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfFiveMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoffiveminute)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -698,7 +698,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfTenMinutes =
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfTenMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoftenminutes)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfTenMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoftenminutes)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -714,7 +714,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFifteenMinut
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfFifteenMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoffifteenminutes)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfFifteenMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoffifteenminutes)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -730,7 +730,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfInterval = R
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toStartOfInterval](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofintervaltime-or-data-interval-x-unit-time-zone)\n'
+        '[ClickHouse] SHALL support correct operation of the [toStartOfInterval](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofintervaltime-or-data-interval-x-unit-time-zone)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         'More detailed description can be found [here](https://github.com/ClickHouse/ClickHouse/issues/1201).\n'
         '\n'
@@ -747,7 +747,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toTime = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toTime](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#totime)\n'
+        '[ClickHouse] SHALL support correct operation of the [toTime](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#totime)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -763,7 +763,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeYearNum = R
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeYearNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeyearnum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeYearNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeyearnum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -779,7 +779,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeQuarterNum 
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeQuarterNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativequarternum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeQuarterNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativequarternum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -795,7 +795,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeMonthNum = 
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeMonthNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativemonthnum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeMonthNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativemonthnum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -811,7 +811,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeWeekNum = R
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeWeekNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeweeknum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeWeekNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeweeknum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -827,7 +827,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeDayNum = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeDayNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativedaynum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeDayNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativedaynum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -843,7 +843,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeHourNum = R
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeHourNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativehournum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeHourNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativehournum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -859,7 +859,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeMinuteNum =
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeMinuteNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeminutenum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeMinuteNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeminutenum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -875,7 +875,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toRelativeSecondNum =
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toRelativeSecondNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativesecondnum)\n'
+        '[ClickHouse] SHALL support correct operation of the [toRelativeSecondNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativesecondnum)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -891,7 +891,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toISOYear = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toISOYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toisoyear)\n'
+        '[ClickHouse] SHALL support correct operation of the [toISOYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toisoyear)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -907,7 +907,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toISOWeek = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toISOWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toisoweek)\n'
+        '[ClickHouse] SHALL support correct operation of the [toISOWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toisoweek)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -923,7 +923,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toWeek = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode)\n'
+        '[ClickHouse] SHALL support correct operation of the [toWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -939,7 +939,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYearWeek = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toYearWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyearweekdatemode)\n'
+        '[ClickHouse] SHALL support correct operation of the [toYearWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyearweekdatemode)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -955,7 +955,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_now = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support conversion of output from the [now](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#now)\n'
+        '[ClickHouse] SHALL support conversion of output from the [now](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#now)\n'
         'function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -971,7 +971,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_today = Requirement(
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support conversion of output from the [today](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#today)\n'
+        '[ClickHouse] SHALL support conversion of output from the [today](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#today)\n'
         'function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -987,7 +987,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_yesterday = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support conversion of output from the [yesterday](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#yesterday)\n'
+        '[ClickHouse] SHALL support conversion of output from the [yesterday](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#yesterday)\n'
         'function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1003,7 +1003,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_timeSlot = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support conversion of output from the [timeSlot](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#timeslot)\n'
+        '[ClickHouse] SHALL support conversion of output from the [timeSlot](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#timeslot)\n'
         'function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1019,7 +1019,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYYYYMM = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toYYYYMM](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymm)\n'
+        '[ClickHouse] SHALL support correct operation of the [toYYYYMM](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymm)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1035,7 +1035,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYYYYMMDD = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toYYYYMMDD](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymmdd)\n'
+        '[ClickHouse] SHALL support correct operation of the [toYYYYMMDD](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymmdd)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1051,7 +1051,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toYYYYMMDDhhmmss = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [toYYYYMMDDhhmmss](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymmddhhmmss)\n'
+        '[ClickHouse] SHALL support correct operation of the [toYYYYMMDDhhmmss](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymmddhhmmss)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1067,7 +1067,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addYears = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addYears](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addYears](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1083,7 +1083,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addMonths = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addMonths](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addMonths](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1099,7 +1099,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addWeeks = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addWeeks](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addWeeks](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1115,7 +1115,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addDays = Requirement
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addDays](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addDays](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1131,7 +1131,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addHours = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addHours](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addHours](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1147,7 +1147,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addMinutes = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1163,7 +1163,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addSeconds = Requirem
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addSeconds](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addSeconds](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1179,7 +1179,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_addQuarters = Require
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [addQuarters](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [addQuarters](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1195,7 +1195,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractYears = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractYears](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractYears](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1211,7 +1211,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractMonths = Requ
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractMonths](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractMonths](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1227,7 +1227,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractWeeks = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractWeeks](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractWeeks](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1243,7 +1243,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractDays = Requir
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractDays](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractDays](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         '\n'
@@ -1260,7 +1260,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractHours = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractHours](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractHours](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1276,7 +1276,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractMinutes = Req
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1292,7 +1292,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractSeconds = Req
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractSeconds](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractSeconds](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1308,7 +1308,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_subtractQuarters = Re
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [subtractQuarters](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
+        '[ClickHouse] SHALL support correct operation of the [subtractQuarters](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1324,7 +1324,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_dateDiff = Requiremen
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [dateDiff](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#datediff)\n'
+        '[ClickHouse] SHALL support correct operation of the [dateDiff](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#datediff)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1340,7 +1340,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_timeSlots = Requireme
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [timeSlots](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#timeslotsstarttime-duration-size)\n'
+        '[ClickHouse] SHALL support correct operation of the [timeSlots](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#timeslotsstarttime-duration-size)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1356,7 +1356,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_formatDateTime = Requ
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct operation of the [formatDateTime](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#formatdatetime)\n'
+        '[ClickHouse] SHALL support correct operation of the [formatDateTime](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#formatdatetime)\n'
         'function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         '\n'
@@ -1374,7 +1374,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toInt_8_16_32_64_128
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to integer types using [toInt(8|16|32|64|128|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#toint8163264128256) functions.\n'
+        'to integer types using [toInt(8|16|32|64|128|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#toint8163264128256) functions.\n'
         '\n'
         ),
     link=None,
@@ -1390,7 +1390,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUInt_8_16_32_64_25
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to unsigned integer types using [toUInt(8|16|32|64|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#touint8163264256) functions.\n'
+        'to unsigned integer types using [toUInt(8|16|32|64|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#touint8163264256) functions.\n'
         '\n'
         ),
     link=None,
@@ -1406,7 +1406,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toFloat_32_64_ = Req
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to float types using [toFloat(32|64)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tofloat3264) functions.\n'
+        'to float types using [toFloat(32|64)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tofloat3264) functions.\n'
         '\n'
         ),
     link=None,
@@ -1422,7 +1422,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDate = Requirement
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range]\n'
-        'to the [Date](https://clickhouse.tech/docs/en/sql-reference/data-types/date/) type using the [toDate](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todate) function.\n'
+        'to the [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date/) type using the [toDate](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todate) function.\n'
         'This function is ONLY supposed to work in NORMAL RANGE.\n'
         '\n'
         ),
@@ -1439,7 +1439,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime = Require
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to the [DateTime](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime/) type using the [toDateTime](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todatetime) function.\n'
+        'to the [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime/) type using the [toDateTime](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todatetime) function.\n'
         'This function is ONLY supposed to work in NORMAL RANGE.\n'
         '\n'
         ),
@@ -1455,7 +1455,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime64 = Requi
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct conversion from the data types supported by the [toDateTime64](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/) function\n'
+        '[ClickHouse] SHALL support correct conversion from the data types supported by the [toDateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/) function\n'
         'to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].\n'
         '\n'
         ),
@@ -1471,8 +1471,8 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDateTime64_FromStr
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct conversion from the [String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)\n'
-        'data type to the [DateTime64](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/) data type\n'
+        '[ClickHouse] SHALL support correct conversion from the [String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)\n'
+        'data type to the [DateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/) data type\n'
         'when value of the string is missing the `hh:mm-ss.sss` part.\n'
         "For example, `toDateTime64('2020-01-01', 3)`.\n"
         '\n'
@@ -1490,7 +1490,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toDecimal_32_64_128_
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to [Decimal](https://clickhouse.tech/docs/en/sql-reference/data-types/decimal/) types using [toDecimal(32|64|128|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todecimal3264128256) functions.\n'
+        'to [Decimal](https://clickhouse.com/docs/en/sql-reference/data-types/decimal/) types using [toDecimal(32|64|128|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todecimal3264128256) functions.\n'
         '\n'
         ),
     link=None,
@@ -1506,7 +1506,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toString = Requireme
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to the [String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/) type using the [toString](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tostring) function.\n'
+        'to the [String](https://clickhouse.com/docs/en/sql-reference/data-types/string/) type using the [toString](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tostring) function.\n'
         '\n'
         ),
     link=None,
@@ -1522,7 +1522,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_CAST_x_T_ = Requirem
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to one of the supported data type using the [CAST(x,T)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) function.\n'
+        'to one of the supported data type using the [CAST(x,T)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) function.\n'
         '\n'
         ),
     link=None,
@@ -1538,7 +1538,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Mil
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Milli](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64milli) function.\n'
+        'to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Milli](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64milli) function.\n'
         '\n'
         ),
     link=None,
@@ -1554,7 +1554,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Mic
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Micro](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64micro) function.\n'
+        'to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Micro](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64micro) function.\n'
         '\n'
         ),
     link=None,
@@ -1570,7 +1570,7 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_toUnixTimestamp64Nan
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Nano](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64nano) function.\n'
+        'to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Nano](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64nano) function.\n'
         '\n'
         ),
     link=None,
@@ -1585,9 +1585,9 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64M
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type\n'
+        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type\n'
         'to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'using the [fromUnixTimestamp64Milli](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64milli) function.\n'
+        'using the [fromUnixTimestamp64Milli](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64milli) function.\n'
         '\n'
         ),
     link=None,
@@ -1602,9 +1602,9 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64M
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type\n'
+        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type\n'
         'to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'using the [fromUnixTimestamp64Micro](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64micro) function.\n'
+        'using the [fromUnixTimestamp64Micro](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64micro) function.\n'
         '\n'
         ),
     link=None,
@@ -1619,9 +1619,9 @@ RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions_fromUnixTimestamp64N
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type\n'
+        '[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type\n'
         'to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]\n'
-        'using the [fromUnixTimestamp64Nano](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64nano) function.\n'
+        'using the [fromUnixTimestamp64Nano](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64nano) function.\n'
         '\n'
         ),
     link=None,
@@ -2155,388 +2155,388 @@ version: 1.0
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toTimeZone
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toTimeZone](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#totimezone)
+[ClickHouse] SHALL support correct operation of the [toTimeZone](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#totimezone)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toYear
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyear)
+[ClickHouse] SHALL support correct operation of the [toYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyear)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toQuarter
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toQuarter](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toquarter)
+[ClickHouse] SHALL support correct operation of the [toQuarter](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toquarter)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toMonth
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tomonth)
+[ClickHouse] SHALL support correct operation of the [toMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tomonth)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toDayOfYear
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toDayOfYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofyear)
+[ClickHouse] SHALL support correct operation of the [toDayOfYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofyear)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toDayOfMonth
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toDayOfMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofmonth)
+[ClickHouse] SHALL support correct operation of the [toDayOfMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofmonth)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toDayOfWeek
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toDayOfWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#todayofweek)
+[ClickHouse] SHALL support correct operation of the [toDayOfWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#todayofweek)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toHour
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toHour](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tohour)
+[ClickHouse] SHALL support correct operation of the [toHour](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tohour)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toMinute
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tominute)
+[ClickHouse] SHALL support correct operation of the [toMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tominute)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toSecond
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toSecond](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tosecond)
+[ClickHouse] SHALL support correct operation of the [toSecond](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tosecond)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toUnixTimestamp
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toUnitTimestamp](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#to-unix-timestamp)
+[ClickHouse] SHALL support correct operation of the [toUnitTimestamp](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#to-unix-timestamp)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 Timestamp value expected to be negative when DateTime64 value is prior to `1970-01-01` and positine otherwise.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfYear
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofyear)
+[ClickHouse] SHALL support correct operation of the [toStartOfYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofyear)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfISOYear
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfISOYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofisoyear)
+[ClickHouse] SHALL support correct operation of the [toStartOfISOYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofisoyear)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfQuarter
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfQuarter](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofquarter)
+[ClickHouse] SHALL support correct operation of the [toStartOfQuarter](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofquarter)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfMonth
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfMonth](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofmonth)
+[ClickHouse] SHALL support correct operation of the [toStartOfMonth](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofmonth)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toMonday
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toMonday](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tomonday)
+[ClickHouse] SHALL support correct operation of the [toMonday](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tomonday)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfWeek
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofweektmode)
+[ClickHouse] SHALL support correct operation of the [toStartOfWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofweektmode)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfDay
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfDay](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofday)
+[ClickHouse] SHALL support correct operation of the [toStartOfDay](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofday)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfHour
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfHour](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofhour)
+[ClickHouse] SHALL support correct operation of the [toStartOfHour](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofhour)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfMinute
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofminute)
+[ClickHouse] SHALL support correct operation of the [toStartOfMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofminute)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfSecond
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfSecond](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofsecond)
+[ClickHouse] SHALL support correct operation of the [toStartOfSecond](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofsecond)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfFiveMinute
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfFiveMinute](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoffiveminute)
+[ClickHouse] SHALL support correct operation of the [toStartOfFiveMinute](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoffiveminute)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfTenMinutes
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfTenMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoftenminutes)
+[ClickHouse] SHALL support correct operation of the [toStartOfTenMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoftenminutes)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfFifteenMinutes
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfFifteenMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartoffifteenminutes)
+[ClickHouse] SHALL support correct operation of the [toStartOfFifteenMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartoffifteenminutes)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toStartOfInterval
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toStartOfInterval](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+[ClickHouse] SHALL support correct operation of the [toStartOfInterval](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 More detailed description can be found [here](https://github.com/ClickHouse/ClickHouse/issues/1201).
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toTime
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toTime](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#totime)
+[ClickHouse] SHALL support correct operation of the [toTime](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#totime)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeYearNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeYearNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeyearnum)
+[ClickHouse] SHALL support correct operation of the [toRelativeYearNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeyearnum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeQuarterNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeQuarterNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativequarternum)
+[ClickHouse] SHALL support correct operation of the [toRelativeQuarterNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativequarternum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeMonthNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeMonthNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativemonthnum)
+[ClickHouse] SHALL support correct operation of the [toRelativeMonthNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativemonthnum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeWeekNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeWeekNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeweeknum)
+[ClickHouse] SHALL support correct operation of the [toRelativeWeekNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeweeknum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeDayNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeDayNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativedaynum)
+[ClickHouse] SHALL support correct operation of the [toRelativeDayNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativedaynum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeHourNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeHourNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativehournum)
+[ClickHouse] SHALL support correct operation of the [toRelativeHourNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativehournum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeMinuteNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeMinuteNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativeminutenum)
+[ClickHouse] SHALL support correct operation of the [toRelativeMinuteNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativeminutenum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toRelativeSecondNum
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toRelativeSecondNum](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#torelativesecondnum)
+[ClickHouse] SHALL support correct operation of the [toRelativeSecondNum](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#torelativesecondnum)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toISOYear
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toISOYear](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toisoyear)
+[ClickHouse] SHALL support correct operation of the [toISOYear](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toisoyear)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toISOWeek
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toISOWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toisoweek)
+[ClickHouse] SHALL support correct operation of the [toISOWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toisoweek)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toWeek
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode)
+[ClickHouse] SHALL support correct operation of the [toWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toYearWeek
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toYearWeek](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyearweekdatemode)
+[ClickHouse] SHALL support correct operation of the [toYearWeek](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyearweekdatemode)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.now
 version: 1.0
 
-[ClickHouse] SHALL support conversion of output from the [now](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#now)
+[ClickHouse] SHALL support conversion of output from the [now](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#now)
 function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.today
 version: 1.0
 
-[ClickHouse] SHALL support conversion of output from the [today](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#today)
+[ClickHouse] SHALL support conversion of output from the [today](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#today)
 function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.yesterday
 version: 1.0
 
-[ClickHouse] SHALL support conversion of output from the [yesterday](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#yesterday)
+[ClickHouse] SHALL support conversion of output from the [yesterday](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#yesterday)
 function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.timeSlot
 version: 1.0
 
-[ClickHouse] SHALL support conversion of output from the [timeSlot](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#timeslot)
+[ClickHouse] SHALL support conversion of output from the [timeSlot](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#timeslot)
 function to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toYYYYMM
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toYYYYMM](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymm)
+[ClickHouse] SHALL support correct operation of the [toYYYYMM](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymm)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toYYYYMMDD
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toYYYYMMDD](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymmdd)
+[ClickHouse] SHALL support correct operation of the [toYYYYMMDD](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymmdd)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.toYYYYMMDDhhmmss
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [toYYYYMMDDhhmmss](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toyyyymmddhhmmss)
+[ClickHouse] SHALL support correct operation of the [toYYYYMMDDhhmmss](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toyyyymmddhhmmss)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addYears
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addYears](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addYears](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addMonths
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addMonths](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addMonths](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addWeeks
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addWeeks](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addWeeks](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addDays
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addDays](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addDays](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addHours
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addHours](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addHours](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addMinutes
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addSeconds
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addSeconds](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addSeconds](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.addQuarters
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [addQuarters](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
+[ClickHouse] SHALL support correct operation of the [addQuarters](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractYears
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractYears](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractYears](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractMonths
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractMonths](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractMonths](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractWeeks
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractWeeks](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractWeeks](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractDays
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractDays](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractDays](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractHours
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractHours](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractHours](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractMinutes
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractMinutes](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractMinutes](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractSeconds
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractSeconds](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractSeconds](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.subtractQuarters
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [subtractQuarters](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
+[ClickHouse] SHALL support correct operation of the [subtractQuarters](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.dateDiff
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [dateDiff](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#datediff)
+[ClickHouse] SHALL support correct operation of the [dateDiff](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#datediff)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.timeSlots
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [timeSlots](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#timeslotsstarttime-duration-size)
+[ClickHouse] SHALL support correct operation of the [timeSlots](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#timeslotsstarttime-duration-size)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.DatesAndTimesFunctions.formatDateTime
 version: 1.0
 
-[ClickHouse] SHALL support correct operation of the [formatDateTime](https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#formatdatetime)
+[ClickHouse] SHALL support correct operation of the [formatDateTime](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#formatdatetime)
 function used with the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 
@@ -2546,45 +2546,45 @@ function used with the [DateTime64] data type when it stores dates within the [n
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to integer types using [toInt(8|16|32|64|128|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#toint8163264128256) functions.
+to integer types using [toInt(8|16|32|64|128|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#toint8163264128256) functions.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toUInt(8|16|32|64|256)
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to unsigned integer types using [toUInt(8|16|32|64|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#touint8163264256) functions.
+to unsigned integer types using [toUInt(8|16|32|64|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#touint8163264256) functions.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toFloat(32|64)
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to float types using [toFloat(32|64)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tofloat3264) functions.
+to float types using [toFloat(32|64)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tofloat3264) functions.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toDate
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range]
-to the [Date](https://clickhouse.tech/docs/en/sql-reference/data-types/date/) type using the [toDate](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todate) function.
+to the [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date/) type using the [toDate](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todate) function.
 This function is ONLY supposed to work in NORMAL RANGE.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toDateTime
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to the [DateTime](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime/) type using the [toDateTime](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todatetime) function.
+to the [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime/) type using the [toDateTime](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todatetime) function.
 This function is ONLY supposed to work in NORMAL RANGE.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toDateTime64
 version: 1.0
 
-[ClickHouse] SHALL support correct conversion from the data types supported by the [toDateTime64](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/) function
+[ClickHouse] SHALL support correct conversion from the data types supported by the [toDateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/) function
 to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range].
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toDateTime64.FromString.MissingTime
 version: 1.0
 
-[ClickHouse] SHALL support correct conversion from the [String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)
-data type to the [DateTime64](https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/) data type
+[ClickHouse] SHALL support correct conversion from the [String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)
+data type to the [DateTime64](https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/) data type
 when value of the string is missing the `hh:mm-ss.sss` part.
 For example, `toDateTime64('2020-01-01', 3)`.
 
@@ -2592,64 +2592,64 @@ For example, `toDateTime64('2020-01-01', 3)`.
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to [Decimal](https://clickhouse.tech/docs/en/sql-reference/data-types/decimal/) types using [toDecimal(32|64|128|256)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#todecimal3264128256) functions.
+to [Decimal](https://clickhouse.com/docs/en/sql-reference/data-types/decimal/) types using [toDecimal(32|64|128|256)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#todecimal3264128256) functions.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toString
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to the [String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/) type using the [toString](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tostring) function.
+to the [String](https://clickhouse.com/docs/en/sql-reference/data-types/string/) type using the [toString](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tostring) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.CAST(x,T)
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to one of the supported data type using the [CAST(x,T)](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) function.
+to one of the supported data type using the [CAST(x,T)](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toUnixTimestamp64Milli
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Milli](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64milli) function.
+to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Milli](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64milli) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toUnixTimestamp64Micro
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Micro](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64micro) function.
+to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Micro](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64micro) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.toUnixTimestamp64Nano
 version: 1.0
 
 [ClickHouse] SHALL support correct conversion of the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-to the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Nano](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64nano) function.
+to the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type using the [toUnixTimestamp64Nano](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#tounixtimestamp64nano) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.fromUnixTimestamp64Milli
 version: 1.0
 
-[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type
+[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type
 to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-using the [fromUnixTimestamp64Milli](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64milli) function.
+using the [fromUnixTimestamp64Milli](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64milli) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.fromUnixTimestamp64Micro
 version: 1.0
 
-[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type
+[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type
 to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-using the [fromUnixTimestamp64Micro](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64micro) function.
+using the [fromUnixTimestamp64Micro](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64micro) function.
 
 ###### RQ.SRS-010.DateTime64.ExtendedRange.TypeConversionFunctions.fromUnixTimestamp64Nano
 version: 1.0
 
-[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/) type
+[ClickHouse] SHALL support correct conversion from the [Int64](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/) type
 to the [DateTime64] data type when it stores dates within the [normal date range] and the [extended date range]
-using the [fromUnixTimestamp64Nano](https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64nano) function.
+using the [fromUnixTimestamp64Nano](https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#fromunixtimestamp64nano) function.
 
 ## References
 
-* **DateTime64**: https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/
+* **DateTime64**: https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/
 * **ISO 8601 format**: https://en.wikipedia.org/wiki/ISO_8601
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/datetime64_extended_range/requirements/requirements.md
 * **Revision History:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/datetime64_extended_range/requirements/requirements.md
 * **Git:** https://git-scm.com/
@@ -2657,10 +2657,10 @@ using the [fromUnixTimestamp64Nano](https://clickhouse.tech/docs/en/sql-referenc
 [SRS]: #srs
 [normal date range]: #normal-date-range
 [extended date range]: #extended-date-range
-[Dates and Times Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/
-[DateTime64]: https://clickhouse.tech/docs/en/sql-reference/data-types/datetime64/
+[Dates and Times Functions]: https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/
+[DateTime64]: https://clickhouse.com/docs/en/sql-reference/data-types/datetime64/
 [ISO 8601 format]: https://en.wikipedia.org/wiki/ISO_8601
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/datetime64_extended_range/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/datetime64_extended_range/requirements/requirements.md
 [Git]: https://git-scm.com/

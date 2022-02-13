@@ -1,5 +1,4 @@
--- Tags: long, no-replicated-database
--- Tag no-replicated-database: Unsupported type of ALTER query
+-- Tags: long
 
 DROP TABLE IF EXISTS test_01640;
 DROP TABLE IF EXISTS restore_01640;

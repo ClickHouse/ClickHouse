@@ -1,4 +1,4 @@
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
@@ -15,7 +15,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <Common/Stopwatch.h>
 

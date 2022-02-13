@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
         <dictionary>
        <name>sqlite3_odbc_hashed</name>
        <source>
@@ -43,4 +43,4 @@
 
        </structure>
    </dictionary>
-</yandex>
+</clickhouse>

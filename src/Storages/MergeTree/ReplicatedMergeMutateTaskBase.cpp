@@ -45,17 +45,17 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
+                LOG_INFO(log, fmt::runtime(e.message()));
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -122,7 +122,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_mutate_entry)->memory_tracker);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -217,9 +217,9 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTaskBase::checkExistingPart()
 {
     /// If we already have this part or a part covering it, we do not need to do anything.
-    /// The part may be still in the PreCommitted -> Committed transition so we first search
-    /// among PreCommitted parts to definitely find the desired part if it exists.
-    MergeTreeData::DataPartPtr existing_part = storage.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+    /// The part may be still in the PreActive -> Active transition so we first search
+    /// among PreActive parts to definitely find the desired part if it exists.
+    MergeTreeData::DataPartPtr existing_part = storage.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
 
     if (!existing_part)
         existing_part = storage.getActiveContainingPart(entry.new_part_name);

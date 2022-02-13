@@ -1,9 +1,9 @@
 #include "DNSResolver.h"
-#include <common/SimpleCache.h>
+#include <base/CachedFn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern Event DNSError;
+    extern const Event DNSError;
 }
 
 namespace std
@@ -114,11 +114,7 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
     try
     {
-#if defined(ARCADIA_BUILD)
-        addresses = Poco::Net::DNS::hostByName(host, &Poco::Net::DNS::DEFAULT_DNS_TIMEOUT, flags).addresses();
-#else
         addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
-#endif
     }
     catch (const Poco::Net::DNSException & e)
     {
@@ -146,8 +142,8 @@ static String reverseResolveImpl(const Poco::Net::IPAddress & address)
 
 struct DNSResolver::Impl
 {
-    SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
-    SimpleCache<decltype(reverseResolveImpl), &reverseResolveImpl> cache_address;
+    CachedFn<&resolveIPAddressImpl> cache_host;
+    CachedFn<&reverseResolveImpl> cache_address;
 
     std::mutex drop_mutex;
     std::mutex update_mutex;
@@ -204,6 +200,45 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
 
     addToNewHosts(host);
     return  Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
+}
+
+std::pair<Poco::Net::IPAddress, std::optional<UInt16>> DNSResolver::resolveHostOrAddress(const std::string & host_and_port)
+{
+    Poco::Net::IPAddress ip;
+
+    size_t number_of_colons = std::count(host_and_port.begin(), host_and_port.end(), ':');
+    if (number_of_colons > 1)
+    {
+        /// IPv6 host
+        if (host_and_port.starts_with('['))
+        {
+            size_t close_bracket_pos = host_and_port.find(']');
+            assert(close_bracket_pos != std::string::npos);
+            ip = resolveHost(host_and_port.substr(0, close_bracket_pos));
+
+            if (close_bracket_pos == host_and_port.size() - 1)
+                return {ip, std::nullopt};
+            if (host_and_port[close_bracket_pos + 1] != ':')
+                throw Exception("Missing delimiter between host and port", ErrorCodes::BAD_ARGUMENTS);
+
+            unsigned int port;
+            if (!Poco::NumberParser::tryParseUnsigned(host_and_port.substr(close_bracket_pos + 2), port))
+                throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
+            if (port > 0xFFFF)
+                throw Exception("Port must be less 0xFFFF", ErrorCodes::BAD_ARGUMENTS);
+            return {ip, port};
+        }
+        return {resolveHost(host_and_port), std::nullopt};
+    }
+    else if (number_of_colons == 1)
+    {
+        /// IPv4 host with port
+        Poco::Net::SocketAddress socket = resolveAddress(host_and_port);
+        return {socket.host(), socket.port()};
+    }
+
+    /// IPv4 host
+    return {resolveHost(host_and_port), std::nullopt};
 }
 
 String DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
@@ -276,7 +311,7 @@ bool DNSResolver::updateCacheImpl(UpdateF && update_func, ElemsT && elems, const
     }
 
     if (!lost_elems.empty())
-        LOG_INFO(log, log_msg, lost_elems);
+        LOG_INFO(log, fmt::runtime(log_msg), lost_elems);
 
     return updated;
 }

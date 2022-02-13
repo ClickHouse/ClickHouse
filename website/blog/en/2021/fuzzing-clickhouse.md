@@ -1,8 +1,8 @@
 ---
 title: 'Fuzzing ClickHouse'
-image: 'https://blog-images.clickhouse.tech/en/2021/fuzzing-clickhouse/some-checks-were-not-successful.png'
+image: 'https://blog-images.clickhouse.com/en/2021/fuzzing-clickhouse/some-checks-were-not-successful.png'
 date: '2021-03-11'
-author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
+author: 'Alexander Kuzmenkov'
 tags: ['fuzzing', 'testing']
 ---
 
@@ -24,7 +24,7 @@ Consider some SQL query from a regression test. After parsing, it is easy to mut
 
 Another interesting thing we can do is change the arguments of functions, or the list of expressions in `SELECT`, `ORDER BY` and so on. Naturally, all the interesting arguments can be taken from other test queries. Same goes for changing the tables used in the queries. When the fuzzer runs in CI, it runs queries from all the SQL tests in random order, mixing into them some parts of queries it has seen previously. This process can eventually cover all the possible permutations of our features.
 
-The core implementation of the fuzzer is relatively small, consisting of about 700 lines of C++ code. A prototype was made in a couple of days, but naturally it took significantly longer to polish it and to start routinely using it in CI. It is very productive and let us find more than 200 bugs already (see the label [fuzz](https://github.com/ClickHouse/ClickHouse/labels/fuzz) on GitHub), some of which are serious logic errors or even memory errors. When we only started, we could segfault the server or make it enter a never-ending loop with simplest read-only queries such as `SELECT arrayReverseFill(x -> (x < 10), [])` or `SELECT geoDistance(0., 0., -inf, 1.)`. Of course I couldn't resist bringing down our [public playground](https://gh-api.clickhouse.tech/play?user=play#LS0gWW91IGNhbiBxdWVyeSB0aGUgR2l0SHViIGhpc3RvcnkgZGF0YSBoZXJlLiBTZWUgaHR0cHM6Ly9naC5jbGlja2hvdXNlLnRlY2gvZXhwbG9yZXIvIGZvciB0aGUgZGVzY3JpcHRpb24gYW5kIGV4YW1wbGUgcXVlcmllcy4Kc2VsZWN0ICdoZWxsbyB3b3JsZCc=) with some of these queries, and was content to see that the server soon restarts correctly.  These queries are actually minified by hand, normally the fuzzer would generate something barely intelligible such as:
+The core implementation of the fuzzer is relatively small, consisting of about 700 lines of C++ code. A prototype was made in a couple of days, but naturally it took significantly longer to polish it and to start routinely using it in CI. It is very productive and let us find more than 200 bugs already (see the label [fuzz](https://github.com/ClickHouse/ClickHouse/labels/fuzz) on GitHub), some of which are serious logic errors or even memory errors. When we only started, we could segfault the server or make it enter a never-ending loop with simplest read-only queries such as `SELECT arrayReverseFill(x -> (x < 10), [])` or `SELECT geoDistance(0., 0., -inf, 1.)`. Of course I couldn't resist bringing down our [public playground](https://gh-api.clickhouse.com/play?user=play#LS0gWW91IGNhbiBxdWVyeSB0aGUgR2l0SHViIGhpc3RvcnkgZGF0YSBoZXJlLiBTZWUgaHR0cHM6Ly9naC5jbGlja2hvdXNlLnRlY2gvZXhwbG9yZXIvIGZvciB0aGUgZGVzY3JpcHRpb24gYW5kIGV4YW1wbGUgcXVlcmllcy4Kc2VsZWN0ICdoZWxsbyB3b3JsZCc=) with some of these queries, and was content to see that the server soon restarts correctly.  These queries are actually minified by hand, normally the fuzzer would generate something barely intelligible such as:
 ```
 SELECT
     (val + 257,
@@ -55,7 +55,4 @@ To see for yourself how the fuzzer works, you only need the normal ClickHouse cl
 
 ## Other Fuzzers
 
-The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.tech/cpp_siberia_2021/)) by Alexey Milovidov that explores all the fuzzers we have. Another interesting recent development is application of pivoted query synthesis technique, implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.  The authors are going to give [a talk about this](https://heisenbug-piter.ru/2021/spb/talks/nr1cwknssdodjkqgzsbvh/) soon, so stay tuned.
-
-_2021-03-11 [Alexander Kuzmenkov](https://github.com/akuzm)_
-
+The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.com/cpp_siberia_2021/)) by Alexey Milovidov that explores all the fuzzers we have. Another interesting recent development is application of pivoted query synthesis technique, implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.  The authors are going to give [a talk about this](https://heisenbug-piter.ru/2021/spb/talks/nr1cwknssdodjkqgzsbvh/) soon, so stay tuned.

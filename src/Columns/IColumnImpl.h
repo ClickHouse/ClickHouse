@@ -8,12 +8,16 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <base/sort.h>
+#include <algorithm>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Derived>
@@ -137,6 +141,155 @@ bool IColumn::hasEqualValuesImpl() const
             return false;
     }
     return true;
+}
+
+template <typename Derived>
+double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
+{
+    if (sample_ratio <= 0.0 || sample_ratio > 1.0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
+
+    /// Randomize a little to avoid boundary effects.
+    std::uniform_int_distribution<size_t> dist(1, static_cast<size_t>(1.0 / sample_ratio));
+
+    size_t num_rows = size();
+    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
+    size_t num_checked_rows = dist(thread_local_rng);
+    num_sampled_rows = std::min(num_sampled_rows + dist(thread_local_rng), num_rows);
+    size_t res = 0;
+
+    if (num_sampled_rows == num_rows)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            res += static_cast<const Derived &>(*this).isDefaultAt(i);
+        num_checked_rows = num_rows;
+    }
+    else if (num_sampled_rows != 0)
+    {
+        for (size_t i = num_checked_rows; i < num_rows; ++i)
+        {
+            if (num_checked_rows * num_rows <= i * num_sampled_rows)
+            {
+                res += static_cast<const Derived &>(*this).isDefaultAt(i);
+                ++num_checked_rows;
+            }
+        }
+    }
+
+    return static_cast<double>(res) / num_checked_rows;
+}
+
+template <typename Derived>
+void IColumn::getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!static_cast<const Derived &>(*this).isDefaultAt(i))
+            indices.push_back(i);
+    }
+}
+
+template <typename Comparator>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Comparator cmp) const
+{
+    updatePermutationImpl(
+        limit, res, equal_ranges,
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; },
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) == 0; },
+        [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); },
+        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
+}
+
+template <typename Less, typename Equals, typename Sort, typename PartialSort>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Less less,
+    Equals equals,
+    Sort full_sort,
+    PartialSort partial_sort) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit > equal_ranges.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_ranges[i];
+        full_sort(res.begin() + first, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (!equals(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+        {
+            equal_ranges = std::move(new_ranges);
+            return;
+        }
+
+        /// Since then we are working inside the interval.
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (!equals(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (equals(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
+
+    equal_ranges = std::move(new_ranges);
 }
 
 }

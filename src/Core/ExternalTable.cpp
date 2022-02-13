@@ -1,6 +1,4 @@
 #include <boost/program_options.hpp>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
@@ -11,16 +9,15 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Formats/IInputFormat.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
-#include <Formats/FormatFactory.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -37,11 +34,10 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
     initReadBuffer();
     initSampleBlock();
     auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
-    auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
 
     auto data = std::make_unique<ExternalTableData>();
+    data->pipe = std::make_unique<Pipe>(std::move(input));
     data->table_name = name;
-    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromInputStream>(std::move(stream)));
 
     return data;
 }
@@ -173,7 +169,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     processors.push_back(std::move(sink));
     processors.push_back(std::move(exception_handling));
 
-    auto executor = std::make_shared<PipelineExecutor>(processors);
+    auto executor = std::make_shared<PipelineExecutor>(processors, getContext()->getProcessListElement());
     executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received

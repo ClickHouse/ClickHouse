@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <s3>
@@ -46,4 +46,4 @@
         <shard>0</shard>
     </macros>
 
-</yandex>
+</clickhouse>

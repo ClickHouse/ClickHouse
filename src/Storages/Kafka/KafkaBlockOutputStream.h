@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class IOutputFormat;
+using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 class KafkaSink : public SinkToStorage
 {
 public:
@@ -26,7 +29,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     ProducerBufferPtr buffer;
-    BlockOutputStreamPtr child;
+    IOutputFormatPtr format;
 };
 
 }

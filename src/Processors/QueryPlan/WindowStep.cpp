@@ -2,7 +2,7 @@
 
 #include <Processors/Transforms/WindowTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>

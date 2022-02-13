@@ -6,7 +6,7 @@
 
 namespace DB
 {
-enum class ReadMethod
+enum class LocalFSReadMethod
 {
     /**
      * Simple synchronous reads with 'read'.
@@ -43,12 +43,20 @@ enum class ReadMethod
     pread_fake_async
 };
 
+enum class RemoteFSReadMethod
+{
+    read,
+    threadpool,
+};
+
 class MMappedFileCache;
 
 struct ReadSettings
 {
     /// Method to use reading from local filesystem.
-    ReadMethod local_fs_method = ReadMethod::pread;
+    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
+    /// Method to use reading from remote filesystem.
+    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::read;
 
     size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -66,8 +74,21 @@ struct ReadSettings
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
 
-    size_t remote_fs_backoff_threshold = 10000;
-    size_t remote_fs_backoff_max_tries = 4;
+    size_t remote_fs_read_max_backoff_ms = 10000;
+    size_t remote_fs_read_backoff_max_tries = 4;
+
+    size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    size_t http_max_tries = 1;
+    size_t http_retry_initial_backoff_ms = 100;
+    size_t http_retry_max_backoff_ms = 1600;
+    bool http_skip_not_found_url_for_globs = true;
+
+    /// Set to true for MergeTree tables to make sure
+    /// that last position (offset in compressed file) is always passed.
+    /// (Otherwise asynchronous reading from remote fs is not efficient).
+    /// If reading is done without final position set, throw logical_error.
+    bool must_read_until_position = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

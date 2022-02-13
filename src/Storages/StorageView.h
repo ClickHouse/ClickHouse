@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB

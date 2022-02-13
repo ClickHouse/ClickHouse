@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Common/SharedLibrary.h>
 #include <Bridge/LibraryBridgeHelper.h>
-#include <common/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>

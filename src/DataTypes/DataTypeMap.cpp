@@ -1,9 +1,7 @@
-#include <common/map.h>
+#include <base/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -11,14 +9,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <Parsers/IAST.h>
-#include <Parsers/ASTNameTypePair.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 
 
@@ -82,27 +73,6 @@ std::string DataTypeMap::doGetName() const
     s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
 
     return s.str();
-}
-
-static const IColumn & extractNestedColumn(const IColumn & column)
-{
-    return assert_cast<const ColumnMap &>(column).getNestedColumn();
-}
-
-DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
-{
-    return nested->tryGetSubcolumnType(subcolumn_name);
-}
-
-ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
-{
-    return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
-}
-
-SerializationPtr DataTypeMap::getSubcolumnSerialization(
-    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
-{
-    return nested->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

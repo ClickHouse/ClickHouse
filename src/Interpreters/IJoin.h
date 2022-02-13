@@ -45,7 +45,8 @@ public:
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return false; }
 
-    virtual std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block &, UInt64) const = 0;
+    virtual std::shared_ptr<NotJoinedBlocks>
+    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

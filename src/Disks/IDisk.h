@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -26,11 +26,6 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DiskSpaceReservedForMerge;
 }
 
 namespace DB
@@ -166,7 +161,8 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        size_t estimated_size = 0) const = 0;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -201,6 +197,32 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
+    struct RemoveRequest
+    {
+        String path;
+        bool if_exists = false;
+
+        explicit RemoveRequest(String path_, bool if_exists_ = false)
+            : path(std::move(path_)), if_exists(std::move(if_exists_))
+        {
+        }
+    };
+
+    using RemoveBatchRequest = std::vector<RemoveRequest>;
+
+    /// Batch request to remove multiple files.
+    /// May be much faster for blob storage.
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+    {
+        for (const auto & file : files)
+        {
+            if (file.if_exists)
+                removeSharedFileIfExists(file.path, keep_in_remote_fs);
+            else
+                removeSharedFile(file.path, keep_in_remote_fs);
+        }
+    }
+
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
@@ -228,6 +250,9 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    /// Check if disk is broken. Broken disks will have 0 space and not be used.
+    virtual bool isBroken() const { return false; }
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
@@ -251,6 +276,28 @@ public:
 
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
+
+    /// Open the local file for read and return ReadBufferFromFileBase object.
+    /// Overridden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const;
+
+    /// Open the local file for write and return WriteBufferFromFileBase object.
+    /// Overridden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode);
+
+    virtual void removeMetaFileIfExists(const String & path);
+
+    /// Return reference count for remote FS.
+    /// Overridden in IDiskRemote.
+    virtual UInt32 getRefCount(const String &) const { return 0; }
 
 protected:
     friend class DiskDecorator;

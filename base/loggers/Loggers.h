@@ -5,9 +5,12 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
-#include <Interpreters/TextLog.h>
 #include "OwnSplitChannel.h"
 
+namespace DB
+{
+    class TextLog;
+}
 
 namespace Poco::Util
 {
@@ -18,6 +21,8 @@ class Loggers
 {
 public:
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
+
+    void updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger);
 
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);

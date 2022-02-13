@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemOne.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB

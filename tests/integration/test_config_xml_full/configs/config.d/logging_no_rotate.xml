@@ -1,8 +1,8 @@
-<yandex>
+<clickhouse>
     <logger>
         <!-- Disable rotation
              https://pocoproject.org/docs/Poco.FileChannel.html
         -->
         <size>never</size>
     </logger>
-</yandex>
+</clickhouse>

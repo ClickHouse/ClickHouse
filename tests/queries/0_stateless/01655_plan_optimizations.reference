@@ -5,11 +5,8 @@ FUNCTION sipHash64
 Filter column: equals
 > sorting steps should know about limit
 Limit 10
-MergingSorted
-Limit 10
-MergeSorting
-Limit 10
-PartialSorting
+Sorting
+Sorting
 Limit 10
 -- filter push down --
 > filter should be pushed down after aggregating
@@ -108,9 +105,8 @@ Filter column: notEquals(y, 2)
 1	0
 1	1
 > filter is pushed down before sorting steps
-MergingSorted
-MergeSorting
-PartialSorting
+Sorting
+Sorting
 Filter column: and(notEquals(x, 0), notEquals(y, 0))
 1	2
 1	1

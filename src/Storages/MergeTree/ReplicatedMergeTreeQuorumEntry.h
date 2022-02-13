@@ -1,7 +1,7 @@
 #pragma once
 
 #include <set>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>

@@ -12,7 +12,7 @@ using namespace DB;
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
 
 std::random_device device;
@@ -48,6 +48,8 @@ public:
             throw std::runtime_error("Unlucky...");
     }
 
+    UInt64 getPriority() override { return 0; }
+
 private:
     std::mt19937 generator;
     std::uniform_int_distribution<> distribution;
@@ -62,12 +64,12 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = DB::MergeTreeBackgroundExecutor::create
+    auto executor = DB::OrdinaryBackgroundExecutor::create
     (
-        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        "GTest",
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -90,9 +92,7 @@ TEST(Executor, RemoveTasks)
     for (auto & thread : threads)
         thread.join();
 
-    ASSERT_EQ(executor->activeCount(), 0);
-    ASSERT_EQ(executor->pendingCount(), 0);
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
 
     executor->wait();
 }
@@ -105,12 +105,12 @@ TEST(Executor, RemoveTasksStress)
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    auto executor = DB::MergeTreeBackgroundExecutor::create
+    auto executor = DB::OrdinaryBackgroundExecutor::create
     (
-        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        "GTest",
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     std::barrier barrier(schedulers_count + removers_count);
@@ -147,9 +147,7 @@ TEST(Executor, RemoveTasksStress)
     for (size_t j = 0; j < tasks_kinds; ++j)
         executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
 
-    ASSERT_EQ(executor->activeCount(), 0);
-    ASSERT_EQ(executor->pendingCount(), 0);
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
-
     executor->wait();
+
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <functional>
 
 #include <Common/ActionBlocker.h>
@@ -41,7 +42,7 @@ class MergeTreeDataMergerMutator
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
 
-    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
+    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -51,7 +52,7 @@ public:
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const;
+    UInt64 getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const;
 
     /** Get maximum total size of parts to do mutation, at current moment of time.
       * It depends only on amount of free space in disk.
@@ -108,7 +109,7 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const IMergeTreeDataPart * parent_part = nullptr,
-        const String & prefix = "");
+        const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MutateTaskPtr mutatePartToTemporaryPart(
@@ -136,6 +137,7 @@ private:
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
     friend class MutateTask;
+    friend class MergeTask;
 
     /** Split mutation commands into two parts:
       * First part should be executed by mutations interpreter.
@@ -148,10 +150,11 @@ private:
         MutationCommands & for_file_renames);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
-    static NamesAndTypesList getColumnsForNewDataPart(
+    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
         NamesAndTypesList storage_columns,
+        const SerializationInfoByName & serialization_infos,
         const MutationCommands & commands_for_removes);
 
     static ExecuteTTLType shouldExecuteTTL(
@@ -176,7 +179,7 @@ private:
 
 private:
     MergeTreeData & data;
-    const size_t background_pool_size;
+    const size_t max_tasks_count;
 
     Poco::Logger * log;
 
@@ -190,6 +193,26 @@ private:
     ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
+
+public:
+    /// Returns true if passed part name is active.
+    /// (is the destination for one of active mutation/merge).
+    ///
+    /// NOTE: that it accept basename (i.e. dirname), not the path,
+    /// since later requires canonical form.
+    bool hasTemporaryPart(const std::string & basename) const;
+
+private:
+    /// Set of active temporary paths that is used as the destination.
+    /// List of such paths is required to avoid trying to remove them during cleanup.
+    ///
+    /// NOTE: It is pretty short, so use STL is fine.
+    std::unordered_set<std::string> tmp_parts;
+    /// Lock for "tmp_parts".
+    ///
+    /// NOTE: mutable is required to mark hasTemporaryPath() const
+    mutable std::mutex tmp_parts_lock;
+
 };
 
 

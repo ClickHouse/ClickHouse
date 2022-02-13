@@ -115,7 +115,7 @@ def test_add_key():
     def make_storage_policy_with_keys(policy_name, keys):
         node.exec_in_container(["bash", "-c" , """cat > /etc/clickhouse-server/config.d/storage_policy_{policy_name}.xml << EOF
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <{policy_name}_disk>
@@ -135,7 +135,7 @@ def test_add_key():
             </{policy_name}>
          </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>
 EOF""".format(policy_name=policy_name, keys=keys)])
         node.query("SYSTEM RELOAD CONFIG")
 

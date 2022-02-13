@@ -6,7 +6,7 @@
 #include <mutex>
 #include <filesystem>
 
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,8 +16,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
-#include <common/getThreadId.h>
-#include <common/logger_useful.h>
+#include <base/getThreadId.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

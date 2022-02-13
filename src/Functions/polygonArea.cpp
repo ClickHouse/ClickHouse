@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -78,7 +78,7 @@ public:
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                for (size_t i = 0; i < input_rows_count; i++)
+                for (size_t i = 0; i < input_rows_count; ++i)
                     res_data.emplace_back(boost::geometry::area(geometries[i]));
             }
         }

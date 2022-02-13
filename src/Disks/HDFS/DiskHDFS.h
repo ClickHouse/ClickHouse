@@ -14,14 +14,17 @@ struct DiskHDFSSettings
     size_t min_bytes_for_seek;
     int thread_pool_size;
     int objects_chunk_size_to_delete;
+    int replication;
 
     DiskHDFSSettings(
             int min_bytes_for_seek_,
             int thread_pool_size_,
-            int objects_chunk_size_to_delete_)
+            int objects_chunk_size_to_delete_,
+            int replication_)
         : min_bytes_for_seek(min_bytes_for_seek_)
         , thread_pool_size(thread_pool_size_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , replication(replication_) {}
 };
 
 
@@ -39,7 +42,7 @@ public:
         const String & disk_name_,
         const String & hdfs_root_path_,
         SettingsPtr settings_,
-        const String & metadata_path_,
+        DiskPtr metadata_disk_,
         const Poco::Util::AbstractConfiguration & config_);
 
     DiskType getType() const override { return DiskType::HDFS; }
@@ -50,7 +53,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 

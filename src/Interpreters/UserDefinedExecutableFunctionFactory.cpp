@@ -1,15 +1,21 @@
 #include "UserDefinedExecutableFunctionFactory.h"
 
+#include <filesystem>
+
+#include <Common/filesystemHelpers.h>
+
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Formats/formatBlock.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -18,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 class UserDefinedFunction final : public IFunction
@@ -43,75 +48,86 @@ public:
     bool useDefaultImplementationForNulls() const override { return true; }
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         const auto & configuration = executable_function->getConfiguration();
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & expected_argument_type = configuration.argument_types[i];
-            if (!areTypesEqual(expected_argument_type, arguments[i]))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Function {} for {} argument expected {} actual {}",
-                    getName(),
-                    i,
-                    expected_argument_type->getName(),
-                    arguments[i]->getName());
-        }
-
         return configuration.result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        std::unique_ptr<ShellCommand> process = getProcess();
+        auto coordinator = executable_function->getCoordinator();
+        const auto & coordinator_configuration = coordinator->getConfiguration();
+        const auto & configuration = executable_function->getConfiguration();
+
+        String command = configuration.command;
+
+        if (coordinator_configuration.execute_direct)
+        {
+            auto user_scripts_path = context->getUserScriptsPath();
+            auto script_path = user_scripts_path + '/' + command;
+
+            if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Executable file {} must be inside user scripts folder {}",
+                    command,
+                    user_scripts_path);
+
+            if (!std::filesystem::exists(std::filesystem::path(script_path)))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Executable file {} does not exist inside user scripts folder {}",
+                    command,
+                    user_scripts_path);
+
+            command = std::move(script_path);
+        }
+
+        size_t argument_size = arguments.size();
+        auto arguments_copy = arguments;
+
+        for (size_t i = 0; i < argument_size; ++i)
+        {
+            auto & column_with_type = arguments_copy[i];
+            column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
+
+            const auto & argument_type = configuration.argument_types[i];
+            if (areTypesEqual(arguments_copy[i].type, argument_type))
+                continue;
+
+            ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
+            column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
+            column_with_type.type = argument_type;
+
+            column_with_type = std::move(column_to_cast);
+        }
 
         ColumnWithTypeAndName result(result_type, "result");
         Block result_block({result});
 
-        Block arguments_block(arguments);
-        auto * process_in = &process->in;
-
-        const auto & configuration = executable_function->getConfiguration();
-        auto process_pool = executable_function->getProcessPool();
-        bool is_executable_pool_function = (process_pool != nullptr);
+        Block arguments_block(arguments_copy);
+        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
+        auto shell_input_pipe = Pipe(std::move(source));
 
         ShellCommandSourceConfiguration shell_command_source_configuration;
 
-        if (is_executable_pool_function)
+        if (coordinator_configuration.is_executable_pool)
         {
             shell_command_source_configuration.read_fixed_number_of_rows = true;
             shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
         }
 
-        ShellCommandSource::SendDataTask task = {[process_in, arguments_block, &configuration, is_executable_pool_function, this]()
-        {
-            auto & out = *process_in;
+        Pipes shell_input_pipes;
+        shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-            if (configuration.send_chunk_header)
-            {
-                writeText(arguments_block.rows(), out);
-                writeChar('\n', out);
-            }
-
-            auto output_stream = context->getOutputStream(configuration.format, out, arguments_block.cloneEmpty());
-            formatBlock(output_stream, arguments_block);
-            if (!is_executable_pool_function)
-                out.close();
-        }};
-        std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
-
-        Pipe pipe(std::make_unique<ShellCommandSource>(
+        Pipe pipe = coordinator->createPipe(
+            command,
+            configuration.command_arguments,
+            std::move(shell_input_pipes),
+            result_block,
             context,
-            configuration.format,
-            result_block.cloneEmpty(),
-            std::move(process),
-            std::move(tasks),
-            shell_command_source_configuration,
-            process_pool));
+            shell_command_source_configuration);
 
         QueryPipeline pipeline(std::move(pipe));
-
         PullingPipelineExecutor executor(pipeline);
 
         auto result_column = result_type->createColumn();
@@ -127,8 +143,8 @@ public:
         size_t result_column_size = result_column->size();
         if (result_column_size != input_rows_count)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {} wrong result rows count expected {} actual {}",
-                getName(),
+                "Function {}: wrong result, expected {} row(s), actual {}",
+                quoteString(getName()),
                 input_rows_count,
                 result_column_size);
 
@@ -136,36 +152,6 @@ public:
     }
 
 private:
-
-    std::unique_ptr<ShellCommand> getProcess() const
-    {
-        auto process_pool = executable_function->getProcessPool();
-        auto executable_function_configuration = executable_function->getConfiguration();
-
-        std::unique_ptr<ShellCommand> process;
-        bool is_executable_pool_function = (process_pool != nullptr);
-        if (is_executable_pool_function)
-        {
-            bool result = process_pool->tryBorrowObject(process, [&]()
-            {
-                ShellCommand::Config process_config(executable_function_configuration.script_path);
-                process_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, executable_function_configuration.command_termination_timeout };
-                auto shell_command = ShellCommand::execute(process_config);
-                return shell_command;
-            }, executable_function_configuration.max_command_execution_time * 1000);
-
-            if (!result)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                    executable_function_configuration.max_command_execution_time);
-        }
-        else
-        {
-            process = ShellCommand::execute(executable_function_configuration.script_path);
-        }
-
-        return process;
-    }
 
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
@@ -198,6 +184,15 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     }
 
     return nullptr;
+}
+
+bool UserDefinedExecutableFunctionFactory::has(const String & function_name, ContextPtr context)
+{
+    const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
+    auto load_result = loader.getLoadResult(function_name);
+
+    bool result = load_result.object != nullptr;
+    return result;
 }
 
 std::vector<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)

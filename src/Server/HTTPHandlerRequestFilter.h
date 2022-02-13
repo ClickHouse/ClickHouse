@@ -3,8 +3,8 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/StringRef.h>
-#include <common/find_symbols.h>
+#include <base/StringRef.h>
+#include <base/find_symbols.h>
 
 #include <re2/re2.h>
 #include <re2/stringpiece.h>

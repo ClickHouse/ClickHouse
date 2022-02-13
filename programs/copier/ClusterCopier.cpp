@@ -8,13 +8,13 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
-#include <Processors/Chain.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 
 namespace DB
 {
@@ -46,7 +46,7 @@ void ClusterCopier::init()
     reloadTaskDescription();
 
     task_cluster->loadTasks(*task_cluster_current_config);
-    getContext()->setClustersConfig(task_cluster_current_config, task_cluster->clusters_prefix);
+    getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
     task_cluster->random_engine.seed(task_cluster->random_device());
@@ -87,7 +87,7 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
             if (try_number < max_tries)
             {
                 tryLogCurrentException(log, "Will retry");
-                std::this_thread::sleep_for(default_sleep_time);
+                std::this_thread::sleep_for(retry_delay_ms);
             }
         }
     }
@@ -310,7 +310,7 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 
         /// Retry table processing
         bool table_is_done = false;
-        for (UInt64 num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
+        for (UInt64 num_table_tries = 1; num_table_tries <= max_table_tries; ++num_table_tries)
         {
             if (tryProcessTable(timeouts, task_table))
             {
@@ -341,7 +341,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
     const String & description,
     bool unprioritized)
 {
-    std::chrono::milliseconds current_sleep_time = default_sleep_time;
+    std::chrono::milliseconds current_sleep_time = retry_delay_ms;
     static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
 
     if (unprioritized)
@@ -367,7 +367,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             LOG_INFO(log, "Too many workers ({}, maximum {}). Postpone processing {}", stat.numChildren, task_cluster->max_workers, description);
 
             if (unprioritized)
-                current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
+                current_sleep_time = std::min(max_sleep_time, current_sleep_time + retry_delay_ms);
 
             std::this_thread::sleep_for(current_sleep_time);
             num_bad_version_errors = 0;
@@ -745,8 +745,8 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
     if (create.storage == nullptr || new_storage_ast == nullptr)
         throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
 
-    res->database = new_table.first;
-    res->table = new_table.second;
+    res->setDatabase(new_table.first);
+    res->setTable(new_table.second);
 
     res->children.clear();
     res->set(res->columns_list, create.columns_list->clone());
@@ -786,7 +786,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         if (e.code == Coordination::Error::ZNODEEXISTS)
         {
             LOG_INFO(log, "Partition {} piece {} is cleaning now by somebody, sleep", task_partition.name, toString(current_piece_number));
-            std::this_thread::sleep_for(default_sleep_time);
+            std::this_thread::sleep_for(retry_delay_ms);
             return false;
         }
 
@@ -799,7 +799,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         if (stat.numChildren != 0)
         {
             LOG_INFO(log, "Partition {} contains {} active workers while trying to drop it. Going to sleep.", task_partition.name, stat.numChildren);
-            std::this_thread::sleep_for(default_sleep_time);
+            std::this_thread::sleep_for(retry_delay_ms);
             return false;
         }
         else
@@ -1006,7 +1006,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             task_status = TaskStatus::Error;
             bool was_error = false;
             has_shard_to_process = true;
-            for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
+            for (UInt64 try_num = 1; try_num <= max_shard_partition_tries; ++try_num)
             {
                 task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
 
@@ -1021,7 +1021,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                     break;
 
                 /// Repeat on errors
-                std::this_thread::sleep_for(default_sleep_time);
+                std::this_thread::sleep_for(retry_delay_ms);
             }
 
             if (task_status == TaskStatus::Error)
@@ -1069,7 +1069,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                         break;
 
                     /// Repeat on errors.
-                    std::this_thread::sleep_for(default_sleep_time);
+                    std::this_thread::sleep_for(retry_delay_ms);
                 }
                 catch (...)
                 {
@@ -1110,7 +1110,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
     if (!table_is_done)
     {
-        LOG_INFO(log, "Table {} is not processed yet.Copied {} of {}, will retry", task_table.table_id, finished_partitions, required_partitions);
+        LOG_INFO(log, "Table {} is not processed yet. Copied {} of {}, will retry", task_table.table_id, finished_partitions, required_partitions);
     }
     else
     {
@@ -1213,7 +1213,7 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
                 break;
 
             /// Repeat on errors
-            std::this_thread::sleep_for(default_sleep_time);
+            std::this_thread::sleep_for(retry_delay_ms);
         }
 
         was_active_pieces = (res == TaskStatus::Active);
@@ -1660,9 +1660,11 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 void ClusterCopier::dropAndCreateLocalTable(const ASTPtr & create_ast)
 {
     const auto & create = create_ast->as<ASTCreateQuery &>();
-    dropLocalTableIfExists({create.database, create.table});
+    dropLocalTableIfExists({create.getDatabase(), create.getTable()});
 
-    InterpreterCreateQuery interpreter(create_ast, getContext());
+    auto create_context = Context::createCopy(getContext());
+
+    InterpreterCreateQuery interpreter(create_ast, create_context);
     interpreter.execute();
 }
 
@@ -1670,10 +1672,12 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 {
     auto drop_ast = std::make_shared<ASTDropQuery>();
     drop_ast->if_exists = true;
-    drop_ast->database = table_name.first;
-    drop_ast->table = table_name.second;
+    drop_ast->setDatabase(table_name.first);
+    drop_ast->setTable(table_name.second);
 
-    InterpreterDropQuery interpreter(drop_ast, getContext());
+    auto drop_context = Context::createCopy(getContext());
+
+    InterpreterDropQuery interpreter(drop_ast, drop_context);
     interpreter.execute();
 }
 

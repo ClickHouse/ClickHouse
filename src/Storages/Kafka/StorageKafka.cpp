@@ -1,44 +1,44 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/KafkaBlockInputStream.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/KafkaSettings.h>
+#include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <librdkafka/rdkafka.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
 #include <Common/config_version.h>
+#include <Common/formatReadable.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Interpreters/Context.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <librdkafka/rdkafka.h>
-#include <common/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 struct StorageKafkaInterceptors
@@ -171,7 +172,9 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_)
+    const StorageID & table_id_, ContextPtr context_,
+    const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_,
+    const String & collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -190,6 +193,7 @@ StorageKafka::StorageKafka(
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
+    , collection_name(collection_name_)
 {
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
@@ -269,6 +273,12 @@ Pipe StorageKafka::read(
     if (num_created_consumers == 0)
         return {};
 
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
+
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -281,8 +291,7 @@ Pipe StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, log, 1)));
+        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -412,7 +421,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     }
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
-    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    conf.set("auto.offset.reset", "earliest");     // If no offset stored for this group, read all messages from the start
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
@@ -463,17 +472,25 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
+String StorageKafka::getConfigPrefix() const
+{
+    if (!collection_name.empty())
+        return "named_collections." + collection_name + "." + CONFIG_PREFIX; /// Add one more level to separate librdkafka configuration.
+    return CONFIG_PREFIX;
+}
+
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
     // Update consumer configuration from the configuration
     const auto & config = getContext()->getConfigRef();
-    if (config.has(CONFIG_PREFIX))
-        loadFromConfig(conf, config, CONFIG_PREFIX);
+    auto config_prefix = getConfigPrefix();
+    if (config.has(config_prefix))
+        loadFromConfig(conf, config, config_prefix);
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
     {
-        const auto topic_config_key = CONFIG_PREFIX + "_" + topic;
+        const auto topic_config_key = config_prefix + "_" + topic;
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
@@ -548,6 +565,8 @@ void StorageKafka::threadFunc(size_t idx)
         {
             auto start_time = std::chrono::steady_clock::now();
 
+            mv_attached.store(true);
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
@@ -578,6 +597,8 @@ void StorageKafka::threadFunc(size_t idx)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)
@@ -611,14 +632,17 @@ bool StorageKafka::streamToViews()
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
-    BlockInputStreams streams;
+    std::vector<std::shared_ptr<KafkaSource>> sources;
+    Pipes pipes;
 
     auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
-    streams.reserve(stream_count);
+    sources.reserve(stream_count);
+    pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
-        streams.emplace_back(stream);
+        auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        sources.emplace_back(source);
+        pipes.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
@@ -628,41 +652,27 @@ bool StorageKafka::streamToViews()
                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
-        stream->setLimits(limits);
+        source->setLimits(limits);
     }
 
-    // Join multiple streams if necessary
-    BlockInputStreamPtr in;
-    if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
-    else
-        in = streams[0];
+    auto pipe = Pipe::unitePipes(std::move(pipes));
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
     size_t rows = 0;
     {
-        PushingPipelineExecutor executor(block_io.pipeline);
-
-        in->readPrefix();
-        executor.start();
-
-        while (auto block = in->read())
-        {
-            rows += block.rows();
-            executor.push(std::move(block));
-        }
-
-        in->readSuffix();
-        executor.finish();
+        block_io.pipeline.complete(std::move(pipe));
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
     }
 
     bool some_stream_is_stalled = false;
-    for (auto & stream : streams)
+    for (auto & source : sources)
     {
-        some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
-        stream->as<KafkaBlockInputStream>()->commit();
+        some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
+        source->commit();
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
@@ -681,6 +691,7 @@ void registerStorageKafka(StorageFactory & factory)
         bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
+        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -744,17 +755,25 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
-        CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
-        CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+        String collection_name;
+        if (named_collection)
+        {
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+        }
+        else
+        {
+            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
+            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+        }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
@@ -780,7 +799,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings));
+        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -789,15 +808,14 @@ void registerStorageKafka(StorageFactory & factory)
 NamesAndTypesList StorageKafka::getVirtuals() const
 {
     auto result = NamesAndTypesList{
-        {"_topic", std::make_shared<DataTypeString>()},
+        {"_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
         {"_partition", std::make_shared<DataTypeUInt64>()},
         {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
-    };
+        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});

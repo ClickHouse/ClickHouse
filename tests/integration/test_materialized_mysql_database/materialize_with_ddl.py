@@ -21,7 +21,7 @@ def check_query(clickhouse_node, query, result_set, retry_count=10, interval_sec
             if result_set == lastest_result:
                 return
 
-            logging.debug(f"latest_result{lastest_result}")
+            logging.debug(f"latest_result {lastest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
@@ -223,6 +223,33 @@ def drop_table_with_materialized_mysql_database(clickhouse_node, mysql_node, ser
 
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
+
+
+def create_table_like_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS create_like")
+    mysql_node.query("DROP DATABASE IF EXISTS create_like2")
+    clickhouse_node.query("DROP DATABASE IF EXISTS create_like")
+
+    mysql_node.query("CREATE DATABASE create_like")
+    mysql_node.query("CREATE DATABASE create_like2")
+    mysql_node.query("CREATE TABLE create_like.t1 (id INT NOT NULL PRIMARY KEY)")
+    mysql_node.query("CREATE TABLE create_like2.t1 LIKE create_like.t1")
+
+    clickhouse_node.query(
+        f"CREATE DATABASE create_like ENGINE = MaterializeMySQL('{service_name}:3306', 'create_like', 'root', 'clickhouse')")
+    mysql_node.query("CREATE TABLE create_like.t2 LIKE create_like.t1")
+    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\n")
+
+    mysql_node.query("USE create_like")
+    mysql_node.query("CREATE TABLE t3 LIKE create_like2.t1")
+    mysql_node.query("CREATE TABLE t4 LIKE t1")
+
+    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\nt4\n")
+    check_query(clickhouse_node, "SHOW DATABASES LIKE 'create_like%'", "create_like\n")
+
+    clickhouse_node.query("DROP DATABASE create_like")
+    mysql_node.query("DROP DATABASE create_like")
+    mysql_node.query("DROP DATABASE create_like2")
 
 
 def create_table_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -597,7 +624,7 @@ def err_sync_user_privs_with_materialized_mysql_database(clickhouse_node, mysql_
             service_name))
     assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
     assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
-    clickhouse_node.query("DETACH DATABASE priv_err_db")
+    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db")
 
     mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
     time.sleep(3)
@@ -716,7 +743,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
             time.sleep(sleep_time)
             clickhouse_node.query("SELECT * FROM test_database.test_table")
 
-    clickhouse_node.query("DETACH DATABASE test_database")
+    clickhouse_node.query_with_retry("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
@@ -757,7 +784,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         mysql_node.alloc_connection()
 
-        clickhouse_node.query("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
 
         result = mysql_node.query_and_get_data("SELECT COUNT(1) FROM kill_mysql_while_insert.test")
@@ -980,3 +1007,179 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
+def materialized_mysql_large_transaction(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS largetransaction")
+    clickhouse_node.query("DROP DATABASE IF EXISTS largetransaction")
+    mysql_node.query("CREATE DATABASE largetransaction")
+
+    mysql_node.query("CREATE TABLE largetransaction.test_table ("
+                     "`key` INT NOT NULL PRIMARY KEY AUTO_INCREMENT, "
+                     "`value` INT NOT NULL) ENGINE = InnoDB;")
+    num_rows = 200000
+    rows_per_insert = 5000
+    values = ",".join(["(1)" for _ in range(rows_per_insert)])
+    for i in range(num_rows//rows_per_insert):
+        mysql_node.query(f"INSERT INTO largetransaction.test_table (`value`) VALUES {values};")
+
+
+    clickhouse_node.query("CREATE DATABASE largetransaction ENGINE = MaterializedMySQL('{}:3306', 'largetransaction', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table", f"{num_rows}\n")
+
+    mysql_node.query("UPDATE largetransaction.test_table SET value = 2;")
+
+    # Attempt to restart clickhouse after it has started processing
+    # the transaction, but before it has completed it.
+    while int(clickhouse_node.query("SELECT COUNT() FROM largetransaction.test_table WHERE value = 2")) == 0:
+        time.sleep(0.2)
+    clickhouse_node.restart_clickhouse()
+
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table WHERE value = 2", f"{num_rows}\n")
+
+    clickhouse_node.query("DROP DATABASE largetransaction")
+    mysql_node.query("DROP DATABASE largetransaction")
+
+def table_table(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS table_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_test")
+    mysql_node.query("CREATE DATABASE table_test")
+
+    # Test that the table name 'table' work as expected
+    mysql_node.query("CREATE TABLE table_test.table (id INT UNSIGNED PRIMARY KEY)")
+    mysql_node.query("INSERT INTO table_test.table VALUES (0),(1),(2),(3),(4)")
+
+    clickhouse_node.query("CREATE DATABASE table_test ENGINE=MaterializeMySQL('{}:3306', 'table_test', 'root', 'clickhouse')".format(service_name))
+
+    check_query(clickhouse_node, "SELECT COUNT(*) FROM table_test.table", "5\n")
+
+    mysql_node.query("DROP DATABASE table_test")
+    clickhouse_node.query("DROP DATABASE table_test")
+
+def table_overrides(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    mysql_node.query("CREATE DATABASE table_overrides")
+    mysql_node.query("CREATE TABLE table_overrides.t1 (sensor_id INT UNSIGNED, timestamp DATETIME, temperature FLOAT, PRIMARY KEY(timestamp, sensor_id))")
+    for id in range(10):
+        mysql_node.query("BEGIN")
+        for day in range(100):
+            mysql_node.query(f"INSERT INTO table_overrides.t1 VALUES({id}, TIMESTAMP('2021-01-01') + INTERVAL {day} DAY, (RAND()*20)+20)")
+        mysql_node.query("COMMIT")
+    clickhouse_node.query(f"""
+        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 (COLUMNS (sensor_id UInt64, temp_f Nullable(Float32) ALIAS if(isNull(temperature), NULL, (temperature * 9 / 5) + 32)))
+    """)
+    check_query(
+        clickhouse_node,
+        "SELECT type FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'sensor_id'",
+        "UInt64\n")
+    check_query(
+        clickhouse_node,
+        "SELECT type, default_kind FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'temp_f'",
+        "Nullable(Float32)\tALIAS\n")
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1000\n")
+    mysql_node.query("INSERT INTO table_overrides.t1 VALUES(1001, '2021-10-01 00:00:00', 42.0)")
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+
+    explain_with_table_func = f"EXPLAIN TABLE OVERRIDE mysql('{service_name}:3306', 'table_overrides', 't1', 'root', 'clickhouse')"
+
+    for what in ['ORDER BY', 'PRIMARY KEY', 'SAMPLE BY', 'PARTITION BY', 'TTL']:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {what} temperature")
+        assert f'{what} override refers to nullable column `temperature`' in \
+            str(exc.value)
+        assert f"{what} uses columns: `temperature` Nullable(Float32)" in \
+            clickhouse_node.query(f"{explain_with_table_func} {what} assumeNotNull(temperature)")
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float32) MATERIALIZED 1.0)',
+         'column `temperature`: modifying default specifier is not allowed'),
+        ('COLUMNS (sensor_id UInt64 ALIAS 42)',
+         'column `sensor_id`: modifying default specifier is not allowed')
+    ]:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {testcase[0]}")
+        assert testcase[1] in str(exc.value)
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float64))',
+         'Modified columns: `temperature` Nullable(Float32) -> Nullable(Float64)'),
+        ('COLUMNS (temp_f Nullable(Float32) ALIAS if(temperature IS NULL, NULL, (temperature * 9.0 / 5.0) + 32),\
+                   temp_k Nullable(Float32) ALIAS if(temperature IS NULL, NULL, temperature + 273.15))',
+         'Added columns: `temp_f` Nullable(Float32), `temp_k` Nullable(Float32)')
+    ]:
+        assert testcase[1] in clickhouse_node.query(
+            f"{explain_with_table_func} {testcase[0]}")
+
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+
+
+def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_datatype")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_datatype")
+    mysql_node.query("CREATE DATABASE test_database_datatype DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query(""" 
+       CREATE TABLE test_database_datatype.t1 (
+            `v1` int(10) unsigned  AUTO_INCREMENT,
+            `v2` TINYINT,
+            `v3` SMALLINT,
+            `v4` BIGINT,
+            `v5` int,
+            `v6` TINYINT unsigned,
+            `v7` SMALLINT unsigned,
+            `v8` BIGINT unsigned,
+            `v9` FLOAT,
+            `v10` FLOAT unsigned,
+            `v11` DOUBLE,
+            `v12` DOUBLE unsigned,
+            `v13` DECIMAL(5,4),
+            `v14` date,
+            `v15` TEXT,
+            `v16` varchar(100) ,
+            `v17` BLOB,
+            `v18` datetime DEFAULT CURRENT_TIMESTAMP,
+            `v19` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
+            `v20` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `v21` TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+            `v22` YEAR,
+            `v23` TIME,
+            `v24` TIME(6),
+            `v25` GEOMETRY,
+            `v26` bit(4),
+             /* todo support */
+            # `v27` JSON DEFAULT NULL,
+            `v28` set('a', 'c', 'f', 'd', 'e', 'b'),
+            `v29` mediumint(4) unsigned NOT NULL DEFAULT '0',
+            `v30` varbinary(255) DEFAULT NULL COMMENT 'varbinary support',
+            `v31`  binary(200) DEFAULT NULL,
+            `v32`  ENUM('RED','GREEN','BLUE'), 
+            PRIMARY KEY (`v1`)
+        ) ENGINE=InnoDB;
+        """)
+
+    mysql_node.query("""
+        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',  
+        '2021-10-06 18:32:57.482786', '2021-10-06 18:32:57', '2021-10-06 18:32:57.482786', '2021', '838:59:59', '838:59:59.000000', ST_GeometryFromText('point(0.0 0.0)'), b'1010', 'a', 11, 'varbinary', 'binary', 'RED');
+        """)
+    clickhouse_node.query(
+        "CREATE DATABASE test_database_datatype ENGINE = MaterializeMySQL('{}:3306', 'test_database_datatype', 'root', 'clickhouse')".format(
+            service_name))
+
+    check_query(clickhouse_node, "SELECT name FROM system.tables WHERE database = 'test_database_datatype'", "t1\n")
+    # full synchronization check
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57" +
+                "\t2021-10-06 18:32:57.482786\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n")
+
+    mysql_node.query("""
+            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',  
+            '2021-10-07 18:32:57.482786', '2021-10-07 18:32:57', '2021-10-07 18:32:57.482786', '2021', '-838:59:59', '-12:59:58.000001',  ST_GeometryFromText('point(120.153576 30.287459)'), b'1011', 'a,c', 22, 'varbinary', 'binary', 'GREEN' );
+            """)
+    # increment synchronization check
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786" +
+                "\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n" +
+                "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786" +
+                "\t2021\t-3020399000000\t-46798000001\t000000000101000000D55C6E30D4095E40DCF0BBE996493E40\t11\t3\t22\tvarbinary\tGREEN\n")

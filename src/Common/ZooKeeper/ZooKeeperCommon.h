@@ -30,9 +30,11 @@ struct ZooKeeperResponse : virtual Response
     XID xid = 0;
     int64_t zxid = 0;
 
+    UInt64 response_created_time_ns = 0;
+
     ZooKeeperResponse() = default;
     ZooKeeperResponse(const ZooKeeperResponse &) = default;
-    virtual ~ZooKeeperResponse() override = default;
+    ~ZooKeeperResponse() override;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual void write(WriteBuffer & out) const;
@@ -54,9 +56,11 @@ struct ZooKeeperRequest : virtual Request
 
     bool restored_from_zookeeper_log = false;
 
+    UInt64 request_created_time_ns = 0;
+
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() override = default;
+    ~ZooKeeperRequest() override;
 
     virtual OpNum getOpNum() const = 0;
 
@@ -69,6 +73,7 @@ struct ZooKeeperRequest : virtual Request
     static std::shared_ptr<ZooKeeperRequest> read(ReadBuffer & in);
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
+    ZooKeeperResponsePtr setTime(ZooKeeperResponsePtr response) const;
     virtual bool isReadRequest() const = 0;
 
     virtual void createLogElements(LogElements & elems) const;

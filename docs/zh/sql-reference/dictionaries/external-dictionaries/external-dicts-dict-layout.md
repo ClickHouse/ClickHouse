@@ -28,7 +28,7 @@ ClickHouse为字典中的错误生成异常。 错误示例:
 配置如下所示:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -38,7 +38,7 @@ ClickHouse为字典中的错误生成异常。 错误示例:
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 相应的 [DDL-查询](../../statements/create.md#create-dictionary-query):
@@ -208,7 +208,7 @@ dictGetT('dict_name', 'attr_name', id, date)
 配置示例:
 
 ``` xml
-<yandex>
+<clickhouse>
         <dictionary>
 
                 ...
@@ -237,7 +237,7 @@ dictGetT('dict_name', 'attr_name', id, date)
                 </structure>
 
         </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 或

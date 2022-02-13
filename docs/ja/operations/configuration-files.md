@@ -10,7 +10,7 @@ toc_title: "\u8A2D\u5B9A\u30D5\u30A1\u30A4\u30EB"
 ClickHouseは複数のファイル構成管理をサポートします。 主サーバ設定ファイルで指定することがで `/etc/clickhouse-server/config.xml`. その他のファイルは `/etc/clickhouse-server/config.d` ディレクトリ。
 
 !!! note "注"
-    すべての構成ファイルはXML形式である必要があります。 また、通常は同じルート要素を持つ必要があります `<yandex>`.
+    すべての構成ファイルはXML形式である必要があります。 また、通常は同じルート要素を持つ必要があります `<clickhouse>`.
 
 メイン構成ファイルで指定された一部の設定は、他の構成ファイルで上書きできます。 その `replace` または `remove` これらの構成ファイルの要素に属性を指定できます。
 
@@ -20,7 +20,7 @@ ClickHouseは複数のファイル構成管理をサポートします。 主サ
 
 もし `remove` 指定されると、要素を削除します。
 
-この設定はまた、 “substitutions”. 要素が `incl` 属性は、ファイルからの対応する置換が値として使用されます。 デフォルトでは、ファイルへのパスとの置換を行う `/etc/metrika.xml`. これはで変えることができます [include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) サーバー設定の要素。 置換値は、次のように指定されます `/yandex/substitution_name` このファイル内の要素。 で指定された置換の場合 `incl` 存在しない場合は、ログに記録されます。 ClickHouseが不足している置換をログに記録しないようにするには、 `optional="true"` 属性(たとえば、 [マクロ](server-configuration-parameters/settings.md)).
+この設定はまた、 “substitutions”. 要素が `incl` 属性は、ファイルからの対応する置換が値として使用されます。 デフォルトでは、ファイルへのパスとの置換を行う `/etc/metrika.xml`. これはで変えることができます [include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) サーバー設定の要素。 置換値は、次のように指定されます `/clickhouse/substitution_name` このファイル内の要素。 で指定された置換の場合 `incl` 存在しない場合は、ログに記録されます。 ClickHouseが不足している置換をログに記録しないようにするには、 `optional="true"` 属性(たとえば、 [マクロ](server-configuration-parameters/settings.md)).
 
 置換はZooKeeperからも実行できます。 これを行うには、属性を指定します `from_zk = "/path/to/node"`. 要素の値は、ノードの内容に置き換えられます。 `/path/to/node` 飼育係で。 また、ZooKeeperノードにXMLサブツリー全体を配置することもできます。
 
@@ -36,7 +36,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<yandex>
+<clickhouse>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -47,7 +47,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 各設定ファイルでは、サーバともある `file-preprocessed.xml` 起動時のファイル。 これらのファイルには、完了したすべての置換と上書きが含まれており、情報提供を目的としています。 設定ファイルでZooKeeperの置換が使用されていても、サーバーの起動時にZooKeeperが使用できない場合、サーバーは前処理されたファイルから設定をロードします。

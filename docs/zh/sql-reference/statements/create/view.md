@@ -5,7 +5,7 @@ toc_title: VIEW
 
 # CREATE VIEW {#create-view}
 
-创建一个新视图。 有两种类型的视图：普通视图和物化视图。
+创建一个新视图。 有两种类型的视图：普通视图，物化视图，Live视图和Window视图。
 
 ## Normal {#normal}
 
@@ -241,3 +241,120 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 使用定期刷新从系统表中查看指标。
 
 [原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
+
+## Window View [Experimental] {#window-view}
+
+!!! important "重要"
+    这是一项试验性功能，可能会在未来版本中以向后不兼容的方式进行更改。
+    通过[allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view)启用window view以及`WATCH`语句。输入命令
+    `set allow_experimental_window_view = 1`。
+
+``` sql
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
+```
+
+Window view可以通过时间窗口聚合数据，并在满足窗口触发条件时自动触发对应窗口计算。其通过将计算状态保存降低处理延迟，支持将处理结果输出至目标表或通过`WATCH`语句输出至终端。
+
+创建window view的方式和创建物化视图类似。Window view使用默认为`AggregatingMergeTree`的内部存储引擎存储计算中间状态。
+
+### 时间窗口函数 {#window-view-shi-jian-chuang-kou-han-shu}
+
+[时间窗口函数](../../functions/time-window-functions.md)用于获取窗口的起始和结束时间。Window view需要和时间窗口函数配合使用。
+
+### 时间属性 {#window-view-shi-jian-shu-xing}
+
+Window view 支持**处理时间**和**事件时间**两种时间类型。
+
+**处理时间**为默认时间类型，该模式下window view使用本地机器时间计算窗口数据。“处理时间”时间类型计算简单，但具有不确定性。该模式下时间可以为时间窗口函数的第一个参数`time_attr`，或通过函数`now()`使用当前机器时间。下面的例子展示了使用“处理时间”创建window view的例子。
+
+``` sql
+CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
+```
+
+**事件时间** 是事件真实发生的时间，该时间往往在事件发生时便嵌入数据记录。事件时间处理提供较高的确定性，可以处理乱序数据以及迟到数据。Window view通过水位线(`WATERMARK`)启用事件时间处理。
+
+Window view提供如下三种水位线策略：
+
+* `STRICTLY_ASCENDING`: 提交观测到的最大时间作为水位线，小于最大观测时间的数据不算迟到。
+* `ASCENDING`: 提交观测到的最大时间减1作为水位线。小于或等于最大观测时间的数据不算迟到。
+* `BOUNDED`: WATERMARK=INTERVAL. 提交最大观测时间减去固定间隔(`INTERVAL`)做为水位线。
+
+以下为使用`WATERMARK`创建window view的示例：
+
+``` sql
+CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+```
+
+通常，窗口会在水位线到达时触发，水位线到达之后的数据会被丢弃。Window view可以通过设置`ALLOWED_LATENESS=INTERVAL`来开启迟到消息处理。示例如下：
+
+``` sql
+CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
+```
+
+需要注意的是，迟到消息需要更新之前的处理结果。与在窗口结束时触发不同，迟到消息到达时window view会立即触发计算。因此，会导致同一个窗口输出多次计算结果。用户需要注意这种情况，并消除重复结果。
+
+### 新窗口监控 {#window-view-xin-chuang-kou-jian-kong}
+
+Window view可以通过`WATCH`语句将处理结果推送至终端，或通过`TO`语句将结果推送至数据表。
+
+``` sql
+WATCH [db.]name [LIMIT n]
+```
+
+`WATCH`语句和`LIVE VIEW`中的类似。支持设置`LIMIT`参数，输出消息数目达到`LIMIT`限制时结束查询。
+
+### 设置 {#window-view-she-zhi}
+
+- `window_view_clean_interval`: window view清除过期数据间隔(单位为秒)。系统会定期清除过期数据，尚未触发的窗口数据不会被清除。
+- `window_view_heartbeat_interval`: 用于判断watch查询活跃的心跳时间间隔。
+
+### 示例 {#window-view-shi-li}
+
+假设我们需要每10秒统计一次`data`表中的点击日志，且`data`表的结构如下：
+
+``` sql
+CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
+```
+
+首先，使用10秒大小的tumble函数创建window view。
+
+``` sql
+CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+随后，我们使用`WATCH`语句获取计算结果。
+
+``` sql
+WATCH wv
+```
+
+当日志插入表`data`时，
+
+``` sql
+INSERT INTO data VALUES(1,now())
+```
+
+`WATCH`语句会输出如下结果：
+
+``` text
+┌─count(id)─┬────────window_start─┐
+│         1 │ 2020-01-14 16:56:40 │
+└───────────┴─────────────────────┘
+```
+
+或者，我们可以通过`TO`关键字将处理结果输出至另一张表。
+
+``` sql
+CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+ClickHouse测试中提供了更多的示例(以`*window_view*`命名)。
+
+### Window View 使用场景 {#window-view-shi-yong-chang-jing}
+
+Window view 在以下场景有用：
+
+* **监控**: 以时间维度聚合及处理数据，并将处理结果输出至目标表。用户可通过目标表获取并操作计算结果。
+* **分析**: 以时间维度进行数据分析. 当数据源非常庞大时，window view可以减少重复全表查询的计算量。

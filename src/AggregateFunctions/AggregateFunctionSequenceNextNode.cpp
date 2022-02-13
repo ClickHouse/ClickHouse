@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB

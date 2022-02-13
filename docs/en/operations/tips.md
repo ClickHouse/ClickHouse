@@ -33,6 +33,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
+!!! warning "Attention"
+    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
+
 ## Storage Subsystem {#storage-subsystem}
 
 If your budget allows you to use SSD, use SSD.
@@ -57,7 +60,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1024 KB is sufficient for all RAID configurations.
+A block size of 64 KB is sufficient for most RAID configurations. The average clickhouse-server write size is approximately 1 MB (1024 KB), and thus the recommended stripe size is also 1 MB. The block size can be optimized if needed when set to 1 MB divided by the number of non-parity disks in the RAID array, such that each write is parallelized across all available non-parity disks.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
@@ -66,11 +69,16 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
+Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
-XFS is also suitable, but it hasn’t been as thoroughly tested with ClickHouse.
-Most other file systems should also work fine. File systems with delayed allocation work better.
+Ext4 is the most reliable option. Set the mount options `noatime`.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
+Most other file systems should also work fine.
+
+Do not use compressed filesystems, because ClickHouse does compression on its own and better.
+It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -120,6 +128,10 @@ You should never use manually written scripts to transfer data between different
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+
+You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
+
+Do not change `minSessionTimeout` setting, large values may affect ClickHouse restart stability.
 
 With the default settings, ZooKeeper is a time bomb:
 
@@ -258,5 +270,9 @@ script
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script
 ```
+
+## Antivirus software {#antivirus-software}
+
+If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
 {## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

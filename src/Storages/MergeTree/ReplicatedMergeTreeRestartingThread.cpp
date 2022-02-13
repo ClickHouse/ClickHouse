@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
@@ -57,106 +58,108 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    bool reschedule_now = false;
+    size_t reschedule_period_ms = check_period_ms;
+
     try
     {
-        if (first_time || readonly_mode_was_set || storage.getZooKeeper()->expired())
-        {
-            startup_completed = false;
-
-            if (first_time)
-            {
-                LOG_DEBUG(log, "Activating replica.");
-            }
-            else
-            {
-                if (storage.getZooKeeper()->expired())
-                {
-                    LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
-                    setReadonly();
-                }
-                else if (readonly_mode_was_set)
-                {
-                    LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
-                }
-                partialShutdown();
-            }
-
-            if (!startup_completed)
-            {
-                try
-                {
-                    storage.setZooKeeper();
-                }
-                catch (const Coordination::Exception &)
-                {
-                    /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
-                    tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-                    /// Here we're almost sure the table is already readonly, but it doesn't hurt to enforce it.
-                    setReadonly();
-                    if (first_time)
-                        storage.startup_event.set();
-                    task->scheduleAfter(retry_period_ms);
-                    return;
-                }
-
-                if (!need_stop && !tryStartup())
-                {
-                    /// We couldn't startup replication. Table must be readonly.
-                    /// Otherwise it can have partially initialized queue and other
-                    /// strange parts of state.
-                    setReadonly();
-
-                    if (first_time)
-                        storage.startup_event.set();
-
-                    task->scheduleAfter(retry_period_ms);
-                    return;
-                }
-
-                if (first_time)
-                    storage.startup_event.set();
-
-                startup_completed = true;
-            }
-
-            if (need_stop)
-                return;
-
-            bool old_val = true;
-            if (storage.is_readonly.compare_exchange_strong(old_val, false))
-            {
-                readonly_mode_was_set = false;
-                CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-            }
-
-            first_time = false;
-        }
+        bool replica_is_active = runImpl();
+        if (!replica_is_active)
+            reschedule_period_ms = retry_period_ms;
     }
     catch (const Exception & e)
     {
         /// We couldn't activate table let's set it into readonly mode
-        setReadonly();
         partialShutdown();
-        storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
-            reschedule_now = true;
+            reschedule_period_ms = 0;
     }
     catch (...)
     {
-        setReadonly();
         partialShutdown();
-        storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    if (reschedule_now)
-        task->schedule();
+    if (first_time)
+    {
+        if (storage.is_readonly)
+        {
+            /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
+            CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+        }
+        /// It does not matter if replication is actually started or not, just notify after the first attempt.
+        storage.startup_event.set();
+        first_time = false;
+    }
+
+    if (need_stop)
+        return;
+
+    if (reschedule_period_ms)
+        task->scheduleAfter(reschedule_period_ms);
     else
-        task->scheduleAfter(check_period_ms);
+        task->schedule();
+}
+
+bool ReplicatedMergeTreeRestartingThread::runImpl()
+
+{
+    if (!storage.is_readonly && !storage.getZooKeeper()->expired())
+        return true;
+
+    if (first_time)
+    {
+        LOG_DEBUG(log, "Activating replica.");
+        assert(storage.is_readonly);
+    }
+    else if (storage.is_readonly)
+    {
+        LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
+    }
+    else if (storage.getZooKeeper()->expired())
+    {
+        LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+        partialShutdown();
+    }
+    else
+    {
+        __builtin_unreachable();
+    }
+
+    try
+    {
+        storage.setZooKeeper();
+    }
+    catch (const Coordination::Exception &)
+    {
+        /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        assert(storage.is_readonly);
+        return false;
+    }
+
+    if (need_stop)
+        return false;
+
+    if (!tryStartup())
+    {
+        assert(storage.is_readonly);
+        return false;
+    }
+
+    setNotReadonly();
+
+    /// Start queue processing
+    storage.background_operations_assignee.start();
+    storage.queue_updating_task->activateAndSchedule();
+    storage.mutations_updating_task->activateAndSchedule();
+    storage.mutations_finalizing_task->activateAndSchedule();
+    storage.merge_selecting_task->activateAndSchedule();
+    storage.cleanup_thread.start();
+    storage.part_check_thread.start();
+
+    return true;
 }
 
 
@@ -178,6 +181,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
             storage.queue.load(zookeeper);
 
+            storage.queue.createLogEntriesToFetchBrokenParts();
+
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
             /// because cleanup_thread doesn't delete log_pointer of active replicas.
             storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
@@ -194,26 +199,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         updateQuorumIfWeHavePart();
 
-        if (storage_settings->replicated_can_become_leader)
-            storage.enterLeaderElection();
-        else
-            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
-
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
         storage.partial_shutdown_called = false;
         storage.partial_shutdown_event.reset();
-
-        /// Start queue processing
-        storage.background_operations_assignee.start();
-
-        storage.queue_updating_task->activateAndSchedule();
-        storage.mutations_updating_task->activateAndSchedule();
-        storage.mutations_finalizing_task->activateAndSchedule();
-        storage.cleanup_thread.start();
-        storage.part_check_thread.start();
-
         return true;
     }
     catch (...)
@@ -255,7 +245,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     for (const auto & part_name : failed_parts)
     {
         auto part = storage.getPartIfExists(
-            part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+            part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
         if (part)
         {
@@ -367,8 +357,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 }
 
 
-void ReplicatedMergeTreeRestartingThread::partialShutdown()
+void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
+    setReadonly(part_of_full_shutdown);
     ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
 
     storage.partial_shutdown_called = true;
@@ -377,8 +368,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     LOG_TRACE(log, "Waiting for threads to finish");
 
-    storage.exitLeaderElection();
-
+    storage.merge_selecting_task->deactivate();
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
     storage.mutations_finalizing_task->deactivate();
@@ -405,25 +395,35 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     task->deactivate();
     LOG_TRACE(log, "Restarting thread finished");
 
-    /// For detach table query, we should reset the ReadonlyReplica metric.
-    if (readonly_mode_was_set)
-    {
-        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        readonly_mode_was_set = false;
-    }
-
     /// Stop other tasks.
-    partialShutdown();
+    partialShutdown(/* part_of_full_shutdown */ true);
 }
 
-void ReplicatedMergeTreeRestartingThread::setReadonly()
+void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
 {
     bool old_val = false;
-    if (storage.is_readonly.compare_exchange_strong(old_val, true))
-    {
-        readonly_mode_was_set = true;
+    bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
+
+    /// Do not increment the metric if replica became readonly due to shutdown.
+    if (became_readonly && on_shutdown)
+        return;
+
+    if (became_readonly)
         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-    }
+
+    /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
+    if (on_shutdown)
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+}
+
+void ReplicatedMergeTreeRestartingThread::setNotReadonly()
+{
+    bool old_val = true;
+    /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
+    /// because we don't want to change this metric if replication is started successfully.
+    /// So we should not decrement it when replica stopped being readonly on startup.
+    if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 }
 
 }

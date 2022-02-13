@@ -1,6 +1,7 @@
 #pragma once
+
 #include <Processors/Sinks/SinkToStorage.h>
-#include <DataStreams/SquashingTransform.h>
+#include <Interpreters/SquashingTransform.h>
 
 namespace DB
 {
@@ -16,12 +17,14 @@ public:
     void work() override;
 
 protected:
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
     void onFinish() override;
 
 
 private:
     SquashingTransform squashing;
+    Chunk cur_chunk;
     Chunk finish_chunk;
 };
 

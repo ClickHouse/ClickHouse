@@ -468,13 +468,11 @@ namespace DB
                     fillArrowArrayWithDecimalColumnData<ToDataType, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
                     return true;
                 }
-#if !defined(ARCADIA_BUILD)
                 if constexpr (std::is_same_v<ToDataType,DataTypeDecimal<Decimal256>>)
                 {
                     fillArrowArrayWithDecimalColumnData<ToDataType, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
                     return true;
                 }
-#endif
 
                 return false;
             };

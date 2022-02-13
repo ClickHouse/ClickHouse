@@ -1,16 +1,23 @@
+#include <string_view>
+
 #include <Parsers/ExpressionListParsers.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
+
+using namespace std::literals;
 
 
 namespace DB
@@ -138,28 +145,28 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
+                union_modes.push_back(SelectUnionMode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
+                union_modes.push_back(SelectUnionMode::DISTINCT);
             }
             // SELECT ... UNION SELECT ...
             else
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
+                union_modes.push_back(SelectUnionMode::Unspecified);
             }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
+            union_modes.push_back(SelectUnionMode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            union_modes.push_back(ASTSelectWithUnionQuery::Mode::INTERSECT);
+            union_modes.push_back(SelectUnionMode::INTERSECT);
             return true;
         }
         return false;
@@ -345,7 +352,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
               */
-            if (0 == strcmp(it[0], "["))
+            if (it[0] == "["sv)
             {
                 if (pos->type != TokenType::ClosingSquareBracket)
                     return false;
@@ -395,7 +402,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// For the expression (subject [NOT] BETWEEN left AND right)
-    ///  create an AST the same as for (subject> = left AND subject <= right).
+    /// create an AST the same as for (subject >= left AND subject <= right).
 
     ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
@@ -682,7 +689,7 @@ bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr expr_ast;
-    if (!elem_parser.parse(pos, expr_ast, expected))
+    if (!elem_parser->parse(pos, expr_ast, expected))
         return false;
 
     ASTPtr type_ast;
@@ -704,7 +711,7 @@ bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserCastExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserExpressionElement>()),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -714,7 +721,7 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserArrayElementExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserArrayElementExpression>()),
         std::make_unique<ParserUnsignedInteger>()
     }.parse(pos, node, expected);
 }

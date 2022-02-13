@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {

@@ -19,7 +19,7 @@ def start_cluster():
 def make_storage_with_key(id):
         node.exec_in_container(["bash", "-c" , """cat > /etc/clickhouse-server/config.d/storage_keys_config.xml << EOF
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <encryption_codecs>
         <aes_128_gcm_siv>
             <key_hex id="0">83e84e9a4eb11535c0670dc62d808ee0</key_hex>
@@ -32,7 +32,7 @@ def make_storage_with_key(id):
             <current_key_id>{cur_id}</current_key_id>
         </aes_256_gcm_siv>
     </encryption_codecs>
-</yandex>
+</clickhouse>
 EOF""".format(cur_id=id)])
         node.query("SYSTEM RELOAD CONFIG")
 

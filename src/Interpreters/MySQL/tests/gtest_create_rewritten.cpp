@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <gtest/gtest.h>
 
@@ -15,7 +13,7 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Poco/String.h>
 
-
+#if USE_MYSQL
 using namespace DB;
 
 static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr context)
@@ -42,7 +40,8 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
         {"TINYINT", "Int8"}, {"SMALLINT", "Int16"}, {"MEDIUMINT", "Int32"}, {"INT", "Int32"},
         {"INTEGER", "Int32"}, {"BIGINT", "Int64"}, {"FLOAT", "Float32"}, {"DOUBLE", "Float64"},
         {"VARCHAR(10)", "String"}, {"CHAR(10)", "String"}, {"Date", "Date"}, {"DateTime", "DateTime"},
-        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Int8"}
+        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}, {"BIT", "UInt64"}, {"SET", "UInt64"},
+        {"YEAR", "UInt16"}, {"TIME", "Int64"}, {"GEOMETRY", "String"}
     };
 
     for (const auto & [test_type, mapped_type] : test_types)
@@ -106,7 +105,7 @@ TEST(MySQLCreateRewritten, PartitionPolicy)
         {"INTEGER", "Int32", " PARTITION BY intDiv(key, 4294967)"}, {"BIGINT", "Int64", " PARTITION BY intDiv(key, 18446744073709551)"},
         {"FLOAT", "Float32", ""}, {"DOUBLE", "Float64", ""}, {"VARCHAR(10)", "String", ""}, {"CHAR(10)", "String", ""},
         {"Date", "Date", " PARTITION BY toYYYYMM(key)"}, {"DateTime", "DateTime", " PARTITION BY toYYYYMM(key)"},
-        {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Int8", " PARTITION BY key"}
+        {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Bool", " PARTITION BY key"}
     };
 
     for (const auto & [test_type, mapped_type, partition_policy] : test_types)
@@ -137,7 +136,7 @@ TEST(MySQLCreateRewritten, OrderbyPolicy)
         {"INTEGER", "Int32", " PARTITION BY intDiv(key, 4294967)"}, {"BIGINT", "Int64", " PARTITION BY intDiv(key, 18446744073709551)"},
         {"FLOAT", "Float32", ""}, {"DOUBLE", "Float64", ""}, {"VARCHAR(10)", "String", ""}, {"CHAR(10)", "String", ""},
         {"Date", "Date", " PARTITION BY toYYYYMM(key)"}, {"DateTime", "DateTime", " PARTITION BY toYYYYMM(key)"},
-        {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Int8", " PARTITION BY key"}
+        {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Bool", " PARTITION BY key"}
     };
 
     for (const auto & [test_type, mapped_type, partition_policy] : test_types)
@@ -257,3 +256,4 @@ TEST(MySQLCreateRewritten, QueryWithEnum)
         std::string(MATERIALIZEDMYSQL_TABLE_COLUMNS) +
         ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 }
+#endif

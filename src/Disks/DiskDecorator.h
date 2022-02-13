@@ -38,7 +38,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -51,6 +52,7 @@ public:
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;
     void setReadOnly(const String & path) override;
@@ -69,6 +71,20 @@ public:
     void shutdown() override;
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override { return delegate->readMetaFile(path, settings, size); }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override { return delegate->writeMetaFile(path, buf_size, mode); }
+
+    void removeMetaFileIfExists(const String & path) override { delegate->removeMetaFileIfExists(path); }
+
+    UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
 protected:
     Executor & getExecutor() override;

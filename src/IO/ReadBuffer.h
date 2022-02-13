@@ -63,7 +63,10 @@ public:
         if (!res)
             working_buffer = Buffer(pos, pos);
         else
+        {
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            assert(position() != working_buffer.end());
+        }
         nextimpl_working_buffer_offset = 0;
 
         assert(position() <= working_buffer.end());
@@ -201,6 +204,12 @@ public:
       * It's used for asynchronous readers with double-buffering.
       */
     virtual void prefetch() {}
+
+    /**
+     * For reading from remote filesystem, when it matters how much we read.
+     */
+    virtual void setReadUntilPosition(size_t /* position */) {}
+    virtual void setReadUntilEnd() {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

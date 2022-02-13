@@ -8,8 +8,8 @@
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
-#include <common/types.h>
-#include <common/logger_useful.h>
+#include <base/types.h>
+#include <base/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -70,6 +70,8 @@ public:
 
     /// Check part by name
     CheckResult checkPart(const String & part_name);
+
+    void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
     void run();

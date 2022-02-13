@@ -1,14 +1,17 @@
 #include <Interpreters/Session.h>
 
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
+
+#include <magic_enum.hpp>
 
 #include <atomic>
 #include <condition_variable>
@@ -240,38 +243,41 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
-
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
-    : session_id(UUIDHelpers::generateV4()),
-      global_context(global_context_)
+    : auth_id(UUIDHelpers::generateV4()),
+      global_context(global_context_),
+      interface(interface_),
+      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
 }
 
-Session::Session(Session &&) = default;
-
 Session::~Session()
 {
+    LOG_DEBUG(log, "{} Destroying {} of user {}",
+        toString(auth_id),
+        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session"),
+        (user_id ? toString(*user_id) : "<EMPTY>")
+    );
+
     /// Early release a NamedSessionData.
     if (named_session)
         named_session->release();
 
     if (notified_session_log_about_login)
     {
-        // must have been set in makeQueryContext or makeSessionContext
-        assert(user);
-        if (auto session_log = getSessionLog())
-            session_log->addLogOut(session_id, user->getName(), getClientInfo());
+        if (auto session_log = getSessionLog(); session_log && user)
+            session_log->addLogOut(auth_id, user->getName(), getClientInfo());
     }
 }
 
-Authentication::Type Session::getAuthenticationType(const String & user_name) const
+AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getType();
+    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
 }
 
-Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
+AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
 {
     try
     {
@@ -280,15 +286,10 @@ Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String &
     catch (const Exception & e)
     {
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(session_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
         throw;
     }
-}
-
-Authentication::Digest Session::getPasswordDoubleSHA1(const String & user_name) const
-{
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getPasswordDoubleSHA1();
 }
 
 void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
@@ -305,25 +306,25 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
 
+    LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
+            toString(auth_id), credentials_.getUserName(), address.toString());
+
     try
     {
-        user_id = global_context->getAccessControlManager().login(credentials_, address.host());
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
+        LOG_DEBUG(log, "{} Authenticated with global context as user {}",
+                toString(auth_id), user_id ? toString(*user_id) : "<EMPTY>");
     }
     catch (const Exception & e)
     {
+        LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(session_id, *prepared_client_info, credentials_.getUserName(), e);
+            session_log->addLoginFailure(auth_id, *prepared_client_info, credentials_.getUserName(), e);
         throw;
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
     prepared_client_info->current_address = address;
-
-#if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials_))
-        prepared_client_info->current_password = basic_credentials->getPassword();
-#endif
 }
 
 ClientInfo & Session::getClientInfo()
@@ -343,6 +344,8 @@ ContextMutablePtr Session::makeSessionContext()
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
 
+    LOG_DEBUG(log, "{} Creating session context with user_id: {}",
+            toString(auth_id), user_id ? toString(*user_id) : "<EMPTY>");
     /// Make a new session context.
     ContextMutablePtr new_session_context;
     new_session_context = Context::createCopy(global_context);
@@ -370,6 +373,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+
+    LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
+              toString(auth_id), session_name_, user_id ? toString(*user_id) : "<EMPTY>");
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
@@ -413,6 +419,11 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
 
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
+    /// For the LOCAL interface we don't send events to the session log
+    /// because the LOCAL interface is internal, it does nothing with networking.
+    if (interface == ClientInfo::Interface::LOCAL)
+        return nullptr;
+
     // take it from global context, since it outlives the Session and always available.
     // please note that server may have session_log disabled, hence this may return nullptr.
     return global_context->getSessionLog();
@@ -427,6 +438,12 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
+    LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+              toString(auth_id),
+              from_session_context ? "session" : "global",
+              user_id ? toString(*user_id) : "<EMPTY>",
+              query_context->getUser() ? query_context->getUser()->getName() : "<NOT SET>");
+
     /// Copy the specified client info to the new query context.
     auto & res_client_info = query_context->getClientInfo();
     if (client_info_to_move)
@@ -439,9 +456,6 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     {
         res_client_info.current_user = prepared_client_info->current_user;
         res_client_info.current_address = prepared_client_info->current_address;
-#if defined(ARCADIA_BUILD)
-        res_client_info.current_password = prepared_client_info->current_password;
-#endif
     }
 
     /// Set parameters of initial query.
@@ -454,8 +468,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         res_client_info.initial_address = res_client_info.current_address;
     }
 
-    /// Sets that row policies from the initial user should be used too.
-    query_context->setInitialRowPolicy();
+    /// Sets that row policies of the initial user should be used too.
+    query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getUser())
@@ -467,10 +481,10 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (!notified_session_log_about_login)
     {
-        if (auto session_log = getSessionLog())
+        if (auto session_log = getSessionLog(); user && user_id && session_log)
         {
             session_log->addLoginSuccess(
-                    session_id,
+                    auth_id,
                     named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
                     *query_context);
 
@@ -479,6 +493,15 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     return query_context;
+}
+
+
+void Session::releaseSessionID()
+{
+    if (!named_session)
+        return;
+    named_session->release();
+    named_session = nullptr;
 }
 
 }

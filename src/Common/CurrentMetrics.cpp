@@ -9,8 +9,9 @@
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
-    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, or replication queue bookkeeping)") \
-    M(BackgroundFetchesPoolTask, "Number of active tasks in BackgroundFetchesPool") \
+    M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
+    M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
+    M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -62,8 +63,10 @@
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
     M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
     M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
-    M(PartsPreCommitted, "The part is in data_parts, but not used for SELECTs.") \
-    M(PartsCommitted, "Active data part, used by current and upcoming SELECTs.") \
+    M(PartsPreCommitted, "Deprecated. See PartsPreActive.") \
+    M(PartsCommitted, "Deprecated. See PartsActive.") \
+    M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
+    M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -77,6 +80,7 @@
     M(SyncDrainedConnections, "Number of connections drained synchronously.") \
     M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
+    M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
 
 namespace CurrentMetrics
 {

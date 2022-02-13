@@ -16,16 +16,11 @@ struct ColumnMapping
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
 
-    /// Tracks which columns we have read in a single read() call.
-    /// For columns that are never read, it is initialized to false when we
-    /// read the file header, and never changed afterwards.
-    /// For other columns, it is updated on each read() call.
-    std::vector<UInt8> read_columns;
+    /// The list of column indexes that are not presented in input data.
+    std::vector<UInt8> not_presented_columns;
 
-
-    /// Whether we have any columns that are not read from file at all,
-    /// and must be always initialized with defaults.
-    bool have_always_default_columns{false};
+    /// The list of column names in input data. Needed for better exception messages.
+    std::vector<String> names_of_columns;
 };
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
@@ -55,6 +50,8 @@ public:
      */
     virtual void resetParser();
 
+    virtual void setReadBuffer(ReadBuffer & in_);
+
     virtual const BlockMissingValues & getMissingValues() const
     {
         static const BlockMissingValues none;
@@ -70,7 +67,6 @@ public:
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
-    void setReadBuffer(ReadBuffer & in_);
 
 protected:
     ColumnMappingPtr column_mapping{};

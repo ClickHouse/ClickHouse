@@ -15,7 +15,7 @@ mkdir -p "${WORKING_FOLDER_01600}"
 clickhouse_local() {
     local query="$1"
     shift
-    ${CLICKHOUSE_LOCAL} --query "$query" "$@" -- --path="${WORKING_FOLDER_01600}"
+    ${CLICKHOUSE_LOCAL} --query "$query" "$@" --path="${WORKING_FOLDER_01600}"
 }
 
 test_detach_attach_sequence() {

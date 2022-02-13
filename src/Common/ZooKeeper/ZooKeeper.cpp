@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
-#include <common/logger_useful.h>
-#include <common/find_symbols.h>
+#include <base/logger_useful.h>
+#include <base/find_symbols.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -269,7 +270,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::List), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -330,7 +331,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Create), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -400,7 +401,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Remove), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -432,7 +433,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Exists), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -466,7 +467,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Get), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -539,7 +540,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Set), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -591,7 +592,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize();
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Multi), requests[0]->getPath()));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -730,7 +731,10 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         }
     };
 
-    while (!condition || !condition())
+    /// do-while control structure to allow using this function in non-blocking
+    /// fashion with a wait condition which returns false by the time this
+    /// method is called.
+    do
     {
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
@@ -746,7 +750,8 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
         if (state->event_type == Coordination::DELETED)
             return true;
-    }
+    } while (!condition || !condition());
+
     return false;
 }
 
@@ -1038,9 +1043,9 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
-void ZooKeeper::finalize()
+void ZooKeeper::finalize(const String & reason)
 {
-    impl->finalize();
+    impl->finalize(reason);
 }
 
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
@@ -1127,6 +1132,56 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->path = path;
     request->version = version;
     return request;
+}
+
+std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
+{
+    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+    {
+        /// Do not allow this for new tables, print warning for tables created in old versions
+        if (check_starts_with_slash)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
+        if (log)
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
+        zookeeper_path = "/" + zookeeper_path;
+    }
+
+    return zookeeper_path;
+}
+
+String extractZooKeeperName(const String & path)
+{
+    static constexpr auto default_zookeeper_name = "default";
+    if (path.empty())
+        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return default_zookeeper_name;
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        auto zookeeper_name = path.substr(0, pos);
+        if (zookeeper_name.empty())
+            throw DB::Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", DB::ErrorCodes::BAD_ARGUMENTS);
+        return zookeeper_name;
+    }
+    return default_zookeeper_name;
+}
+
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log)
+{
+    if (path.empty())
+        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
+    }
+    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
 }
 
 }

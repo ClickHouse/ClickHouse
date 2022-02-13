@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-#include <common/chrono_io.h>
+#include <base/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
 {
@@ -69,7 +69,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -110,12 +110,12 @@ std::exception_ptr CacheDictionary<dictionary_key_type>::getLastException() cons
 }
 
 template <DictionaryKeyType dictionary_key_type>
-const IDictionarySource * CacheDictionary<dictionary_key_type>::getSource() const
+DictionarySourcePtr CacheDictionary<dictionary_key_type>::getSource() const
 {
     /// Mutex required here because of the getSourceAndUpdateIfNeeded() function
     /// which is used from another thread.
     std::lock_guard lock(source_mutex);
-    return source_ptr.get();
+    return source_ptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -270,7 +270,6 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
-
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
@@ -484,24 +483,31 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
-    Pipe pipe;
-    std::optional<DictionarySourceData> data;
+    ColumnsWithTypeAndName key_columns;
+
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
+        {
+            auto keys = cache_storage_ptr->getCachedSimpleKeys();
+            auto keys_column = getColumnFromPODArray(std::move(keys));
+            key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+        }
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            data.emplace(shared_from_this(), keys, column_names);
+            key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
         }
     }
 
-    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
+
+    return result;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -589,6 +595,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
 
+                convertToFullIfSparse(block);
                 auto block_columns = block.getColumns();
 
                 /// Split into keys columns and attribute columns

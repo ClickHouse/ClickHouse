@@ -5,7 +5,7 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -105,12 +105,16 @@ namespace MySQLReplication
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
         {
             typ = QUERY_EVENT_MULTI_TXN_FLAG;
+            if (!query.starts_with("COMMIT"))
+                transaction_complete = false;
         }
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
                 throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
+            if (!query.starts_with("XA COMMIT"))
+                transaction_complete = false;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
@@ -155,7 +159,7 @@ namespace MySQLReplication
         payload.ignore(1);
 
         column_count = readLengthEncodedNumber(payload);
-        for (auto i = 0U; i < column_count; i++)
+        for (auto i = 0U; i < column_count; ++i)
         {
             UInt8 v = 0x00;
             payload.readStrict(reinterpret_cast<char *>(&v), 1);
@@ -184,7 +188,7 @@ namespace MySQLReplication
     {
         auto pos = 0;
         column_meta.reserve(column_count);
-        for (auto i = 0U; i < column_count; i++)
+        for (auto i = 0U; i < column_count; ++i)
         {
             UInt16 typ = column_type[i];
             switch (typ)
@@ -200,6 +204,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATE:
                 case MYSQL_TYPE_DATETIME:
                 case MYSQL_TYPE_NEWDATE:
+                case MYSQL_TYPE_YEAR:
                 {
                     /// No data here.
                     column_meta.emplace_back(0);
@@ -210,7 +215,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DOUBLE:
                 case MYSQL_TYPE_TIMESTAMP2:
                 case MYSQL_TYPE_DATETIME2:
+                case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_BLOB:
+                case MYSQL_TYPE_GEOMETRY:
                 {
                     column_meta.emplace_back(UInt16(meta[pos]));
                     pos += 1;
@@ -226,6 +233,7 @@ namespace MySQLReplication
                     pos += 2;
                     break;
                 }
+                case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     /// Little-Endian
@@ -251,7 +259,7 @@ namespace MySQLReplication
         out << "Table Len: " << std::to_string(this->table_len) << '\n';
         out << "Table: " << this->table << '\n';
         out << "Column Count: " << this->column_count << '\n';
-        for (auto i = 0U; i < column_count; i++)
+        for (UInt32 i = 0; i < column_count; ++i)
         {
             out << "Column Type [" << i << "]: " << std::to_string(column_type[i]) << ", Meta: " << column_meta[i] << '\n';
         }
@@ -308,7 +316,7 @@ namespace MySQLReplication
         UInt32 null_index = 0;
 
         UInt32 re_count = 0;
-        for (auto i = 0U; i < number_columns; i++)
+        for (UInt32 i = 0; i < number_columns; ++i)
         {
             if (bitmap[i])
                 re_count++;
@@ -317,7 +325,7 @@ namespace MySQLReplication
         boost::dynamic_bitset<> columns_null_set;
         readBitmap(payload, columns_null_set, re_count);
 
-        for (auto i = 0U; i < number_columns; i++)
+        for (UInt32 i = 0; i < number_columns; ++i)
         {
             UInt32 field_len = 0;
 
@@ -427,6 +435,98 @@ namespace MySQLReplication
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
                     }
+                    case MYSQL_TYPE_YEAR: {
+                        Int16 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
+                        break;
+                    }
+                    case MYSQL_TYPE_TIME2:
+                    {
+                        UInt64 uintpart = 0UL;
+                        Int32 frac = 0U;
+                        Int64 ltime;
+                        Int64 intpart;
+                        switch (meta)
+                        {
+                            case 0:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 1:
+                            case 2:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 1);
+                                if (intpart < 0 && frac > 0)
+                                {
+                                    intpart ++;
+                                    frac -= 0x100;
+                                }
+                                frac = frac * 10000;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 3:
+                            case 4:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 2);
+                                if (intpart < 0 && frac > 0)
+                                {
+                                    intpart ++;
+                                    frac -= 0x10000;
+                                }
+                                frac = frac * 100;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 5:
+                            case 6:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 6);
+                                intpart = uintpart - 0x800000000000L;
+                                ltime = intpart;
+                                frac = std::abs(intpart % (1L << 24));
+                                break;
+                            }
+                            default:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                        }
+                        Int64 hh, mm, ss;
+                        bool negative = false;
+                        if (intpart == 0)
+                        {
+                            hh = 0;
+                            mm = 0;
+                            ss = 0;
+                        }
+                        else
+                        {
+                            if (ltime < 0) negative= true;
+                            UInt64 ultime = std::abs(ltime);
+                            intpart = ultime >> 24;
+                            hh = (intpart >> 12) % (1 << 10);
+                            mm = (intpart >> 6) % (1 << 6);
+                            ss = intpart % (1 << 6);
+                        }
+
+                        Int64 time_micro = 0;
+                        time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
+                        if (negative) time_micro = - time_micro;
+                        row.push_back(Field{Int64{time_micro}});
+                        break;
+                    }
                     case MYSQL_TYPE_DATETIME2:
                     {
                         Int64 val = 0;
@@ -497,6 +597,9 @@ namespace MySQLReplication
                             UInt32 mask = 0;
                             DecimalType res(0);
 
+                            if (payload.eof())
+                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+
                             if ((*payload.position() & 0x80) == 0)
                                 mask = UInt32(-1);
 
@@ -516,7 +619,7 @@ namespace MySQLReplication
                                     res += (val ^ (mask & compressed_integer_align_numbers[compressed_integers]));
                                 }
 
-                                for (auto k = 0U; k < uncompressed_integers; k++)
+                                for (size_t k = 0; k < uncompressed_integers; ++k)
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
@@ -529,7 +632,7 @@ namespace MySQLReplication
                                 size_t uncompressed_decimals = scale / digits_per_integer;
                                 size_t compressed_decimals = scale - (uncompressed_decimals * digits_per_integer);
 
-                                for (auto k = 0U; k < uncompressed_decimals; k++)
+                                for (size_t k = 0; k < uncompressed_decimals; ++k)
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
@@ -577,6 +680,23 @@ namespace MySQLReplication
                         }
                         break;
                     }
+                    case MYSQL_TYPE_SET:
+                    {
+                        UInt32 size = (meta & 0xff);
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
+                    case MYSQL_TYPE_BIT:
+                    {
+                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
+                        UInt32 size = (bits + 7) / 8;
+                        UInt64 val = 0UL;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), size);
+                        row.push_back(val);
+                        break;
+                    }
                     case MYSQL_TYPE_VARCHAR:
                     case MYSQL_TYPE_VAR_STRING:
                     {
@@ -614,6 +734,7 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
+                    case MYSQL_TYPE_GEOMETRY:
                     case MYSQL_TYPE_BLOB:
                     {
                         UInt32 size = 0;
@@ -662,7 +783,7 @@ namespace MySQLReplication
         header.dump(out);
         out << "Schema: " << this->schema << '\n';
         out << "Table: " << this->table << '\n';
-        for (auto i = 0U; i < rows.size(); i++)
+        for (size_t i = 0; i < rows.size(); ++i)
         {
             out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << '\n';
         }
@@ -711,9 +832,26 @@ namespace MySQLReplication
     {
         switch (event->header.type)
         {
-            case FORMAT_DESCRIPTION_EVENT:
-            case QUERY_EVENT:
+            case FORMAT_DESCRIPTION_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case QUERY_EVENT: {
+                auto query = std::static_pointer_cast<QueryEvent>(event);
+                if (query->transaction_complete && pending_gtid)
+                {
+                    gtid_sets.update(*pending_gtid);
+                    pending_gtid.reset();
+                }
+                binlog_pos = event->header.log_pos;
+                break;
+            }
             case XID_EVENT: {
+                if (pending_gtid)
+                {
+                    gtid_sets.update(*pending_gtid);
+                    pending_gtid.reset();
+                }
                 binlog_pos = event->header.log_pos;
                 break;
             }
@@ -724,9 +862,11 @@ namespace MySQLReplication
                 break;
             }
             case GTID_EVENT: {
+                if (pending_gtid)
+                    gtid_sets.update(*pending_gtid);
                 auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
                 binlog_pos = event->header.log_pos;
-                gtid_sets.update(gtid_event->gtid);
+                pending_gtid = gtid_event->gtid;
                 break;
             }
             default:
@@ -792,6 +932,7 @@ namespace MySQLReplication
             {
                 event = std::make_shared<QueryEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
+                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
@@ -803,7 +944,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        position.update(event);
+                        break;
                 }
                 break;
             }

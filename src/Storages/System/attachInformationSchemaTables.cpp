@@ -3,7 +3,7 @@
 #include <Storages/System/attachSystemTablesImpl.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <common/getResource.h>
+#include <Common/getResource.h>
 
 namespace DB
 {
@@ -31,14 +31,14 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                                 DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
-        assert(view_name == ast_create.table);
+        assert(view_name == ast_create.getTable());
         if (is_uppercase)
-            ast_create.table = Poco::toUpper(view_name);
+            ast_create.setTable(Poco::toUpper(view_name));
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create), context, true).second;
 
-        database.createTable(context, ast_create.table, view, ast);
+        database.createTable(context, ast_create.getTable(), view, ast);
     }
     catch (...)
     {

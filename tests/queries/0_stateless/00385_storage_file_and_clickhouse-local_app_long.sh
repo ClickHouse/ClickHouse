@@ -51,8 +51,8 @@ ${CLICKHOUSE_LOCAL} --max_rows_in_distinct=33 -q "SELECT name, value FROM system
 ${CLICKHOUSE_LOCAL} -q "SET max_rows_in_distinct=33; SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
 ${CLICKHOUSE_LOCAL} --max_bytes_before_external_group_by=1 --max_block_size=10 -q "SELECT sum(ignore(*)) FROM (SELECT number, count() FROM numbers(1000) GROUP BY number)"
 echo
-# Check exta options
-(${CLICKHOUSE_LOCAL} --ignore-error --echo -q "SELECT nothing_to_do();SELECT 42;" 2>/dev/null && echo "Wrong RC") || true
+# Check exta options, we expect zero exit code and no stderr output
+(${CLICKHOUSE_LOCAL} --ignore-error --echo -q "SELECT nothing_to_do();SELECT 42;" 2>/dev/null || echo "Wrong RC")
 echo
 ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 (

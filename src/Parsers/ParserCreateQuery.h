@@ -5,8 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
@@ -97,6 +96,8 @@ public:
     {
     }
 
+    void enableCheckTypeKeyword() { check_type_keyword = true; }
+
 protected:
     using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
 
@@ -107,6 +108,8 @@ protected:
     bool require_type = true;
     bool allow_null_modifiers = false;
     bool check_keywords_after_name = false;
+    /// just for ALTER TABLE ALTER COLUMN use
+    bool check_type_keyword = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -126,6 +129,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_codec{"CODEC"};
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
+    ParserKeyword s_type{"TYPE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
@@ -172,6 +176,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
     {
+        if (check_type_keyword && !s_type.ignore(pos, expected))
+            return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
     }
@@ -270,7 +276,7 @@ protected:
 class ParserIndexDeclaration : public IParserBase
 {
 public:
-    ParserIndexDeclaration() {}
+    ParserIndexDeclaration() = default;
 
 protected:
     const char * getName() const override { return "index declaration"; }
@@ -330,7 +336,7 @@ protected:
 
 
 /**
-  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  * [ENGINE = name] [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {
@@ -355,6 +361,8 @@ protected:
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
   *
+  * Or (for engines that supports schema inference):
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] ENGINE = engine
   */
 class ParserCreateTableQuery : public IParserBase
 {
@@ -368,6 +376,32 @@ class ParserCreateLiveViewQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE LIVE VIEW query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE [db.]name] [WATERMARK function] AS SELECT ...
+class ParserCreateWindowViewQuery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CREATE WINDOW VIEW query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserTableOverrideDeclaration : public IParserBase
+{
+public:
+    const bool is_standalone;
+    explicit ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
+
+protected:
+    const char * getName() const override { return "table override declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserTableOverridesDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "table overrides declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

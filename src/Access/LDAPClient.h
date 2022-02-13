@@ -1,10 +1,8 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
+#include "config_core.h"
 
-#include <common/types.h>
+#include <base/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>
@@ -136,7 +134,7 @@ public:
 
 protected:
     MAYBE_NORETURN void diag(const int rc, String text = "");
-    MAYBE_NORETURN void openConnection();
+    MAYBE_NORETURN bool openConnection();
     void closeConnection() noexcept;
     SearchResults search(const SearchParams & search_params);
 

@@ -1,8 +1,8 @@
 #include "SharedLibraryHandler.h"
 
-#include <common/scope_guard.h>
-#include <common/bit_cast.h>
-#include <common/find_symbols.h>
+#include <base/scope_guard.h>
+#include <base/bit_cast.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 
@@ -92,7 +92,7 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadAll()
+Block SharedLibraryHandler::loadAll()
 {
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};
@@ -107,13 +107,11 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll()
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_all_func(data_ptr, &settings_holder->strings, &columns);
-    auto block = dataToBlock(data);
-
-    return std::make_shared<OneBlockInputStream>(block);
+    return dataToBlock(data);
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
+Block SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
     const ClickHouseLibrary::VectorUInt64 ids_data{bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
@@ -128,13 +126,11 @@ BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & 
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_ids_func(data_ptr, &settings_holder->strings, &columns_pass, &ids_data);
-    auto block = dataToBlock(data);
-
-    return std::make_shared<OneBlockInputStream>(block);
+    return dataToBlock(data);
 }
 
 
-BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns)
+Block SharedLibraryHandler::loadKeys(const Columns & key_columns)
 {
     auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
     std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
@@ -171,9 +167,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadKeys(const Columns & key_columns)
     SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
 
     ClickHouseLibrary::RawClickHouseLibraryTable data = load_keys_func(data_ptr, &settings_holder->strings, &request_cols);
-    auto block = dataToBlock(data);
-
-    return std::make_shared<OneBlockInputStream>(block);
+    return dataToBlock(data);
 }
 
 

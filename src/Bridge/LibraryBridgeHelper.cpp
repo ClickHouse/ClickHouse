@@ -1,8 +1,8 @@
 #include "LibraryBridgeHelper.h"
 
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -11,8 +11,8 @@
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -75,11 +75,12 @@ bool LibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts);
+        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
         readString(result, buf);
     }
     catch (...)
     {
+        tryLogCurrentException(log);
         return false;
     }
 
@@ -134,8 +135,8 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
 {
     /// Sample block must contain null values
     WriteBufferFromOwnString out;
-    auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
-    formatBlock(output_stream, sample_block);
+    auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
+    formatBlock(output_format, sample_block);
     auto block_string = out.str();
 
     return [block_string, this](std::ostream & os)
@@ -226,8 +227,8 @@ Pipe LibraryBridgeHelper::loadKeys(const Block & requested_block)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
-        auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
-        formatBlock(output_stream, requested_block);
+        auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
+        formatBlock(output_format, requested_block);
     };
     return loadBase(uri, out_stream_callback);
 }
@@ -239,7 +240,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        http_timeouts);
+        http_timeouts, credentials);
 
     bool res;
     readBoolText(res, buf);
@@ -254,12 +255,12 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
         http_timeouts,
+        credentials,
         0,
-        Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
+        getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
-    auto input_stream = getContext()->getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, DEFAULT_BLOCK_SIZE);
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));
     return Pipe(std::move(source));

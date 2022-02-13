@@ -7,7 +7,7 @@ toc_title: PROJECTION
 
 Доступны следующие операции с [проекциями](../../../engines/table-engines/mergetree-family/mergetree.md#projections):
 
--   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` — добавляет описание проекции в метаданные.
+-   `ALTER TABLE [db].name ADD PROJECTION name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` — добавляет описание проекции в метаданные.
 
 -   `ALTER TABLE [db].name DROP PROJECTION name` — удаляет описание проекции из метаданных и удаляет файлы проекции с диска.
 

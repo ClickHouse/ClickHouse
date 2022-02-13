@@ -1,36 +1,37 @@
 #include "Keeper.h"
 
-#include <sys/stat.h>
-#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
-#include <Server/ProtocolServerAdapter.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Coordination/Defines.h>
+#include <Common/Config/ConfigReloader.h>
+#include <Server/TCPServer.h>
+#include <filesystem>
+#include <IO/UseSSL.h>
+#include <Core/ServerUUID.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Core/ServerUUID.h>
-#include <filesystem>
-#include <IO/UseSSL.h>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
 #if defined(OS_LINUX)
@@ -323,15 +324,19 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            LOG_WARNING(log, message);
+            LOG_WARNING(log, fmt::runtime(message));
         }
     }
 
     DB::ServerUUID::load(path + "/uuid", log);
 
-    const Settings & settings = global_context->getSettingsRef();
+    std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 100),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -358,8 +363,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-    global_context->initializeKeeperDispatcher();
+    /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
+    global_context->initializeKeeperDispatcher(/* start_async = */false);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -368,14 +375,14 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                "Keeper (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -384,13 +391,14 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 secure_port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -400,10 +408,32 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : *servers)
+    {
         server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
+
+    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
+    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+    /// ConfigReloader have to strict parameters which are redundant in our case
+    auto main_config_reloader = std::make_unique<ConfigReloader>(
+        config_path,
+        include_from_path,
+        config().getString("path", ""),
+        std::move(unused_cache),
+        unused_event,
+        [&](ConfigurationPtr config, bool /* initial_loading */)
+        {
+            if (config->has("keeper_server"))
+                global_context->updateKeeperConfiguration(*config);
+        },
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
 
         global_context->shutdown();
 
@@ -450,6 +480,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
 
     buildLoggers(config(), logger());
+    main_config_reloader->start();
 
     LOG_INFO(log, "Ready for connections.");
 

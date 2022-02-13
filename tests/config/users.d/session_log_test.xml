@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!-- User and profile to be used in sesson_log tests, to make sure that list of user's profiles is logged correctly -->
-<yandex>
+<clickhouse>
     <profiles>
         <session_log_test_xml_profile>
             <!--
@@ -27,4 +27,4 @@
             <quota>default</quota>
         </session_log_test_xml_user>
     </users>
-</yandex>
+</clickhouse>

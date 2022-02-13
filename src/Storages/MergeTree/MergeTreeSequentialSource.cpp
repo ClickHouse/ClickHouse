@@ -36,6 +36,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
+    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
+    /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
@@ -78,7 +80,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
@@ -123,7 +125,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
     throw;
 }
 

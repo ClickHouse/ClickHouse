@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -54,7 +54,7 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
-            new_columns[i++]->insert(p.disk);
+            new_columns[i++]->insert(p.disk->getName());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
             new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
             new_columns[i++]->insert(p.valid_name ? p.max_block : Field());

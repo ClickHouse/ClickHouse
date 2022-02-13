@@ -19,7 +19,7 @@ public:
         const Names & partition_key_columns,
         size_t max_block_size)
         : IMergingTransform(
-            num_inputs, header, header, /*have_all_inputs_=*/ true, /*has_limit_below_one_block_=*/ false,
+            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
             header,
             num_inputs,
             std::move(description_),

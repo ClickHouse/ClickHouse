@@ -46,7 +46,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return { true, (left_float > 0) };
+        return { .is_monotonic = true, .is_positive = left_float > 0 };
     }
 };
 

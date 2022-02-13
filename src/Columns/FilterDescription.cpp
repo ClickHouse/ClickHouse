@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 
@@ -50,6 +51,9 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
+    if (column_.isSparse())
+        data_holder = recursiveRemoveSparse(column_.getPtr());
+
     if (column_.lowCardinality())
         data_holder = column_.convertToFullColumnIfLowCardinality();
 

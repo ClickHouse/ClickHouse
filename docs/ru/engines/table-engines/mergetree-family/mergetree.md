@@ -316,17 +316,26 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Доступные индексы {#available-types-of-indices}
 
--   `minmax` — Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
+-   `minmax` — хранит минимум и максимум выражения (если выражение - [Tuple](../../../sql-reference/data-types/tuple.md), то для каждого элемента `Tuple`), используя их для пропуска блоков аналогично первичному ключу.
 
--   `set(max_rows)` — Хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+-   `set(max_rows)` — хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+
+-   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — хранит [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter), содержащий все N-граммы блока данных. Работает только с данными форматов [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) и [Map](../../../sql-reference/data-types/map.md) с ключами типа `String` или `fixedString`. Может быть использован для оптимизации выражений `EQUALS`, `LIKE` и `IN`.
+
+    -   `n` — размер N-граммы,
+    -   `size_of_bloom_filter_in_bytes` — размер в байтах фильтра Блума (можно использовать большие значения, например, 256 или 512, поскольку сжатие компенсирует возможные издержки).
+    -   `number_of_hash_functions` — количество хеш-функций, использующихся в фильтре Блума.
+    -   `random_seed` — состояние генератора случайных чисел для хеш-функций фильтра Блума.
+
+-   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — то же, что и`ngrambf_v1`, но хранит токены вместо N-грамм. Токены — это последовательности символов, разделенные не буквенно-цифровыми символами.
 
 -   `bloom_filter([false_positive])` — [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter) для указанных стоблцов.
 
     Необязательный параметр `false_positive` — это вероятность получения ложноположительного срабатывания. Возможные значения: (0, 1). Значение по умолчанию: 0.025.
 
-    Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+    Поддерживаемые типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Фильтром могут пользоваться функции: [equals](../../../engines/table-engines/mergetree-family/mergetree.md), [notEquals](../../../engines/table-engines/mergetree-family/mergetree.md), [in](../../../engines/table-engines/mergetree-family/mergetree.md), [notIn](../../../engines/table-engines/mergetree-family/mergetree.md).
+    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem).
 
 **Примеры**
 
@@ -668,7 +677,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 -   `policy_name_N` — название политики. Названия политик должны быть уникальны.
 -   `volume_name_N` — название тома. Названия томов должны быть уникальны.
 -   `disk` — диск, находящийся внутри тома.
--   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома.
+-   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома. Если в результате слияния размер куска ожидается больше, чем max_data_part_size_bytes, то этот кусок будет записан в следующий том. В основном эта функция позволяет хранить новые / мелкие куски на горячем (SSD) томе и перемещать их на холодный (HDD) том, когда они достигают большого размера. Не используйте этот параметр, если политика имеет только один том. 
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).
 -   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
@@ -766,6 +775,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
+Пользователь может сбалансированно распределять новые большие куски данных по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures), используя настройку [min_bytes_to_rebalance_partition_over_jbod](../../../operations/settings/merge-tree-settings.md#min-bytes-to-rebalance-partition-over-jbod).
+
 ## Использование сервиса S3 для хранения данных {#table_engine-mergetree-s3}
 
 Таблицы семейства `MergeTree` могут хранить данные в сервисе [S3](https://aws.amazon.com/s3/) при использовании диска типа `s3`.
@@ -861,3 +872,13 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`.
+
+## Виртуальные столбцы {#virtual-columns}
+
+-   `_part` — Имя куска.
+-   `_part_index` — Номер куска по порядку в результате запроса.
+-   `_partition_id` — Имя партиции.
+-   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
+-   `_partition_value` — Значения (кортеж) выражения `partition by`.
+-   `_sample_factor` — Коэффициент сэмплирования (из запроса).
+

@@ -1,4 +1,5 @@
 #include <Interpreters/DDLTask.h>
+#include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteHelpers.h>
@@ -6,13 +7,14 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
+
 
 namespace DB
 {
@@ -201,7 +203,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 
     if (!cluster)
         throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                        "DDL task {} contains current host {} in cluster {}, but there are no such cluster here.",
+                        "DDL task {} contains current host {} in cluster {}, but there is no such cluster here.",
                         entry_name, host_id.readableString(), cluster_name);
 
     /// Try to find host from task host list in cluster
@@ -257,12 +259,12 @@ bool DDLTask::tryFindHostInCluster()
                          * */
                         is_circular_replicated = true;
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
-                        if (!query_with_table || query_with_table->database.empty())
+                        if (!query_with_table || !query_with_table->database)
                         {
                             throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
                                             "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
                         }
-                        if (default_database == query_with_table->database)
+                        if (default_database == query_with_table->getDatabase())
                             return true;
                     }
                 }
@@ -324,7 +326,7 @@ String DDLTask::getShardID() const
     Strings replica_names;
     for (const Cluster::Address & address : shard_addresses)
         replica_names.emplace_back(address.readableString());
-    std::sort(replica_names.begin(), replica_names.end());
+    ::sort(replica_names.begin(), replica_names.end());
 
     String res;
     for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
@@ -351,8 +353,8 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        assert(ddl_query->database.empty());
-        ddl_query->database = database->getDatabaseName();
+        assert(!ddl_query->database);
+        ddl_query->setDatabase(database->getDatabaseName());
     }
 }
 

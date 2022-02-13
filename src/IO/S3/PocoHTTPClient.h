@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -10,10 +8,10 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
-#include <aws/core/http/HttpClient.h> // Y_IGNORE
-#include <aws/core/http/HttpRequest.h> // Y_IGNORE
-#include <aws/core/http/standard/StandardHttpResponse.h> // Y_IGNORE
+#include <aws/core/client/ClientConfiguration.h>
+#include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
+#include <aws/core/http/standard/StandardHttpResponse.h>
 
 namespace Aws::Http::Standard
 {

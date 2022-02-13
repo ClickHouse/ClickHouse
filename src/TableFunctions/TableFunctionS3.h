@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/* s3(source, [access_key_id, secret_access_key,] format, structure) - creates a temporary storage for a file in S3
+/* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3
  */
 class TableFunctionS3 : public ITableFunction
 {
@@ -23,7 +23,7 @@ public:
     {
         return name;
     }
-    bool hasStaticStructure() const override { return true; }
+    bool hasStaticStructure() const override { return s3_configuration->structure != "auto"; }
 
 protected:
     StoragePtr executeImpl(

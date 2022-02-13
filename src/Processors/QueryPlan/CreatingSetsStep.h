@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/Context_fwd.h>
 

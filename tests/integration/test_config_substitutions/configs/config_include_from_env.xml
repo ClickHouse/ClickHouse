@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <include_from from_env="INCLUDE_FROM_ENV"></include_from>
   <profiles>
     <default>
@@ -14,4 +14,4 @@
 
       <include incl="node_does_not_exist" />
   </users>
-</yandex>
+</clickhouse>

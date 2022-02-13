@@ -6,8 +6,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <common/find_symbols.h>
-#include <common/logger_useful.h>
+#include <base/find_symbols.h>
+#include <base/logger_useful.h>
 
 #include <cassert>
 #include <sys/types.h>

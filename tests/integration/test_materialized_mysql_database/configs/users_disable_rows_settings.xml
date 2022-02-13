@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <allow_experimental_database_materialized_mysql>1</allow_experimental_database_materialized_mysql>
@@ -18,4 +18,4 @@
             <profile>default</profile>
         </default>
     </users>
-</yandex>
+</clickhouse>

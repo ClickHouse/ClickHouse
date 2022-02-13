@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -28,9 +28,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
 
     if (source_part->name != source_part_name)
     {
-        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
-                    + " but should be mutated to " + entry.new_part_name + ". "
-                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
+        LOG_WARNING(log,
+            "Part {} is covered by {} but should be mutated to {}. "
+            "Possibly the mutation of this part is not needed and will be skipped. "
+            "This shouldn't happen often.",
+            source_part_name, source_part->name, entry.new_part_name);
         return {false, {}};
     }
 
@@ -71,13 +73,27 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     future_mutated_part->updatePath(storage, reserved_space.get());
     future_mutated_part->type = source_part->getType();
 
-    merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_mutated_part);
+    const Settings & settings = storage.getContext()->getSettingsRef();
+    merge_mutate_entry = storage.getContext()->getMergeList().insert(
+        storage.getStorageID(),
+        future_mutated_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
+            entry.create_time, fake_query_context, reserved_space, table_lock_holder);
+
+    /// Adjust priority
+    for (auto & item : future_mutated_part->parts)
+        priority += item->getBytesOnDisk();
 
     return {true, [this] (const ExecutionStatus & execution_status)
     {

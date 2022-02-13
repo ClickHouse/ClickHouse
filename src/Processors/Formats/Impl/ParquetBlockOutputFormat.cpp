@@ -60,7 +60,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void ParquetBlockOutputFormat::finalize()
+void ParquetBlockOutputFormat::finalizeImpl()
 {
     if (!file_writer)
     {
@@ -74,9 +74,9 @@ void ParquetBlockOutputFormat::finalize()
         throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void registerOutputFormatProcessorParquet(FormatFactory & factory)
+void registerOutputFormatParquet(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -85,6 +85,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Parquet");
 }
 
 }
@@ -94,7 +95,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorParquet(FormatFactory &)
+void registerOutputFormatParquet(FormatFactory &)
 {
 }
 }

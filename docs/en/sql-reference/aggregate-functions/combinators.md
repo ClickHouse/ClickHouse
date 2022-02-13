@@ -25,6 +25,12 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
 
+## -Map {#agg-functions-combinator-map}
+
+The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
+
+Examples: `sumMap(map(1,1))`, `avgMap(map('a', 1))`.
+
 ## -SimpleState {#agg-functions-combinator-simplestate}
 
 If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.

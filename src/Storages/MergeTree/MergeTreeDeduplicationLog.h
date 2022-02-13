@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Types.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <map>

@@ -8,10 +8,10 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
@@ -27,6 +27,10 @@ namespace ErrorCodes
 #if USE_LIBPQXX
 
 static const UInt64 max_block_size = 8192;
+
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db", "database", "table", "schema",
+    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "priority"};
 
 namespace
 {
@@ -76,7 +80,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 
 Pipe PostgreSQLDictionarySource::loadAll()
 {
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadBase(load_all_query);
 }
 
@@ -84,7 +88,7 @@ Pipe PostgreSQLDictionarySource::loadAll()
 Pipe PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadBase(load_update_query);
 }
 
@@ -161,7 +165,7 @@ bool PostgreSQLDictionarySource::supportsSelectiveLoad() const
 
 DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 {
-    return std::make_unique<PostgreSQLDictionarySource>(*this);
+    return std::make_shared<PostgreSQLDictionarySource>(*this);
 }
 
 
@@ -185,8 +189,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
-
-        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context);
+        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
+        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
         auto pool = std::make_shared<postgres::PoolWithFailover>(
                     configuration.replicas_configurations,
                     context->getSettingsRef().postgresql_connection_pool_size,

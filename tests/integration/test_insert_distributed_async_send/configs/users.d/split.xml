@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <distributed_directory_monitor_split_batch_on_failure>1</distributed_directory_monitor_split_batch_on_failure>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

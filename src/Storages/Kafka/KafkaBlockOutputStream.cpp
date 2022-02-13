@@ -1,6 +1,7 @@
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 namespace DB
@@ -24,7 +25,7 @@ void KafkaSink::onStart()
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+    format = FormatFactory::instance().getOutputFormat(storage.getFormatName(), *buffer,
         getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
@@ -35,13 +36,13 @@ void KafkaSink::onStart()
 
 void KafkaSink::consume(Chunk chunk)
 {
-    child->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void KafkaSink::onFinish()
 {
-    if (child)
-        child->writeSuffix();
+    if (format)
+        format->finalize();
     //flush();
 
     if (buffer)

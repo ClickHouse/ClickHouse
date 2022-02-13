@@ -283,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -8,8 +8,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Parsers/ASTFunction.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -54,6 +53,10 @@ public:
     bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
+    /// Do not apply moving to PREWHERE optimization for distributed tables,
+    /// because we can't be sure that underlying table supports PREWHERE.
+    bool canMoveConditionsToPrewhere() const override { return false; }
+
     bool isRemote() const override { return true; }
 
     QueryProcessingStage::Enum
@@ -94,7 +97,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;

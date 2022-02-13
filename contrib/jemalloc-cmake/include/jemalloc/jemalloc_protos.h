@@ -1,6 +1,6 @@
 // OSX does not have this for system alloc functions, so you will get
 // "exception specification in declaration" error.
-#if defined(__APPLE__) || defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(USE_MUSL)
 # undef JEMALLOC_NOTHROW
 # define JEMALLOC_NOTHROW
 

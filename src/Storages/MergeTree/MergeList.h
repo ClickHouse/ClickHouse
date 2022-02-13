@@ -55,6 +55,10 @@ struct MergeInfo
 struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 
+struct MergeListElement;
+using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
+
+
 /**
  * Since merge is executed with multiple threads, this class
  * switches the parent MemoryTracker to account all the memory used.
@@ -62,11 +66,15 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 class MemoryTrackerThreadSwitcher : boost::noncopyable
 {
 public:
-    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr);
+    explicit MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_);
     ~MemoryTrackerThreadSwitcher();
 private:
+    MergeListEntry & merge_list_entry;
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    UInt64 prev_untracked_memory_limit;
+    UInt64 prev_untracked_memory;
+    String prev_query_id;
 };
 
 using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
@@ -104,22 +112,33 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
+    /// Used to adjust ThreadStatus::untracked_memory_limit
+    UInt64 max_untracked_memory;
+    /// Used to avoid losing any allocation context
+    UInt64 untracked_memory = 0;
+    /// Used for identifying mutations/merges in trace_log
+    std::string query_id;
 
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part);
+    MergeListElement(
+        const StorageID & table_id_,
+        FutureMergedMutatedPartPtr future_part,
+        UInt64 memory_profiler_step,
+        UInt64 memory_profiler_sample_probability,
+        UInt64 max_untracked_memory_);
 
     MergeInfo getInfo() const;
 
     MergeListElement * ptr() { return this; }
 
     ~MergeListElement();
-};
 
-using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
+    MergeListElement & ref() { return *this; }
+};
 
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.

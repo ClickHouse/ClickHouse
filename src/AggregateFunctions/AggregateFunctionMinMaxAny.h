@@ -9,14 +9,12 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -1159,12 +1157,12 @@ public:
         this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, *serialization);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, arena);
     }

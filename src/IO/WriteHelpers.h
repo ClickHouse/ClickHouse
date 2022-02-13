@@ -9,13 +9,13 @@
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
-#include <common/find_symbols.h>
-#include <common/StringRef.h>
-#include <common/DecomposedFloat.h>
-#include <common/EnumReflection.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
+#include <base/find_symbols.h>
+#include <base/StringRef.h>
+#include <base/DecomposedFloat.h>
+#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -117,6 +117,7 @@ inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
+
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)

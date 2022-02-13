@@ -44,7 +44,7 @@ toc_title: "\u7D71\u5408"
         -   [mfedotov/クリックハウス](https://forge.puppet.com/mfedotov/clickhouse)
 -   監視
     -   [黒鉛](https://graphiteapp.org)
-        -   [グラファウス](https://github.com/yandex/graphouse)
+        -   [グラファウス](https://github.com/ClickHouse/graphouse)
         -   [カーボンクリックハウス](https://github.com/lomik/carbon-clickhouse)
         -   [グラファイト-クリック](https://github.com/lomik/graphite-clickhouse)
         -   [黒鉛-ch-オプティマイザー](https://github.com/innogames/graphite-ch-optimizer) -staled仕切りを最大限に活用する [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 応用できます

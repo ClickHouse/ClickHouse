@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse на HighLoad++ 2016'
-image: 'https://blog-images.clickhouse.tech/ru/2016/clickhouse-na-highload-2016/main.jpg'
+image: 'https://blog-images.clickhouse.com/ru/2016/clickhouse-na-highload-2016/main.jpg'
 date: '2016-12-10'
 tags: ['мероприятия', 'конференции', 'Москва', 'HighLoad++']
 ---

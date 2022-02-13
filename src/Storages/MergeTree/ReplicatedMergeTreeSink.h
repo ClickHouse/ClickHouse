@@ -2,7 +2,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace Poco { class Logger; }
@@ -35,8 +35,11 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
+    ~ReplicatedMergeTreeSink() override;
+
     void onStart() override;
     void consume(Chunk chunk) override;
+    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -82,13 +85,20 @@ private:
 
     bool is_attach = false;
     bool quorum_parallel = false;
-    bool deduplicate = true;
+    const bool deduplicate = true;
     bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
 
     ContextPtr context;
+    UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
+
+    /// We can delay processing for previous chunk and start writing a new one.
+    struct DelayedChunk;
+    std::unique_ptr<DelayedChunk> delayed_chunk;
+
+    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
 };
 
 }

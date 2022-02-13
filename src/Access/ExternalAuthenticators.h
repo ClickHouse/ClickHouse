@@ -3,7 +3,7 @@
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
 #include <Access/GSSAcceptor.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <chrono>
 #include <map>

@@ -8,8 +8,8 @@ echo '{
     "ip-forward": true,
     "log-level": "debug",
     "storage-driver": "overlay2",
-    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+    "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+    "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }' | dd of=/etc/docker/daemon.json 2>/dev/null
 
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
@@ -39,6 +39,7 @@ export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/clickhouse-odbc-bridge
 export CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH=/clickhouse-library-bridge
 
 export DOCKER_MYSQL_GOLANG_CLIENT_TAG=${DOCKER_MYSQL_GOLANG_CLIENT_TAG:=latest}
+export DOCKER_DOTNET_CLIENT_TAG=${DOCKER_DOTNET_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_JAVA_CLIENT_TAG=${DOCKER_MYSQL_JAVA_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_JS_CLIENT_TAG=${DOCKER_MYSQL_JS_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_PHP_CLIENT_TAG=${DOCKER_MYSQL_PHP_CLIENT_TAG:=latest}

@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Security Announcements
-Security fixes will be announced by posting them in the [security changelog](https://clickhouse.tech/docs/en/whats-new/security-changelog/)
+Security fixes will be announced by posting them in the [security changelog](https://clickhouse.com/docs/en/whats-new/security-changelog/).
 
 ## Scope and Supported Versions
 
@@ -12,26 +12,20 @@ The following versions of ClickHouse server are currently being supported with s
 | 1.x   | :x: |
 | 18.x   | :x:                |
 | 19.x   | :x:                |
-| 20.1   | :x: |
-| 20.3   | :x: |
-| 20.4   | :x: |
-| 20.5   | :x: |
-| 20.6   | :x: |
-| 20.7   | :x: |
-| 20.8   | :x: |
-| 20.9   | :x: |
-| 20.10  | :x: |
-| 20.11  | :x: |
-| 20.12  | :x: |
+| 20.x   | :x: |
 | 21.1   | :x: |
 | 21.2   | :x: |
 | 21.3   | ✅ |
 | 21.4   | :x: |
 | 21.5   | :x: |
 | 21.6   | :x: |
-| 21.7   | ✅ |
+| 21.7   | :x: |
 | 21.8   | ✅ |
-| 21.9   | ✅ |
+| 21.9   | :x: |
+| 21.10   | :x: |
+| 21.11   | ✅ |
+| 21.12   | ✅ |
+| 22.1   | ✅ |
 
 ## Reporting a Vulnerability
 

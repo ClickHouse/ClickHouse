@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <common/EnumReflection.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB

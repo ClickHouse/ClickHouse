@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 

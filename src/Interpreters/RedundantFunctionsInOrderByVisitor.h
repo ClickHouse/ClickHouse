@@ -2,13 +2,13 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
+
+class ASTIdentifier;
 
 class RedundantFunctionsInOrderByMatcher
 {

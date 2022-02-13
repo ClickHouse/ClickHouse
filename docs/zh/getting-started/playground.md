@@ -5,7 +5,7 @@ toc_title: 体验平台
 
 # ClickHouse体验平台 {#clickhouse-playground}
 
-[ClickHouse体验平台](https://play.clickhouse.tech?file=welcome) 允许人们通过即时运行查询来尝试ClickHouse，而无需设置他们的服务器或集群。
+[ClickHouse体验平台](https://play.clickhouse.com?file=welcome) 允许人们通过即时运行查询来尝试ClickHouse，而无需设置他们的服务器或集群。
 
 体验平台中提供几个示例数据集以及显示ClickHouse特性的示例查询。还有一些ClickHouse LTS版本可供尝试。
 
@@ -17,15 +17,15 @@ ClickHouse体验平台提供了小型集群[Managed Service for ClickHouse](http
 
 | 参数                 | 值                                      |
 |:--------------------|:----------------------------------------|
-| HTTPS端点           | `https://play-api.clickhouse.tech:8443` |
-| TCP端点             | `play-api.clickhouse.tech:9440`         |
+| HTTPS端点           | `https://play-api.clickhouse.com:8443` |
+| TCP端点             | `play-api.clickhouse.com:9440`         |
 | 用户                | `playground`                            |
 | 密码                | `clickhouse`                            |
 
 还有一些带有特定ClickHouse版本的附加信息来试验它们之间的差异(端口和用户/密码与上面相同):
 
--   20.3 LTS: `play-api-v20-3.clickhouse.tech`
--   19.14 LTS: `play-api-v19-14.clickhouse.tech`
+-   20.3 LTS: `play-api-v20-3.clickhouse.com`
+-   19.14 LTS: `play-api-v19-14.clickhouse.com`
 
 !!! note "注意"
     所有这些端点都需要安全的TLS连接。
@@ -53,13 +53,13 @@ ClickHouse体验还有如下：
 使用`curl`连接Https服务：
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 TCP连接示例[CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
 ## Implementation Details {#implementation-details}

@@ -1,0 +1,73 @@
+{%- macro jnull(join_use_nulls, value='') -%}
+{#- default value or null if join_use_nulls is enabled -#}
+{% if join_use_nulls == 1 %}\N{% else %}{{ value }}{% endif %}
+{%- endmacro -%}
+{% for jn in [0, 1] -%}
+-- hash_join --
+--
+222	2
+222	222
+333	333
+--
+222	222
+333	333
+--
+222
+333
+--
+1
+1
+1
+1
+1
+1
+1
+1
+1
+--
+2
+2
+3
+2
+3
+2
+3
+2
+3
+2
+3
+2
+3
+2
+3
+2
+3
+--
+222	2
+333	3
+222	2
+333	3
+--
+{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}	2	AAA	a
+{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}	4	CCC	CCC
+1	111	111	{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}
+2	222	2	{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}
+2	222	222	2	AAA	AAA
+3	333	333	3	BBB	BBB
+{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}	4	101	CCC	CCC
+1	111	111	2	1	AAA	AAA
+2	222	2	{{ jnull(jn, 0) }}	{{ jnull(jn, 0) }}	{{ jnull(jn) }}	{{ jnull(jn) }}
+2	222	222	2	1	AAA	AAA
+3	333	333	2	3	AAA	a
+3	333	333	3	100	BBB	BBB
+2	222	2	2	AAA	AAA
+2	222	222	2	AAA	AAA
+3	333	333	3	BBB	BBB
+--
+2	222	2	2	AAA	a
+2	222	222	2	AAA	AAA
+t22	1	111	111	2	1	AAA	AAA
+t22	1	111	111	2	1	AAA	AAA
+t22	1	111	111	2	1	AAA	AAA
+t22	1	111	111	2	1	AAA	AAA
+{% endfor -%}

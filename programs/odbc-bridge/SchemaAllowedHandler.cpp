@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
 #include <sql.h>
@@ -37,7 +37,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             *response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG_WARNING(log, fmt::runtime(message));
     };
 
     if (!params.has("connection_string"))

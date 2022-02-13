@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
@@ -14,7 +14,7 @@
 /// outside of try/catch block of thread functions. ALLOW_ALLOCATIONS_IN_SCOPE cancels effect of
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
         bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
@@ -31,6 +31,9 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
+  *
+  * @see LockMemoryExceptionInThread
+  * @see MemoryTrackerBlockerInThread
   */
 class MemoryTracker
 {
@@ -58,10 +61,15 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    void updatePeak(Int64 will_be, bool log_memory_usage);
+    bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
+    void setOrRaiseProfilerLimit(Int64 value);
+
 public:
+
+    static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
@@ -106,7 +114,6 @@ public:
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
     void setOrRaiseHardLimit(Int64 value);
-    void setOrRaiseProfilerLimit(Int64 value);
 
     void setFaultProbability(double value)
     {
@@ -121,6 +128,7 @@ public:
     void setProfilerStep(Int64 value)
     {
         profiler_step = value;
+        setOrRaiseProfilerLimit(value);
     }
 
     /// next should be changed only once: from nullptr to some value.
@@ -141,6 +149,11 @@ public:
         metric.store(metric_, std::memory_order_relaxed);
     }
 
+    CurrentMetrics::Metric getMetric()
+    {
+        return metric.load(std::memory_order_relaxed);
+    }
+
     void setDescription(const char * description)
     {
         description_ptr.store(description, std::memory_order_relaxed);
@@ -157,64 +170,6 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
-
-    /// To be able to temporarily stop memory tracking from current thread.
-    struct BlockerInThread
-    {
-    private:
-        static thread_local uint64_t counter;
-        static thread_local VariableContext level;
-
-        VariableContext previous_level;
-    public:
-        /// level_ - block in level and above
-        explicit BlockerInThread(VariableContext level_ = VariableContext::User);
-        ~BlockerInThread();
-
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
-
-        static bool isBlocked(VariableContext current_level)
-        {
-            return counter > 0 && current_level >= level;
-        }
-    };
-
-    /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
-    /// - either configured memory limit reached
-    /// - or fault injected
-    ///
-    /// So this will simply ignore the configured memory limit (and avoid fault injection).
-    ///
-    /// NOTE: exception will be silently ignored, no message in log
-    /// (since logging from MemoryTracker::alloc() is tricky)
-    ///
-    /// NOTE: MEMORY_LIMIT_EXCEEDED Exception implicitly blocked if
-    /// stack unwinding is currently in progress in this thread (to avoid
-    /// std::terminate()), so you don't need to use it in this case explicitly.
-    struct LockExceptionInThread
-    {
-    private:
-        static thread_local uint64_t counter;
-        static thread_local VariableContext level;
-        static thread_local bool block_fault_injections;
-
-        VariableContext previous_level;
-        bool previous_block_fault_injections;
-    public:
-        /// level_ - block in level and above
-        /// block_fault_injections_ - block in fault injection too
-        explicit LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
-        ~LockExceptionInThread();
-
-        LockExceptionInThread(const LockExceptionInThread &) = delete;
-        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
-
-        static bool isBlocked(VariableContext current_level, bool fault_injection)
-        {
-            return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);
-        }
-    };
 };
 
 extern MemoryTracker total_memory_tracker;

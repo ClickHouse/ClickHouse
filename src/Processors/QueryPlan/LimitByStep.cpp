@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 

@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -30,6 +30,7 @@ TotalsHavingStep::TotalsHavingStep(
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
+    bool remove_filter_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
@@ -38,11 +39,14 @@ TotalsHavingStep::TotalsHavingStep(
             TotalsHavingTransform::transformHeader(
                     input_stream_.header,
                     actions_dag_.get(),
+                    filter_column_,
+                    remove_filter_,
                     final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
+    , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
@@ -58,6 +62,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         overflow_row,
         expression_actions,
         filter_column_name,
+        remove_filter,
         totals_mode,
         auto_include_threshold,
         final);
@@ -85,7 +90,10 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
-    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
+    settings.out << prefix << "Filter column: " << filter_column_name;
+    if (remove_filter)
+        settings.out << " (removed)";
+    settings.out << '\n';
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
     if (actions_dag)

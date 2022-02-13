@@ -2,18 +2,23 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
+#include "Common/ProfileEvents.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
+#include <Formats/NativeReader.h>
+
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "IServer.h"
+#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -29,7 +34,8 @@ namespace DB
 class Session;
 struct Settings;
 class ColumnsDescription;
-struct BlockStreamProfileInfo;
+struct ProfileInfo;
+class TCPServer;
 
 /// State of query processing.
 struct QueryState
@@ -44,15 +50,18 @@ struct QueryState
     /// destroyed after input/output blocks, because they may contain other
     /// threads that use this queue.
     InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
+    std::unique_ptr<NativeWriter> logs_block_out;
+
+    InternalProfileEventsQueuePtr profile_queue;
+    std::unique_ptr<NativeWriter> profile_events_block_out;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    BlockInputStreamPtr block_in;
+    std::unique_ptr<NativeReader> block_in;
 
     /// Where to write result data.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
-    BlockOutputStreamPtr block_out;
+    std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
     /// Query text.
@@ -119,7 +128,7 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -129,6 +138,7 @@ public:
 
 private:
     IServer & server;
+    TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
@@ -169,6 +179,7 @@ private:
     String cluster_secret;
 
     std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -177,6 +188,10 @@ private:
     LastBlockInputParameters last_block_in;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
+
+    using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, ProfileEvents::Counters::Snapshot>;
+
+    ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
@@ -191,6 +206,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -223,14 +239,17 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
+    void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
+    void sendProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
     void initBlockOutput(const Block & block);
     void initLogsBlockOutput(const Block & block);
+    void initProfileEventsBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

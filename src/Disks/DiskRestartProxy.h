@@ -2,7 +2,7 @@
 
 #include "DiskDecorator.h"
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <shared_mutex>
 
 namespace DB
@@ -46,13 +46,15 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;

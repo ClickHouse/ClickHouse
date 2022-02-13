@@ -4,7 +4,7 @@
 #include <string>
 
 #include <Common/SpaceSaving.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 int main(int, char **)
 {

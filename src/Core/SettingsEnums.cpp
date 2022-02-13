@@ -93,6 +93,16 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64}})
@@ -116,4 +126,24 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
+
+IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
+     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
+     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
+
+IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", FormatSettings::EscapingRule::None},
+     {"Escaped", FormatSettings::EscapingRule::Escaped},
+     {"Quoted", FormatSettings::EscapingRule::Quoted},
+     {"CSV", FormatSettings::EscapingRule::CSV},
+     {"JSON", FormatSettings::EscapingRule::JSON},
+     {"XML", FormatSettings::EscapingRule::XML},
+     {"Raw", FormatSettings::EscapingRule::Raw}})
+
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+                       {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
+                        {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
+                        {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
+
 }

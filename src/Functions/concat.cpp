@@ -9,8 +9,8 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 
 #include "formatString.h"
 

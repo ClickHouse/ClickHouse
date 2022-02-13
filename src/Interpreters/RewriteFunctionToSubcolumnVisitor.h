@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Parsers/ASTFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
+
+class ASTFunction;
 
 /// Rewrites functions to subcolumns, if possible, to reduce amount of read data.
 /// E.g. 'length(arr)' -> 'arr.size0', 'col IS NULL' -> 'col.null'

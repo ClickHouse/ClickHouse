@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>

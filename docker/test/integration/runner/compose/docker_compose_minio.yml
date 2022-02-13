@@ -2,7 +2,9 @@ version: '2.3'
 
 services:
   minio1:
-    image: minio/minio
+    # Newer version of minio results in such errors:
+    # "AWSErrorMarshaller: Encountered AWSError 'InternalError': We encountered an internal error, please try again"
+    image: minio/minio:RELEASE.2021-09-23T04-46-24Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs

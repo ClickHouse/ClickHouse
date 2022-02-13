@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_BROTLI
 #    include <brotli/decode.h>
@@ -41,7 +39,7 @@ BrotliReadBuffer::BrotliReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_s
         , in_data(nullptr)
         , out_capacity(0)
         , out_data(nullptr)
-        , eof(false)
+        , eof_flag(false)
 {
 }
 
@@ -49,7 +47,7 @@ BrotliReadBuffer::~BrotliReadBuffer() = default;
 
 bool BrotliReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_flag)
         return false;
 
     if (!in_available)
@@ -76,7 +74,7 @@ bool BrotliReadBuffer::nextImpl()
     {
         if (in->eof())
         {
-            eof = true;
+            eof_flag = true;
             return !working_buffer.empty();
         }
         else

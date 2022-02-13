@@ -6,7 +6,7 @@
 
 #include <Common/Stopwatch.h>
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/Arena.h>
 
 #include <IO/ReadBufferFromFileDescriptor.h>

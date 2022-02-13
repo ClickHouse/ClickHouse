@@ -1,8 +1,8 @@
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>localhost</host>
             <port>9181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>

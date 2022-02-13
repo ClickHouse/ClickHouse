@@ -286,7 +286,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## パーティションされたデータのダウンロード {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

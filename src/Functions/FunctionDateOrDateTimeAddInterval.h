@@ -1,5 +1,5 @@
 #pragma once
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -58,7 +58,7 @@ struct AddSecondsImpl
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta;
+        return time_zone.fromDayNum(DayNum(d)) + delta;
     }
 };
 
@@ -83,7 +83,7 @@ struct AddMinutesImpl
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60;
+        return time_zone.fromDayNum(DayNum(d)) + delta * 60;
     }
 };
 
@@ -107,7 +107,7 @@ struct AddHoursImpl
     }
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600;
+        return time_zone.fromDayNum(DayNum(d)) + delta * 3600;
     }
 };
 
@@ -180,7 +180,7 @@ struct AddMonthsImpl
 
     static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.addMonths(ExtendedDayNum(d), delta);
+        return time_zone.addMonths(DayNum(d), delta);
     }
 
     static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
@@ -206,7 +206,7 @@ struct AddQuartersImpl
 
     static inline UInt16 execute(UInt16 d, Int32 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.addQuarters(ExtendedDayNum(d), delta);
+        return time_zone.addQuarters(DayNum(d), delta);
     }
 
     static inline Int32 execute(Int32 d, Int32 delta, const DateLUTImpl & time_zone)
@@ -232,7 +232,7 @@ struct AddYearsImpl
 
     static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return time_zone.addYears(ExtendedDayNum(d), delta);
+        return time_zone.addYears(DayNum(d), delta);
     }
 
     static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)

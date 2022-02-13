@@ -1,35 +1,33 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
-#include <Access/AccessFlags.h>
-#include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <Access/Common/AccessFlags.h>
+#include <Columns/ColumnNullable.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Transforms/CheckConstraintsTransform.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/processColumnTransformers.h>
-#include <Interpreters/addMissingDefaults.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -65,7 +63,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
-    query.table_id = getContext()->resolveStorageID(query.table_id);
+    if (query.table_id)
+    {
+        query.table_id = getContext()->resolveStorageID(query.table_id);
+    }
+    else
+    {
+        /// Insert query parser does not fill table_id because table and
+        /// database can be parameters and be filled after parsing.
+        StorageID local_table_id(query.getDatabase(), query.getTable());
+        query.table_id = getContext()->resolveStorageID(local_table_id);
+    }
+
     return DatabaseCatalog::instance().getTable(query.table_id, getContext());
 }
 
@@ -188,6 +197,9 @@ Chain InterpreterInsertQuery::buildChainImpl(
     /// We create a pipeline of several streams, into which we will write data.
     Chain out;
 
+    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
+    out.addInterpreterContext(context_ptr);
+
     /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
@@ -251,6 +263,10 @@ BlockIO InterpreterInsertQuery::execute()
     QueryPipelineBuilder pipeline;
 
     StoragePtr table = getTable(query);
+    StoragePtr inner_table;
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        inner_table = mv->getTargetTable();
+
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
@@ -289,7 +305,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
+                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::ALL; };
 
                 is_trivial_insert_select =
                     std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
@@ -363,7 +379,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
-        for (size_t i = 0; i < out_streams_size; i++)
+        for (size_t i = 0; i < out_streams_size; ++i)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
             out_chains.emplace_back(std::move(out));
@@ -371,13 +387,6 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
-
-    res.pipeline.addStorageHolder(table);
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-    {
-        if (auto inner_table = mv->tryGetTargetTable())
-            res.pipeline.addStorageHolder(inner_table);
-    }
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
     if (is_distributed_insert_select)
@@ -398,18 +407,29 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
-        auto num_select_threads = pipeline.getNumThreads();
+        /// We need to convert Sparse columns to full, because it's destination storage
+        /// may not support it may have different settings for applying Sparse serialization.
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<MaterializingTransform>(in_header);
+        });
 
+        size_t num_select_threads = pipeline.getNumThreads();
+        size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
+        {
+            return a.getNumThreads() < b.getNumThreads();
+        })->getNumThreads();
         pipeline.addChains(std::move(out_chains));
+
+        pipeline.setMaxThreads(num_insert_threads);
+        /// Don't use more threads for insert then for select to reduce memory consumption.
+        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
+            pipeline.setMaxThreads(num_select_threads);
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
             return std::make_shared<EmptySink>(cur_header);
         });
-
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
 
         if (!allow_materialized)
         {
@@ -433,6 +453,10 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
 
+    res.pipeline.addStorageHolder(table);
+    if (inner_table)
+        res.pipeline.addStorageHolder(inner_table);
+
     return res;
 }
 
@@ -443,7 +467,7 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
 }
 
 
-void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
     elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
@@ -452,6 +476,11 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
         elem.query_databases.insert(insert_table.getDatabaseName());
         elem.query_tables.insert(insert_table.getFullNameNotQuoted());
     }
+}
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+{
+    extendQueryLogElemImpl(elem, context_);
 }
 
 }

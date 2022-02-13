@@ -21,7 +21,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 -   `user` — ClickHouse user account.
 
 The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
-The `WITH REPLACE OPTION` clause replace old privileges by new privileges for the `user` or `role`, if not specified it is append privileges.
+The `WITH REPLACE OPTION` clause replace old privileges by new privileges for the `user` or `role`, if is not specified it appends privileges.
 
 ## Assigning Role Syntax {#assign-role-syntax}
 
@@ -33,7 +33,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 -   `user` — ClickHouse user account.
 
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
-The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if not specified it is append roles.
+The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Usage {#grant-usage}
 
@@ -155,6 +155,8 @@ Hierarchy of privileges:
         -   `SYSTEM RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`
             -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     -   `SYSTEM MERGES`
     -   `SYSTEM TTL MERGES`
     -   `SYSTEM FETCHES`
@@ -170,6 +172,7 @@ Hierarchy of privileges:
         -   `SYSTEM FLUSH LOGS`
 -   [INTROSPECTION](#grant-introspection)
     -   `addressToLine`
+    -   `addressToLineWithInlines`
     -   `addressToSymbol`
     -   `demangle`
 -   [SOURCES](#grant-sources)
@@ -428,6 +431,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 -   `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
     -   `addressToLine`. Level: `GLOBAL`
+    -   `addressToLineWithInlines`. Level: `GLOBAL`
     -   `addressToSymbol`. Level: `GLOBAL`
     -   `demangle`. Level: `GLOBAL`
 

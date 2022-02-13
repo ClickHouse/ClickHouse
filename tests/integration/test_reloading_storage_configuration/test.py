@@ -66,7 +66,7 @@ def add_disk(node, name, path, separate_file=False):
             tree = ET.parse(os.path.join(node.config_d_dir, "storage_configuration.xml"))
     except:
         tree = ET.ElementTree(
-            ET.fromstring('<yandex><storage_configuration><disks/><policies/></storage_configuration></yandex>'))
+            ET.fromstring('<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>'))
     root = tree.getroot()
     new_disk = ET.Element(name)
     new_path = ET.Element("path")
@@ -90,7 +90,7 @@ def update_disk(node, name, path, keep_free_space_bytes, separate_file=False):
                 os.path.join(node.config_d_dir, "storage_configuration.xml"))
     except:
         tree = ET.ElementTree(
-            ET.fromstring('<yandex><storage_configuration><disks/><policies/></storage_configuration></yandex>'))
+            ET.fromstring('<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>'))
 
     root = tree.getroot()
     disk = root.find("storage_configuration").find("disks").find(name)

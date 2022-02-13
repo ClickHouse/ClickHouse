@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 namespace DB
 {
@@ -23,7 +21,7 @@ void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
 void registerFunctionWkt(FunctionFactory & factory);
-void registerFunctionReadWkt(FunctionFactory & factory);
+void registerFunctionReadWKT(FunctionFactory & factory);
 void registerFunctionSvg(FunctionFactory & factory);
 
 #if USE_H3
@@ -32,12 +30,17 @@ void registerFunctionH3ToGeo(FunctionFactory &);
 void registerFunctionH3ToGeoBoundary(FunctionFactory &);
 void registerFunctionH3EdgeAngle(FunctionFactory &);
 void registerFunctionH3EdgeLengthM(FunctionFactory &);
+void registerFunctionH3EdgeLengthKm(FunctionFactory &);
+void registerFunctionH3ExactEdgeLengthM(FunctionFactory &);
+void registerFunctionH3ExactEdgeLengthKm(FunctionFactory &);
+void registerFunctionH3ExactEdgeLengthRads(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
 void registerFunctionH3IsValid(FunctionFactory &);
 void registerFunctionH3KRing(FunctionFactory &);
 void registerFunctionH3GetBaseCell(FunctionFactory &);
 void registerFunctionH3ToParent(FunctionFactory &);
 void registerFunctionH3ToChildren(FunctionFactory &);
+void registerFunctionH3ToCenterChild(FunctionFactory &);
 void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
@@ -45,6 +48,11 @@ void registerFunctionH3HexAreaM2(FunctionFactory &);
 void registerFunctionH3IsResClassIII(FunctionFactory &);
 void registerFunctionH3IsPentagon(FunctionFactory &);
 void registerFunctionH3GetFaces(FunctionFactory &);
+void registerFunctionH3HexAreaKm2(FunctionFactory &);
+void registerFunctionH3CellAreaM2(FunctionFactory &);
+void registerFunctionH3CellAreaRads2(FunctionFactory &);
+void registerFunctionH3NumHexagons(FunctionFactory &);
+
 #endif
 
 #if USE_S2_GEOMETRY
@@ -79,7 +87,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
     registerFunctionWkt(factory);
-    registerFunctionReadWkt(factory);
+    registerFunctionReadWKT(factory);
     registerFunctionSvg(factory);
 
 #if USE_H3
@@ -88,12 +96,17 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3ToGeoBoundary(factory);
     registerFunctionH3EdgeAngle(factory);
     registerFunctionH3EdgeLengthM(factory);
+    registerFunctionH3EdgeLengthKm(factory);
+    registerFunctionH3ExactEdgeLengthM(factory);
+    registerFunctionH3ExactEdgeLengthKm(factory);
+    registerFunctionH3ExactEdgeLengthRads(factory);
     registerFunctionH3GetResolution(factory);
     registerFunctionH3IsValid(factory);
     registerFunctionH3KRing(factory);
     registerFunctionH3GetBaseCell(factory);
     registerFunctionH3ToParent(factory);
     registerFunctionH3ToChildren(factory);
+    registerFunctionH3ToCenterChild(factory);
     registerFunctionH3IndexesAreNeighbors(factory);
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
@@ -101,6 +114,10 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3IsResClassIII(factory);
     registerFunctionH3IsPentagon(factory);
     registerFunctionH3GetFaces(factory);
+    registerFunctionH3HexAreaKm2(factory);
+    registerFunctionH3CellAreaM2(factory);
+    registerFunctionH3CellAreaRads2(factory);
+    registerFunctionH3NumHexagons(factory);
 #endif
 
 #if USE_S2_GEOMETRY

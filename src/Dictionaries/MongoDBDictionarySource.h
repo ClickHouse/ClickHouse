@@ -65,7 +65,7 @@ public:
     ///Not yet supported
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<MongoDBDictionarySource>(*this); }
 
     std::string toString() const override;
 

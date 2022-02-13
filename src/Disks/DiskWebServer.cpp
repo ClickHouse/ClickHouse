@@ -1,16 +1,19 @@
 #include "DiskWebServer.h"
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-
-#include <Disks/IDiskRemote.h>
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadIndirectBufferFromWebServer.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <Disks/IDiskRemote.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -35,10 +38,12 @@ void DiskWebServer::initialize(const String & uri_path) const
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
     try
     {
+        Poco::Net::HTTPBasicCredentials credentials{};
         ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_path) / ".index"),
                                             Poco::Net::HTTPRequest::HTTP_GET,
                                             ReadWriteBufferFromHTTP::OutStreamCallback(),
-                                            ConnectionTimeouts::getHTTPTimeouts(getContext()));
+                                            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+                                            credentials);
         String file_name;
         FileData file_data{};
 
@@ -105,39 +110,6 @@ private:
 };
 
 
-class ReadBufferFromWebServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>
-{
-public:
-    ReadBufferFromWebServer(
-            const String & uri_,
-            RemoteMetadata metadata_,
-            ContextPtr context_,
-            size_t buf_size_,
-            size_t backoff_threshold_,
-            size_t max_tries_)
-        : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
-        , uri(uri_)
-        , context(context_)
-        , buf_size(buf_size_)
-        , backoff_threshold(backoff_threshold_)
-        , max_tries(max_tries_)
-    {
-    }
-
-    std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
-    {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries);
-    }
-
-private:
-    String uri;
-    ContextPtr context;
-    size_t buf_size;
-    size_t backoff_threshold;
-    size_t max_tries;
-};
-
-
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & url_,
@@ -182,7 +154,7 @@ bool DiskWebServer::exists(const String & path) const
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     LOG_TRACE(log, "Read from path: {}", path);
     auto iter = files.find(path);
@@ -196,9 +168,20 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(),
-        read_settings.remote_fs_buffer_size, read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(path, url, meta, getContext(), threadpool_read, read_settings);
+
+    if (threadpool_read)
+    {
+        auto reader = IDiskRemote::getThreadPoolReader();
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
 }
 
 

@@ -1,5 +1,5 @@
-#include <common/DateLUT.h>
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 #include <gtest/gtest.h>
 

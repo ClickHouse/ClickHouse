@@ -38,6 +38,12 @@ Columns:
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks.
 
+-   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks for secondary indices.
+
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 
 -   `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time when the data part became inactive.
@@ -119,6 +125,9 @@ rows:                                  6
 bytes_on_disk:                         310
 data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
+secondary_indices_compressed_bytes:    58
+secondary_indices_uncompressed_bytes:  6
+secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           1970-01-01 00:00:00

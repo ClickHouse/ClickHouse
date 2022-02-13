@@ -12,9 +12,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -83,6 +81,8 @@ class FunctionUnaryArithmetic : public IFunction
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
+    ContextPtr context;
+
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
@@ -109,9 +109,28 @@ class FunctionUnaryArithmetic : public IFunction
         >(type, std::forward<F>(f));
     }
 
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    {
+        if (!isTuple(type))
+            return {};
+
+        /// Special case when the function is negate, argument is tuple.
+        /// We construct another function (example: tupleNegate) and call it.
+
+        if constexpr (!IsUnaryOperation<Op>::negate)
+            return {};
+
+        return FunctionFactory::instance().get("tupleNegate", context);
+    }
+
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
+
+    explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -126,6 +145,22 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        return getReturnTypeImplStatic(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        {
+            ColumnsWithTypeAndName new_arguments(1);
+
+            new_arguments[0].type = arguments[0];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
         DataTypePtr result;
         bool valid = castType(arguments[0].get(), [&](const auto & type)
         {
@@ -152,13 +187,19 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + String(name),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
+        {
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
+
         ColumnPtr result_column;
         bool valid = castType(arguments[0].type.get(), [&](const auto & type)
         {
@@ -290,7 +331,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 

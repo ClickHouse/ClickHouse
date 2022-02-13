@@ -1,6 +1,5 @@
 #include <IO/LZMAInflatingReadBuffer.h>
 
-#if !defined(ARCADIA_BUILD)
 namespace DB
 {
 namespace ErrorCodes
@@ -8,7 +7,7 @@ namespace ErrorCodes
     extern const int LZMA_STREAM_DECODER_FAILED;
 }
 LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_)), eof(false)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_)), eof_flag(false)
 {
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
@@ -37,7 +36,7 @@ LZMAInflatingReadBuffer::~LZMAInflatingReadBuffer()
 
 bool LZMAInflatingReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_flag)
         return false;
 
     lzma_action action = LZMA_RUN;
@@ -65,7 +64,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
     {
         if (in->eof())
         {
-            eof = true;
+            eof_flag = true;
             return !working_buffer.empty();
         }
         else
@@ -88,4 +87,3 @@ bool LZMAInflatingReadBuffer::nextImpl()
     return true;
 }
 }
-#endif

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <shared_mutex>
 
@@ -55,6 +56,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
+    using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+
     using Type = MergeTreeDataPartType;
 
 
@@ -68,7 +71,7 @@ public:
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
@@ -95,14 +98,23 @@ public:
 
     virtual bool isStoredOnDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
+    ColumnSize getColumnSize(const String & column_name) const;
+
+    /// NOTE: Returns zeros if secondary indexes are not found in checksums.
+    /// Otherwise return information about secondary index size on disk.
+    IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
+
+    /// Return information about secondary indexes size on disk for all indexes in part
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -119,6 +131,12 @@ public:
     void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+
+    void setSerializationInfos(const SerializationInfoByName & new_infos);
+
+    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -159,7 +177,8 @@ public:
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
+    /// If token is not empty, block id is calculated based on it instead of block data
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     const MergeTreeData & storage;
 
@@ -175,17 +194,18 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
-
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
+    /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
@@ -202,19 +222,19 @@ public:
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted:    we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:     we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
-     * Precommitted -> Outdated:     a part was replaced by a covering part or DROP PARTITION
+     * Temporary -> PreActive:       we are trying to add a fetched, inserted or merged part to active set
+     * PreActive -> Outdated:        we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * PreActive -> Active:          we successfully added a part to active dataset
+     * PreActive -> Outdated:        a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:         a cleaner selected this part for deletion
      * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Committed -> DeleteOnDestroy: if part was moved to another disk
+     * Active -> DeleteOnDestroy:    if part was moved to another disk
      */
     enum class State
     {
         Temporary,       /// the part is generating now, it is not in data_parts list
-        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
-        Committed,       /// active data part, used by current and upcoming SELECTs
+        PreActive,    /// the part is in data_parts, but not used for SELECTs
+        Active,       /// active data part, used by current and upcoming SELECTs
         Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
@@ -280,9 +300,11 @@ public:
         {
         }
 
+        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+
         void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
-        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
-        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -322,6 +344,9 @@ public:
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
+    /// Cleanup shared locks made with old name after part renaming
+    virtual void cleanupOldName(const String & old_part_name) const;
+
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -341,9 +366,11 @@ public:
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
-    void calculateColumnsSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    /// Calculate column and secondary indices sizes on disk.
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -376,17 +403,23 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
+    /// File that contains information about kinds of serialization of columns
+    /// and information that helps to choose kind of serialization later during merging
+    /// (number of rows, number of rows with default values, etc).
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Returns serialization for column according to files in which column is written in part.
-    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
-
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file.
+    /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getNumberOfRefereneces() const;
 
 protected:
 
@@ -396,12 +429,17 @@ protected:
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
 
+    ColumnSize total_secondary_indices_size;
+
+    IndexSizeByName secondary_index_sizes;
+
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
+
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -426,6 +464,9 @@ private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
+    /// Map from name of column to its serialization info.
+    SerializationInfoByName serialization_infos;
+
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
@@ -449,6 +490,10 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    void calculateColumnsSizesOnDisk();
+
+    void calculateSecondaryIndicesSizesOnDisk();
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

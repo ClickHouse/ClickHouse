@@ -12,6 +12,8 @@ The list of available `SYSTEM` statements:
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -70,7 +72,7 @@ Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-mo
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODELS
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 ```
 
 ## RELOAD MODEL {#query_language-system-reload-model}
@@ -80,7 +82,18 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL <model_name>
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
+```
+
+## RELOAD FUNCTIONS {#query_language-system-reload-functions}
+
+Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
+
+**Syntax**
+
+```sql
+RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -128,7 +141,7 @@ This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
 
 ## SHUTDOWN {#query_language-system-shutdown}
 

@@ -1,17 +1,18 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -52,6 +53,8 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }

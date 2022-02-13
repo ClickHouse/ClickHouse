@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 
@@ -29,6 +30,7 @@ AggregatingStep::AggregatingStep(
     Aggregator::Params params_,
     bool final_,
     size_t max_block_size_,
+    size_t aggregation_in_order_max_block_bytes_,
     size_t merge_threads_,
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
@@ -38,6 +40,7 @@ AggregatingStep::AggregatingStep(
     , params(std::move(params_))
     , final(std::move(final_))
     , max_block_size(max_block_size_)
+    , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
@@ -78,48 +81,64 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             if (pipeline.getNumStreams() > 1)
             {
+                /** The pipeline is the following:
+                 *
+                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+                 * --> AggregatingInOrder --> FinishAggregatingInOrder --> ResizeProcessor --> MergingAggregatedBucket
+                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+                 */
+
                 auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
                 size_t counter = 0;
                 pipeline.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_sort_description, max_block_size, many_data, counter++);
+                    /// We want to merge aggregated data in batches of size
+                    /// not greater than 'aggregation_in_order_max_block_bytes'.
+                    /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
+                    return std::make_shared<AggregatingInOrderTransform>(
+                        header, transform_params, group_by_sort_description,
+                        max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
+                        many_data, counter++);
                 });
 
                 aggregating_in_order = collector.detachProcessors(0);
-
-                for (auto & column_description : group_by_sort_description)
-                {
-                    if (!column_description.column_name.empty())
-                    {
-                        column_description.column_number = pipeline.getHeader().getPositionByName(column_description.column_name);
-                        column_description.column_name.clear();
-                    }
-                }
 
                 auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     transform_params,
                     group_by_sort_description,
-                    max_block_size);
+                    max_block_size,
+                    aggregation_in_order_max_block_bytes);
 
                 pipeline.addTransform(std::move(transform));
+
+                /// Do merge of aggregated data in parallel.
+                pipeline.resize(merge_threads);
+
+                pipeline.addSimpleTransform([&](const Block &)
+                {
+                    return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
+                });
+
                 aggregating_sorted = collector.detachProcessors(1);
             }
             else
             {
                 pipeline.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_sort_description, max_block_size);
+                    return std::make_shared<AggregatingInOrderTransform>(
+                        header, transform_params, group_by_sort_description,
+                        max_block_size, aggregation_in_order_max_block_bytes);
+                });
+
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
                 });
 
                 aggregating_in_order = collector.detachProcessors(0);
             }
-
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
-            });
 
             finalizing = collector.detachProcessors(2);
             return;

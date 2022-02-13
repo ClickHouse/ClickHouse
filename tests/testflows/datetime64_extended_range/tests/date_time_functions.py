@@ -978,7 +978,7 @@ def to_week_compute_expected(dt: datetime.datetime, mode: int, ret_year=False):
 def to_week_year_week(self, clh_func, ret_year):
     """Check the toWeek/toYearWeek function with DateTime64 extended range.
     For detailed info on work modes and description, see
-    https://clickhouse.tech/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode
+    https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions/#toweekdatemode
     :param self: current test
     :param clh_func: ClickHouse function to be called, string
     :param ret_year: toWeek/toYearWeek selector, Boolean

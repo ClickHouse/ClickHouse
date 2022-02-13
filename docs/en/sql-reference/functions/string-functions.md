@@ -28,7 +28,7 @@ The function also works for [arrays](array-functions.md#function-empty) or [UUID
 
 **Returned value**
 
--   Returns `1` for an empty string or `0` for a non-empty string. 
+-   Returns `1` for an empty string or `0` for a non-empty string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -68,7 +68,7 @@ The function also works for [arrays](array-functions.md#function-notempty) or [U
 
 **Returned value**
 
--   Returns `1` for a non-empty string or `0` for an empty string string. 
+-   Returns `1` for a non-empty string or `0` for an empty string string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -782,6 +782,150 @@ Result:
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+## normalizeUTF8NFC {#normalizeutf8nfc}
+
+Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFC(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFC normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
+```
+
+Result:
+
+``` text
+┌─length('â')─┬─nfc─┬─nfc_len─┐
+│           2 │ â   │       2 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFD {#normalizeutf8nfd}
+
+Converts a string to [NFD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFD(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFD normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
+```
+
+Result:
+
+``` text
+┌─length('â')─┬─nfd─┬─nfd_len─┐
+│           2 │ â   │       3 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFKC {#normalizeutf8nfkc}
+
+Converts a string to [NFKC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFKC(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFKC normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
+```
+
+Result:
+
+``` text
+┌─length('â')─┬─nfkc─┬─nfkc_len─┐
+│           2 │ â    │        2 │
+└─────────────┴──────┴──────────┘
+```
+
+## normalizeUTF8NFKD {#normalizeutf8nfkd}
+
+Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFKD(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFKD normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
+```
+
+Result:
+
+``` text
+┌─length('â')─┬─nfkd─┬─nfkd_len─┐
+│           2 │ â    │        3 │
+└─────────────┴──────┴──────────┘
 ```
 
 ## encodeXMLComponent {#encode-xml-component}

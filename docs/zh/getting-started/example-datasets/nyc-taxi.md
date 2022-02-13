@@ -283,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

@@ -65,6 +65,23 @@ public:
         experimental_use_sample_offset = value;
     }
 
+    void setMaxTableTries(UInt64 tries)
+    {
+        max_table_tries = tries;
+    }
+    void setMaxShardPartitionTries(UInt64 tries)
+    {
+        max_shard_partition_tries = tries;
+    }
+    void setMaxShardPartitionPieceTriesForAlter(UInt64 tries)
+    {
+        max_shard_partition_piece_tries_for_alter = tries;
+    }
+    void setRetryDelayMs(std::chrono::milliseconds ms)
+    {
+        retry_delay_ms = ms;
+    }
+
 protected:
 
     String getWorkersPath() const
@@ -122,10 +139,6 @@ protected:
 
     bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
-
-    static constexpr UInt64 max_table_tries = 3;
-    static constexpr UInt64 max_shard_partition_tries = 3;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 10;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
@@ -218,6 +231,9 @@ private:
 
     Poco::Logger * log;
 
-    std::chrono::milliseconds default_sleep_time{1000};
+    UInt64 max_table_tries = 3;
+    UInt64 max_shard_partition_tries = 3;
+    UInt64 max_shard_partition_piece_tries_for_alter = 10;
+    std::chrono::milliseconds retry_delay_ms{1000};
 };
 }

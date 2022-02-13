@@ -5,5 +5,6 @@ set(SRCS
     "${LIBRARY_DIR}/src/RdrLemmatizer.cpp"
 )
 
-add_library(lemmagen STATIC ${SRCS})
-target_include_directories(lemmagen PUBLIC "${LEMMAGEN_INCLUDE_DIR}")
+add_library(_lemmagen STATIC ${SRCS})
+target_include_directories(_lemmagen SYSTEM PUBLIC "${LEMMAGEN_INCLUDE_DIR}")
+add_library(ch_contrib::lemmagen ALIAS _lemmagen)

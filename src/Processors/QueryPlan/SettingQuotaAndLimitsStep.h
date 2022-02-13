@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/TableLockHolder.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {

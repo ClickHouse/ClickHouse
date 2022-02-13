@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <load_balancing>in_order</load_balancing>
@@ -9,4 +9,4 @@
             <use_hedged_requests>1</use_hedged_requests>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

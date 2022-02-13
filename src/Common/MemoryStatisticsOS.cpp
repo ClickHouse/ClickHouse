@@ -8,8 +8,8 @@
 
 #include "MemoryStatisticsOS.h"
 
-#include <common/logger_useful.h>
-#include <common/getPageSize.h>
+#include <base/logger_useful.h>
+#include <base/getPageSize.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>

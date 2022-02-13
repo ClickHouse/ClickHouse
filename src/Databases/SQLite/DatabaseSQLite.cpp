@@ -2,12 +2,13 @@
 
 #if USE_SQLITE
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
@@ -93,7 +94,7 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';", table_name);
+    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table_name);
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
     {
@@ -160,8 +161,12 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
 ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
+
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+
     return create_query;
 }
 
@@ -176,50 +181,17 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
                             database_name, table_name);
         return nullptr;
     }
-
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
-    create_table_query->set(create_table_query->storage, table_storage_define);
-
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
-
-    columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
-    /// init create query.
-    auto table_id = storage->getStorageID();
-    create_table_query->table = table_id.table_name;
-    create_table_query->database = table_id.database_name;
-
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
-    {
-        const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
-        column_declaration->name = column_type_and_name.name;
-        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
-        columns_expression_list->children.emplace_back(column_declaration);
-    }
-
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
-
+    auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
+    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+
     return create_table_query;
-}
-
-
-ASTPtr DatabaseSQLite::getColumnDeclaration(const DataTypePtr & data_type) const
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    return std::make_shared<ASTIdentifier>(data_type->getName());
 }
 
 }

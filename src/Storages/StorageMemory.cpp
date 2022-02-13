@@ -8,8 +8,10 @@
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -263,11 +265,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto in = interpreter->execute();
+    auto pipeline = interpreter->execute();
+    PullingPipelineExecutor executor(pipeline);
 
-    in->readPrefix();
     Blocks out;
-    while (Block block = in->read())
+    Block block;
+    while (executor.pull(block))
     {
         if (compress)
             for (auto & elem : block)
@@ -275,7 +278,6 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 
         out.push_back(block);
     }
-    in->readSuffix();
 
     std::unique_ptr<Blocks> new_data;
 

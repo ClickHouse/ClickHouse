@@ -45,7 +45,7 @@ Configuration template:
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
 -   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
--   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table/#create-query-general-purpose-codecs).
+-   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
 
@@ -71,26 +71,26 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
-Keys can be hex or string. Their length must be equal to 16.
+Keys can be hex or string with a length equal to 16 bytes.
 
 **Example**
 
-Load from config:
+Loading from config:
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key>12345567812345678</key>
+        <key>1234567812345678</key>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
 
 !!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
 
-Load from config, when key is in hex:
+Loading from config, when the key is in hex:
 
 ```xml
 <encryption_codecs>
@@ -100,38 +100,38 @@ Load from config, when key is in hex:
 </encryption_codecs>
 ```
 
-Load key from environment variable:
+Loading key from the environment variable:
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex from_env="KEY"></key_hex>
+        <key_hex from_env="ENVVAR"></key_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
 
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
+Here `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
 
-All this methods can be applied for multiple keys:
+Each of these methods can be applied for multiple keys:
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
         <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env=".."></key_hex>
+        <key_hex id="1" from_env="ENVVAR"></key_hex>
         <current_key_id>1</current_key_id>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
 
-Where `current_key_id` shows current key for encryption.
+Here `current_key_id` shows current key for encryption.
 
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
+Also, users can add nonce that must be 12 bytes long (by default encryption and decryption processes use nonce that consists of zero bytes):
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -146,7 +146,8 @@ Or it can be set in hex:
 </encryption_codecs>
 ```
 
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
+Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
+
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -365,6 +366,15 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
+```  
+## hsts_max_age  {#hsts-max-age}
+  
+Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
+  
+**Example**  
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
 ```
 
 ## include_from {#server_configuration_parameters-include_from}
@@ -425,25 +435,57 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
+
+By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
 !!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+    `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 
-This section contains the following parameters:
+!!! note "Note"
+    These credentials are common for replication via `HTTP` and `HTTPS`.
 
--   `user` — username.
--   `password` — password.
+The section contains the following parameters:
 
-**Example**
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+
+**Credentials Rotation**
+
+ClickHouse supports dynamic interserver credentials rotation without stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
+
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
@@ -466,6 +508,26 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
+## listen_backlog {#server_configuration_parameters-listen_backlog}
+
+Backlog (queue size of pending connections) of the listen socket.
+
+Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
+
+Usually this value does not need to be changed, since:
+-  default value is large enough,
+-  and for accepting client's connections server has separate thread.
+
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this counter grows for ClickHouse server it does not mean that this value need to be increased, since:
+-  usually if 4096 is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
+-  and it does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
+
+Examples:
+
+``` xml
+<listen_backlog>4096</listen_backlog>
+```
+
 ## logger {#server_configuration_parameters-logger}
 
 Logging settings.
@@ -475,7 +537,7 @@ Keys:
 -   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
 -   `log` – The log file. Contains all the entries according to `level`.
 -   `errorlog` – Error log file.
--   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
 
 **Example**
@@ -555,7 +617,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+The cache is shared for the server and memory is allocated as needed.
 
 **Example**
 
@@ -610,7 +672,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table.
+Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Note"
 	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -618,12 +681,71 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `100`.
 
 **Example**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+The maximum number of simultaneously processed `INSERT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+The maximum number of simultaneously processed `SELECT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
@@ -634,7 +756,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -705,14 +832,50 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-The maximum number of threads in the Global Thread pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Default value: 10000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
+```
+
+## max_thread_pool_free_size {#max-thread-pool-free-size}
+
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+
+Possible values: 
+
+-   Positive integer.
+
+Default value: `1000`.
+
+**Example**
+
+``` xml
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+```
+
+## thread_pool_queue_size {#thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
+
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
+
+**Example**
+
+``` xml
+<thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -738,14 +901,14 @@ It is enabled by default. If it`s not, you can do this manually.
 To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Disabling**
@@ -753,9 +916,9 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
 To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -991,7 +1154,7 @@ Parameters:
 
 **Example**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1000,7 +1163,7 @@ Parameters:
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 
@@ -1125,6 +1288,20 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
+```
+
 ## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
@@ -1242,6 +1419,7 @@ This section contains the following parameters:
 
 -   [Replication](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
@@ -1373,7 +1551,7 @@ You can also define sections `memory` — means storing information only in memo
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
--   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authenthication attept will fail as if the provided password was incorrect.
+-   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect.
 
 **Example**
 
@@ -1387,4 +1565,54 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+## total_memory_profiler_step {#total-memory-profiler-step}
+
+Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `4194304`.
+
+## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
+
+Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
+
+Default value: `0`.
+
+## mmap_cache_size {#mmap-cache-size}
+
+Sets the cache size (in bytes) for mapped files. This setting allows to avoid frequent open/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/close calls (which are very expensive due to consequent page faults) and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) system tables by the `MMappedFiles` and `MMappedFileBytes` metrics, in [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) by the `MMapCacheCells` metric, and also in [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events. Note that the amount of data in mapped files does not consume memory directly and is not accounted in query or server memory usage — because this memory can be discarded similar to OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
+

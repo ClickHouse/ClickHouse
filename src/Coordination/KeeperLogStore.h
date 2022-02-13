@@ -1,10 +1,10 @@
 #pragma once
-#include <libnuraft/log_store.hxx> // Y_IGNORE
+#include <libnuraft/log_store.hxx>
 #include <map>
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -57,6 +57,9 @@ public:
 
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
+
+    /// Get entry with latest config in logstore
+    nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
 
 private:
     mutable std::mutex changelog_lock;

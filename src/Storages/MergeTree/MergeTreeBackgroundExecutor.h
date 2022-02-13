@@ -7,18 +7,125 @@
 #include <future>
 #include <condition_variable>
 #include <set>
+#include <iostream>
 
 #include <boost/circular_buffer.hpp>
 
-#include <common/shared_ptr_helper.h>
-#include <common/logger_useful.h>
+#include <base/shared_ptr_helper.h>
+#include <base/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/IExecutableTask.h>
-
-
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+struct TaskRuntimeData;
+using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+
+/**
+ * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
+ * Also has some flags and primitives to wait for current task to be executed.
+ */
+struct TaskRuntimeData
+{
+    TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
+        : task(std::move(task_))
+        , metric(metric_)
+    {
+        /// Increment and decrement a metric with sequentially consistent memory order
+        /// This is needed, because in unit test this metric is read from another thread
+        /// and some invariant is checked. With relaxed memory order we could read stale value
+        /// for this metric, that's why test can be failed.
+        CurrentMetrics::values[metric].fetch_add(1);
+    }
+
+    ~TaskRuntimeData()
+    {
+        CurrentMetrics::values[metric].fetch_sub(1);
+    }
+
+    ExecutableTaskPtr task;
+    CurrentMetrics::Metric metric;
+    std::atomic_bool is_currently_deleting{false};
+    /// Actually autoreset=false is needed only for unit test
+    /// where multiple threads could remove tasks corresponding to the same storage
+    /// This scenario in not possible in reality.
+    Poco::Event is_done{/*autoreset=*/false};
+    /// This is equal to task->getPriority() not to do useless virtual calls in comparator
+    UInt64 priority{0};
+
+    /// By default priority queue will have max element at top
+    static bool comparePtrByPriority(const TaskRuntimeDataPtr & lhs, const TaskRuntimeDataPtr & rhs)
+    {
+        return lhs->priority > rhs->priority;
+    }
+};
+
+
+class OrdinaryRuntimeQueue
+{
+public:
+    TaskRuntimeDataPtr pop()
+    {
+        auto result = std::move(queue.front());
+        queue.pop_front();
+        return result;
+    }
+
+    void push(TaskRuntimeDataPtr item) { queue.push_back(std::move(item));}
+
+    void remove(StorageID id)
+    {
+        auto it = std::remove_if(queue.begin(), queue.end(),
+            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+        queue.erase(it, queue.end());
+    }
+
+    void setCapacity(size_t count) { queue.set_capacity(count); }
+    bool empty() { return queue.empty(); }
+
+private:
+    boost::circular_buffer<TaskRuntimeDataPtr> queue{0};
+};
+
+/// Uses a heap to pop a task with minimal priority
+class MergeMutateRuntimeQueue
+{
+public:
+    TaskRuntimeDataPtr pop()
+    {
+        std::pop_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
+        auto result = std::move(buffer.back());
+        buffer.pop_back();
+        return result;
+    }
+
+    void push(TaskRuntimeDataPtr item)
+    {
+        item->priority = item->task->getPriority();
+        buffer.push_back(std::move(item));
+        std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
+    }
+
+    void remove(StorageID id)
+    {
+        auto it = std::remove_if(buffer.begin(), buffer.end(),
+            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+        buffer.erase(it, buffer.end());
+
+        std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
+    }
+
+    void setCapacity(size_t count) { buffer.reserve(count); }
+    bool empty() { return buffer.empty(); }
+
+private:
+    std::vector<TaskRuntimeDataPtr> buffer{};
+};
 
 /**
  *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
@@ -48,30 +155,24 @@ namespace DB
  *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
-class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackgroundExecutor>
+template <class Queue>
+class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
 {
 public:
-
-    enum class Type
-    {
-        MERGE_MUTATE,
-        FETCH,
-        MOVE
-    };
-
     MergeTreeBackgroundExecutor(
-        Type type_,
+        String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_)
-        : type(type_)
+        : name(name_)
         , threads_count(threads_count_)
         , max_tasks_count(max_tasks_count_)
         , metric(metric_)
     {
-        name = toString(type);
+        if (max_tasks_count == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task count for MergeTreeBackgroundExecutor must not be zero");
 
-        pending.set_capacity(max_tasks_count);
+        pending.setCapacity(max_tasks_count);
         active.set_capacity(max_tasks_count);
 
         pool.setMaxThreads(std::max(1UL, threads_count));
@@ -88,69 +189,32 @@ public:
     }
 
     bool trySchedule(ExecutableTaskPtr task);
-
     void removeTasksCorrespondingToStorage(StorageID id);
-
     void wait();
 
-    size_t activeCount()
-    {
-        std::lock_guard lock(mutex);
-        return active.size();
-    }
-
-    size_t pendingCount()
-    {
-        std::lock_guard lock(mutex);
-        return pending.size();
-    }
-
 private:
-
-    static String toString(Type type);
-
-    Type type;
     String name;
     size_t threads_count{0};
     size_t max_tasks_count{0};
     CurrentMetrics::Metric metric;
 
-    /**
-     * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
-     * Also has some flags and primitives to wait for current task to be executed.
-     */
-    struct TaskRuntimeData
-    {
-        TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
-            : task(std::move(task_))
-            , increment(std::move(metric_))
-        {}
-
-        ExecutableTaskPtr task;
-        CurrentMetrics::Increment increment;
-        bool is_currently_deleting{false};
-        /// Actually autoreset=false is needed only for unit test
-        /// where multiple threads could remove tasks corresponding to the same storage
-        /// This scenario in not possible in reality.
-        Poco::Event is_done{/*autoreset=*/false};
-    };
-
-    using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
-
     void routine(TaskRuntimeDataPtr item);
-
     void threadFunction();
 
     /// Initially it will be empty
-    boost::circular_buffer<TaskRuntimeDataPtr> pending{0};
+    Queue pending{};
     boost::circular_buffer<TaskRuntimeDataPtr> active{0};
-
     std::mutex mutex;
     std::condition_variable has_tasks;
-
     std::atomic_bool shutdown{false};
-
     ThreadPool pool;
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
+
+extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 }

@@ -693,9 +693,14 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
+    auto func_alias = function->tryGetAlias();
     for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
+
+        /// This transformation can lead to exponential growth of AST size, let's check it.
+        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
+
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
@@ -703,7 +708,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-
+        if (!func_alias.empty())
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 

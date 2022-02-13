@@ -4,9 +4,9 @@
 #include <memory>
 #include <functional>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
@@ -19,8 +19,7 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
 
@@ -43,8 +42,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
-
-class IBlockOutputStream;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -853,6 +850,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 class CompiledAggregateFunctionsHolder;
+class NativeWriter;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -1064,6 +1062,7 @@ private:
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
+        bool has_sparse_arguments = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1139,18 +1138,18 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
 
-    static void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataWithoutKey & res,
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        IBlockOutputStream & out) const;
+        NativeWriter & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -1308,7 +1307,7 @@ private:
         NestedColumnsHolder & nested_columns_holder) const;
 
     void addSingleKeyToAggregateColumns(
-        const AggregatedDataVariants & data_variants,
+        AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
     void addArenasToAggregateColumns(
@@ -1319,6 +1318,8 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
+
+    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };
 
 

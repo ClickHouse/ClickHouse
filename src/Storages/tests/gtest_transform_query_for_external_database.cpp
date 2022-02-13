@@ -84,6 +84,7 @@ private:
             const auto & table_name = tab.table.table;
             const auto & db_name = tab.table.database;
             database->attachTable(
+                context,
                 table_name,
                 StorageMemory::create(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
@@ -119,7 +120,7 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 
     check(state, 1,
           "SELECT column FROM test.table WHERE 1 IN (1)",
-          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
     check(state, 1,
           "SELECT column FROM test.table WHERE column IN (1, 2)",
           R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, 2))");
@@ -134,7 +135,7 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
 
     check(state, 1,
           "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
-          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
     check(state, 1,
           "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
@@ -248,4 +249,23 @@ TEST(TransformQueryForExternalDatabase, Strict)
     EXPECT_THROW(check(state, 1, "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)", ""), Exception);
     /// !isCompatible() takes place
     EXPECT_THROW(check(state, 1, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
+}
+
+TEST(TransformQueryForExternalDatabase, Null)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NOT NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+
+    check(state, 1,
+          "SELECT field FROM table WHERE isNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE isNotNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 }

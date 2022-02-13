@@ -30,6 +30,11 @@ class ReadBuffer;
 using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
+struct ProtocolServerMetrics
+{
+    String port_name;
+    size_t current_threads;
+};
 
 /** Periodically (by default, each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
@@ -41,39 +46,25 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 class AsynchronousMetrics : WithContext
 {
 public:
-    /// The default value of update_period_seconds is for ClickHouse-over-YT
-    /// in Arcadia -- it uses its own server implementation that also uses these
-    /// metrics.
+    using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
-        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
-        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     ~AsynchronousMetrics();
 
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start();
 
+    void stop();
+
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
-#if defined(ARCADIA_BUILD)
-    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
-    /// Never use this in the ClickHouse codebase.
-    AsynchronousMetrics(
-        ContextPtr global_context_,
-        int update_period_seconds = 60)
-        : WithContext(global_context_)
-        , update_period(update_period_seconds)
-    {
-    }
-#endif
-
 private:
     const std::chrono::seconds update_period;
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables{nullptr};
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers{nullptr};
+    ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;

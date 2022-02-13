@@ -3,15 +3,12 @@
 #include <atomic>
 #include <variant>
 #include <vector>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/Arena.h>
-#include <Core/Block.h>
-#include <Common/HashTable/HashMap.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace DB
 {
@@ -58,7 +55,7 @@ public:
         return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -96,7 +93,7 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     Pipe getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;

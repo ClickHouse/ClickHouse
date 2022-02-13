@@ -90,6 +90,27 @@ Result:
 └─────────────────────────┴───────────────────────────┘
 ```
 
+## toInt(8\|16\|32\|64\|128\|256)OrDefault {#toint8163264128256orDefault}
+
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns the default type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe123', cast('-1' as Int8));
+```
+
+Result:
+
+``` text
+┌─toInt64OrDefault('123123', CAST('-1', 'Int64'))─┬─toInt8OrDefault('123qwe123', CAST('-1', 'Int8'))─┐
+│                                          123123 │                                               -1 │
+└─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+```
+
+
 ## toUInt(8\|16\|32\|64\|256) {#touint8163264256}
 
 Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
@@ -132,11 +153,15 @@ Result:
 
 ## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264256ornull}
 
+## toUInt(8\|16\|32\|64\|256)OrDefault {#touint8163264256ordefault}
+
 ## toFloat(32\|64) {#tofloat3264}
 
 ## toFloat(32\|64)OrZero {#tofloat3264orzero}
 
 ## toFloat(32\|64)OrNull {#tofloat3264ornull}
+
+## toFloat(32\|64)OrDefault {#tofloat3264ordefault}
 
 ## toDate {#todate}
 
@@ -146,23 +171,27 @@ Alias: `DATE`.
 
 ## toDateOrNull {#todateornull}
 
+## toDateOrDefault {#todateordefault}
+
 ## toDateTime {#todatetime}
 
 ## toDateTimeOrZero {#todatetimeorzero}
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDateTimeOrDefault {#todatetimeordefault}
+
 ## toDate32 {#todate32}
 
 Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 toDate32(expr)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) or [Date](../../sql-reference/data-types/date.md).
 
@@ -250,6 +279,28 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
+## toDate32OrDefault {#todate32-or-default}
+
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the lower border value supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if invalid argument is received.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
+    toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
+```
+
+Result:
+
+``` text
+┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
+│                                              1930-01-01 │                                                2020-01-01 │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
@@ -293,9 +344,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 Result:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.11100 │ Nullable(Decimal(9, 5))                            │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.111 │ Nullable(Decimal(9, 5))                            │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Query:
@@ -310,6 +361,60 @@ Result:
 ┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
 │ ᴺᵁᴸᴸ │ Nullable(Decimal(9, 2))                            │
 └──────┴────────────────────────────────────────────────────┘
+```
+
+
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
+
+Converts an input string to a [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
+
+-   `toDecimal32OrDefault(expr, S)` — Results in `Decimal32(S)` data type.
+-   `toDecimal64OrDefault(expr, S)` — Results in `Decimal64(S)` data type.
+-   `toDecimal128OrDefault(expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal256OrDefault(expr, S)` — Results in `Decimal256(S)` data type.
+
+These functions should be used instead of `toDecimal*()` functions, if you prefer to get a default value instead of an exception in the event of an input value parsing error.
+
+**Arguments**
+
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
+
+**Returned value**
+
+A value in the `Decimal(P,S)` data type. The value contains:
+
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   Default `Decimal(P,S)` data type value, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 5) AS val, toTypeName(val);
+```
+
+Result:
+
+``` text
+┌────val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                         │
+└────────┴───────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
+```
+
+Result:
+
+``` text
+┌─val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 2))─┐
+│   0 │ Decimal(9, 2)                                         │
+└─────┴───────────────────────────────────────────────────────┘
 ```
 
 ## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128256orzero}
@@ -346,9 +451,9 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 Result:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.11100 │ Decimal(9, 5)                                      │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                      │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Query:
@@ -749,6 +854,63 @@ Result:
 ┌─uint8─┬─int8─┬─fixed_string─┐
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
 └───────┴──────┴──────────────┘
+```
+
+
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
+
+Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
+
+**Syntax**
+
+```sql
+accurateCastOrDefault(x, T)
+```
+
+**Parameters**
+
+-   `x` — Input value.
+-   `T` — The name of the returned data type.
+-   `default_value` — Default value of returned data type.
+
+**Returned value**
+
+-   The value converted to the specified data type `T`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toTypeName(accurateCastOrDefault(5, 'UInt8'));
+```
+
+Result:
+
+``` text
+┌─toTypeName(accurateCastOrDefault(5, 'UInt8'))─┐
+│ UInt8                                         │
+└───────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT
+    accurateCastOrDefault(-1, 'UInt8') as uint8,
+    accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
+    accurateCastOrDefault(128, 'Int8') as int8,
+    accurateCastOrDefault(128, 'Int8', 5) as int8_default,
+    accurateCastOrDefault('Test', 'FixedString(2)') as fixed_string,
+    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') as fixed_string_default;
+```
+
+Result:
+
+``` text
+┌─uint8─┬─uint8_default─┬─int8─┬─int8_default─┬─fixed_string─┬─fixed_string_default─┐
+│     0 │             5 │    0 │            5 │              │ Te                   │
+└───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
 ```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -197,13 +197,13 @@ public:
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
-    virtual StoragePtr detachTable(const String & /*name*/)
+    virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
     {
         throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -259,6 +259,17 @@ public:
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
+    String getDatabaseComment() const
+    {
+        std::lock_guard lock{mutex};
+        return comment;
+    }
+    void setDatabaseComment(String new_comment)
+    {
+        std::lock_guard lock{mutex};
+        comment = std::move(new_comment);
+    }
+
     /// Get name of database.
     String getDatabaseName() const
     {
@@ -268,7 +279,7 @@ public:
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
-    virtual void renameDatabase(const String & /*new_name*/)
+    virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
     {
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -312,6 +323,13 @@ public:
                         getEngineName());
     }
 
+    virtual bool hasReplicationThread() const { return false; }
+
+    virtual void stopReplication()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+    }
+
     virtual ~IDatabase() = default;
 
 protected:
@@ -324,6 +342,7 @@ protected:
 
     mutable std::mutex mutex;
     String database_name;
+    String comment;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

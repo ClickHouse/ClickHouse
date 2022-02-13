@@ -6,17 +6,17 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/StorageMergeTree.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
@@ -54,24 +54,33 @@ public:
     {
         ContextPtr context;
         std::optional<String> nondeterministic_function_name;
+        bool subquery = false;
     };
 
-    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & child)
+    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & /*child*/)
     {
-        return child != nullptr;
+        return true;
     }
 
     static void visit(const ASTPtr & node, Data & data)
     {
-        if (data.nondeterministic_function_name)
+        if (data.nondeterministic_function_name || data.subquery)
             return;
 
-        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+        if (node->as<ASTSelectQuery>())
+        {
+            /// We cannot determine if subquery is deterministic or not,
+            /// so we do not allow to use subqueries in mutation without allow_nondeterministic_mutations=1
+            data.subquery = true;
+        }
+        else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
             /// Property of being deterministic for lambda expression is completely determined
             /// by the contents of its definition, so we just proceed to it.
             if (function->name != "lambda")
             {
+                /// NOTE It may be an aggregate function, so get(...) may throw.
+                /// However, an aggregate function can be used only in subquery and we do not go into subquery.
                 const auto func = FunctionFactory::instance().get(function->name, data.context);
                 if (!func->isDeterministic())
                     data.nondeterministic_function_name = func->getName();
@@ -81,10 +90,11 @@ public:
 };
 
 using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
+using FirstNonDeterministicFunctionData = FirstNonDeterministicFunctionMatcher::Data;
 
-std::optional<String> findFirstNonDeterministicFunctionName(const MutationCommand & command, ContextPtr context)
+FirstNonDeterministicFunctionData findFirstNonDeterministicFunctionName(const MutationCommand & command, ContextPtr context)
 {
-    FirstNonDeterministicFunctionMatcher::Data finder_data{context, std::nullopt};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, std::nullopt, false};
 
     switch (command.type)
     {
@@ -94,7 +104,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
             FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.nondeterministic_function_name)
-                return finder_data.nondeterministic_function_name;
+                return finder_data;
 
             /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
             [[fallthrough]];
@@ -105,7 +115,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
             auto predicate_ast = command.predicate->clone();
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
 
-            return finder_data.nondeterministic_function_name;
+            return finder_data;
         }
 
         default:
@@ -214,15 +224,16 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and and give it into ExpressionBlockInputStream
+    /// For some reason it may copy context and and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQuery interpreter(
+        select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
     auto io = interpreter.execute();
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (!block.rows())
-        executor.pull(block);
+    while (executor.pull(block)) {}
+
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
@@ -281,7 +292,7 @@ MutationsInterpreter::MutationsInterpreter(
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
-    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
 {
     mutation_ast = prepare(!can_execute);
 }
@@ -411,6 +422,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
+
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
@@ -559,7 +571,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
-            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+
+            if (!column.default_desc.expression)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot materialize column `{}` because it doesn't have default expression", column.name);
+
+            auto materialized_column = makeASTFunction(
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+            stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -612,7 +633,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         dependencies.insert(dependency);
                 }
             }
-            else if (metadata_snapshot->hasRowsTTL())
+            else if (metadata_snapshot->hasRowsTTL()
+                || metadata_snapshot->hasAnyRowsWhereTTL()
+                || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -710,7 +733,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
-                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits().ignoreProjections()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 QueryPlan plan;
@@ -775,8 +798,12 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot);
-        if (context->hasQueryContext())
+        /// Executing scalar subquery on that stage can lead to deadlock
+        /// e.g. ALTER referencing the same table in scalar subquery
+        bool execute_scalar_subqueries = !dry_run;
+        auto syntax_result = TreeRewriter(context).analyze(
+            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+        if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 
@@ -918,12 +945,15 @@ void MutationsInterpreter::validate()
     {
         for (const auto & command : commands)
         {
-            const auto nondeterministic_func_name = findFirstNonDeterministicFunctionName(command, context);
-            if (nondeterministic_func_name)
-                throw Exception(
-                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
-                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
-                    ErrorCodes::BAD_ARGUMENTS);
+            const auto nondeterministic_func_data = findFirstNonDeterministicFunctionName(command, context);
+            if (nondeterministic_func_data.subquery)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
+                                                           "see allow_nondeterministic_mutations setting");
+
+            if (nondeterministic_func_data.nondeterministic_function_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                    "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
         }
     }
 
@@ -932,7 +962,7 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+QueryPipeline MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -956,12 +986,11 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (!updated_header)
-        updated_header = std::make_unique<Block>(result_stream->getHeader());
+        updated_header = std::make_unique<Block>(pipeline.getHeader());
 
-    return result_stream;
+    return pipeline;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

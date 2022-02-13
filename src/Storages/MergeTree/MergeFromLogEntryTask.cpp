@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -84,7 +84,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
             return {false, {}};
@@ -185,7 +185,13 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     auto table_id = storage.getStorageID();
 
     /// Add merge to list
-    merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
+    const Settings & settings = storage.getContext()->getSettingsRef();
+    merge_mutate_entry = storage.getContext()->getMergeList().insert(
+        storage.getStorageID(),
+        future_merged_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -202,6 +208,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             entry.deduplicate,
             entry.deduplicate_by_columns,
             storage.merging_params);
+
+
+    /// Adjust priority
+    for (auto & item : future_merged_part->parts)
+        priority += item->getBytesOnDisk();
 
     return {true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {

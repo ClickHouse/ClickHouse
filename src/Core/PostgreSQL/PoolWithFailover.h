@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
 
@@ -10,7 +8,7 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 
@@ -46,12 +44,11 @@ public:
 private:
     struct PoolHolder
     {
-        String connection_string;
+        ConnectionInfo connection_info;
         PoolPtr pool;
-        String name_for_log;
 
-        PoolHolder(const String & connection_string_, size_t pool_size, const String & name_for_log_)
-            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)), name_for_log(name_for_log_) {}
+        PoolHolder(const ConnectionInfo & connection_info_, size_t pool_size)
+            : connection_info(connection_info_), pool(std::make_shared<Pool>(pool_size)) {}
     };
 
     /// Highest priority is 0, the bigger the number in map, the less the priority

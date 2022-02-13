@@ -1,6 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

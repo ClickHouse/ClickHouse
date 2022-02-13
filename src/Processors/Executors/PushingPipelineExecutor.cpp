@@ -1,8 +1,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPipeline.h>
-#include <iostream>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB

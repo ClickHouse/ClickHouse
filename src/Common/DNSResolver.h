@@ -2,10 +2,10 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -33,6 +33,10 @@ public:
     Poco::Net::SocketAddress resolveAddress(const std::string & host_and_port);
 
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
+
+    /// Accepts host names like 'example.com'/'example.com:port' or '127.0.0.1'/'127.0.0.1:port' or '::1'/'[::1]:port'
+    /// and resolves its IP and port, if port is set
+    std::pair<Poco::Net::IPAddress, std::optional<UInt16>> resolveHostOrAddress(const std::string & host_and_port);
 
     /// Accepts host IP and resolves its host name
     String reverseResolve(const Poco::Net::IPAddress & address);

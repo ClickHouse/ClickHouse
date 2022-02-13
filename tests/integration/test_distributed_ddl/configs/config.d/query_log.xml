@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
         <!-- What table to insert data. If table is not exist, it will be created.
@@ -11,4 +11,4 @@
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </query_log>
-</yandex>
+</clickhouse>

@@ -1,13 +1,13 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <unistd.h>
 
 #if defined(OS_LINUX)
 
 #include "hasLinuxCapability.h"
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <errno.h>
 #include <stdio.h>

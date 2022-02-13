@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
-#include <common/types.h>
+#include <base/types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -39,6 +39,12 @@ namespace CurrentMetrics
     inline void set(Metric metric, Value value)
     {
         values[metric].store(value, std::memory_order_relaxed);
+    }
+
+    /// Get value of specified metric.
+    inline Value get(Metric metric)
+    {
+        return values[metric].load(std::memory_order_relaxed);
     }
 
     /// Add value for specified metric. You must subtract value later; or see class Increment below.

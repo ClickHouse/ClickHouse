@@ -13,7 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -139,7 +139,7 @@ public:
         }
         else
         {
-            for (size_t i = 1; i < arguments.size(); i++)
+            for (size_t i = 1; i < arguments.size(); ++i)
             {
                 const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)

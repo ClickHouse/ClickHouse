@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -10,6 +9,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
@@ -59,6 +59,12 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
         {"has_own_data", std::make_shared<DataTypeUInt8>()},
+        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+    }, {
+        {"table", std::make_shared<DataTypeString>(), "name"}
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -79,6 +85,26 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    return block.getByPosition(0).column;
+}
+
+static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
+{
+    MutableColumnPtr column = ColumnString::create();
+
+    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
+    {
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (!database)
+            continue;
+
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            column->insert(table_it->name());
+    }
+
+    Block block {ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "name")};
+    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
 }
 
@@ -106,12 +132,19 @@ public:
         Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
+        ColumnPtr tables_,
         ContextPtr context_)
         : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
-        , context(Context::createCopy(context_)) {}
+        , context(Context::createCopy(context_))
+    {
+        size_t size = tables_->size();
+        tables.reserve(size);
+        for (size_t idx = 0; idx < size; ++idx)
+            tables.insert(tables_->getDataAt(idx).toString());
+    }
 
     String getName() const override { return "Tables"; }
 
@@ -211,53 +244,10 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        // as_select
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // partition_key
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // sorting_key
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // primary_key
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // sampling_key
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // storage_policy
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // total_rows
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // total_bytes
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // lifetime_rows
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // lifetime_bytes
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // comment
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
-                        // has_own_data
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
+                        /// Fill the rest columns with defaults
+                        while (src_index < columns_mask.size())
+                            if (columns_mask[src_index++])
+                                res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -276,6 +266,9 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
+                if (!tables.contains(table_name))
+                    continue;
+
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
@@ -505,6 +498,42 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
+                {
+                    DependenciesInfo info = DatabaseCatalog::instance().getLoadingDependenciesInfo({database_name, table_name});
+
+                    Array loading_dependencies_databases;
+                    Array loading_dependencies_tables;
+                    loading_dependencies_databases.reserve(info.dependencies.size());
+                    loading_dependencies_tables.reserve(info.dependencies.size());
+                    for (auto && dependency : info.dependencies)
+                    {
+                        loading_dependencies_databases.push_back(std::move(dependency.database));
+                        loading_dependencies_tables.push_back(std::move(dependency.table));
+                    }
+
+                    Array loading_dependent_databases;
+                    Array loading_dependent_tables;
+                    loading_dependent_databases.reserve(info.dependencies.size());
+                    loading_dependent_tables.reserve(info.dependencies.size());
+                    for (auto && dependent : info.dependent_database_objects)
+                    {
+                        loading_dependent_databases.push_back(std::move(dependent.database));
+                        loading_dependent_tables.push_back(std::move(dependent.table));
+                    }
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(loading_dependencies_databases);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(loading_dependencies_tables);
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(loading_dependent_databases);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(loading_dependent_tables);
+
+                }
             }
         }
 
@@ -515,6 +544,7 @@ private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
     ColumnPtr databases;
+    NameSet tables;
     size_t database_idx = 0;
     DatabaseTablesIteratorPtr tables_it;
     ContextPtr context;
@@ -553,9 +583,10 @@ Pipe StorageSystemTables::read(
     }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
+    ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);
 
     return Pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
 }
 
 }

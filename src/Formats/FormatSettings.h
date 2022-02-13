@@ -1,6 +1,7 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Names.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -25,10 +26,15 @@ struct FormatSettings
 
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
+    bool with_types_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
+    bool defaults_for_omitted_fields = true;
+
+    bool seekable_read = true;
+    UInt64 max_rows_to_read_for_schema_inference = 100;
 
     enum class DateTimeInputFormat
     {
@@ -45,6 +51,17 @@ struct FormatSettings
         UnixTimestamp
     };
 
+    enum class EscapingRule
+    {
+        None,
+        Escaped,
+        Quoted,
+        CSV,
+        JSON,
+        XML,
+        Raw
+    };
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     UInt64 input_allow_errors_num = 0;
@@ -55,6 +72,7 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
+        bool allow_missing_columns = false;
     } arrow;
 
     struct
@@ -64,20 +82,32 @@ struct FormatSettings
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
+        UInt64 output_rows_in_file = 1;
     } avro;
+
+    String bool_true_representation = "true";
+    String bool_false_representation = "false";
 
     struct CSV
     {
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
-        bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
         String null_representation = "\\N";
+        char tuple_delimiter = ',';
     } csv;
+
+    struct HiveText
+    {
+        char fields_delimiter = '\x01';
+        char collection_items_delimiter = '\x02';
+        char map_keys_delimiter = '\x03';
+        Names input_field_names;
+    } hive_text;
 
     struct Custom
     {
@@ -87,7 +117,7 @@ struct FormatSettings
         std::string row_after_delimiter;
         std::string row_between_delimiter;
         std::string field_delimiter;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Escaped;
     } custom;
 
     struct
@@ -104,6 +134,7 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
+        bool allow_missing_columns = false;
     } parquet;
 
     struct Pretty
@@ -146,7 +177,7 @@ struct FormatSettings
     struct
     {
         std::string regexp;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Raw;
         bool skip_unmatched = false;
     } regexp;
 
@@ -182,7 +213,36 @@ struct FormatSettings
     struct
     {
         bool import_nested = false;
+        bool allow_missing_columns = false;
+        int64_t row_batch_size = 100'000;
     } orc;
+
+    /// For capnProto format we should determine how to
+    /// compare ClickHouse Enum and Enum from schema.
+    enum class EnumComparingMode
+    {
+        BY_NAMES, // Names in enums should be the same, values can be different.
+        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
+        BY_VALUES, // Values should be the same, names can be different.
+    };
+
+    struct
+    {
+        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+    } capn_proto;
+
+    enum class MsgPackUUIDRepresentation
+    {
+        STR, // Output UUID as a string of 36 characters.
+        BIN, // Output UUID as 16-bytes binary.
+        EXT, // Output UUID as ExtType = 2
+    };
+
+    struct
+    {
+        UInt64 number_of_columns = 0;
+        MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
+    } msgpack;
 };
 
 }

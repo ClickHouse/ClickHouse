@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -41,7 +41,7 @@ void LimitStep::updateInputStream(DataStream input_stream)
 {
     input_streams.clear();
     input_streams.emplace_back(std::move(input_stream));
-    output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/log.log</log>
@@ -13,4 +13,4 @@
         <table>part_log</table>
         <flush_interval_milliseconds>500</flush_interval_milliseconds>
     </part_log>
-</yandex>
+</clickhouse>

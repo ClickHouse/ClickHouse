@@ -39,7 +39,7 @@ select number, avg(number) over (order by number rows unbounded preceding) from 
 8	4
 9	4.5
 -- no order by
-select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by value rows unbounded preceding) from numbers(10);
 0	0
 1	1
 2	1
@@ -51,7 +51,7 @@ select number, quantileExact(number) over (partition by intDiv(number, 3) rows u
 8	7
 9	9
 -- can add an alias after window spec
-select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by value rows unbounded preceding) q from numbers(10);
 0	0
 1	1
 2	1
@@ -174,6 +174,8 @@ select groupArray(number) over () from numbers(3);
 -- Seen errors like 'column `1` not found' from count(1).
 select count(1) over (rows unbounded preceding), max(number + 1) over () from numbers(3);
 1	3
+2	3
+3	3
 -- Should work in DISTINCT
 select distinct sum(0) over (rows unbounded preceding) from numbers(2);
 0
@@ -196,7 +198,7 @@ select sum(number) over w1, sum(number) over w2
 from numbers(10)
 window
     w1 as (rows unbounded preceding),
-    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
+    w2 as (partition by intDiv(number, 3) as value order by value rows unbounded preceding)
 ;
 0	0
 1	1
@@ -212,7 +214,7 @@ window
 -- EXPLAIN test for this.
 select
     sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
+    sum(number) over (partition by intDiv(number, 3) as value order by value rows unbounded preceding)
 from numbers(10)
 window
     w1 as (partition by intDiv(number, 3) rows unbounded preceding)
@@ -908,12 +910,10 @@ Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'\')
     Window (Window step for window \'PARTITION BY p\')
       Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
-        MergingSorted (Merge sorted streams for window \'PARTITION BY p ORDER BY o ASC\')
-          MergeSorting (Merge sorted blocks for window \'PARTITION BY p ORDER BY o ASC\')
-            PartialSorting (Sort each block for window \'PARTITION BY p ORDER BY o ASC\')
-              Expression ((Before window functions + (Projection + Before ORDER BY)))
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+        Sorting (Sorting for window \'PARTITION BY p ORDER BY o ASC\')
+          Expression ((Before window functions + (Projection + Before ORDER BY)))
+            SettingQuotaAndLimits (Set limits and quota after reading from storage)
+              ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
     count(*) over (order by number)
@@ -923,16 +923,12 @@ from
 ;
 Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'ORDER BY o ASC, number ASC\')
-    MergingSorted (Merge sorted streams for window \'ORDER BY o ASC, number ASC\')
-      MergeSorting (Merge sorted blocks for window \'ORDER BY o ASC, number ASC\')
-        PartialSorting (Sort each block for window \'ORDER BY o ASC, number ASC\')
-          Window (Window step for window \'ORDER BY number ASC\')
-            MergingSorted (Merge sorted streams for window \'ORDER BY number ASC\')
-              MergeSorting (Merge sorted blocks for window \'ORDER BY number ASC\')
-                PartialSorting (Sort each block for window \'ORDER BY number ASC\')
-                  Expression ((Before window functions + (Projection + Before ORDER BY)))
-                    SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                      ReadFromStorage (SystemNumbers)
+    Sorting (Sorting for window \'ORDER BY o ASC, number ASC\')
+      Window (Window step for window \'ORDER BY number ASC\')
+        Sorting (Sorting for window \'ORDER BY number ASC\')
+          Expression ((Before window functions + (Projection + Before ORDER BY)))
+            SettingQuotaAndLimits (Set limits and quota after reading from storage)
+              ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),

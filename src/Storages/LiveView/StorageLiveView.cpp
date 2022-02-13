@@ -18,14 +18,15 @@ limitations under the License. */
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <DataStreams/copyData.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include "QueryPipeline/printPipeline.h"
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
@@ -42,7 +43,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 
@@ -70,7 +71,7 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
         if (db_and_table->database.empty())
         {
             db_and_table->database = select_database_name;
-            AddDefaultDatabaseVisitor visitor(select_database_name);
+            AddDefaultDatabaseVisitor visitor(context, select_database_name);
             visitor.visit(select_query);
         }
         else
@@ -121,7 +122,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     new_mergeable_blocks->sample_block = builder.getHeader();
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(pipeline);
+    PullingAsyncPipelineExecutor executor(pipeline);
     Block this_block;
 
     while (executor.pull(this_block))
@@ -138,7 +139,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
 
     return pipes;
 }
@@ -224,7 +225,7 @@ void StorageLiveView::writeIntoLiveView(
             mergeable_query = live_view.getInnerSubQuery();
 
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
@@ -245,7 +246,7 @@ void StorageLiveView::writeIntoLiveView(
         });
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-        PullingPipelineExecutor executor(pipeline);
+        PullingAsyncPipelineExecutor executor(pipeline);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -279,7 +280,8 @@ StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
     ContextPtr context_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
 {
@@ -290,6 +292,9 @@ StorageLiveView::StorageLiveView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    if (!comment.empty())
+        storage_metadata.setComment(comment);
+
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
@@ -386,10 +391,13 @@ bool StorageLiveView::getNewBlocks()
     auto builder = completeQuery(std::move(from));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-    PullingPipelineExecutor executor(pipeline);
+    PullingAsyncPipelineExecutor executor(pipeline);
     Block block;
     while (executor.pull(block))
     {
+        if (block.rows() == 0)
+            continue;
+
         /// calculate hash before virtual column is added
         block.updateHash(hash);
         /// add result version meta column
@@ -553,7 +561,7 @@ Pipe StorageLiveView::read(
             refresh(false);
     }
 
-    return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
 }
 
 Pipe StorageLiveView::watch(
@@ -617,7 +625,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns);
+        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });
 }
 

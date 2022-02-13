@@ -7,7 +7,8 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Common/DNSResolver.h>
 
 namespace DB::ErrorCodes
 {
@@ -44,13 +45,36 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         Poco::Timespan(1000000), /// Send timeout.
         Poco::Timespan(1000000)  /// Receive timeout.
     );
-    auto session = makeHTTPSession(endpoint, timeouts);
 
     try
     {
         /// It should be just empty GET request.
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
-        session->sendRequest(request);
+
+        const auto & host = endpoint.getHost();
+        auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
+
+        if (resolved_hosts.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver cannot resolve host {}", host);
+
+        HTTPSessionPtr session;
+
+        for (size_t i = 0; i < resolved_hosts.size(); ++i)
+        {
+            auto resolved_endpoint = endpoint;
+            resolved_endpoint.setHost(resolved_hosts[i].toString());
+            session = makeHTTPSession(endpoint, timeouts, false);
+
+            try
+            {
+                session->sendRequest(request);
+            }
+            catch (...)
+            {
+                if (i + 1 == resolved_hosts.size())
+                    throw;
+            }
+        }
 
         Poco::Net::HTTPResponse response;
         auto & response_body_stream = session->receiveResponse(response);

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <!-- See also the files in users.d directory where the settings can be overridden. -->
 
     <!-- Profiles of settings. -->
@@ -120,4 +120,4 @@
             </interval>
         </default>
     </quotas>
-</yandex>
+</clickhouse>

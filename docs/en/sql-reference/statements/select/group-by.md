@@ -10,6 +10,8 @@ toc_title: GROUP BY
 -   All the expressions in the [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md), and [ORDER BY](../../../sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
 -   Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually this signficantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.
 
+When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
+
 !!! note "Note"
     There’s an additional way to run aggregation over a table. If a query contains table columns only inside aggregate functions, the `GROUP BY clause` can be omitted, and aggregation by an empty set of keys is assumed. Such queries always return exactly one row.
 
@@ -203,6 +205,9 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 -   In `TabSeparated*` formats, the row comes after the main result, preceded by an empty row (after the other data).
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
 -   In the other formats it is not available.
+
+!!! note "Note"
+    totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`. 
 
 `WITH TOTALS` can be run in different ways when [HAVING](../../../sql-reference/statements/select/having.md) is present. The behavior depends on the `totals_mode` setting.
 

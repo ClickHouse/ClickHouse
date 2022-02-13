@@ -1,8 +1,8 @@
 ---
 title: 'The ClickHouse Community'
-image: 'https://blog-images.clickhouse.tech/en/2020/the-clickhouse-community/clickhouse-community-history.png'
+image: 'https://blog-images.clickhouse.com/en/2020/the-clickhouse-community/clickhouse-community-history.png'
 date: '2020-12-10'
-author: '[Robert Hodges](https://github.com/hodgesrm)'
+author: 'Robert Hodges'
 tags: ['community', 'open source', 'telegram', 'meetup']
 ---
 
@@ -22,7 +22,7 @@ Over the next 5 years Alexey and a growing team of developers extended ClickHous
 
 By 2016, ClickHouse had an 8 year history and was ready to become a major open source project.  Here’s a timeline that tracks major developments as a time series.
 
-<img src="https://blog-images.clickhouse.tech/en/2020/the-clickhouse-community/clickhouse-community-history.png"/>
+<img src="https://blog-images.clickhouse.com/en/2020/the-clickhouse-community/clickhouse-community-history.png"/>
 
 ## ClickHouse goes open source
 
@@ -92,13 +92,13 @@ ClickHouse ecosystem projects are also growing rapidly. Here is a selected list 
 
 ## Resources
 
-With the community growth numerous resources are available to users. At the center is the [ClickHouse org on Github](https://github.com/ClickHouse), which hosts [ClickHouse server code](https://github.com/ClickHouse/ClickHouse).  ClickHouse server documentation is available at the [clickhouse.tech](/) website. It has [installation instructions](/docs/en/getting-started/install/) and links to ClickHouse community builds for major Linux distributions as well as Mac, FreeBSD, and Docker.
+With the community growth numerous resources are available to users. At the center is the [ClickHouse org on Github](https://github.com/ClickHouse), which hosts [ClickHouse server code](https://github.com/ClickHouse/ClickHouse).  ClickHouse server documentation is available at the [clickhouse.com](/) website. It has [installation instructions](/docs/en/getting-started/install/) and links to ClickHouse community builds for major Linux distributions as well as Mac, FreeBSD, and Docker.
 
 In addition, ClickHouse users have a wide range of ways to engage with the community and get help on applications.  These include both chat applications as well as meetups.  Here are some links to get started.
 
-* Yandex Meetups — Yandex has regular in-person and online international and Russian-language meetups. Video recordings and online translations are available at the official [YouTube channel](https://www.youtube.com/c/ClickHouseDB/videos). Watch for announcements on the [clickhouse.tech](/) site and [Telegram](https://t.me/clickhouse_ru).
+* Yandex Meetups — Yandex has regular in-person and online international and Russian-language meetups. Video recordings and online translations are available at the official [YouTube channel](https://www.youtube.com/c/ClickHouseDB/videos). Watch for announcements on the [clickhouse.com](/) site and [Telegram](https://t.me/clickhouse_ru).
 * [SF Bay Area ClickHouse Meetup](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/) — The largest US ClickHouse meetup, with meetings approximately every 2 months.
-* Chinese meetups occur at regular intervals with different sponsors.  Watch for announcements on clickhouse.tech.
+* Chinese meetups occur at regular intervals with different sponsors.  Watch for announcements on clickhouse.com.
 * Telegram - By far the largest forum for ClickHouse. It is the best place to talk to ClickHouse devs. There are two groups.
 * [ClickHouse не тормозит](https://t.me/clickhouse_ru) (“ClickHouse does not slow down”) - Russian language Telegram group with 4,629 members currently.
 * [ClickHouse](https://t.me/clickhouse_en) — English language group with 1,286 members.
@@ -115,7 +115,7 @@ We welcome users to join the ClickHouse community in every capacity. There are f
 
 ### Use ClickHouse and share your experiences
 
-Start with the documentation. Download ClickHouse and try it out. Join the chat channels. If you encounter bugs, [log issues](https://github.com/ClickHouse/ClickHouse/issues) so we can get them fixed. Also, it’s easy to make contributions to the documentation if you have basic Github and markdown skills. Press the pencil icon on any page of the clickhouse.tech website to edit pages and automatically generate pull requests to merge your changes.
+Start with the documentation. Download ClickHouse and try it out. Join the chat channels. If you encounter bugs, [log issues](https://github.com/ClickHouse/ClickHouse/issues) so we can get them fixed. Also, it’s easy to make contributions to the documentation if you have basic Github and markdown skills. Press the pencil icon on any page of the clickhouse.com website to edit pages and automatically generate pull requests to merge your changes.
 
 If your company has deployed ClickHouse and is comfortable talking about it, please don't be shy. Add them to the [ClickHouse Adopters](/docs/en/introduction/adopters/) page so that others can learn from your experience.
 

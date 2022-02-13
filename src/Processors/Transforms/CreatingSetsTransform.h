@@ -1,12 +1,11 @@
 #pragma once
 
-#include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/Chain.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -45,8 +44,8 @@ public:
 private:
     SubqueryForSet subquery;
 
-    std::unique_ptr<PushingPipelineExecutor> executor;
     QueryPipeline table_out;
+    std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
     Stopwatch watch;
 
