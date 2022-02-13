@@ -423,7 +423,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             if (found)
                 mapped_cache[row] = it->getMapped();
         }
-        
+
         size_t offset = 0;
 
         if constexpr (FindResult::has_offset)
