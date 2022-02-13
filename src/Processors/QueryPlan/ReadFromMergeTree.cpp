@@ -113,7 +113,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (!analyzed_result_ptr)
     {
-        analyzed_result_ptr = selectRangesToRead(std::move(parts_)); 
+        analyzed_result_ptr = selectRangesToRead(std::move(parts_));
     }
 
     if (enable_parallel_reading)
