@@ -602,11 +602,6 @@ namespace DB
         return arrow::TimeUnit::NANO;
     }
 
-    static String getArrowTimeZone(const DataTypeDateTime64 * type)
-    {
-        return type->getTimeZone().getTimeZone();
-    }
-
     static std::shared_ptr<arrow::DataType> getArrowType(
         DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, bool * out_is_column_nullable)
     {
@@ -702,7 +697,7 @@ namespace DB
         if (isDateTime64(column_type))
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
-            return arrow::timestamp(getArrowTimeUnit(datetime64_type), getArrowTimeZone(datetime64_type));
+            return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
         }
 
         throw Exception(ErrorCodes::UNKNOWN_TYPE,
