@@ -2,6 +2,8 @@ import os
 import pytest
 import sys
 import time
+import pytz
+import uuid
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
@@ -43,8 +45,8 @@ def create_channel():
         main_channel = channel
     return channel
 
-def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', external_tables=[],
-                 user_name='', password='', query_id='123', session_id='', stream_output=False, channel=None):
+def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', send_output_columns=False,
+                 external_tables=[], user_name='', password='', query_id='123', session_id='', stream_output=False, channel=None):
     if type(input_data) is not list:
         input_data = [input_data]
     if type(input_data_delimiter) is str:
@@ -58,7 +60,8 @@ def query_common(query_text, settings={}, input_data=[], input_data_delimiter=''
             input_data_part = input_data_part.encode(DEFAULT_ENCODING)
         return clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part,
                                              input_data_delimiter=input_data_delimiter, output_format=output_format,
-                                             external_tables=external_tables, user_name=user_name, password=password, query_id=query_id,
+                                             send_output_columns=send_output_columns, external_tables=external_tables,
+                                             user_name=user_name, password=password, query_id=query_id,
                                              session_id=session_id, next_query_info=bool(input_data))
     def send_query_info():
         yield query_info()
@@ -204,6 +207,28 @@ def test_totals_and_extremes():
     assert query("SELECT x, y FROM t") == "1\t2\n2\t4\n3\t2\n3\t3\n3\t4\n"
     assert query_and_get_extremes("SELECT x, y FROM t", settings={"extremes": "1"}) == "1\t2\n3\t4\n"
 
+def test_get_query_details():
+    result = list(query_no_errors("CREATE TABLE t (a UInt8) ENGINE = Memory", query_id = '123'))[0]
+    assert result.query_id == '123'
+    pytz.timezone(result.time_zone)
+    assert result.output_format == ''
+    assert len(result.output_columns) == 0
+    assert result.output == b''
+    #
+    result = list(query_no_errors("SELECT 'a', 1", query_id = '', output_format = 'TabSeparated'))[0]
+    uuid.UUID(result.query_id)
+    pytz.timezone(result.time_zone)
+    assert result.output_format == 'TabSeparated'
+    assert len(result.output_columns) == 0
+    assert result.output == b'a\t1\n'
+    #
+    result = list(query_no_errors("SELECT 'a' AS x, 1 FORMAT JSONEachRow", query_id = '', send_output_columns=True))[0]
+    uuid.UUID(result.query_id)
+    pytz.timezone(result.time_zone)
+    assert result.output_format == 'JSONEachRow'
+    assert ([(col.name, col.type) for col in result.output_columns]) == [('x', 'String'), ('1', 'UInt8')]
+    assert result.output == b'{"x":"a","1":1}\n'
+
 def test_errors_handling():
     e = query_and_get_error("")
     #print(e)
@@ -225,6 +250,9 @@ def test_logs():
 
 def test_progress():
     results = query_no_errors("SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000", stream_output=True)
+    for result in results:
+        result.time_zone = ''
+        result.query_id = ''
     #print(results)
     assert str(results) ==\
 """[progress {
@@ -232,6 +260,7 @@ def test_progress():
   read_bytes: 16
   total_rows_to_read: 8
 }
+output_format: "TabSeparated"
 , output: "0\\t0\\n1\\t0\\n"
 , progress {
   read_rows: 2
