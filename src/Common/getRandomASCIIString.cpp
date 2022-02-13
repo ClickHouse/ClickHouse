@@ -7,7 +7,7 @@ namespace DB
 
 String getRandomASCIIString(size_t length)
 {
-    std::uniform_int_distribution<int> distribution('a', 'z');
+    std::uniform_int_distribution<char> distribution('a', 'z');
     String res;
     res.resize(length);
     for (auto & c : res)
