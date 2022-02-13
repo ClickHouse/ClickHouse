@@ -56,6 +56,7 @@ void registerFunctionH3PointDistM(FunctionFactory &);
 void registerFunctionH3PointDistKm(FunctionFactory &);
 void registerFunctionH3PointDistRads(FunctionFactory &);
 void registerFunctionH3GetRes0Indexes(FunctionFactory &);
+void registerFunctionH3GetPentagonIndexes(FunctionFactory &);
 
 #endif
 
@@ -126,6 +127,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3PointDistKm(factory);
     registerFunctionH3PointDistRads(factory);
     registerFunctionH3GetRes0Indexes(factory);
+    registerFunctionH3GetPentagonIndexes(factory);
 #endif
 
 #if USE_S2_GEOMETRY
