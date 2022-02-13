@@ -31,6 +31,7 @@ private:
     std::vector<size_t> sort_column_positions;
 
     UInt64 rows_read = 0; /// including the last read block
+    UInt64 reverse_rows_read = 0;
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
@@ -46,6 +47,9 @@ private:
 
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
+
+    std::vector<Columns> reverse_chunks;
+    std::vector<UInt64> reverse_chunks_size;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;

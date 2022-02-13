@@ -16,6 +16,7 @@ private:
     UInt64 offset;
     bool is_offset_positive;
     UInt64 rows_read = 0; /// including the last read block
+    UInt64 reverse_rows_read = 0;
 
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
@@ -31,6 +32,8 @@ private:
     };
 
     std::vector<PortsData> ports_data;
+    std::vector<Columns> reverse_chunks;
+    std::vector<UInt64> reverse_chunks_size;
     size_t num_finished_port_pairs = 0;
 
 public:

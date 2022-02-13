@@ -43,6 +43,9 @@ LimitTransform::LimitTransform(
         else
             sort_column_positions.push_back(desc.column_number);
     }
+
+    if (!is_limit_positive)
+        always_read_till_end = true;
 }
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
@@ -162,7 +165,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
 
     /// Check if we are done with pushing.
-    bool is_limit_reached = !limit_is_unreachable && rows_read >= offset + limit && !previous_row_chunk;
+    bool is_limit_reached = !limit_is_unreachable && rows_read >= offset + limit && !previous_row_chunk && is_limit_positive;
     if (is_limit_reached)
     {
         if (!always_read_till_end)
@@ -174,7 +177,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     }
 
     /// Check can input.
-
     if (input.isFinished())
     {
         output.finish();
@@ -213,6 +215,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     if (rows_read <= offset)
     {
+        reverse_chunks.emplace_back(data.current_chunk.getColumns());
+        reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -225,19 +229,102 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         input.setNeeded();
         return Status::NeedData;
     }
-
-    if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows
-        && !limit_is_unreachable && rows_read <= offset + limit)
+    
+    if (is_limit_positive)
     {
-        /// Return the whole chunk.
+        if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows
+            && !limit_is_unreachable && rows_read <= offset + limit)
+        {
+            /// Return the whole chunk.
 
-        /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read == offset + limit)
-            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
+            /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
+            if (with_ties && rows_read == offset + limit)
+                previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
+        }
+        else
+            /// This function may be heavy to execute in prepare. But it happens no more than twice, and make code simpler.
+            splitChunk(data);
     }
     else
-        /// This function may be heavy to execute in prepare. But it happens no more than twice, and make code simpler.
-        splitChunk(data);
+    {
+        if (rows == 8192 || rows == 16384 || rows == 32768 || rows == 65536 || rows == 65505)
+        {
+            reverse_chunks.emplace_back(data.current_chunk.getColumns());
+            reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
+            data.current_chunk.clear();
+
+            if (input.isFinished())
+            {
+                output.finish();
+                return Status::Finished;
+            }
+
+            /// Now, we pulled from input, and it must be empty.
+            input.setNeeded();
+            return Status::NeedData;
+        }
+        else
+        {
+            reverse_chunks.emplace_back(data.current_chunk.getColumns());
+            reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
+        }
+
+        MutableColumns whole_columns;
+        ColumnRawPtrs current_columns;
+        for (auto column : reverse_chunks.back())
+            current_columns.push_back(column.get());
+
+        for (auto j = 0u; j < current_columns.size(); ++j)
+            whole_columns.emplace_back(current_columns[j]->cloneEmpty());
+
+        for (int i = reverse_chunks.size() - 1; i >= 0; --i)
+        {
+            UInt64 inversion_rows = reverse_chunks_size[i];
+            reverse_rows_read += inversion_rows;
+            if (reverse_rows_read <= offset)
+                continue;
+            if (inversion_rows <= std::numeric_limits<UInt64>::max() - offset && reverse_rows_read >= offset + inversion_rows
+                && !limit_is_unreachable && reverse_rows_read <= offset + limit)
+            {
+                /// Return the whole chunk.
+                MutableColumns res_columns;
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                    res_columns.emplace_back(current_columns[j]->cloneEmpty());
+                
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                {
+                    res_columns[j]->insertRangeFrom(*reverse_chunks[i][j], 0, reverse_chunks_size[i]);
+                    res_columns[j]->insertRangeFrom(*whole_columns[j], 0, whole_columns[j]->size());
+                }
+                whole_columns.swap(res_columns);
+                
+                /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
+                if (with_ties && reverse_rows_read == offset + limit)
+                    previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, 0);
+            }
+            else
+                /// This function may be heavy to execute in prepare. But it happens no more than twice, and make code simpler.
+            {
+                MutableColumns res_columns;
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                    res_columns.emplace_back(current_columns[j]->cloneEmpty());
+                data.current_chunk.setColumns(reverse_chunks[i], inversion_rows);
+
+                splitChunk(data);
+                
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                {
+                    res_columns[j]->insertRangeFrom(*data.current_chunk.getColumns()[j], 0, data.current_chunk.getNumRows());
+                    res_columns[j]->insertRangeFrom(*whole_columns[j], 0, whole_columns[j]->size());
+                }
+                whole_columns.swap(res_columns);
+            }
+
+            if (reverse_rows_read >= offset + limit)
+                break;
+        }
+        data.current_chunk.setColumns(std::move(whole_columns), whole_columns[0]->size());
+    }
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
     /// No more data is needed.
@@ -245,7 +332,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         input.close();
 
     output.push(std::move(data.current_chunk));
-
     return Status::PortFull;
 }
 
@@ -351,11 +437,11 @@ void LimitTransform::splitChunk(PortsData & data)
     {
         limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
 
-        if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
+        if (previous_row_chunk && !limit_is_unreachable && reverse_rows_read >= offset + limit)
         {
             /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
-            UInt64 current_row_num = 0;
-            for (; current_row_num < num_rows; ++current_row_num)
+            Int128 current_row_num = num_rows - 1;
+            for (; current_row_num < num_rows; --current_row_num)
             {
                 if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
                     break;
@@ -367,7 +453,7 @@ void LimitTransform::splitChunk(PortsData & data)
             {
                 previous_row_chunk = {};
                 for (UInt64 i = 0; i < num_columns; ++i)
-                    columns[i] = columns[i]->cut(0, current_row_num);
+                    columns[i] = columns[i]->cut(current_row_num, num_rows - 1);
             }
 
             data.current_chunk.setColumns(std::move(columns), current_row_num);
@@ -376,28 +462,35 @@ void LimitTransform::splitChunk(PortsData & data)
 
         start = 0;
 
-        assert(offset < rows_read);
+        assert(offset < reverse_rows_read);
 
-        if (offset + limit <= num_rows)
-            start = num_rows - offset - limit;
+        if (offset + num_rows > reverse_rows_read)
+            length = reverse_rows_read - offset;
 
-        length = num_rows - start;
+        // if (offset + limit <= num_rows)
+        //     start = num_rows - offset - limit;
 
-        if (!limit_is_unreachable && offset + limit <= rows_read)
+        if (!limit_is_unreachable && offset + limit < reverse_rows_read)
         {
-            if (offset >= num_rows)
-                length = num_rows;
-            else if (offset + limit > num_rows)
-                length = num_rows - offset;
-            else if (offset + limit <= num_rows)
+            if (offset + limit < reverse_rows_read - num_rows)
+                length = 0;
+            else if (offset + limit >= reverse_rows_read - num_rows && offset >= reverse_rows_read - num_rows)
+            {
+                start = reverse_rows_read - limit - offset;
                 length = limit;
+            }
+            else
+            {
+                start = reverse_rows_read - limit - offset;
+                length = offset + limit - (reverse_rows_read - num_rows);
+            }
         }
 
         /// check if other rows in current block equals to last one in limit
         if (with_ties && length)
         {
             Int128 current_row_num = start;
-            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
+            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num);
 
             for (; current_row_num >= 0u; --current_row_num)
             {
@@ -407,9 +500,8 @@ void LimitTransform::splitChunk(PortsData & data)
                     break;
                 }
             }
-            UInt64 current_row_num_after = current_row_num;
-            length = start + length - (current_row_num_after == start ? current_row_num_after : current_row_num_after + 1);
-            start = (current_row_num_after == start ? current_row_num_after : current_row_num_after + 1);
+            length = start + length - current_row_num - 1;
+            start = current_row_num + 1;
         }
     }
 

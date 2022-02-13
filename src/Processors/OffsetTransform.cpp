@@ -1,6 +1,5 @@
 #include <Processors/OffsetTransform.h>
 
-
 namespace DB
 {
 
@@ -137,6 +136,8 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
 
     if (rows_read <= offset)
     {
+        reverse_chunks.emplace_back(data.current_chunk.getColumns());
+        reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -149,9 +150,82 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
         input.setNeeded();
         return Status::NeedData;
     }
+    if (is_offset_positive)
+    {
+        if (!(rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows))
+            splitChunk(data);
+    }
+    else
+    {
+        if (rows == 8192 || rows == 16384 || rows == 32768 || rows == 65536 || rows == 65505)
+        {
+            reverse_chunks.emplace_back(data.current_chunk.getColumns());
+            reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
+            data.current_chunk.clear();
 
-    if (!(rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows))
-        splitChunk(data);
+            if (input.isFinished())
+            {
+                output.finish();
+                return Status::Finished;
+            }
+
+            /// Now, we pulled from input, and it must be empty.
+            input.setNeeded();
+            return Status::NeedData;
+        }
+        else
+        {
+            reverse_chunks.emplace_back(data.current_chunk.getColumns());
+            reverse_chunks_size.emplace_back(data.current_chunk.getNumRows());
+        }
+
+        MutableColumns whole_columns;
+        ColumnRawPtrs current_columns;
+        for (auto column : reverse_chunks.back())
+            current_columns.push_back(column.get());
+
+        for (auto j = 0u; j < current_columns.size(); ++j)
+            whole_columns.emplace_back(current_columns[j]->cloneEmpty());
+
+        for (int i = reverse_chunks.size() - 1; i >= 0; --i)
+        {
+            UInt64 inversion_rows = reverse_chunks_size[i];
+            reverse_rows_read += inversion_rows;
+            if (reverse_rows_read <= offset)
+                continue;
+
+            if (!(inversion_rows <= std::numeric_limits<UInt64>::max() - offset && reverse_rows_read >= offset + inversion_rows))
+            {
+                MutableColumns res_columns;
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                    res_columns.emplace_back(current_columns[j]->cloneEmpty());
+                data.current_chunk.setColumns(reverse_chunks[i], inversion_rows);
+
+                splitChunk(data);
+                
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                {
+                    res_columns[j]->insertRangeFrom(*data.current_chunk.getColumns()[j], 0, data.current_chunk.getNumRows());
+                    res_columns[j]->insertRangeFrom(*whole_columns[j], 0, whole_columns[j]->size());
+                }
+                whole_columns.swap(res_columns);
+            }
+            else
+            {
+                MutableColumns res_columns;
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                    res_columns.emplace_back(current_columns[j]->cloneEmpty());
+                
+                for (auto j = 0u; j < current_columns.size(); ++j)
+                {
+                    res_columns[j]->insertRangeFrom(*reverse_chunks[i][j], 0, reverse_chunks_size[i]);
+                    res_columns[j]->insertRangeFrom(*whole_columns[j], 0, whole_columns[j]->size());
+                }
+                whole_columns.swap(res_columns);
+            }
+        }
+        data.current_chunk.setColumns(std::move(whole_columns), whole_columns[0]->size());
+    }
 
     output.push(std::move(data.current_chunk));
 
@@ -173,11 +247,11 @@ void OffsetTransform::splitChunk(PortsData & data) const
     /// <---------------> offset
     ///             <---> start
 
-    assert(offset < rows_read);
 
     UInt64 length = 0;
     if (is_offset_positive)
     {
+        assert(offset < rows_read);
         if (offset + num_rows > rows_read)
             start = offset + num_rows - rows_read;
         else
@@ -186,18 +260,18 @@ void OffsetTransform::splitChunk(PortsData & data) const
     }
     else
     {
-        if (offset <= num_rows)
+        assert(offset < reverse_rows_read);
+        if (offset + num_rows > reverse_rows_read)
             start = 0;
         else
             return;
-        length = num_rows - offset;
+        length = reverse_rows_read - offset;
     }
 
     auto columns = data.current_chunk.detachColumns();
 
     for (UInt64 i = 0; i < num_columns; ++i)
         columns[i] = columns[i]->cut(start, length);
-
     data.current_chunk.setColumns(std::move(columns), length);
 }
 
