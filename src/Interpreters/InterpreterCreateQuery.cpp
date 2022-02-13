@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -12,6 +13,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -91,6 +93,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int ENGINE_REQUIRED;
 }
 
 namespace fs = std::filesystem;
@@ -156,6 +159,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// Currently, there are no database engines, that support any arguments.
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
+
+    if (create.storage && !create.storage->engine)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Database engine must be specified");
 
     if (create.storage->engine->name == "Atomic"
         || create.storage->engine->name == "Replicated"
@@ -581,6 +587,17 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const
 {
+    /// Set the table engine if it was not specified explicitly.
+    setEngine(create);
+
+    /// We have to check access rights again (in case engine was changed).
+    if (create.storage)
+    {
+        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
+        if (source_access_type != AccessType::NONE)
+            getContext()->checkAccess(source_access_type);
+    }
+
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -645,7 +662,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
-    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
+    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name)) // NOLINT
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
@@ -663,8 +680,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
     validateTableStructure(create, properties);
-    /// Set the table engine if it was not specified explicitly.
-    setEngine(create);
 
     assert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
@@ -718,30 +733,90 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
+{
+    switch (default_table_engine)
+    {
+        case DefaultTableEngine::Log:
+            return "Log";
+
+        case DefaultTableEngine::StripeLog:
+            return "StripeLog";
+
+        case DefaultTableEngine::MergeTree:
+            return "MergeTree";
+
+        case DefaultTableEngine::ReplacingMergeTree:
+            return "ReplacingMergeTree";
+
+        case DefaultTableEngine::ReplicatedMergeTree:
+            return "ReplicatedMergeTree";
+
+        case DefaultTableEngine::ReplicatedReplacingMergeTree:
+            return "ReplicatedReplacingMergeTree";
+
+        case DefaultTableEngine::Memory:
+            return "Memory";
+
+        default:
+            throw Exception("default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context)
+{
+    if (local_context->getSettingsRef().default_table_engine.value == DefaultTableEngine::None)
+        throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+
+    auto engine_ast = std::make_shared<ASTFunction>();
+    auto default_table_engine = local_context->getSettingsRef().default_table_engine.value;
+    engine_ast->name = getTableEngineName(default_table_engine);
+    engine_ast->no_empty_args = true;
+    storage.set(storage.engine, engine_ast);
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
         return;
 
-    if (create.storage || create.is_dictionary || create.isView())
-    {
-        if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
-
+    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
-    }
+
+    if (create.is_materialized_view && create.to_table_id)
+        return;
 
     if (create.temporary)
     {
+        if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables can only be created with ENGINE = Memory, not {}",
+                create.storage->engine->name);
+
+        /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
+        /// It makes sense when default_table_engine setting is used, but not for temporary tables.
+        /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
+        /// even if setting is set to MergeTree or something like that (otherwise MergeTree will be substituted and query will fail).
+        if (create.storage && !create.storage->engine)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
+
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
         engine_ast->no_empty_args = true;
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
+        return;
     }
-    else if (!create.as_table.empty())
+
+    if (create.storage)
+    {
+        /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
+        if (!create.storage->engine)
+            setDefaultTableEngine(*create.storage, getContext());
+        return;
+    }
+
+    if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -754,24 +829,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
         if (as_create.is_ordinary_view)
-            throw Exception(
-                "Cannot CREATE a table AS " + qualified_name + ", it is a View",
-                ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
 
         if (as_create.is_live_view)
-            throw Exception(
-                "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
-                ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
 
         if (as_create.is_window_view)
-            throw Exception(
-                "Cannot CREATE a table AS " + qualified_name + ", it is a Window View",
-                ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
 
         if (as_create.is_dictionary)
-            throw Exception(
-                "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
-                ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Dictionary", qualified_name);
 
         if (as_create.storage)
             create.set(create.storage, as_create.storage->ptr());
@@ -779,7 +846,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             create.as_table_function = as_create.as_table_function->clone();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+
+        return;
     }
+
+    create.set(create.storage, std::make_shared<ASTStorage>());
+    setDefaultTableEngine(*create.storage, getContext());
 }
 
 static void generateUUIDForTable(ASTCreateQuery & create)

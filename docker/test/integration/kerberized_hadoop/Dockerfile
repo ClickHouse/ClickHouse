@@ -20,4 +20,4 @@ RUN cd /tmp && \
 	cd commons-daemon-1.0.15-src/src/native/unix && \
 	./configure && \
 	make && \
-	cp ./jsvc /usr/local/hadoop/sbin
+	cp ./jsvc /usr/local/hadoop-2.7.0/sbin

@@ -346,9 +346,10 @@ StorageURLSink::StorageURLSink(
     : SinkToStorage(sample_block)
 {
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+    std::string content_encoding = toContentEncodingName(compression_method);
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, timeouts),
+            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, timeouts),
             compression_method, 3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
@@ -479,10 +480,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     }
     else
     {
-        auto parsed_uri = Poco::URI(uri);
-        StorageURLSource::setCredentials(credentials, parsed_uri);
         read_buffer_creator = [&]()
         {
+            auto parsed_uri = Poco::URI(uri);
+            StorageURLSource::setCredentials(credentials, parsed_uri);
+
             return wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     parsed_uri,

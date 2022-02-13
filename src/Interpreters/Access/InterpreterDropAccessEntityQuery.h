@@ -6,7 +6,6 @@
 
 namespace DB
 {
-
 class AccessRightsElements;
 
 class InterpreterDropAccessEntityQuery : public IInterpreter, WithMutableContext
