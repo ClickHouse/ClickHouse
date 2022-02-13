@@ -320,13 +320,15 @@ private:
             while (data.size && data.data[data.size - 1] == 0)
                 --data.size;
 
-            data_to.resize(offset + data.size + 1);
-            memcpy(&data_to[offset], data.data, data.size);
+            if (data_to.capacity() < offset + data.size + 1)
+              data_to.resize(offset + data.size + 1);
+            memcpy(data_to.data() + offset, data.data, data.size);
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
             offsets_to[i] = offset;
         }
+        data_to.resize(offset);
     }
 
     template <typename Type>

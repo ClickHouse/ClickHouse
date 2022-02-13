@@ -173,7 +173,7 @@ public:
         return col_to;
     }
 
-    static void processUnit(
+    ALWAYS_INLINE static void processUnit(
         UInt64 unit_size, const char * unit_name, size_t unit_name_size,
         Float64 & value, WriteBuffer & buf_to, bool & has_output)
     {
