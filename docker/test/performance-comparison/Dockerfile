@@ -26,8 +26,8 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3.8 \
-            python3.8-dev \
+            python3 \
+            python3-dev \
             python3-pip \
             python3-setuptools \
             rsync \
@@ -37,7 +37,7 @@ RUN apt-get update \
             wget \
             rustc \
             cargo \
-    && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
+    && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' numpy==1.14.5 scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
