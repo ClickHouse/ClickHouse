@@ -940,10 +940,11 @@ public:
                 size_t max_entries_for_hash_table_stats_,
                 size_t max_size_to_preallocate_for_aggregation_);
 
-            UInt64 key = 0;
-            bool collect_hash_table_stats_during_aggregation = false;
-            size_t max_entries_for_hash_table_stats = 0;
-            size_t max_size_to_preallocate_for_aggregation = 0;
+            bool isEnabled() const;
+
+            const UInt64 key = 0;
+            const size_t max_entries_for_hash_table_stats = 0;
+            const size_t max_size_to_preallocate_for_aggregation = 0;
         };
         StatsCollectingParams stats_collecting_params;
 
@@ -1135,8 +1136,9 @@ private:
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
 
-    // It's a RAII helper class to update stats at the end of query execution
+    /// It's a RAII helper class to update stats at the end of query execution.
     class StatisticsUpdater;
+    /// stats_updater == nullptr iff statistics collection is disabled.
     std::unique_ptr<StatisticsUpdater> stats_updater;
 
 #if USE_EMBEDDED_COMPILER

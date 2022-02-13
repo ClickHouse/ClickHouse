@@ -52,8 +52,7 @@ public:
 
     std::optional<size_t> getSizeHint(const Params & params)
     {
-        std::lock_guard lock(mutex);
-        const auto cache = getHashTableStatsCache(params, lock);
+        const auto cache = getHashTableStatsCache(params);
         if (const auto hint = cache->get(params.key))
         {
             LOG_DEBUG(&Poco::Logger::get("Aggregator"), "An entry for key={} found in cache: size_hint={}", params.key, *hint);
@@ -64,32 +63,63 @@ public:
 
     void update(size_t observed_size, const Params & params)
     {
-        std::lock_guard lock(mutex);
-        const auto cache = getHashTableStatsCache(params, lock);
+        const auto cache = getHashTableStatsCache(params);
         const auto hint = cache->get(params.key);
         // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
-        if (!hint || observed_size > *hint || observed_size < *hint / 2)
+        if (!hint || observed_size < *hint / 2 || *hint < observed_size)
         {
             LOG_DEBUG(&Poco::Logger::get("Aggregator"), "Statistics updated for key={}: new size_hint={}", params.key, observed_size);
             cache->set(params.key, std::make_shared<size_t>(observed_size));
         }
     }
 
-    CachePtr getCache()
+    std::optional<DB::HashTablesCacheStatistics> getCacheStats() const
+    {
+        if (const auto cache = getHashTableStatsCache())
+        {
+            size_t hits = 0, misses = 0;
+            cache->getStats(hits, misses);
+            return DB::HashTablesCacheStatistics{.entries = cache->count(), .hits = hits, .misses = misses};
+        }
+        return std::nullopt;
+    }
+
+    static size_t calculateCacheKey(const DB::ASTPtr & select_query)
+    {
+        if (!select_query)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
+
+        const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+        // It may happen in some corner cases like `select 1 as num group by num`.
+        if (!select.tables())
+            return 0;
+
+        SipHash hash;
+        hash.update(select.tables()->getTreeHash());
+        if (const auto where = select.where())
+            hash.update(where->getTreeHash());
+        if (const auto group_by = select.groupBy())
+            hash.update(group_by->getTreeHash());
+        return hash.get64();
+    }
+
+private:
+    CachePtr getHashTableStatsCache() const
     {
         std::lock_guard lock(mutex);
         return hash_table_stats;
     }
 
-private:
-    CachePtr getHashTableStatsCache(const Params & params, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    CachePtr getHashTableStatsCache(const Params & params)
     {
+        std::lock_guard lock(mutex);
         if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
             hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
         return hash_table_stats;
     }
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     CachePtr hash_table_stats;
 };
 
@@ -111,7 +141,7 @@ void initDataVariants(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
-    if (stats_collecting_params.collect_hash_table_stats_during_aggregation)
+    if (stats_collecting_params.isEnabled())
     {
         if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
         {
@@ -190,13 +220,7 @@ namespace ErrorCodes
 
 std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
 {
-    if (auto cache = getHashTablesStatistics().getCache())
-    {
-        size_t hits = 0, misses = 0;
-        cache->getStats(hits, misses);
-        return HashTablesCacheStatistics{.entries = cache->count(), .hits = hits, .misses = misses};
-    }
-    return std::nullopt;
+    return getHashTablesStatistics().getCacheStats();
 }
 
 void AggregatedDataVariants::convertToTwoLevel()
@@ -252,43 +276,34 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
     bool collect_hash_table_stats_during_aggregation_,
     size_t max_entries_for_hash_table_stats_,
     size_t max_size_to_preallocate_for_aggregation_)
-    : key(0)
-    , collect_hash_table_stats_during_aggregation(collect_hash_table_stats_during_aggregation_)
+    : key(collect_hash_table_stats_during_aggregation_ ? HashTablesStatistics::calculateCacheKey(select_query_) : 0)
     , max_entries_for_hash_table_stats(max_entries_for_hash_table_stats_)
     , max_size_to_preallocate_for_aggregation(max_size_to_preallocate_for_aggregation_)
 {
-    if (!select_query_)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "query ptr cannot be null");
-    const auto & select = select_query_->as<DB::ASTSelectQuery &>();
+}
 
-    if (!select.tables())
-    {
-        // It may happen in some corner cases like `select 1 as num group by num`.
-        collect_hash_table_stats_during_aggregation = false;
-        return;
-    }
-
-    SipHash hash;
-    hash.update(select.tables()->getTreeHash());
-    if (const auto where = select.where())
-        hash.update(where->getTreeHash());
-    if (const auto group_by = select.groupBy())
-        hash.update(group_by->getTreeHash());
-    key = hash.get64();
+bool Aggregator::Params::StatsCollectingParams::isEnabled() const
+{
+    return key != 0;
 }
 
 class Aggregator::StatisticsUpdater
 {
 public:
-    explicit StatisticsUpdater(Aggregator & aggregator_) : aggregator(aggregator_), observed_size(0) { }
+    explicit StatisticsUpdater(Aggregator & aggregator_) : aggregator(aggregator_), observed_size(0)
+    {
+        if (!aggregator.params.stats_collecting_params.isEnabled())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics collection should be enabled");
+    }
 
     ~StatisticsUpdater()
     {
         try
         {
+            // It is hard to track a hash table size after we start spilling on disk.
+            // But it won't happen until we reach at least one of the group by two-level thresholds.
             const auto result = !aggregator.hasTemporaryFiles() ? observed_size.load() : aggregator.params.group_by_two_level_threshold;
-            if (aggregator.params.stats_collecting_params.collect_hash_table_stats_during_aggregation)
-                getHashTablesStatistics().update(result, aggregator.params.stats_collecting_params);
+            getHashTablesStatistics().update(result, aggregator.params.stats_collecting_params);
         }
         catch (...)
         {
@@ -309,7 +324,9 @@ AggregatedDataVariants::~AggregatedDataVariants()
     {
         try
         {
-            aggregator->stats_updater->addToObservedHashTableSize(size());
+            if (aggregator->stats_updater)
+                aggregator->stats_updater->addToObservedHashTableSize(size());
+
             if (!aggregator->all_aggregates_has_trivial_destructor)
                 aggregator->destroyAllAggregateStates(*this);
         }
@@ -469,7 +486,7 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_) : params(params_), stats_updater(std::make_unique<StatisticsUpdater>(*this))
+Aggregator::Aggregator(const Params & params_) : params(params_)
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -524,6 +541,8 @@ Aggregator::Aggregator(const Params & params_) : params(params_), stats_updater(
     compileAggregateFunctionsIfNeeded();
 #endif
 
+    if (params.stats_collecting_params.isEnabled())
+        stats_updater = std::make_unique<StatisticsUpdater>(*this);
 }
 
 Aggregator::~Aggregator() = default;
@@ -1554,7 +1573,7 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
 
-    if (params.stats_collecting_params.collect_hash_table_stats_during_aggregation)
+    if (stats_updater)
         stats_updater->addToObservedHashTableSize(data.size());
 
     /// In order to release memory early.
