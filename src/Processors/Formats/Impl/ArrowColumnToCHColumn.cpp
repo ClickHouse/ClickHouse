@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -204,6 +205,7 @@ static ColumnWithTypeAndName readColumnWithDate64Data(std::shared_ptr<arrow::Chu
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+/*
 static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeUInt32>();
@@ -238,6 +240,27 @@ static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::
         {
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
             column_data.emplace_back(timestamp);
+        }
+    }
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+*/
+
+static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
+    const UInt8 scale = arrow_type.unit() * 3;
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, arrow_type.timezone());
+    auto internal_column = internal_type->createColumn();
+    auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
+    column_data.reserve(arrow_column->length());
+
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
+        const auto & chunk = dynamic_cast<const arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            column_data.emplace_back(chunk.Value(value_i));
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
