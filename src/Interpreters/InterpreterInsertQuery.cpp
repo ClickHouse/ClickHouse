@@ -24,6 +24,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/ReduceToPhysicalTransform.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -109,22 +110,31 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot) const
 {
-    Block table_sample = metadata_snapshot->getSampleBlock();
-    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockInsertable();
+    Block table_sample_physical = metadata_snapshot->getSampleBlock();
+    Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
     {
-        /// The table does not have a column with that name
-        if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        if (!allow_materialized && !table_sample_non_materialized.has(current_name))
-            throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         if (res.has(current_name))
             throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
-        res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
+        /// Column is not ordinary or ephemeral
+        if (!table_sample_insertable.has(current_name))
+        {
+            /// Column is materialized
+            if (table_sample_physical.has(current_name))
+            {
+                if (!allow_materialized)
+                    throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.",
+                        ErrorCodes::ILLEGAL_COLUMN);
+                res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
+            }
+            else /// The table does not have a column with that name
+                throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        }
+        else
+            res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
     }
     return res;
 }
@@ -228,6 +238,12 @@ Chain InterpreterInsertQuery::buildChainImpl(
         null_as_default);
 
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+
+    /// Non-physical columns may be necessary up to this point. Sink requires only physical columns, so
+    /// add this transform to remove non-physical columns.
+    out.addSource(std::make_shared<ReduceToPhysicalTransform>(
+        ExpressionTransform::transformHeader(query_sample_block, *adding_missing_defaults_dag),
+        metadata_snapshot->getColumns()));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
