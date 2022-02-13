@@ -75,6 +75,7 @@ struct TreeRewriterResult
 
     /// Results of scalar sub queries
     Scalars scalars;
+    Scalars local_scalars;
 
     explicit TreeRewriterResult(
         const NamesAndTypesList & source_columns_,

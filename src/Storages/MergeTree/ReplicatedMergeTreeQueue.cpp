@@ -20,7 +20,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
-    extern const int READONLY;
 }
 
 
@@ -555,10 +554,17 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
 int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
-    if (storage.is_readonly && reason == SYNC)
+
+    if (reason != LOAD)
     {
-        throw Exception(ErrorCodes::READONLY, "Cannot SYNC REPLICA, because replica is readonly");
-        /// TODO throw logical error for other reasons (except LOAD)
+        /// It's totally ok to load queue on readonly replica (that's what RestartingThread does on initialization).
+        /// It's ok if replica became readonly due to connection loss after we got current zookeeper (in this case zookeeper must be expired).
+        /// And it's ok if replica became readonly after shutdown.
+        /// In other cases it's likely that someone called pullLogsToQueue(...) when queue is not initialized yet by RestartingThread.
+        bool not_completely_initialized = storage.is_readonly && !zookeeper->expired() && !storage.shutdown_called;
+        if (not_completely_initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to pull logs to queue (reason: {}) on readonly replica {}, it's a bug",
+                            reason, storage.getStorageID().getNameForLogs());
     }
 
     if (pull_log_blocker.isCancelled())

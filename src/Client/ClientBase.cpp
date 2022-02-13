@@ -1317,7 +1317,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert = global_context->getSettings().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
@@ -1501,12 +1501,33 @@ String ClientBase::prompt() const
 }
 
 
+void ClientBase::initQueryIdFormats()
+{
+    if (!query_id_formats.empty())
+        return;
+
+    /// Initialize query_id_formats if any
+    if (config().has("query_id_formats"))
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config().keys("query_id_formats", keys);
+        for (const auto & name : keys)
+            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+    }
+
+    if (query_id_formats.empty())
+        query_id_formats.emplace_back("Query id:", " {query_id}\n");
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
         throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
     if (print_time_to_stderr)
         throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+
+    initQueryIdFormats();
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
@@ -1527,18 +1548,6 @@ void ClientBase::runInteractive()
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
-
-    /// Initialize query_id_formats if any
-    if (config().has("query_id_formats"))
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config().keys("query_id_formats", keys);
-        for (const auto & name : keys)
-            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-    }
-
-    if (query_id_formats.empty())
-        query_id_formats.emplace_back("Query id:", " {query_id}\n");
 
     /// Load command history if present.
     if (config().has("history_file"))
@@ -1648,6 +1657,9 @@ void ClientBase::runInteractive()
 
 void ClientBase::runNonInteractive()
 {
+    if (delayed_interactive)
+        initQueryIdFormats();
+
     if (!queries_files.empty())
     {
         auto process_multi_query_from_file = [&](const String & file)
@@ -1917,7 +1929,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Output of help message.
     if (options.count("help")
-        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
+        || (options.count("host") && options["host"].as<std::vector<HostPort>>()[0].host == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
         exit(0);

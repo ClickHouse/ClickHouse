@@ -194,6 +194,16 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
     return res;
 }
 
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonly() const
+{
+    /// There's a short period of time after connection loss when new session is created,
+    /// but replication queue is not reinitialized. We must ensure that table is not readonly anymore
+    /// before using new ZooKeeper session to write something (except maybe GET_PART) into replication log.
+    auto res = getZooKeeper();
+    assertNotReadonly();
+    return res;
+}
+
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
 {
     /// NOTE We don't have special log entry type for MOVE PARTITION/ATTACH PARTITION FROM,
@@ -335,14 +345,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         /// Do not activate the replica. It will be readonly.
         LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
-        is_readonly = true;
+        has_metadata_in_zookeeper = std::nullopt;
         return;
     }
 
     if (attach && !current_zookeeper->exists(zookeeper_path + "/metadata"))
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode.", zookeeper_path);
-        is_readonly = true;
         has_metadata_in_zookeeper = false;
         return;
     }
@@ -354,10 +363,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (attach && !current_zookeeper->exists(replica_path))
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode", replica_path);
-        is_readonly = true;
         has_metadata_in_zookeeper = false;
         return;
     }
+
+    has_metadata_in_zookeeper = true;
 
     if (!attach)
     {
@@ -2776,7 +2786,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     }
     try
     {
-        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
+        queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -2985,7 +2995,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// (OPTIMIZE queries) can assign new merges.
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
 
@@ -3086,7 +3096,7 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 
     try
     {
-        needs_reschedule = queue.tryFinalizeMutations(getZooKeeper());
+        needs_reschedule = queue.tryFinalizeMutations(getZooKeeperAndAssertNotReadonly());
     }
     catch (...)
     {
@@ -4029,7 +4039,8 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
 void StorageReplicatedMergeTree::startup()
 {
-    if (is_readonly)
+    /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
+    if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
         return;
 
     try
@@ -4044,7 +4055,10 @@ void StorageReplicatedMergeTree::startup()
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread finishing initialization
+        /// Wait while restarting_thread finishing initialization.
+        /// NOTE It does not mean that replication is actually started after receiving this event.
+        /// It only means that an attempt to startup replication was made.
+        /// Table may be still in readonly mode if this attempt failed for any reason.
         startup_event.wait();
 
         startBackgroundMovesIfNeeded();
@@ -4334,7 +4348,7 @@ bool StorageReplicatedMergeTree::optimize(
         return false;
     };
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeperAndAssertNotReadonly();
     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -4478,7 +4492,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto alter_lock_holder = lockForAlter(getSettings()->lock_acquire_timeout_for_background_operations);
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry);
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry, getInMemoryMetadataPtr()->getColumns(), getContext());
         setTableStructure(std::move(columns_from_entry), metadata_diff);
         metadata_version = entry.alter_version;
 
@@ -4553,7 +4567,7 @@ void StorageReplicatedMergeTree::alter(
         return queryToString(query);
     };
 
-    const auto zookeeper = getZooKeeper();
+    const auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
@@ -4857,7 +4871,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     LOG_INFO(log, "Created ZK nodes for table");
 
-    is_readonly = false;
     has_metadata_in_zookeeper = true;
 
     if (is_first_replica)
@@ -4875,7 +4888,7 @@ void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
     if (!is_leader)
         throw Exception("DROP PART cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
     LogEntry entry;
 
     dropPartImpl(zookeeper, part_name, entry, /*detach=*/ false, /*throw_if_noop=*/ false);
@@ -4887,7 +4900,7 @@ void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach,
     if (!is_leader)
         throw Exception("DROP PART cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
     LogEntry entry;
 
     dropPartImpl(zookeeper, part_name, entry, detach, /*throw_if_noop=*/ true);
@@ -4901,7 +4914,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
     if (!is_leader)
         throw Exception("DROP PARTITION cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
     LogEntry entry;
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
@@ -4924,7 +4937,7 @@ void StorageReplicatedMergeTree::truncate(
     if (!is_leader)
         throw Exception("TRUNCATE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
     Strings partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
 
@@ -4948,7 +4961,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     bool attach_part,
     ContextPtr query_context)
 {
-    assertNotReadonly();
+    /// Allow ATTACH PARTITION on readonly replica when restoring it.
+    if (!are_restoring_replica)
+        assertNotReadonly();
 
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, "detached/");
@@ -5870,7 +5885,7 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 {
     assertNotReadonly();
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
     LOG_INFO(log, "Killing mutation {}", mutation_id);
 
@@ -6609,7 +6624,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (zkutil::normalizeZooKeeperPath(zookeeper_path, /* check_starts_with_slash */ true) == zkutil::normalizeZooKeeperPath(to, /* check_starts_with_slash */ true))
         throw Exception("Source and destination are the same", ErrorCodes::BAD_ARGUMENTS);
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
     String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -6795,7 +6810,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     Stopwatch watch;
 
     /// Let's fetch new log entries firstly
-    queue.pullLogsToQueue(getZooKeeper(), {}, ReplicatedMergeTreeQueue::SYNC);
+    queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
 
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
@@ -7537,7 +7552,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     /// TODO(ab): What projections should we add to the empty part? How can we make sure that it
     /// won't block future merges? Perhaps we should also check part emptiness when selecting parts
     /// to merge.
-    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
+    out.finalizePart(new_data_part, sync_on_insert);
 
     try
     {

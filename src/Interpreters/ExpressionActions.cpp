@@ -159,8 +159,8 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty())
         lazy_execution_info.can_be_lazy_executed = false;
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
