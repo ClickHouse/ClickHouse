@@ -25,6 +25,10 @@ TRUNCATE TABLE t_ephemeral_02205_1;
 INSERT INTO t_ephemeral_02205_1 (x, y) VALUES (DEFAULT, 7);
 SELECT * FROM t_ephemeral_02205_1;
 
+# Test ALTER TABLE DELETE
+ALTER TABLE t_ephemeral_02205_1 DELETE WHERE x = 7;
+SELECT * FROM t_ephemeral_02205_1;
+
 TRUNCATE TABLE t_ephemeral_02205_1;
 
 # Test INSERT into column, defaulted to ephemeral, but explicitly provided with value

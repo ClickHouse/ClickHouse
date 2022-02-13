@@ -94,7 +94,7 @@ public:
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
-    NamesAndTypesList getInsertable() const;
+    NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.

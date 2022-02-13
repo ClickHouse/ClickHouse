@@ -461,7 +461,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && col.default_desc.kind != ColumnDefaultKind::Ephemeral)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -470,7 +470,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 {
     Names ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && col.default_desc.kind != ColumnDefaultKind::Ephemeral)
             ret.emplace_back(col.name);
     return ret;
 }
@@ -501,7 +501,8 @@ NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetFlags flags, const S
 std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
+    if (it == columns.get<1>().end() ||
+            it->default_desc.kind == ColumnDefaultKind::Alias || it->default_desc.kind == ColumnDefaultKind::Ephemeral)
         return {};
 
     return NameAndTypePair(it->name, it->type);
@@ -520,7 +521,8 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
+    return it != columns.get<1>().end() &&
+        it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
 }
 
 bool ColumnsDescription::hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const
