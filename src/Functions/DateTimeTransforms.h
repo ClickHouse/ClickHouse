@@ -311,6 +311,121 @@ struct ToStartOfSecondImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfMillisecondImpl
+{
+    static constexpr auto name = "toStartOfMillisecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // given that scale is 6, scale_multiplier is 1000000
+        // for DateTime64 value of 123.456789:
+        // 123456789 - 789 = 123456000
+        // for DateTime64 value of -123.456789:
+        // -123456789 - (1000 + (-789)) = -123457000
+
+        if (scale_multiplier <= 1000){
+            return datetime64 * (1000 / scale_multiplier);
+        }
+        else
+        {
+        auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
+
+        if (droppable_part_with_sign < 0)
+            droppable_part_with_sign += scale_multiplier;
+
+        return datetime64 - droppable_part_with_sign;
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfMicrosecondImpl
+{
+    static constexpr auto name = "toStartOfMicrosecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // @see ToStartOfMillisecondImpl
+
+        if (scale_multiplier <= 1000000){
+            return datetime64 * (1000000 / scale_multiplier);
+        }
+        else
+        {
+            auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
+
+            if (droppable_part_with_sign < 0)
+                droppable_part_with_sign += scale_multiplier;
+
+            return datetime64 - droppable_part_with_sign;
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfNanosecondImpl
+{
+    static constexpr auto name = "toStartOfNanosecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // @see ToStartOfMillisecondImpl
+        if (scale_multiplier == 1000000000){
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000000000){
+            return datetime64 * (1000000000 / scale_multiplier);
+        }
+        else
+        {
+            throw Exception("Illegal type of argument for function " + std::string(name) + ", DateTime64 expected", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToStartOfFiveMinuteImpl
 {
     static constexpr auto name = "toStartOfFiveMinute";

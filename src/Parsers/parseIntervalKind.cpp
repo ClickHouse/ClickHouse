@@ -10,7 +10,7 @@ bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IntervalKind & r
     if (ParserKeyword("NANOSECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_NANOSECOND").ignore(pos, expected)
         || ParserKeyword("NS").ignore(pos, expected))
     {
-        result = IntervalKind::Microsecond;
+        result = IntervalKind::Nanosecond;
         return true;
     }
 
