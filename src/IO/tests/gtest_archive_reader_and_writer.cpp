@@ -328,14 +328,16 @@ TEST_P(ArchiveReaderAndWriterTest, ArchiveNotExist)
 }
 
 
+#if USE_MINIZIP
+
 namespace
 {
     const char * supported_archive_file_exts[] =
     {
-#if USE_MINIZIP
         ".zip",
-#endif
     };
 }
 
 INSTANTIATE_TEST_SUITE_P(All, ArchiveReaderAndWriterTest, ::testing::ValuesIn(supported_archive_file_exts));
+
+#endif
