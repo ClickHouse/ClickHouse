@@ -827,6 +827,9 @@ CompiledSortDescriptionFunction compileSortDescription(
 
             auto * column_native_type_nullable = toNativeType(b, column_type);
             auto * column_native_type = toNativeType(b, removeNullable(column_type));
+            if (!column_native_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No native type for column type {}", column_type->getName());
+
             auto * column_native_type_pointer = column_native_type->getPointerTo();
             bool column_type_is_nullable = column_type->isNullable();
 
