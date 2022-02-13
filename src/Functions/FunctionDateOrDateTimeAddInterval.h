@@ -37,29 +37,27 @@ namespace ErrorCodes
 ///  - 'AddSecondsImpl::execute(UInt32, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(DateTime, ...) -> DateTime'
 ///  - 'AddSecondsImpl::execute(UInt16, ...) -> UInt32' is available to the ClickHouse users as 'addSeconds(Date, ...) -> DateTime'
 
-//TODO: fix wrong results when source DateTime64 precision is less then result
 struct AddNanosecondsImpl
 {
     static constexpr auto name = "addNanoseconds";
 
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
     {
-        Int64 multiplier = std::pow(10, 9 - scale);
-        auto div_result = std::div(t.fractional * multiplier + delta, static_cast<Int64>(10e9));
-        return {t.whole / multiplier + div_result.quot, div_result.rem};
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
+        auto division = std::div(t.fractional * multiplier + delta, static_cast<Int64>(1000000000));
+        return {t.whole * multiplier + division.quot, t.fractional * multiplier + delta};
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64, const DateLUTImpl &, UInt16 = DataTypeDateTime64::default_scale)
     {
         return t;
     }
-    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = DataTypeDateTime64::default_scale)
     {
-        // use default datetime64 scale
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+        return time_zone.fromDayNum(ExtendedDayNum(d)) * DecimalUtils::scaleMultiplier<DateTime64>(scale) + delta;
     }
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = DataTypeDateTime64::default_scale)
     {
         return time_zone.fromDayNum(DayNum(d)) + delta;
     }
@@ -72,14 +70,14 @@ struct AddMicrosecondsImpl
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
     {
-        Int64 multiplier = std::pow(10, std::abs(6 - scale));
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
         if (scale <= 6)
         {
-            return {t.whole * multiplier + (t.fractional * multiplier + delta) / static_cast<Int64>(10e6 / multiplier),
-                    (t.fractional * multiplier + delta) % static_cast<Int64>(10e6 / multiplier)};
+            auto division = std::div( (t.fractional + delta), static_cast<Int64>(10e6));
+            return {t.whole * multiplier + division.quot, division.rem};
         } else {
-            return {t.whole + (t.fractional + delta * multiplier) / static_cast<Int64>(10e6 / multiplier),
-                    (t.fractional + delta * multiplier) % static_cast<Int64>(10e6 / multiplier)};
+            auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(10e6 * multiplier));
+            return {t.whole + division.quot, division.rem};
         }
     }
 
@@ -105,14 +103,14 @@ struct AddMillisecondsImpl
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &, UInt16 scale = DataTypeDateTime64::default_scale)
     {
-        Int64 multiplier = std::pow(10, std::abs(3 - scale));
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
         if (scale <= 3)
         {
-            return {t.whole * multiplier + (t.fractional * multiplier + delta) / static_cast<Int64>(1000 / multiplier),
-                    (t.fractional * multiplier + delta) % static_cast<Int64>(1000 / multiplier)};
+            auto division = std::div( (t.fractional + delta), static_cast<Int64>(1000));
+            return {t.whole * multiplier + division.quot, division.rem};
         } else {
-            return {t.whole + (t.fractional + delta * multiplier) / static_cast<Int64>(1000 / multiplier),
-                    (t.fractional + delta * multiplier) % static_cast<Int64>(1000 / multiplier)};
+            auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(1000 * multiplier));
+            return {t.whole + division.quot,division.rem};
         }
     }
 
@@ -428,7 +426,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale = 0)
+    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale = DataTypeDateTime64::default_scale)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -610,6 +608,8 @@ public:
                     scale = 9;
                 else if (std::is_same_v<Transform, AddMicrosecondsImpl>)
                     scale = 6;
+                else if (std::is_same_v<Transform, AddMillisecondsImpl>)
+                    scale = 3;
 
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
