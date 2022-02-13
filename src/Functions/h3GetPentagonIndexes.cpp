@@ -72,6 +72,7 @@ public:
 
         auto current_offset = 0;
         std::vector<H3Index> hindex_vec;
+        result_data.reserve(input_rows_count);
 
 
         for (size_t row = 0; row < input_rows_count; ++row)
