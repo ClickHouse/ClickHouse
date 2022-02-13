@@ -600,7 +600,7 @@ struct ImplBLAKE3
 
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {   
-        #if USE_SANITIZER
+        #if defined(MEMORY_SANITIZER)
             auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
         #else
             auto err_msg = blake3_apply_shim(begin, size, out_char_data);
