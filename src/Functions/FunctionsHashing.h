@@ -599,8 +599,12 @@ struct ImplBLAKE3
     //static inline Hasher_shim blake3_hasher = new_hasher();
 
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
-    {
-        auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+    {   
+        #if USE_SANITIZER
+            auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+        #else
+            auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+        #endif
         if (err_msg != nullptr)
         {
             throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
