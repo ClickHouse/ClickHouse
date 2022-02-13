@@ -1,5 +1,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
+#include <Common/ArenaUtils.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
