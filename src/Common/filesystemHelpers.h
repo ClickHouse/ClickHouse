@@ -18,6 +18,27 @@ using TemporaryFile = Poco::TemporaryFile;
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+String getBlockDeviceId(const String & path);
+
+enum class BlockDeviceType {
+    UNKNOWN = 0,
+    NONROT = 1,
+    ROT = 2
+};
+
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+BlockDeviceType getBlockDeviceType(const String & deviceId);
+
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+UInt64 getBlockDeviceReadAheadBytes(const String & deviceId);
+
 /// Returns mount point of filesystem where absolute_path (must exist) is located
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 

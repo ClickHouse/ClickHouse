@@ -4,6 +4,8 @@
 #if defined(__linux__)
 #    include <cstdio>
 #    include <mntent.h>
+#    include <sys/stat.h>
+#    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
 #include <Poco/Version.h>
@@ -13,6 +15,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <utime.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace fs = std::filesystem;
 
@@ -24,6 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_STAT;
     extern const int CANNOT_STATVFS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_CREATE_FILE;
@@ -57,6 +63,62 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
     return std::make_unique<TemporaryFile>(path);
 }
 
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+String getBlockDeviceId(const String & path)
+{
+#if defined(__linux__)
+    struct stat sb;
+    if (lstat(path.c_str(), &sb))
+        throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
+    WriteBufferFromOwnString ss;
+    ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
+    return ss.str();
+#else
+    throw DB::Exception("The function getDeviceId is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+}
+
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+BlockDeviceType getBlockDeviceType(const String & deviceId)
+{
+#if defined(__linux__)
+    try {
+        ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/rotational");
+        int rotational;
+        readText(rotational, in);
+        return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
+    } catch (...) {
+        return BlockDeviceType::UNKNOWN;
+    }
+#else
+    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+}
+
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+UInt64 getBlockDeviceReadAheadBytes(const String & deviceId)
+{
+#if defined(__linux__)
+    try {
+        ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/read_ahead_kb");
+        int read_ahead_kb;
+        readText(read_ahead_kb, in);
+        return read_ahead_kb * 1024;
+    } catch (...) {
+        return static_cast<UInt64>(-1);
+    }
+#else
+    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+}
+
+/// Returns name of filesystem mounted to mount_point
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 {
     if (absolute_path.is_relative())
