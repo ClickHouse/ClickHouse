@@ -24,7 +24,7 @@ using FunctionToStartOfNanosecond = FunctionDateOrDateTimeToSomething<DataTypeDa
 
 void registerFunctionToStartOfNanosecond(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionToStartOfMillisecond>();
+    factory.registerFunction<FunctionToStartOfNanosecond>();
 }
 
 }
