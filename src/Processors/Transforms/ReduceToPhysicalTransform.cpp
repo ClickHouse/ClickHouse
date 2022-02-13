@@ -8,8 +8,8 @@ Block ReduceToPhysicalTransform::transformToPhysicalBlock(const Block & header, 
 {
     Block out = header.cloneWithoutColumns();
 
-    for(const auto & column : columns.getEphemeral())
-        if(out.has(column.name))
+    for (const auto & column : columns.getEphemeral())
+        if (out.has(column.name))
             out.erase(column.name);
 
     return out;
@@ -19,8 +19,8 @@ ReduceToPhysicalTransform::ReduceToPhysicalTransform(const Block & input_header,
         ISimpleTransform(input_header, transformToPhysicalBlock(input_header, columns), false)
 {
     /// Find non-physical columns in input_header
-    for(const auto & column : columns.getEphemeral())
-        if(input_header.has(column.name))
+    for (const auto & column : columns.getEphemeral())
+        if (input_header.has(column.name))
             index.push_back(input_header.getPositionByName(column.name));
 
     std::sort(index.begin(), index.end(), std::greater());
@@ -28,7 +28,7 @@ ReduceToPhysicalTransform::ReduceToPhysicalTransform(const Block & input_header,
 
 void ReduceToPhysicalTransform::transform(Chunk & chunk)
 {
-    for(size_t i : index)
+    for (size_t i : index)
         chunk.erase(i);
 }
 
