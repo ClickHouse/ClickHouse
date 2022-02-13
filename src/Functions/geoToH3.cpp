@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -68,9 +69,35 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lon = arguments[0].column.get();
-        const auto * col_lat = arguments[1].column.get();
-        const auto * col_res = arguments[2].column.get();
+        const auto * col_lon = checkAndGetColumn<ColumnFloat64>(arguments[0].column.get());
+        if (!col_lon)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
+                    arguments[0].type->getName(),
+                    1,
+                    getName());
+        const auto & data_lon = col_lon->getData();
+
+        const auto * col_lat = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
+        if (!col_lat)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
+                    arguments[1].type->getName(),
+                    2,
+                    getName());
+        const auto & data_lat = col_lat->getData();
+
+        const auto * col_res = checkAndGetColumn<ColumnUInt8>(arguments[2].column.get());
+        if (!col_res)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be UInt8.",
+                    arguments[2].type->getName(),
+                    3,
+                    getName());
+        const auto & data_res = col_res->getData();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -78,9 +105,9 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const double lon = col_lon->getFloat64(row);
-            const double lat = col_lat->getFloat64(row);
-            const UInt8 res = col_res->getUInt(row);
+            const double lon = data_lon[row];
+            const double lat = data_lat[row];
+            const UInt8 res = data_res[row];
 
             LatLng coord;
             coord.lng = degsToRads(lon);
