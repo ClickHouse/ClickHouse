@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
+#include <constants.h>
 #include <h3api.h>
 
 
@@ -108,6 +109,14 @@ public:
             const double lon = data_lon[row];
             const double lat = data_lat[row];
             const UInt8 res = data_res[row];
+
+            if (res > MAX_H3_RES)
+                throw Exception(
+                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                        toString(res),
+                        getName(),
+                        MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);
