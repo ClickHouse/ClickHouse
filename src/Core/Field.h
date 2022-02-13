@@ -392,7 +392,7 @@ public:
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
 
-    ~Field()
+    ALWAYS_INLINE ~Field()
     {
         destroy();
     }
