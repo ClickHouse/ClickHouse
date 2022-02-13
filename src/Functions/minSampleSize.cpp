@@ -2,9 +2,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/castTypeToEither.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/typeid_cast.h>
+#include <Interpreters/castColumn.h>
 #include <boost/math/distributions/normal.hpp>
 #include <cmath>
 #include <cfloat>
@@ -64,15 +68,7 @@ namespace DB
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            for (const auto & arg : arguments)
-            {
-                if (!isFloat(arg))
-                {
-                    throw Exception("Arguments of function " + getName() + " must be floats", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                }
-
-            }
-
+            Impl::validateArguments(arguments);
             return getReturnType();
         }
 
@@ -89,20 +85,117 @@ namespace DB
     }
 
 
+    enum class OpCase { Vector, ConstBaseline, ConstSigma, ConstBoth };
+
+    template <typename DataType> constexpr bool IsFloatingPoint = false;
+    template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
+    template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+
+
     struct ContinousImpl
     {
         static constexpr auto name = "minSampleSizeContinous";
         static constexpr size_t num_args = 5;
 
-        static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+        static void validateArguments(const DataTypes & arguments)
         {
-            const auto converted_type = std::make_shared<DataTypeFloat64>();
+            for (size_t i = 0; i < 1; ++i)
+            {
+                if (!isNativeNumber(arguments[i]))
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a native number.", i + 1, name);
+                }
+            }
 
-            const ColumnFloat64 * col_baseline = typeid_cast<const ColumnFloat64 *>(arguments[0].column.get());
-            const ColumnFloat64 * col_sigma = typeid_cast<const ColumnFloat64 *>(arguments[1].column.get());
-            const ColumnFloat64 * col_mde = typeid_cast<const ColumnFloat64 *>(arguments[2].column.get());
-            const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
-            const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[4].column.get());
+            for (size_t i = 2; i < arguments.size(); ++i)
+            {
+                if (!isFloat(arguments[i]))
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a float.", i + 1, name);
+                }
+            }
+        }
+
+        static bool castType(const IDataType * type, auto && f)
+        {
+            using Types = TypeList<
+                DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+                DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
+
+            using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+
+            using ValidTypes = TypeListConcat<Types, Floats>;
+
+            return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
+        }
+
+        template <typename F>
+        static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+        {
+            return castType(left, [&](const auto & left_)
+            {
+                return castType(right, [&](const auto & right_)
+                {
+                    return f(left_, right_);
+                });
+            });
+        }
+
+        template <typename A, typename B>
+        static ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const size_t input_rows_count)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ColVecT0 = ColumnVector<T0>;
+            using ColVecT1 = ColumnVector<T1>;
+
+            ColumnPtr left_col = nullptr;
+            ColumnPtr right_col = nullptr;
+
+            left_col = arguments[0].column;
+            right_col = arguments[1].column;
+
+            const auto * const col_left_raw = left_col.get();
+            const auto * const col_right_raw = right_col.get();
+            const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
+            const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
+            const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
+            const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
+
+            if (col_left && col_right)
+            {
+                return process<OpCase::Vector>(arguments, col_left->getData().data(), col_right->getData().data(), input_rows_count);
+            }
+            else if (col_left_const && col_right_const)
+            {
+                const T0 left_value = col_left_const->template getValue<T0>();
+                const T1 right_value = col_left_const->template getValue<T1>();
+                return process<OpCase::ConstBoth>(arguments, &left_value, &right_value, input_rows_count);
+            }
+            else if (col_left_const && col_right)
+            {
+                const T0 value = col_left_const->template getValue<T0>();
+                return process<OpCase::ConstBaseline>(arguments, &value, col_right->getData().data(), input_rows_count);
+            }
+            else if (col_left && col_right_const)
+            {
+                const T1 value = col_right_const->template getValue<T1>();
+                return process<OpCase::ConstSigma>(arguments, col_left->getData().data(), &value, input_rows_count);
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+
+        template <OpCase op_case, typename T0, typename T1>
+        static ColumnPtr process(const ColumnsWithTypeAndName & arguments, const T0 * col_baseline, const T1 * col_sigma, const size_t input_rows_count)
+        {
+            const IColumn & col_mde = *arguments[2].column;
+            const IColumn & col_power = *arguments[3].column;
+            const IColumn & col_alpha = *arguments[4].column;
 
             auto res_min_sample_size = ColumnFloat64::create();
             auto & data_min_sample_size = res_min_sample_size->getData();
@@ -119,15 +212,36 @@ namespace DB
             for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
                 /// Mean of control-metric
-                Float64 baseline = col_baseline->getFloat64(row_num);
+                Float64 baseline;
                 /// Standard deviation of conrol-metric
-                Float64 sigma = col_sigma->getFloat64(row_num);
+                Float64 sigma;
                 /// Minimal Detectable Effect
-                Float64 mde = col_mde->getFloat64(row_num);
+                Float64 mde = col_mde.getFloat64(row_num);
                 /// Sufficient statistical power to detect a treatment effect
-                Float64 power = col_power->getFloat64(row_num);
+                Float64 power = col_power.getFloat64(row_num);
                 /// Significance level
-                Float64 alpha = col_alpha->getFloat64(row_num);
+                Float64 alpha = col_alpha.getFloat64(row_num);
+
+                if constexpr (op_case == OpCase::ConstBaseline)
+                {
+                    baseline = static_cast<Float64>(col_baseline[0]);
+                    sigma = static_cast<Float64>(col_sigma[row_num]);
+                }
+                else if constexpr (op_case == OpCase::ConstSigma)
+                {
+                    baseline = static_cast<Float64>(col_baseline[row_num]);
+                    sigma = static_cast<Float64>(col_sigma[0]);
+                }
+                else if constexpr (op_case == OpCase::Vector)
+                {
+                    baseline = static_cast<Float64>(col_baseline[row_num]);
+                    sigma = static_cast<Float64>(col_sigma[row_num]);
+                }
+                else if constexpr (op_case == OpCase::ConstBoth)
+                {
+                    baseline = static_cast<Float64>(col_baseline[0]);
+                    sigma = static_cast<Float64>(col_sigma[0]);
+                }
 
                 if (!std::isfinite(baseline) || !std::isfinite(sigma) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
                 {
@@ -150,6 +264,25 @@ namespace DB
 
             return ColumnTuple::create(Columns{std::move(res_min_sample_size), std::move(res_detect_lower), std::move(res_detect_upper)});
         }
+
+        static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+        {
+            const auto & arg_baseline = arguments[0];
+            const auto & arg_sigma = arguments[1];
+            ColumnPtr res;
+
+            const bool valid = castBothTypes(arg_baseline.type.get(), arg_sigma.type.get(), [&](const auto & left, const auto & right)
+            {
+                return (res = executeNumeric(arguments, left, right, input_rows_count)) != nullptr;
+            });
+
+            if (!valid)
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of '{}' have unsupported data types: '{}' of type '{}', '{}' of type '{}'", name,
+                        arg_baseline.name, arg_baseline.type->getName(), arg_sigma.name, arg_sigma.type->getName());
+            }
+            return res;
+        }
     };
 
 
@@ -158,12 +291,23 @@ namespace DB
         static constexpr auto name = "minSampleSizeConversion";
         static constexpr size_t num_args = 4;
 
+        static void validateArguments(const DataTypes & arguments)
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (!isFloat(arguments[i]))
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a float.", i + 1, name);
+                }
+            }
+        }
+
         static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
         {
-            const ColumnFloat64 * col_p1 = typeid_cast<const ColumnFloat64 *>(arguments[0].column.get());
-            const ColumnFloat64 * col_mde = typeid_cast<const ColumnFloat64 *>(arguments[1].column.get());
-            const ColumnFloat64 * col_power = typeid_cast<const ColumnFloat64 *>(arguments[2].column.get());
-            const ColumnFloat64 * col_alpha = typeid_cast<const ColumnFloat64 *>(arguments[3].column.get());
+            const IColumn & col_p1 = *arguments[0].column;
+            const IColumn & col_mde = *arguments[1].column;
+            const IColumn & col_power = *arguments[2].column;
+            const IColumn & col_alpha = *arguments[3].column;
 
             auto res_min_sample_size = ColumnFloat64::create();
             auto & data_min_sample_size = res_min_sample_size->getData();
@@ -180,13 +324,13 @@ namespace DB
             for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
                 /// Mean of control-metric
-                Float64 p1 = col_p1->getFloat64(row_num);
+                Float64 p1 = col_p1.getFloat64(row_num);
                 /// Minimal Detectable Effect
-                Float64 mde = col_mde->getFloat64(row_num);
+                Float64 mde = col_mde.getFloat64(row_num);
                 /// Sufficient statistical power to detect a treatment effect
-                Float64 power = col_power->getFloat64(row_num);
+                Float64 power = col_power.getFloat64(row_num);
                 /// Significance level
-                Float64 alpha = col_alpha->getFloat64(row_num);
+                Float64 alpha = col_alpha.getFloat64(row_num);
 
                 if (!std::isfinite(p1) || !isBetweenZeroAndOne(mde) || !isBetweenZeroAndOne(power) || !isBetweenZeroAndOne(alpha))
                 {
