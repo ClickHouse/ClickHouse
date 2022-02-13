@@ -235,7 +235,7 @@ class ClickhouseIntegrationTestsRunner:
                 "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
                 "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
                 "clickhouse/integration-test", "clickhouse/kerberos-kdc",
-                "clickhouse/dotnet-client",
+                "clickhouse/kerberized-hadoop", "clickhouse/dotnet-client",
                 "clickhouse/integration-helper", ]
 
 
