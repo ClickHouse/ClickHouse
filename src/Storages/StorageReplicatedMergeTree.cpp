@@ -1290,6 +1290,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         {
             String columns_str;
             String checksums_str;
+
             if (zookeeper->tryGet(fs::path(current_part_path) / "columns", columns_str) &&
                 zookeeper->tryGet(fs::path(current_part_path) / "checksums", checksums_str))
             {
@@ -3786,24 +3787,38 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
         if (source_part)
         {
-            MinimalisticDataPartChecksums source_part_checksums;
-            source_part_checksums.computeTotalChecksums(source_part->checksums);
+            auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
+                source_part->getColumns(), source_part->checksums);
 
-            MinimalisticDataPartChecksums desired_checksums;
             String part_path = fs::path(source_replica_path) / "parts" / part_name;
             String part_znode = zookeeper->get(part_path);
 
+            std::optional<ReplicatedMergeTreePartHeader> desired_part_header;
             if (!part_znode.empty())
-                desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
+            {
+                desired_part_header = ReplicatedMergeTreePartHeader::fromString(part_znode);
+            }
             else
             {
-                String desired_checksums_str = zookeeper->get(fs::path(part_path) / "checksums");
-                desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+                String columns_str;
+                String checksums_str;
+
+                if (zookeeper->tryGet(fs::path(part_path) / "columns", columns_str) &&
+                    zookeeper->tryGet(fs::path(part_path) / "checksums", checksums_str))
+                {
+                    desired_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(columns_str, checksums_str);
+                }
+                else
+                {
+                    LOG_INFO(log, "Not checking checksums of part {} with replica {} because part was removed from ZooKeeper", part_name, source_replica_path);
+                }
             }
 
-            if (source_part_checksums == desired_checksums)
+            if (desired_part_header
+                && source_part_header.getColumnsHash() == desired_part_header->getColumnsHash()
+                && source_part_header.getChecksums() == desired_part_header->getChecksums())
             {
-                LOG_TRACE(log, "Found local part {} with the same checksums as {}", source_part->name, part_name);
+                LOG_TRACE(log, "Found local part {} with the same checksums and columns hash as {}", source_part->name, part_name);
                 part_to_clone = source_part;
             }
         }
