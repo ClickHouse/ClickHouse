@@ -7,8 +7,6 @@
 #include <random>
 #include <utility>
 
-#include <boost/algorithm/string.hpp>
-
 #include <base/scope_guard_safe.h>
 #include <base/unit.h>
 #include <base/FnTraits.h>
@@ -16,10 +14,8 @@
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <Common/thread_local_rng.h>
 #include <Common/getRandomASCIIString.h>
 
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -32,7 +28,6 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
@@ -247,8 +242,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto settings = current_settings.get();
     auto metadata = readOrCreateMetaForWriting(path, mode);
 
-    /// Path to store new S3 object.
-    auto s3_path = getRandomASCIIString();
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    auto s3_path = fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size), getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 
     std::optional<ObjectMetadata> object_metadata;
     if (settings->send_metadata)
