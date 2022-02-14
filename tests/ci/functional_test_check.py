@@ -31,7 +31,7 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_POLYMORPHIC_PARTS=1")
 
     #temporary
-    if 'Stateless' in check_name:
+    if 's3 storage' in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     if run_by_hash_total != 0:
