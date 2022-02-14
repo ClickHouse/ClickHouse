@@ -120,6 +120,19 @@ enum class DefaultDatabaseEngine
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
 
+enum class DefaultTableEngine
+{
+    None = 0, /// Disable. Need to use ENGINE =
+    Log,
+    StripeLog,
+    MergeTree,
+    ReplacingMergeTree,
+    ReplicatedMergeTree,
+    ReplicatedReplacingMergeTree,
+    Memory,
+};
+
+DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class MySQLDataTypesSupport
 {
@@ -171,5 +184,7 @@ DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
 }

@@ -108,7 +108,13 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
 
 ```bash
-clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as argument:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
 ## Four Letter Word Commands {#four-letter-word-commands}

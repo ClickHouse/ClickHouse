@@ -120,7 +120,7 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 Get the first available contact method for the customer from the contact list:
 
 ``` sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
+SELECT name, coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 ```
 
 ``` text

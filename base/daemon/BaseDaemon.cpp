@@ -79,17 +79,13 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
-static constexpr size_t max_query_id_size = 127;
-
 static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
-    + sizeof(ucontext_t)
+    + sizeof(ucontext_t*)
     + sizeof(StackTrace)
     + sizeof(UInt32)
-    + max_query_id_size + 1    /// query_id + varint encoded length
     + sizeof(void*);
-
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -129,18 +125,14 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
-    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    const StackTrace stack_trace(signal_context);
-
-    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
-    query_id.size = std::min(query_id.size, max_query_id_size);
+    const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
+    const StackTrace stack_trace(*signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
-    DB::writeStringBinary(query_id, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
@@ -184,6 +176,8 @@ public:
 
     void run() override
     {
+        static_assert(PIPE_BUF >= 512);
+        static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
         char buf[signal_pipe_buf_size];
         DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
@@ -227,10 +221,9 @@ public:
             else
             {
                 siginfo_t info{};
-                ucontext_t context{};
+                ucontext_t * context{};
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num{};
-                std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
                 if (sig != SanitizerTrap)
@@ -241,12 +234,11 @@ public:
 
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
-                DB::readBinary(query_id, in);
                 DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, thread_ptr); }).detach();
             }
         }
     }
@@ -279,18 +271,27 @@ private:
     void onFault(
         int sig,
         const siginfo_t & info,
-        const ucontext_t & context,
+        ucontext_t * context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
-        const std::string & query_id,
         DB::ThreadStatus * thread_ptr) const
     {
         DB::ThreadStatus thread_status;
+
+        String query_id;
+        String query;
 
         /// Send logs from this thread to client if possible.
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
+            query_id = thread_ptr->getQueryId().toString();
+
+            if (auto thread_group = thread_ptr->getThreadGroup())
+            {
+                query = thread_group->query;
+            }
+
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
@@ -305,19 +306,19 @@ private:
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, strsignal(sig), sig);
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
 
         if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, context);
+            error_message = signalToErrorMessage(sig, info, *context);
         else
             error_message = "Sanitizer trap.";
 
-        LOG_FATAL(log, error_message);
+        LOG_FATAL(log, fmt::runtime(error_message));
 
         if (stack_trace.getSize())
         {
@@ -330,11 +331,11 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
-            LOG_FATAL(log, bare_stacktrace.str());
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -389,20 +390,16 @@ static void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    StringRef query_id = DB::CurrentThread::getQueryId();
-    query_id.size = std::min(query_id.size, max_query_id_size);
-
     int sig = SignalListener::SanitizerTrap;
     DB::writeBinary(sig, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
-    DB::writeStringBinary(query_id, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
     /// The time that is usually enough for separate thread to print info into log.
-    sleepForSeconds(10);
+    sleepForSeconds(20);
 }
 #endif
 

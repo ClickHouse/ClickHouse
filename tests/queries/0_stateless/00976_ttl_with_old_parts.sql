@@ -13,6 +13,6 @@ alter table ttl modify ttl d + interval 1 day;
 select sleep(1) format Null; -- wait if very fast merge happen
 optimize table ttl partition 10 final;
 
-select * from ttl order by d;
+select * from ttl order by d, a;
 
 drop table if exists ttl;
