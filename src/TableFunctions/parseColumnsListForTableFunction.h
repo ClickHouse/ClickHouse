@@ -12,4 +12,6 @@ class Context;
 /// Parses a common argument for table functions such as table structure given in string
 ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextPtr context);
 
+bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, ContextPtr context);
+
 }

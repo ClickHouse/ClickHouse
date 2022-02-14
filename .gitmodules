@@ -259,3 +259,6 @@
 [submodule "contrib/azure"]
 	path = contrib/azure
 	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git
+[submodule "contrib/minizip-ng"]
+	path = contrib/minizip-ng
+	url = https://github.com/zlib-ng/minizip-ng
