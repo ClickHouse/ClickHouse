@@ -26,6 +26,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -440,7 +441,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto txn = context->getCurrentTransaction())
         {
             assert(txn->getState() != MergeTreeTransaction::COMMITTED);
-            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>())
+            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
                 throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
         }
 

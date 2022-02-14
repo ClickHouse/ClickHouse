@@ -145,11 +145,9 @@ bool VersionMetadata::isMaxTIDLocked() const
 
 void VersionMetadata::setCreationTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    /// TODO Transactions: initialize it in constructor on part creation and remove this method
-    /// FIXME ReplicatedMergeTreeBlockOutputStream may add one part multiple times
+    /// NOTE ReplicatedMergeTreeBlockOutputStream may add one part multiple times
     assert(creation_tid.isEmpty() || creation_tid == tid);
-    const_cast<TransactionID &>(creation_tid) = tid;
-
+    creation_tid = tid;
     tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, context);
 }
 

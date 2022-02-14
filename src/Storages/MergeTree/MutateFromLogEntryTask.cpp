@@ -63,7 +63,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);   //FIXME
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);
 
     future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
     future_mutated_part->name = entry.new_part_name;
@@ -108,7 +108,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 {
     new_part = mutate_task->getFuture().get();
 
-    //FIXME
     storage.renameTempPartAndReplace(new_part, nullptr, nullptr, transaction_ptr.get());
 
     try

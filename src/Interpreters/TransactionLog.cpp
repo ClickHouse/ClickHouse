@@ -277,7 +277,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
     }
     else
     {
-        LOG_TEST(log, "Committing transaction {}{}", txn->tid, txn->dumpDescription());
+        LOG_TEST(log, "Committing transaction {}", txn->dumpDescription());
         /// TODO handle connection loss
         /// TODO support batching
         auto current_zookeeper = getZooKeeper();

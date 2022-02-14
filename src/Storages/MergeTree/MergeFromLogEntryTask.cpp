@@ -193,7 +193,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
         settings.memory_profiler_sample_probability,
         settings.max_untracked_memory);
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);   //FIXME
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -230,7 +230,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// Task is not needed
     merge_task.reset();
 
-    //FIXME
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, nullptr, transaction_ptr.get());
 
     try

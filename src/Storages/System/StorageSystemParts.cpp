@@ -84,10 +84,10 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
         {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"creation_tid",                                      getTransactionIDDataType()},
-        {"removal_tid",                                      getTransactionIDDataType()},
-        {"creation_csn",                                      std::make_shared<DataTypeUInt64>()},
-        {"removal_csn",                                      std::make_shared<DataTypeUInt64>()},
+        {"creation_tid",                                getTransactionIDDataType()},
+        {"removal_tid",                                 getTransactionIDDataType()},
+        {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
+        {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
     }
     )
 {
