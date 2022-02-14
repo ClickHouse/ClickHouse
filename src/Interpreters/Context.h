@@ -32,6 +32,7 @@
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
 
+struct OvercommitTracker;
 
 namespace DB
 {
@@ -668,6 +669,8 @@ public:
     /// List all queries.
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
+
+    OvercommitTracker * getGlobalOvercommitTracker() const;
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;

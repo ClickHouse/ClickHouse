@@ -199,18 +199,27 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
+
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
-    if (path.find_first_of("*?{") == std::string::npos)
+
+    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    {
+        paths.push_back(path);
+    }
+    else if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
         if (fs::exists(path))
             total_bytes_to_read += fs::file_size(path, error);
+
         paths.push_back(path);
     }
     else
+    {
         paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
+    }
 
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
@@ -313,7 +322,11 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     is_db_table = false;
     paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     is_path_with_globs = paths.size() > 1;
-    path_for_partitioned_write = table_path_;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_path_;
+
     setStorageMetadata(args);
 }
 
@@ -853,6 +866,7 @@ SinkToStoragePtr StorageFile::write(
     {
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
+
         fs::create_directories(fs::path(path_for_partitioned_write).parent_path());
 
         return std::make_shared<PartitionedStorageFileSink>(

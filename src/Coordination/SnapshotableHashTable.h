@@ -2,6 +2,7 @@
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <unordered_map>
 #include <list>
 #include <atomic>
@@ -115,17 +116,6 @@ private:
         }
     }
 
-    StringRef copyStringInArena(const std::string & value_to_copy)
-    {
-        size_t value_to_copy_size = value_to_copy.size();
-        char * place_for_key = arena.alloc(value_to_copy_size);
-        memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(value_to_copy.data()), value_to_copy_size);
-        StringRef updated_value{place_for_key, value_to_copy_size};
-
-        return updated_value;
-    }
-
-
 public:
 
     using iterator = typename List::iterator;
@@ -139,7 +129,7 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{copyStringInArena(arena, key), value, true};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -161,7 +151,7 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{copyStringInArena(arena, key), value, true};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
