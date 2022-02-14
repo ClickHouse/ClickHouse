@@ -7168,7 +7168,31 @@ void StorageReplicatedMergeTree::createTableSharedID()
 }
 
 
-void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part) const
+void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const
+{
+    if (!disk || !disk->supportZeroCopyReplication())
+        return;
+
+    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
+    if (!zookeeper)
+        return;
+
+    String id = part_id;
+    boost::replace_all(id, "/", "_");
+
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
+        part_name, zookeeper_path);
+
+    for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
+    {
+        String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+
+        LOG_TRACE(log, "Set zookeeper temporary ephemeral lock {}", zookeeper_node);
+        createZeroCopyLockNode(zookeeper, zookeeper_node, zkutil::CreateMode::Ephemeral, false);
+    }
+}
+
+void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock) const
 {
     if (!part.volume || !part.isStoredOnDisk())
         return;
@@ -7190,8 +7214,9 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
 
-        LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
-        createZeroCopyLockNode(zookeeper, zookeeper_node);
+        LOG_TRACE(log, "Set zookeeper persistent lock {}", zookeeper_node);
+
+        createZeroCopyLockNode(zookeeper, zookeeper_node, zkutil::CreateMode::Persistent, replace_existing_lock);
     }
 }
 
@@ -7677,7 +7702,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node)
+void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
@@ -7687,8 +7712,22 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
         try
         {
             zookeeper->createAncestors(zookeeper_node);
-            zookeeper->createIfNotExists(zookeeper_node, "lock");
-            break;
+            if (replace_existing && zookeeper->exists(zookeeper_node))
+            {
+                Coordination::Requests ops;
+                ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_node, -1));
+                ops.emplace_back(zkutil::makeCreateRequest(zookeeper_node, "", mode));
+                Coordination::Responses responses;
+                auto error = zookeeper->tryMulti(ops, responses);
+                if (error == Coordination::Error::ZOK)
+                    break;
+            }
+            else
+            {
+                auto error = zookeeper->tryCreate(zookeeper_node, "", mode);
+                if (error == Coordination::Error::ZOK || error == Coordination::Error::ZNODEEXISTS)
+                    break;
+            }
         }
         catch (const zkutil::KeeperException & e)
         {
