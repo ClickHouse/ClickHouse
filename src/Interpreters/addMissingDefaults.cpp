@@ -86,6 +86,7 @@ ActionsDAGPtr addMissingDefaults(
 
     /// Removes unused columns and reorders result.
     actions->removeUnusedActions(required_columns.getNames(), false);
+    actions->addMaterializingOutputActions();
 
     return actions;
 }
