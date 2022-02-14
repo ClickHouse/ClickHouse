@@ -11,7 +11,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree OR
 
 cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames FORMAT JSONAsObject" --input_format_parallel_parsing 0
 
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM nbagames"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM nbagames WHERE NOT ignore(*)"
 ${CLICKHOUSE_CLIENT} -q "DESC nbagames SETTINGS describe_extend_object_types = 1"
 
 ${CLICKHOUSE_CLIENT} -q  \
