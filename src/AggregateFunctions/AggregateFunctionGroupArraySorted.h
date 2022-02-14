@@ -35,8 +35,9 @@ inline TColumn readItem(const IColumn * column, Arena * arena, size_t row)
     }
 }
 
-template <typename TColumn>
-size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, size_t * results, const UInt8 * filter = nullptr)
+template <typename TColumn, typename TFilter = void>
+size_t
+getFirstNElements_low_threshold(const TColumn * data, int num_elements, int threshold, size_t * results, const TFilter * filter = nullptr)
 {
     for (int i = 0; i < threshold; i++)
     {
@@ -49,8 +50,11 @@ size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, 
     int z;
     for (int i = 0; i < num_elements; i++)
     {
-        if (filter && (filter[i] == 0))
-            continue;
+        if constexpr (!std::is_same_v<TFilter, void>)
+        {
+            if (filter[i] == 0)
+                continue;
+        }
 
         //Starting from the highest values and we look for the immediately lower than the given one
         for (cur = current_max; cur > 0; cur--)
@@ -74,6 +78,68 @@ size_t getFirstNElements(const TColumn * data, int num_elements, int threshold, 
     }
 
     return current_max;
+}
+
+template <typename T>
+struct SortableItem
+{
+    T a;
+    size_t b;
+    bool operator<(const SortableItem & other) const { return (this->a < other.a); }
+};
+
+template <typename TColumn, typename TFilter = void>
+size_t getFirstNElements_high_threshold(
+    const TColumn * data, size_t num_elements, size_t threshold, size_t * results, const TFilter * filter = nullptr)
+{
+    std::vector<SortableItem<TColumn>> dataIndexed(num_elements);
+    size_t num_elements_filtered = 0;
+
+    for (size_t i = 0; i < num_elements; i++)
+    {
+        if constexpr (!std::is_same_v<TFilter, void>)
+        {
+            if (filter[i] == 0)
+                continue;
+        }
+
+        dataIndexed.data()[num_elements_filtered].a = data[i];
+        dataIndexed.data()[num_elements_filtered].b = i;
+        num_elements_filtered++;
+    }
+
+    threshold = std::min(num_elements_filtered, threshold);
+
+    std::nth_element(dataIndexed.data(), dataIndexed.data() + threshold, dataIndexed.data() + num_elements_filtered);
+    std::sort(dataIndexed.data(), dataIndexed.data() + threshold);
+
+    for (size_t i = 0; i < threshold; i++)
+    {
+        results[i] = dataIndexed[i].b;
+    }
+
+    return threshold;
+}
+
+static const size_t THRESHOLD_MAX_CUSTOM_FUNCTION = 1000;
+
+template <typename TColumn>
+size_t getFirstNElements(const TColumn * data, size_t num_elements, size_t threshold, size_t * results, const UInt8 * filter = nullptr)
+{
+    if (threshold < THRESHOLD_MAX_CUSTOM_FUNCTION)
+    {
+        if (filter != nullptr)
+            return getFirstNElements_low_threshold(data, num_elements, threshold, results, filter);
+        else
+            return getFirstNElements_low_threshold(data, num_elements, threshold, results);
+    }
+    else
+    {
+        if (filter != nullptr)
+            return getFirstNElements_high_threshold(data, num_elements, threshold, results, filter);
+        else
+            return getFirstNElements_high_threshold(data, num_elements, threshold, results);
+    }
 }
 
 template <typename TColumnA, bool is_plain_a, bool use_column_b, typename TColumnB, bool is_plain_b>
