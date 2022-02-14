@@ -229,7 +229,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         input.setNeeded();
         return Status::NeedData;
     }
-
     if (is_limit_positive)
     {
         if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows
@@ -290,14 +289,12 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
                 MutableColumns res_columns;
                 for (auto j = 0u; j < current_columns.size(); ++j)
                     res_columns.emplace_back(current_columns[j]->cloneEmpty());
-
                 for (auto j = 0u; j < current_columns.size(); ++j)
                 {
                     res_columns[j]->insertRangeFrom(*reverse_chunks[i][j], 0, reverse_chunks_size[i]);
                     res_columns[j]->insertRangeFrom(*whole_columns[j], 0, whole_columns[j]->size());
                 }
                 whole_columns.swap(res_columns);
-
                 /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
                 if (with_ties && reverse_rows_read == offset + limit)
                     previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, 0);
@@ -311,7 +308,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
                 data.current_chunk.setColumns(reverse_chunks[i], inversion_rows);
 
                 splitChunk(data);
-
                 for (auto j = 0u; j < current_columns.size(); ++j)
                 {
                     res_columns[j]->insertRangeFrom(*data.current_chunk.getColumns()[j], 0, data.current_chunk.getNumRows());
