@@ -771,6 +771,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     LOG_DEBUG(log, "Downloading Part {} unique id {} metadata onto disk {}.",
         part_name, part_id, disk->getName());
 
+    data.lockSharedDataTemporary(part_name, part_id, disk);
+
     static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
@@ -835,7 +837,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    new_data_part->storage.lockSharedData(*new_data_part);
+    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true);
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
         part_name, part_id, disk->getName());
