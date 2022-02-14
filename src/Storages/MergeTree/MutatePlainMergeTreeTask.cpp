@@ -57,7 +57,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), fake_query_context, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 bool MutatePlainMergeTreeTask::executeStep()

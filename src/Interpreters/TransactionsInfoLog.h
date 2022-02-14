@@ -51,4 +51,8 @@ class TransactionsInfoLog : public SystemLog<TransactionsInfoLogElement>
     using SystemLog<TransactionsInfoLogElement>::SystemLog;
 };
 
+
+void tryWriteEventToSystemLog(Poco::Logger * log, TransactionsInfoLogElement::Type type,
+                              const TransactionID & tid, const TransactionInfoContext & context);
+
 }

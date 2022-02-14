@@ -113,6 +113,7 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeTransactionPtr & txn,
         const IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -124,6 +125,7 @@ public:
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
+        const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder);
 

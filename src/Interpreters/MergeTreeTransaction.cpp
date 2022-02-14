@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
 
 namespace DB
 {
@@ -33,7 +34,10 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
-    new_part->version.setCreationTID(tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+    /// Now we know actual part name and can write it to system log table.
+    tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+
+    new_part->assertHasVersionMetadata(txn);
     if (txn)
         txn->addNewPart(storage, new_part);
 }
@@ -52,7 +56,9 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
     TransactionInfoContext context{storage->getStorageID(), new_part->name};
-    new_part->version.setCreationTID(tid, context);
+    tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, context);
+    new_part->assertHasVersionMetadata(txn);
+
     if (txn)
         txn->addNewPart(storage, new_part);
 
@@ -94,12 +100,14 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
 {
+    storages.insert(table);
     mutations.emplace_back(table, mutation_id);
 }
 
 bool MergeTreeTransaction::isReadOnly() const
 {
-    return creating_parts.empty() && removing_parts.empty();
+    assert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+    return storages.empty();
 }
 
 void MergeTreeTransaction::beforeCommit()
@@ -169,20 +177,45 @@ void MergeTreeTransaction::onException()
 
 String MergeTreeTransaction::dumpDescription() const
 {
-    String res = "\ncreating parts:\n";
-    for (const auto & part : creating_parts)
+    String res = fmt::format("{} state: {}, snapshot: {}", tid, getState(), snapshot);
+
+    if (isReadOnly())
     {
-        res += part->name;
-        res += "\n";
+        res += ", readonly";
+        return res;
     }
 
-    res += "removing parts:\n";
+    res += fmt::format(", affects {} tables:", storages.size());
+
+    using ChangesInTable = std::tuple<Strings, Strings, Strings>;
+    std::unordered_map<const IStorage *, ChangesInTable> storage_to_changes;
+
+    for (const auto & part : creating_parts)
+        std::get<0>(storage_to_changes[&(part->storage)]).push_back(part->name);
+
     for (const auto & part : removing_parts)
     {
-        res += part->name;
-        res += fmt::format(" (created by {}, {})\n", part->version.getCreationTID(), part->version.creation_csn);
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
+        std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         assert(!part->version.creation_csn || part->version.creation_csn <= snapshot);
-        assert(!part->version.removal_csn);
+    }
+
+    for (const auto & mutation : mutations)
+        std::get<2>(storage_to_changes[mutation.first.get()]).push_back(mutation.second);
+
+    for (const auto & storage_changes : storage_to_changes)
+    {
+        res += fmt::format("\n\t{}:", storage_changes.first->getStorageID().getNameForLogs());
+        const auto & creating_info = std::get<0>(storage_changes.second);
+        const auto & removing_info = std::get<1>(storage_changes.second);
+        const auto & mutations_info = std::get<2>(storage_changes.second);
+
+        if (!creating_info.empty())
+            res += fmt::format("\n\t\tcreating parts:\n\t\t\t{}", fmt::join(creating_info, "\n\t\t\t"));
+        if (!removing_info.empty())
+            res += fmt::format("\n\t\tremoving parts:\n\t\t\t{}", fmt::join(removing_info, "\n\t\t\t"));
+        if (!mutations_info.empty())
+            res += fmt::format("\n\t\tmutations:\n\t\t\t{}", fmt::join(mutations_info, "\n\t\t\t"));
     }
 
     return res;

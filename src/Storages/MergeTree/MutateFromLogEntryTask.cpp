@@ -89,7 +89,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, fake_query_context, reserved_space, table_lock_holder);
+            entry.create_time, fake_query_context, nullptr, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)

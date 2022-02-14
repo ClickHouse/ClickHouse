@@ -109,7 +109,8 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            txn);
 }
 
 

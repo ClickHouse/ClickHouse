@@ -32,6 +32,7 @@ public:
         ContextPtr context_,
         ReservationSharedPtr space_reservation_,
         TableLockHolder & table_lock_holder_,
+        const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
         ActionBlocker & merges_blocker_);
