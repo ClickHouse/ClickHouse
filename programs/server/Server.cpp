@@ -977,6 +977,8 @@ if (ThreadFuzzer::instance().isEffective())
             CertificateReloader::instance().tryLoad(*config);
 #endif
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
+
+            global_context->setConfig(config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
