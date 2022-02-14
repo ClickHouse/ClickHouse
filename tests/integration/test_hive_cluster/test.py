@@ -17,9 +17,9 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance('h0_0_0', main_configs=["configs/cluster.xml"], main_configs=['configs/config.xml'], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
-        cluster.add_instance('h0_0_1', main_configs=["configs/cluster.xml"], main_configs=['configs/config.xml'], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
-        cluster.add_instance('h0_1_0', main_configs=["configs/cluster.xml"], main_configs=['configs/config.xml'], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
+        cluster.add_instance('h0_0_0', main_configs=["configs/cluster.xml"], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
+        cluster.add_instance('h0_0_1', main_configs=["configs/cluster.xml"], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
+        cluster.add_instance('h0_1_0', main_configs=["configs/cluster.xml"], extra_configs=[ 'configs/hdfs-site.xml'], with_hive=True)
             
         logging.info("Starting cluster...")
         cluster.start()
