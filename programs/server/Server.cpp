@@ -517,7 +517,7 @@ void checkForUsersNotInMainConfig(
 #endif
 }
 
-static String readString(const String& path)
+static String readString(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
@@ -525,7 +525,7 @@ static String readString(const String& path)
     return contents;
 }
 
-static int readNumber(const String& path)
+static int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
     int result;
