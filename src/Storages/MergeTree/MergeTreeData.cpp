@@ -1310,7 +1310,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
+
         (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
+        auto creation_csn = (*it)->version.creation_csn.load(std::memory_order_relaxed);
+        if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !(*it)->version.isMaxTIDLocked())
+        {
+            /// It's possible that covering part was created without transaction,
+            /// but if covered part was created with transaction (i.e. creation_tid is not prehistoric),
+            /// then it must have removal tid in metadata file.
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part {} is Outdated and has creation TID {} and CSN {}, "
+                            "but does not have removal tid. It's a bug or a result of manual intervention.",
+                            (*it)->name, (*it)->version.creation_tid, creation_csn);
+        }
         modifyPartState(it, DataPartState::Outdated);
         removePartContributionToDataVolume(*it);
     };
@@ -1405,40 +1416,45 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
 
-    if (data_parts_indexes.size() >= 2)
+    auto active_parts_range = getDataPartsStateRange(DataPartState::Active);
+    auto prev_it = active_parts_range.begin();
+    auto end_it = active_parts_range.end();
+
+    bool less_than_two_active_parts = prev_it == end_it || std::next(prev_it) == end_it;
+
+    if (!less_than_two_active_parts)
     {
-        /// Now all parts are committed, so data_parts_by_state_and_info == committed_parts_range
-        auto prev_jt = data_parts_by_state_and_info.begin();
-        auto curr_jt = std::next(prev_jt);
+        (*prev_it)->assertState({DataPartState::Active});
+        auto curr_it = std::next(prev_it);
 
-        (*prev_jt)->assertState({DataPartState::Active});
-
-        while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->getState() == DataPartState::Active)
+        while (curr_it != data_parts_by_state_and_info.end() && (*curr_it)->getState() == DataPartState::Active)
         {
+            (*curr_it)->assertState({DataPartState::Active});
+
             /// Don't consider data parts belonging to different partitions.
-            if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
+            if ((*curr_it)->info.partition_id != (*prev_it)->info.partition_id)
             {
-                ++prev_jt;
-                ++curr_jt;
+                ++prev_it;
+                ++curr_it;
                 continue;
             }
 
-            if ((*curr_jt)->contains(**prev_jt))
+            if ((*curr_it)->contains(**prev_it))
             {
-                deactivate_part(prev_jt);
-                prev_jt = curr_jt;
-                ++curr_jt;
+                deactivate_part(prev_it);
+                prev_it = curr_it;
+                ++curr_it;
             }
-            else if ((*prev_jt)->contains(**curr_jt))
+            else if ((*prev_it)->contains(**curr_it))
             {
-                auto next = std::next(curr_jt);
-                deactivate_part(curr_jt);
-                curr_jt = next;
+                auto next = std::next(curr_it);
+                deactivate_part(curr_it);
+                curr_it = next;
             }
             else
             {
-                ++prev_jt;
-                ++curr_jt;
+                ++prev_it;
+                ++curr_it;
             }
         }
     }
@@ -5411,7 +5427,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeTransactionPtr & txn)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
@@ -5429,6 +5446,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
             ErrorCodes::BAD_ARGUMENTS);
 
     String dst_part_name = src_part->getNewName(dst_part_info);
+    assert(!tmp_part_prefix.empty());
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     auto reservation = reserveSpace(src_part->getBytesOnDisk(), src_part->volume->getDisk());
@@ -5455,6 +5473,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
+    if (supportsTransactions())
+    {
+        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+        dst_data_part->version.setCreationTID(tid, nullptr);
+        dst_data_part->storeVersionMetadata();
+    }
 
     dst_data_part->is_temp = true;
 

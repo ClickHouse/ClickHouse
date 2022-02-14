@@ -25,6 +25,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Interpreters/MergeTreeTransaction.h>
 
 
 namespace CurrentMetrics
@@ -1103,12 +1104,30 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setSerializationInfos(infos);
 }
 
+void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
+{
+    assert(storage.supportsTransactions());
+    TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;
+    if (version.creation_tid != expected_tid)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "CreationTID of part {} (table {}) is set to unexpected value {}, it's a bug. Current transaction: {}",
+                        name, storage.getStorageID().getNameForLogs(), version.creation_tid, txn ? txn->dumpDescription() : "<none>");
+
+    assert(!txn || volume->getDisk()->exists(fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME));
+}
 
 void IMergeTreeDataPart::storeVersionMetadata() const
 {
+    assert(storage.supportsTransactions());
     assert(!version.creation_tid.isEmpty());
     if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
         return;
+
+    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+
+    if (!isStoredOnDisk())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",
+                        storage.getStorageID().getNameForLogs(), name);
 
     String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
     String tmp_version_file_name = version_file_name + ".tmp";
@@ -1121,6 +1140,9 @@ void IMergeTreeDataPart::storeVersionMetadata() const
         auto out = disk->writeFile(tmp_version_file_name, 256, WriteMode::Rewrite);
         version.write(*out);
         out->finalize();
+        /// TODO Small enough appends to file are usually atomic,
+        /// maybe we should append new metadata instead of rewriting file to reduce number of fsyncs.
+        /// (especially, it will allow to remove fsync after writing CSN after commit).
         out->sync();
     }
 
@@ -1160,21 +1182,18 @@ try
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
     /// 2. Version metadata file was not renamed from *.tmp on part creation.
-    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync
-    ///    We must remove part in this case, but we cannot distinguish it from the first case.
-    ///    TODO Write something to some checksummed file if part was created with transaction,
-    ///         so part will be ether broken or known to be created by transaction.
+    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
     /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
-
-    TransactionInfoContext txn_context{storage.getStorageID(), name};
 
     if (!disk->exists(tmp_version_file_name))
     {
-        /// Case 1 (or 3).
+        /// Case 1.
         /// We do not have version metadata and transactions history for old parts,
         /// so let's consider that such parts were created by some ancient transaction
         /// and were committed with some prehistoric CSN.
-        version.setCreationTID(Tx::PrehistoricTID, txn_context);
+        /// NOTE It might be Case 3, but version metadata file is written on part creation before other files,
+        /// so it's not Case 3 if part is not broken.
+        version.setCreationTID(Tx::PrehistoricTID, nullptr);
         version.creation_csn = Tx::PrehistoricCSN;
         return;
     }
@@ -1182,7 +1201,7 @@ try
     /// Case 2.
     /// Content of *.tmp file may be broken, just use fake TID.
     /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
-    version.setCreationTID(Tx::DummyTID, txn_context);
+    version.setCreationTID(Tx::DummyTID, nullptr);
     version.creation_csn = Tx::RolledBackCSN;
     remove_tmp_file();
 }

@@ -728,7 +728,8 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
-        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot);
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info,
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 

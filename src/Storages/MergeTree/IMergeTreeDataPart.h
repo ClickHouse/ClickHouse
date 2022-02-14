@@ -423,6 +423,7 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
     void storeVersionMetadata() const;
     void loadVersionMetadata() const;
 

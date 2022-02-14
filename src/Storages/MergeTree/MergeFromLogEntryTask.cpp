@@ -207,7 +207,8 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            nullptr);
 
 
     /// Adjust priority

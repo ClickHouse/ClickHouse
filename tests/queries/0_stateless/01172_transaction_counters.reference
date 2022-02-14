@@ -23,7 +23,6 @@
 3	1	Begin	1	1	1	1	
 3	1	AddPart	1	1	1	1	all_3_3_0
 3	1	Commit	1	1	1	0	
-1	1	AddPart	1	1	1	1	all_1_1_0
 4	1	Begin	1	1	1	1	
 4	1	AddPart	1	1	1	1	all_4_4_0
 4	1	Commit	1	1	1	0	

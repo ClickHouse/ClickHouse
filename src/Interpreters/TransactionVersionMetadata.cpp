@@ -20,26 +20,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
-static void tryWriteEventToSystemLog(Poco::Logger * log,
-                                     TransactionsInfoLogElement::Type type, const TransactionID & tid,
-                                     const TransactionInfoContext & context)
-try
-{
-    auto system_log =  Context::getGlobalContextInstance()->getTransactionsInfoLog();
-    if (!system_log)
-        return;
-
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.fillCommonFields(&context);
-    system_log->add(elem);
-}
-catch (...)
-{
-    tryLogCurrentException(log);
-}
-
 VersionMetadata::VersionMetadata()
 {
     /// It would be better to make it static, but static loggers do not work for some reason (initialization order?)
@@ -143,12 +123,13 @@ bool VersionMetadata::isMaxTIDLocked() const
     return removal_tid_lock.load() != 0;
 }
 
-void VersionMetadata::setCreationTID(const TransactionID & tid, const TransactionInfoContext & context)
+void VersionMetadata::setCreationTID(const TransactionID & tid, TransactionInfoContext * context)
 {
     /// NOTE ReplicatedMergeTreeBlockOutputStream may add one part multiple times
     assert(creation_tid.isEmpty() || creation_tid == tid);
     creation_tid = tid;
-    tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, context);
+    if (context)
+        tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, *context);
 }
 
 bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)

@@ -422,6 +422,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool deduplicate,
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
+    const MergeTreeTransactionPtr & txn,
     const IMergeTreeDataPart * parent_part,
     const String & suffix)
 {
@@ -438,6 +439,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         merging_params,
         parent_part,
         suffix,
+        txn,
         &data,
         this,
         &merges_blocker,
@@ -452,6 +454,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     MergeListEntry * merge_entry,
     time_t time_of_mutation,
     ContextPtr context,
+    const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
     TableLockHolder & holder)
 {
@@ -464,6 +467,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         context,
         space_reservation,
         holder,
+        txn,
         data,
         *this,
         merges_blocker

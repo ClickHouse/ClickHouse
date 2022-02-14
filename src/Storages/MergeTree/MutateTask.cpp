@@ -536,6 +536,8 @@ struct MutationContext
 
     bool need_sync;
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+
+    MergeTreeTransactionPtr txn;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -646,6 +648,7 @@ public:
                 false, // TODO Do we need deduplicate for projections
                 {},
                 projection_merging_params,
+                nullptr,
                 ctx->new_data_part.get(),
                 ".tmp_proj");
 
@@ -967,7 +970,8 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
-            ctx->compression_codec);
+            ctx->compression_codec,
+            ctx->txn);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
@@ -1188,6 +1192,7 @@ MutateTask::MutateTask(
     ContextPtr context_,
     ReservationSharedPtr space_reservation_,
     TableLockHolder & table_lock_holder_,
+    const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
     ActionBlocker & merges_blocker_)
@@ -1205,6 +1210,7 @@ MutateTask::MutateTask(
     ctx->metadata_snapshot = metadata_snapshot_;
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
+    ctx->txn = txn;
 }
 
 
@@ -1264,7 +1270,7 @@ bool MutateTask::prepare()
         storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot));
+        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
         return false;
     }
     else
@@ -1358,7 +1364,7 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot));
+            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn));
             return false;
         }
 

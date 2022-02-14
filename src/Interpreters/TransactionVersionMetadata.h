@@ -43,7 +43,7 @@ struct VersionMetadata
     bool isMaxTIDLocked() const;
 
     /// It can be called only from MergeTreeTransaction or on server startup
-    void setCreationTID(const TransactionID & tid, const TransactionInfoContext & context);
+    void setCreationTID(const TransactionID & tid, TransactionInfoContext * context);
 
     /// Checks if it's safe to remove outdated version of an object
     bool canBeRemoved();

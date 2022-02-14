@@ -262,6 +262,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
+        global_ctx->txn,
         /*reset_columns=*/ true,
         ctx->blocks_are_granules_size);
 
@@ -599,6 +600,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_merging_params,
             global_ctx->new_data_part.get(),
             ".proj",
+            nullptr,
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,

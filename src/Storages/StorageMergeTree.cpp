@@ -1550,7 +1550,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot));
+        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction());
+        dst_parts.emplace_back(std::move(dst_part));
     }
 
     /// ATTACH empty part set
@@ -1635,7 +1636,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot));
+        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction());
+        dst_parts.emplace_back(std::move(dst_part));
     }
 
     /// empty part set

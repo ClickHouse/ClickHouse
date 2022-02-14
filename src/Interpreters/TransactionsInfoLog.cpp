@@ -1,5 +1,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 #include <Common/TransactionID.h>
 #include <Common/CurrentThread.h>
 #include <Core/NamesAndTypes.h>
@@ -84,6 +85,27 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table.table_name);
     columns[i++]->insert(table.uuid);
     columns[i++]->insert(part_name);
+}
+
+
+void tryWriteEventToSystemLog(Poco::Logger * log,
+                              TransactionsInfoLogElement::Type type, const TransactionID & tid,
+                              const TransactionInfoContext & context)
+try
+{
+    auto system_log =  Context::getGlobalContextInstance()->getTransactionsInfoLog();
+    if (!system_log)
+        return;
+
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.fillCommonFields(&context);
+    system_log->add(elem);
+}
+catch (...)
+{
+    tryLogCurrentException(log);
 }
 
 }
