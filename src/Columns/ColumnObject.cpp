@@ -703,7 +703,8 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
 
     bool inserted = false;
     const auto * nested_node = subcolumns.findBestMatch(key);
-    if (nested_node && nested_node->isNested())
+
+    if (nested_node)
     {
         const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto & ) { return true; });
         assert(leaf);
@@ -717,7 +718,9 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
         inserted = subcolumns.add(key, new_subcolumn);
     }
     else
+    {
         inserted = subcolumns.add(key, Subcolumn(new_size, is_nullable));
+    }
 
     if (!inserted)
         throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
