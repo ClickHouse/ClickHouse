@@ -202,7 +202,7 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
                 data.current_chunk.setColumns(reverse_chunks[i], inversion_rows);
 
                 splitChunk(data);
-                
+
                 for (auto j = 0u; j < current_columns.size(); ++j)
                 {
                     res_columns[j]->insertRangeFrom(*data.current_chunk.getColumns()[j], 0, data.current_chunk.getNumRows());
@@ -215,7 +215,7 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
                 MutableColumns res_columns;
                 for (auto j = 0u; j < current_columns.size(); ++j)
                     res_columns.emplace_back(current_columns[j]->cloneEmpty());
-                
+
                 for (auto j = 0u; j < current_columns.size(); ++j)
                 {
                     res_columns[j]->insertRangeFrom(*reverse_chunks[i][j], 0, reverse_chunks_size[i]);
