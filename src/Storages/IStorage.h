@@ -160,6 +160,7 @@ public:
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
+    /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.

@@ -39,7 +39,6 @@ struct MergeMutateSelectedEntry
     FutureMergedMutatedPartPtr future_part;
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
-    //TransactionID mutation_tid;
     MergeTreeTransactionPtr txn;
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = nullptr)

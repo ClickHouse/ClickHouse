@@ -45,4 +45,4 @@ from system.transactions_info_log
 where tid in (select tid from system.transactions_info_log where database=currentDatabase() and table='txn_counters' and not (tid.1=1 and tid.2=1))
 or (database=currentDatabase() and table='txn_counters') order by event_time;
 
---drop table txn_counters;
+drop table txn_counters;

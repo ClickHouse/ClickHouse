@@ -22,6 +22,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_plan("PLAN");
     ParserKeyword s_estimates("ESTIMATE");
     ParserKeyword s_table_override("TABLE OVERRIDE");
+    ParserKeyword s_current_transaction("CURRENT TRANSACTION");
 
     if (s_explain.ignore(pos, expected))
     {
@@ -39,6 +40,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
         else if (s_table_override.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::TableOverride;
+        else if (s_current_transaction.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::CurrentTransaction;
     }
     else
         return false;
@@ -78,6 +81,10 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             return false;
         explain_query->setTableFunction(table_function);
         explain_query->setTableOverride(table_override);
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
+    {
+        /// Nothing to parse
     }
     else if (select_p.parse(pos, query, expected) ||
         create_p.parse(pos, query, expected) ||
