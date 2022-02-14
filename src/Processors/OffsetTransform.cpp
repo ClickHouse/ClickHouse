@@ -224,7 +224,8 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
                 whole_columns.swap(res_columns);
             }
         }
-        data.current_chunk.setColumns(std::move(whole_columns), whole_columns[0]->size());
+        auto whole_columns_size = whole_columns[0]->size();
+        data.current_chunk.setColumns(std::move(whole_columns), whole_columns_size);
     }
 
     output.push(std::move(data.current_chunk));

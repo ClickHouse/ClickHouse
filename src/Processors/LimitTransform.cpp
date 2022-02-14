@@ -319,7 +319,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
             if (reverse_rows_read >= offset + limit)
                 break;
         }
-        data.current_chunk.setColumns(std::move(whole_columns), whole_columns[0]->size());
+        auto whole_columns_size = whole_columns[0]->size();
+        data.current_chunk.setColumns(std::move(whole_columns), whole_columns_size);
     }
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
