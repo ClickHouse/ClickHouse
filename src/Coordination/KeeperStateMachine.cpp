@@ -204,10 +204,6 @@ void KeeperStateMachine::create_snapshot(
         {
             {   /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
-                auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                latest_snapshot_buf = snapshot_buf;
-                latest_snapshot_meta = snapshot->snapshot_meta;
                 auto [path, error_code]= snapshot_manager.serializeSnapshotToDisk(*snapshot);
                 if (error_code)
                 {
@@ -215,6 +211,7 @@ void KeeperStateMachine::create_snapshot(
                             snapshot->snapshot_meta->get_last_log_idx(), error_code.message());
                 }
                 latest_snapshot_path = path;
+                latest_snapshot_meta = snapshot->snapshot_meta;
                 LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
             }
 
