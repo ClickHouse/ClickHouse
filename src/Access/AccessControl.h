@@ -61,13 +61,13 @@ public:
     void addUsersConfigStorage(const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {},const bool allow_plaintext_password=0);
 
     void addUsersConfigStorage(const String & storage_name_,
                                const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {},const bool allow_plaintext_password=0);
 
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();

@@ -14,6 +14,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     void updateUserFromQueryImpl(
@@ -22,7 +28,7 @@ namespace
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
-        const std::optional<RolesOrUsersSet> & override_grantees)
+        const std::optional<RolesOrUsersSet> & override_grantees,const bool allow_plaintext_password)
     {
         if (override_name)
             user.setName(override_name->toString());
@@ -31,8 +37,14 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (query.auth_data)
+        if (query.auth_data){
+            if(query.auth_data->getType()==AuthenticationType::PLAINTEXT_PASSWORD  && !allow_plaintext_password)
+                  throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "InterPreterQuery: User is not allowed to Create users with type "+ toString(query.auth_data->getType())+"Please configure User with authtype "
+                                    "to SHA256_PASSWORD,DOUBLE_SHA1_PASSWORD OR enable setting enable_plaintext_password in server configuration to configure user with plaintext password"
+                                    "It is recommended to use plaintext_password.");
+                // throw Exception("InterPreterQuery: User is not allowed to Create users with type " + toString(query.auth_data->getType()), ErrorCodes::LOGICAL_ERROR);
             user.auth_data = *query.auth_data;
+        }
 
         if (override_name && !override_name->host_pattern.empty())
         {
@@ -76,12 +88,21 @@ namespace
 }
 
 
+
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+    String username= access->getUserName();
+    std::cout<<"Heena - lets see what is the user name: "<< access->getUserName();
+    auto user = access->getUser();
+    bool allow_plaintext_password = user->auth_data.getPlaintextPasswordSetting();
+  //   bool allow_plaintext_password = getContext().getSettingsRef().allow_plaintext_password
+    
+    if(allow_plaintext_password)
+      std::cout<<"Heena - Finally got";
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -110,7 +131,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query);
+            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query,allow_plaintext_password);
             return updated_user;
         };
 
@@ -129,7 +150,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{});
+            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},allow_plaintext_password);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -157,9 +178,9 @@ BlockIO InterpreterCreateUserQuery::execute()
 }
 
 
-void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query)
+void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query,const bool allow_plaintext_password)
 {
-    updateUserFromQueryImpl(user, query, {}, {}, {}, {});
+    updateUserFromQueryImpl(user, query, {}, {}, {}, {},allow_plaintext_password);
 }
 
 }
