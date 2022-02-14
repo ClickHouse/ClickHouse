@@ -315,7 +315,7 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -327,6 +327,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
@@ -336,8 +337,9 @@ std::string LocalServer::getInitialCreateTableQuery()
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    auto data_format
-        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
 
     if (table_structure == "auto")
         table_structure = "";

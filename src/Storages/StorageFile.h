@@ -71,7 +71,9 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
-    static ColumnsDescription getTableStructureFromData(
+    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
+
+    static ColumnsDescription getTableStructureFromFile(
         const String & format,
         const std::vector<String> & paths,
         const String & compression_method,
@@ -122,6 +124,12 @@ private:
     String path_for_partitioned_write;
 
     bool is_path_with_globs = false;
+
+    /// These buffers are needed for schema inference when data source
+    /// is file descriptor. See getTableStructureFromFileDescriptor.
+    std::unique_ptr<ReadBuffer> read_buffer_from_fd;
+    std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
+    std::atomic<bool> has_peekable_read_buffer_from_fd = false;
 };
 
 }

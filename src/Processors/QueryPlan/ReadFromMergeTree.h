@@ -173,7 +173,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
         const Names & column_names,
-        const ActionsDAGPtr & sorting_key_prefix_expr,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
