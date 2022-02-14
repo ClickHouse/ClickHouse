@@ -629,17 +629,17 @@ public:
 
     bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
     {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
         return result;
     }
 
     bool SignRequest(Aws::Http::HttpRequest & request, const char * region, const char * service_name, bool sign_body) const override
     {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, service_name, sign_body);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, service_name, sign_body);
         return result;
     }
 
@@ -648,9 +648,9 @@ public:
         const char * region,
         long long expiration_time_sec) const override // NOLINT
     {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, expiration_time_sec);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, expiration_time_sec);
         return result;
     }
 
@@ -660,9 +660,9 @@ public:
         const char * service_name,
         long long expiration_time_sec) const override // NOLINT
     {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, service_name, expiration_time_sec);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, service_name, expiration_time_sec);
         return result;
     }
 
