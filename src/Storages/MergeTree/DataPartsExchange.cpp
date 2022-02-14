@@ -314,6 +314,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
 void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
+    auto disk = part->volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", disk->getName());
+
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
     /// Add files that are not in the checksum list.
@@ -321,11 +325,12 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     for (const auto & file_name : file_names_without_checksums)
         checksums.files[file_name] = {};
 
-    auto disk = part->volume->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "disk {} doesn't support zero-copy replication", disk->getName());
+    std::vector<std::string> paths;
+    paths.reserve(checksums.files.size());
+    for (const auto & it : checksums.files)
+        paths.push_back(fs::path(part->getFullRelativePath()) / it.first);
 
-    part->storage.lockSharedData(*part);
+    auto metadatas = disk->getSerializedMetadata(paths);
 
     String part_id = part->getUniqueId();
     writeStringBinary(part_id, out);
@@ -333,24 +338,26 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     writeBinary(checksums.files.size(), out);
     for (const auto & it : checksums.files)
     {
-        String file_name = it.first;
-
-        String metadata_file = fs::path(disk->getPath()) / part->getFullRelativePath() / file_name;
-
+        const String & file_name = it.first;
+        String file_path_prefix = fs::path(part->getFullRelativePath()) / file_name;
+        String metadata_file = fs::path(disk->getPath()) / file_path_prefix;
         fs::path metadata(metadata_file);
 
         if (!fs::exists(metadata))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not exists", file_name);
         if (!fs::is_regular_file(metadata))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not a file", file_name);
-        UInt64 file_size = fs::file_size(metadata);
+
+        auto metadata_str = metadatas[file_path_prefix];
+        UInt64 file_size = metadata_str.size();
+
+        ReadBufferFromString buf(metadata_str);
 
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, /* settings= */ {});
         HashingWriteBuffer hashing_out(out);
-        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        copyDataWithThrottler(buf, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 

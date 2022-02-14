@@ -6,6 +6,8 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/Executor.h>
 #include <utility>
+#include <mutex>
+#include <shared_mutex>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <filesystem>
@@ -64,6 +66,7 @@ public:
     const String & getPath() const final override { return metadata_disk->getPath(); }
 
     Metadata readMetadata(const String & path) const;
+    Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
     Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
 
     Metadata createAndStoreMetadata(const String & path, bool sync);
@@ -145,6 +148,13 @@ public:
 
     UInt32 getRefCount(const String & path) const override;
 
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+
+    std::shared_lock<std::shared_mutex> lockMetadataForRead() const
+    {
+        return std::shared_lock(metadata_mutex);
+    }
+
 protected:
     Poco::Logger * log;
     const String name;
@@ -209,9 +219,10 @@ struct IDiskRemote::Metadata : RemoteMetadata
     /// Flag indicates that file is read only.
     bool read_only = false;
 
-    Metadata(const String & remote_fs_root_path_,
-            DiskPtr metadata_disk_,
-            const String & metadata_file_path_);
+    Metadata(
+        const String & remote_fs_root_path_,
+        DiskPtr metadata_disk_,
+        const String & metadata_file_path_);
 
     void addObject(const String & path, size_t size);
 
@@ -222,9 +233,12 @@ struct IDiskRemote::Metadata : RemoteMetadata
     static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
     static Metadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
 
+    std::string serializeToString();
+
 private:
     /// Fsync metadata file if 'sync' flag is set.
     void save(bool sync = false);
+    void saveToBuffer(WriteBuffer & buffer, bool sync);
     void load();
 };
 
