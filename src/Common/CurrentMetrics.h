@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
+#include <cassert>
 #include <base/types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
@@ -50,6 +51,8 @@ namespace CurrentMetrics
     /// Add value for specified metric. You must subtract value later; or see class Increment below.
     inline void add(Metric metric, Value value = 1)
     {
+        assert(values);
+        assert(metric < end());
         values[metric].fetch_add(value, std::memory_order_relaxed);
     }
 
