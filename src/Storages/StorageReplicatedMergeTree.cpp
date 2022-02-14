@@ -7702,7 +7702,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing)
+void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode, bool replace_existing_lock)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
@@ -7712,7 +7712,7 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
         try
         {
             zookeeper->createAncestors(zookeeper_node);
-            if (replace_existing && zookeeper->exists(zookeeper_node))
+            if (replace_existing_lock && zookeeper->exists(zookeeper_node))
             {
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_node, -1));
