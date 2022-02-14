@@ -37,7 +37,7 @@ public:
     void load(const String & users_config_path,
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
-              const zkutil::GetZooKeeper & get_zookeeper_function = {});
+              const zkutil::GetZooKeeper & get_zookeeper_function = {},const bool allow_plaintext_password=0);
     void reload();
     void startPeriodicReloading();
     void stopPeriodicReloading();
@@ -47,7 +47,7 @@ public:
     bool hasSubscription(AccessEntityType type) const override;
 
 private:
-    void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void parseFromConfig(const Poco::Util::AbstractConfiguration & config,const bool allow_plaintext_password);
 
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
@@ -58,9 +58,9 @@ private:
 
     MemoryAccessStorage memory_storage;
     CheckSettingNameFunction check_setting_name_function;
-
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;
+    bool allow_plaintext_password;
 };
 }

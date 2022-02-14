@@ -36,6 +36,7 @@ namespace
         String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
         String by_keyword = "BY";
         std::optional<String> by_value;
+        
 
         if (
             show_password ||
@@ -47,6 +48,11 @@ namespace
             {
                 case AuthenticationType::PLAINTEXT_PASSWORD:
                 {
+
+                    //bool allow_plaintext_password = auth_data.getPlaintextPasswordSetting();  
+                   // std::cout<<"heena - You are at right place to throw exception."<<allow_plaintext_password<<"\n";
+                    //if(allow_plaintext_password) 
+                     // std::cout<<"heena - You are in";
                     by_value = auth_data.getPassword();
                     break;
                 }

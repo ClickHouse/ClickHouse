@@ -19,6 +19,9 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
+#include "Poco/Logger.h"
+#include <base/logger_useful.h>
+
 
 
 namespace DB
@@ -48,7 +51,7 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name , const bool allow_plaintext_password_)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
@@ -70,20 +73,35 @@ namespace
         if (num_password_fields < 1)
             throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-        if (has_password_plaintext)
+        //bool user_has_allow_plaintext_password = config.has(user_config + ".enable_plaintext_password");
+       // bool user_allow_plaintext_password=0 ;
+       // if(user_has_allow_plaintext_password)
+      //  bool  allow_plaintext_password  = config.getBool(user_config + ".enable_plaintext_password",allow_plaintext_password_);
+
+       bool  allow_plaintext_password  = allow_plaintext_password_;
+        
+        if (has_password_plaintext) 
         {
+            if(!allow_plaintext_password)
+               // LOG_ERROR(log(&Poco::Logger::get("BaseDaemon")), "Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD if the setting name enable_plaintext_password setting is off");
+             //   LOG_ERROR(log(&Poco::Logger::get("BaseDaemon"), "Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD if the setting name enable_plaintext_password setting is off.Please chnage the authtype to SHA256_PASSWORD,DOUBLE_SHA1_PASSWORD");
+               throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD. Please configure User with authtype to SHA256_PASSWORD,DOUBLE_SHA1_PASSWORD OR enable setting enable_plaintext_password in server configuration to configure user with plaintext password"
+                                "It is recommended to use plaintext_password.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
             user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->auth_data.setPlaintextPasswordSetting(allow_plaintext_password);
         }
         else if (has_password_sha256_hex)
         {
             user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
             user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+             user->auth_data.setPlaintextPasswordSetting(allow_plaintext_password);
         }
         else if (has_password_double_sha1_hex)
         {
             user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
             user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+             user->auth_data.setPlaintextPasswordSetting(allow_plaintext_password);
         }
         else if (has_ldap)
         {
@@ -201,7 +219,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config,const bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -213,7 +231,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name));
+                users.push_back(parseUser(config, user_name,allow_plaintext_password));
             }
             catch (Exception & e)
             {
@@ -529,15 +547,15 @@ void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration
     std::lock_guard lock{load_mutex};
     path.clear();
     config_reloader.reset();
-    parseFromConfig(config);
+    parseFromConfig(config,allow_plaintext_password);
 }
 
-void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
+void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password)
 {
     try
     {
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config))
+        for (const auto & entity : parseUsers(config,allow_plaintext_password))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
@@ -558,10 +576,12 @@ void UsersConfigAccessStorage::load(
     const String & users_config_path,
     const String & include_from_path,
     const String & preprocessed_dir,
-    const zkutil::GetZooKeeper & get_zookeeper_function)
+    const zkutil::GetZooKeeper & get_zookeeper_function, const bool allow_plaintext_password_flag)
 {
+   // allow_plaintext_password = allow_plaintext_password;
     std::lock_guard lock{load_mutex};
     path = std::filesystem::path{users_config_path}.lexically_normal();
+    allow_plaintext_password = allow_plaintext_password_flag;
     config_reloader.reset();
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
@@ -571,7 +591,8 @@ void UsersConfigAccessStorage::load(
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
-            parseFromConfig(*new_config);
+            parseFromConfig(*new_config,allow_plaintext_password);
+
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
         },
         /* already_loaded = */ false);

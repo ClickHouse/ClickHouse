@@ -201,9 +201,9 @@
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>3</keep_alive_timeout>
-
+    <enable_plaintext_password>0</enable_plaintext_password>	    
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
-    <!-- <grpc_port>9100</grpc_port> -->
+    <grpc_port>9100</grpc_port>
     <grpc>
         <enable_ssl>false</enable_ssl>
 
@@ -1257,7 +1257,8 @@
         <!-- Changing <enabled> to true allows sending crash reports to -->
         <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
-        <enabled>false</enabled>
+		<enabled>true</enabled>
+		<debug>true</debug>	
         <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
         <anonymize>false</anonymize>
         <!-- Default endpoint should be changed to different Sentry DSN only if you have -->

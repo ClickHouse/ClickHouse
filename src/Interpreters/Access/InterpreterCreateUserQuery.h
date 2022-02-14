@@ -17,7 +17,7 @@ public:
 
     BlockIO execute() override;
 
-    static void updateUserFromQuery(User & user, const ASTCreateUserQuery & query);
+    static void updateUserFromQuery(User & user, const ASTCreateUserQuery & query,const bool allow_plaintext_password=1);
 
 private:
     ASTPtr query_ptr;
