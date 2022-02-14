@@ -160,42 +160,61 @@ void IDiskRemote::Metadata::addObject(const String & path, size_t size)
     remote_fs_objects.emplace_back(path, size);
 }
 
+
+void IDiskRemote::Metadata::saveToBuffer(WriteBuffer & buf, bool sync)
+{
+    writeIntText(VERSION_RELATIVE_PATHS, buf);
+    writeChar('\n', buf);
+
+    writeIntText(remote_fs_objects.size(), buf);
+    writeChar('\t', buf);
+    writeIntText(total_size, buf);
+    writeChar('\n', buf);
+
+    for (const auto & [remote_fs_object_path, remote_fs_object_size] : remote_fs_objects)
+    {
+        writeIntText(remote_fs_object_size, buf);
+        writeChar('\t', buf);
+        writeEscapedString(remote_fs_object_path, buf);
+        writeChar('\n', buf);
+    }
+
+    writeIntText(ref_count, buf);
+    writeChar('\n', buf);
+
+    writeBoolText(read_only, buf);
+    writeChar('\n', buf);
+
+    buf.finalize();
+    if (sync)
+        buf.sync();
+
+}
+
 /// Fsync metadata file if 'sync' flag is set.
 void IDiskRemote::Metadata::save(bool sync)
 {
     auto buf = metadata_disk->writeFile(metadata_file_path, 1024);
-
-    writeIntText(VERSION_RELATIVE_PATHS, *buf);
-    writeChar('\n', *buf);
-
-    writeIntText(remote_fs_objects.size(), *buf);
-    writeChar('\t', *buf);
-    writeIntText(total_size, *buf);
-    writeChar('\n', *buf);
-
-    for (const auto & [remote_fs_object_path, remote_fs_object_size] : remote_fs_objects)
-    {
-        writeIntText(remote_fs_object_size, *buf);
-        writeChar('\t', *buf);
-        writeEscapedString(remote_fs_object_path, *buf);
-        writeChar('\n', *buf);
-    }
-
-    writeIntText(ref_count, *buf);
-    writeChar('\n', *buf);
-
-    writeBoolText(read_only, *buf);
-    writeChar('\n', *buf);
-
-    buf->finalize();
-    if (sync)
-        buf->sync();
+    saveToBuffer(*buf, sync);
 }
+
+std::string IDiskRemote::Metadata::serializeToString()
+{
+    WriteBufferFromOwnString write_buf;
+    saveToBuffer(write_buf, false);
+    return write_buf.str();
+}
+
+IDiskRemote::Metadata IDiskRemote::readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const
+{
+    return Metadata::readMetadata(remote_fs_root_path, metadata_disk, path);
+}
+
 
 IDiskRemote::Metadata IDiskRemote::readMetadata(const String & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return Metadata::readMetadata(remote_fs_root_path, metadata_disk, path);
+    return readMetadataUnlocked(path, lock);
 }
 
 IDiskRemote::Metadata IDiskRemote::readUpdateAndStoreMetadata(const String & path, bool sync, IDiskRemote::MetadataUpdater updater)
@@ -209,11 +228,11 @@ IDiskRemote::Metadata IDiskRemote::readOrCreateUpdateAndStoreMetadata(const Stri
 {
     if (mode == WriteMode::Rewrite || !metadata_disk->exists(path))
     {
+        std::unique_lock lock(metadata_mutex);
         return Metadata::createUpdateAndStoreMetadata(remote_fs_root_path, metadata_disk, path, sync, updater);
     }
     else
     {
-        std::unique_lock lock(metadata_mutex);
         return Metadata::readUpdateAndStoreMetadata(remote_fs_root_path, metadata_disk, path, sync, updater);
     }
 }
@@ -226,6 +245,23 @@ IDiskRemote::Metadata IDiskRemote::createAndStoreMetadata(const String & path, b
 IDiskRemote::Metadata IDiskRemote::createUpdateAndStoreMetadata(const String & path, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     return Metadata::createUpdateAndStoreMetadata(remote_fs_root_path, metadata_disk, path, sync, updater);
+}
+
+
+std::unordered_map<String, String> IDiskRemote::getSerializedMetadata(const std::vector<std::string> & file_paths) const
+{
+    std::unordered_map<std::string, std::string> metadatas;
+
+    std::shared_lock lock(metadata_mutex);
+
+    for (const auto & path : file_paths)
+    {
+        IDiskRemote::Metadata metadata = readMetadataUnlocked(path, lock);
+        metadata.ref_count = 0;
+        metadatas[path] = metadata.serializeToString();
+    }
+
+    return metadatas;
 }
 
 void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)

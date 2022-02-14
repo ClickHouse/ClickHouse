@@ -279,6 +279,8 @@ public:
 
     virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
 
+    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> &) const { return {}; }
+
     /// Return reference count for remote FS.
     /// You can ask -- why we have zero and what does it mean? For some unknown reason
     /// the decision was made to take 0 as "no references exist", but only file itself left.
@@ -291,6 +293,7 @@ public:
     /// manages hardlinks by itself. So you can always remove hardlink and all
     /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
+
 
 protected:
     friend class DiskDecorator;
