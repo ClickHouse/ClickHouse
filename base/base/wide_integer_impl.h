@@ -13,6 +13,7 @@
 #include <limits>
 
 #include <boost/multiprecision/cpp_bin_float.hpp>
+#include <boost/math/special_functions/fpclassify.hpp>
 
 /// Use same extended double for all platforms
 #if (LDBL_MANT_DIG == 64)
@@ -288,7 +289,7 @@ struct integer<Bits, Signed>::_impl
         }
         else
         {
-            if (!boost::isfinite(t))
+            if (!boost::math::isfinite(t))
             {
                 self = 0;
                 return;
