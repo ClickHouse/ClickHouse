@@ -411,7 +411,7 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
+    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress, need_render_profile_events);
 }
 
 

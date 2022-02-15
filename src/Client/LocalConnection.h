@@ -66,7 +66,11 @@ public:
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
 
-    static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
+    static ServerConnectionPtr createConnection(
+        const ConnectionParameters & connection_parameters,
+        ContextPtr current_context,
+        bool send_progress = false,
+        bool send_profile_events = false);
 
     void setDefaultDatabase(const String & database) override;
 
@@ -133,7 +137,7 @@ private:
 
     void updateProgress(const Progress & value);
 
-    void updateProfileEvents(Block & block);
+    void getProfileEvents(Block & block);
 
     bool pollImpl();
 
@@ -153,5 +157,6 @@ private:
     String current_database;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 }

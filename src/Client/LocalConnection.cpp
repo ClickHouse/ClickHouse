@@ -62,7 +62,7 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
-void LocalConnection::updateProfileEvents(Block & block)
+void LocalConnection::getProfileEvents(Block & block)
 {
     static const NamesAndTypesList column_names_and_types = {
         {"host_name", std::make_shared<DataTypeString>()},
@@ -141,7 +141,6 @@ void LocalConnection::updateProfileEvents(Block & block)
         for (size_t j = 0; j < curr_columns.size(); ++j)
             columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
     }
-
 }
 
 void LocalConnection::sendQuery(
@@ -163,7 +162,8 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
-    CurrentThread::QueryScope query_scope_holder(query_context);
+    query_scope_holder.reset();
+    query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
 
     state.reset();
     state.emplace();
@@ -324,8 +324,11 @@ bool LocalConnection::poll(size_t)
 
         if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
         {
+            Block block;
             state->after_send_profile_events.restart();
             next_packet_type = Protocol::Server::ProfileEvents;
+            getProfileEvents(block);
+            state->block.emplace(std::move(block));
             return true;
         }
 
@@ -557,9 +560,9 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)
+ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress, bool send_profile_events)
 {
-    return std::make_unique<LocalConnection>(current_context, send_progress);
+    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events);
 }
 
 
