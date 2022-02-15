@@ -1,4 +1,4 @@
 <clickhouse>
-    <max_server_memory_usage>5000000</max_server_memory_usage>
-    <global_memory_usage_overcommit_max_wait_microseconds>200</global_memory_usage_overcommit_max_wait_microseconds>
+    <max_server_memory_usage>50000000</max_server_memory_usage>
+    <global_memory_usage_overcommit_max_wait_microseconds>500</global_memory_usage_overcommit_max_wait_microseconds>
 </clickhouse>

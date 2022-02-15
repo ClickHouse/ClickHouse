@@ -134,15 +134,15 @@ private:
 // list immutable when UserOvercommitTracker reads it.
 struct BlockQueryIfMemoryLimit
 {
-    BlockQueryIfMemoryLimit(OvercommitTracker const & overcommit_tracker)
-        : mutex(overcommit_tracker.overcommit_m)
+    BlockQueryIfMemoryLimit(OvercommitTracker * overcommit_tracker)
+        : mutex(overcommit_tracker->overcommit_m)
         , lk(mutex)
     {
-        if (overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::RUNNING)
+        if (overcommit_tracker->cancelation_state == OvercommitTracker::QueryCancelationState::RUNNING)
         {
-            overcommit_tracker.cv.wait_for(lk, overcommit_tracker.max_wait_time, [&overcommit_tracker]()
+            overcommit_tracker->cv.wait_for(lk, overcommit_tracker->max_wait_time, [&overcommit_tracker]()
             {
-                return overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::NONE;
+                return overcommit_tracker->cancelation_state == OvercommitTracker::QueryCancelationState::NONE;
             });
         }
     }
