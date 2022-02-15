@@ -181,7 +181,9 @@ private:
         ActionsDAGPtr & out_projection);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
-    void checkAnalysisResult() const;
+
+    ReadFromMergeTree::AnalysisResult & getAnalysisResult();
+    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     std::optional<MergeTreeReadTaskCallback> read_task_callback;

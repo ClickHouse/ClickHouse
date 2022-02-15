@@ -985,16 +985,22 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-void ReadFromMergeTree::checkAnalysisResult() const
+ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResult()
 {
     if (std::holds_alternative<std::exception_ptr>(analyzed_result_ptr->result))
         std::rethrow_exception(std::move(std::get<std::exception_ptr>(analyzed_result_ptr->result)));
+
+    return std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+}
+
+const ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResult() const
+{
+    return const_cast<ReadFromMergeTree *>(this)->getAnalysisResult();
 }
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    checkAnalysisResult();
-    auto result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+    auto result = getAnalysisResult();
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -1195,8 +1201,7 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
-    checkAnalysisResult();
-    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+    const auto & result = getAnalysisResult();
     std::string prefix(format_settings.offset, format_settings.indent_char);
     format_settings.out << prefix << "ReadType: " << readTypeToString(result.read_type) << '\n';
 
@@ -1209,8 +1214,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
-    checkAnalysisResult();
-    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
+    const auto & result = getAnalysisResult();
     map.add("Read Type", readTypeToString(result.read_type));
     if (!result.index_stats.empty())
     {
@@ -1221,9 +1225,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
-    checkAnalysisResult();
-    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
-    const auto & index_stats = result.index_stats;
+    const auto & index_stats = getAnalysisResult().index_stats;
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (!index_stats.empty())
@@ -1274,9 +1276,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    checkAnalysisResult();
-    const auto & result = std::get<ReadFromMergeTree::AnalysisResult>(analyzed_result_ptr->result);
-    const auto & index_stats = result.index_stats;
+    const auto & index_stats = getAnalysisResult().index_stats;
 
     if (!index_stats.empty())
     {
