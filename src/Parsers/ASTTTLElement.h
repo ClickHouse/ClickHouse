@@ -16,16 +16,18 @@ public:
     TTLMode mode;
     DataDestinationType destination_type;
     String destination_name;
+    bool if_exists = false;
 
     ASTs group_by_key;
     ASTs group_by_assignments;
 
     ASTPtr recompression_codec;
 
-    ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_)
+    ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_, bool if_exists_)
         : mode(mode_)
         , destination_type(destination_type_)
         , destination_name(destination_name_)
+        , if_exists(if_exists_)
         , ttl_expr_pos(-1)
         , where_expr_pos(-1)
     {
