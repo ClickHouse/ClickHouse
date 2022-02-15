@@ -22,7 +22,7 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-String getBlockDeviceId(const String & path);
+String getBlockDeviceId([[maybe_unused]] const String & path);
 
 enum class BlockDeviceType {
     UNKNOWN = 0, // we were unable to determine device type
@@ -34,13 +34,13 @@ enum class BlockDeviceType {
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-BlockDeviceType getBlockDeviceType(const String & deviceId);
+BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & deviceId);
 
 // Get size of read-ahead in bytes for specified block device
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-UInt64 getBlockDeviceReadAheadBytes(const String & deviceId);
+UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & deviceId);
 
 /// Returns mount point of filesystem where absolute_path (must exist) is located
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path);

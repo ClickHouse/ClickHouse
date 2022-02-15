@@ -584,8 +584,8 @@ static void sanityChecks(Server* server)
     {
     }
 
-    std::string devId = getBlockDeviceId(data_path);
-    if (getBlockDeviceType(devId) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(devId) == 0)
+    std::string dev_id = getBlockDeviceId(data_path);
+    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
         server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
     if (sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGE_SIZE) < (2l << 30))
@@ -594,7 +594,8 @@ static void sanityChecks(Server* server)
     if (!enoughSpaceInDirectory(data_path, 1ull << 30))
         server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
 
-    if (!logs_path.empty()) {
+    if (!logs_path.empty())
+    {
         if (!enoughSpaceInDirectory(logs_path, 1ull << 30))
             server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
     }
@@ -873,7 +874,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim_t old = rlim.rlim_cur;
             rlim.rlim_cur = rlim.rlim_max;
             int rc = setrlimit(RLIMIT_NPROC, &rlim);
-            if (rc != 0) {
+            if (rc != 0)
+            {
                 LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
                 rlim.rlim_cur = old;
             }
@@ -883,7 +885,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
         }
 
-        if (rlim.rlim_cur < 30000) {
+        if (rlim.rlim_cur < 30000)
+        {
             global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
         }
     }

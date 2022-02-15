@@ -66,7 +66,7 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-String getBlockDeviceId(const String & path)
+String getBlockDeviceId([[maybe_unused]] const String & path)
 {
 #if defined(__linux__)
     struct stat sb;
@@ -83,15 +83,18 @@ String getBlockDeviceId(const String & path)
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-BlockDeviceType getBlockDeviceType(const String & deviceId)
+BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & deviceId)
 {
 #if defined(__linux__)
-    try {
+    try
+    {
         ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/rotational");
         int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
-    } catch (...) {
+    }
+    catch (...)
+    {
         return BlockDeviceType::UNKNOWN;
     }
 #else
@@ -102,15 +105,18 @@ BlockDeviceType getBlockDeviceType(const String & deviceId)
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-UInt64 getBlockDeviceReadAheadBytes(const String & deviceId)
+UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & deviceId)
 {
 #if defined(__linux__)
-    try {
+    try
+    {
         ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/read_ahead_kb");
         int read_ahead_kb;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
-    } catch (...) {
+    }
+    catch (...)
+    {
         return static_cast<UInt64>(-1);
     }
 #else
