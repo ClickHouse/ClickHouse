@@ -12,7 +12,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -91,7 +90,7 @@ public:
         {
             throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        
+
         return std::make_shared<DataTypeDateTime>();
     }
 
@@ -101,7 +100,7 @@ public:
         {
             throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        
+
         return std::make_unique<FunctionBaseUTCTimestamp>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>("UTC"));
     }
 };
