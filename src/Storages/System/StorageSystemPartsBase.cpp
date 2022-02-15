@@ -66,7 +66,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
-    : query_id(context->getCurrentQueryId()), settings(context->getSettings())
+    : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
