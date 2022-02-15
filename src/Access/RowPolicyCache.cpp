@@ -67,7 +67,8 @@ namespace
 void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 {
     policy = policy_;
-    roles = &policy->to_roles;
+    to_set = &policy->to_set;
+    of_set = &policy->of_set;
     database_and_table_name = std::make_shared<std::pair<String, String>>(policy->getDatabase(), policy->getTableName());
 
     for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
@@ -225,7 +226,8 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
     for (const auto & [policy_id, info] : all_policies)
     {
         const auto & policy = *info.policy;
-        bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
+        bool matches = info.to_set->match(enabled.params.user_id, enabled.params.enabled_roles);
+        bool affects = !matches && (policy.getKind() == RowPolicyKind::PERMISSIVE) && info.of_set->match(enabled.params.user_id, enabled.params.enabled_roles);
         MixedFiltersKey key;
         key.database = info.database_and_table_name->first;
         key.table_name = info.database_and_table_name->second;
@@ -237,13 +239,10 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
                 key.filter_type = filter_type;
                 auto & mixer = mixers[key];
                 mixer.database_and_table_name = info.database_and_table_name;
-                if (policy.getKind() == RowPolicyKind::PERMISSIVE)
-                {
-                    /// We call setPermissiveFiltersExist() even if the current user doesn't match to the current policy's TO clause.
-                    mixer.mixer.setPermissiveFiltersExist();
-                }
-                if (match)
+                if (matches)
                     mixer.mixer.add(info.parsed_filters[filter_type_i], policy.getKind());
+                else if (affects)
+                    mixer.mixer.setPermissiveFiltersExist();
             }
         }
     }

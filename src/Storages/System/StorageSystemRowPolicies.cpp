@@ -153,7 +153,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         if (!storage)
             continue;
 
-        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->getKind(), policy->to_roles);
+        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->getKind(), policy->to_set);
     }
 }
 }

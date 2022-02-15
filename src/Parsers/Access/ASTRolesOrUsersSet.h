@@ -26,6 +26,9 @@ public:
     bool use_keyword_any = false; /// whether the keyword ANY should be used instead of the keyword ALL
 
     bool empty() const { return names.empty() && !current_user && !all; }
+    bool isAll() const { return all && except_names.empty() && !except_current_user; }
+    bool equals(const ASTRolesOrUsersSet & other) const;
+
     void replaceCurrentUserTag(const String & current_user_name);
 
     String getID(char) const override { return "RolesOrUsersSet"; }

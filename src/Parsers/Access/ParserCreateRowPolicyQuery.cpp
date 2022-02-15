@@ -173,22 +173,46 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRolesOrUsersSet(
+        IParserBase::Pos & pos, Expected & expected, const char * keyword, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & set)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{keyword}.ignore(pos, expected))
                 return false;
 
-            ParserRolesOrUsersSet roles_p;
-            roles_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
-            if (!roles_p.parse(pos, ast, expected))
+            ParserRolesOrUsersSet set_p;
+            set_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
+            if (!set_p.parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            set = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
+    }
+
+    bool parseToSet(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & to_set)
+    {
+        return parseRolesOrUsersSet(pos, expected, "TO", id_mode, to_set);
+    }
+
+    bool parseOfSet(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & of_set, bool & same_as_to_set)
+    {
+        if (parseRolesOrUsersSet(pos, expected, "OF", id_mode, of_set))
+        {
+            same_as_to_set = false;
+            return true;
+        }
+        if (ParserKeyword{"ONLY"}.ignore(pos, expected))
+        {
+            of_set = nullptr;
+            same_as_to_set = true;
+            return true;
+        }
+        of_set = nullptr;
+        same_as_to_set = false;
+        return false;
     }
 
     bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
@@ -274,11 +298,30 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
+    std::shared_ptr<ASTRolesOrUsersSet> to_set, of_set;
+    if (parseToSet(pos, expected, attach_mode, to_set))
+    {
+        bool same_as_to_set = false;
+        if (parseOfSet(pos, expected, attach_mode, of_set, same_as_to_set))
+        {
+            if (same_as_to_set)
+                of_set = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(to_set->clone());
+        }
+    }
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
+
+    /// By default row policies are permissive.
+    if (!kind && !alter)
+        kind = RowPolicyKind::PERMISSIVE;
+
+    /// By default permissive row policies are OF ALL.
+    if (!of_set && to_set && !to_set->isAll() && (kind == RowPolicyKind::PERMISSIVE))
+    {
+        of_set = std::make_shared<ASTRolesOrUsersSet>();
+        of_set->all = true;
+    }
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
@@ -293,7 +336,8 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->new_short_name = std::move(new_short_name);
     query->kind = kind;
     query->filters = std::move(filters);
-    query->roles = std::move(roles);
+    query->to_set = std::move(to_set);
+    query->of_set = std::move(of_set);
 
     return true;
 }

@@ -30,7 +30,8 @@ private:
         void setPolicy(const RowPolicyPtr & policy_);
 
         RowPolicyPtr policy;
-        const RolesOrUsersSet * roles = nullptr;
+        const RolesOrUsersSet * to_set = nullptr;
+        const RolesOrUsersSet * of_set = nullptr;
         std::shared_ptr<const std::pair<String, String>> database_and_table_name;
         ASTPtr parsed_filters[static_cast<size_t>(RowPolicyFilterType::MAX)];
     };

@@ -12,6 +12,7 @@ namespace DB
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+  *      [OF {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
@@ -20,6 +21,7 @@ namespace DB
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+  *      [OF {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ParserCreateRowPolicyQuery : public IParserBase
 {

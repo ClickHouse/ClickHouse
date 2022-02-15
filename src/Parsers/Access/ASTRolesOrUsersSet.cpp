@@ -77,6 +77,16 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
+bool ASTRolesOrUsersSet::equals(const ASTRolesOrUsersSet & other) const
+{
+    if (all != other.all)
+        return false;
+    if (all)
+        return except_names == other.except_names;
+    return (names == other.names) && (except_names == other.except_names);
+}
+
+
 void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
 {
     if (current_user)

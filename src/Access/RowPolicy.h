@@ -38,8 +38,21 @@ struct RowPolicy : public IAccessEntity
     static constexpr const auto TYPE = AccessEntityType::ROW_POLICY;
     AccessEntityType getType() const override { return TYPE; }
 
-    /// Which roles or users should use this row policy.
-    RolesOrUsersSet to_roles;
+    /// Users and roles written in the TO clause.
+    /// For each user in this set this row policy is applied,
+    /// and for each role in this set this row policy is applied for any user using that role.
+    RolesOrUsersSet to_set;
+
+    /// Users and roles written in the OF clause (used for permissive row policies only).
+    /// Contains a list of users this row policy affects.
+    /// There can be one of the three cases:
+    /// 1) If some user is in `to_set` set he will see filtered rows;
+    /// 2) If some user is not in `to_set` set but he's in `of_set` set
+    /// he won't see any rows unless other permissive row policies allow him
+    /// to see something;
+    /// 3) If some user is not in `to_set` set and not in `of_set` set
+    /// this row policy won't affect this user at all, but other row policies can.
+    RolesOrUsersSet of_set;
 
 private:
     void setName(const String &) override;

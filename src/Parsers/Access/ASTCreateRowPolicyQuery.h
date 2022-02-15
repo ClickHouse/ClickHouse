@@ -17,6 +17,7 @@ class ASTRolesOrUsersSet;
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+  *      [OF {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
@@ -25,6 +26,7 @@ class ASTRolesOrUsersSet;
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+  *      [OF {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ASTCreateRowPolicyQuery : public IAST, public ASTQueryWithOnCluster
 {
@@ -42,7 +44,8 @@ public:
     std::optional<RowPolicyKind> kind;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters; /// `nullptr` means set to NONE.
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> to_set;
+    std::shared_ptr<ASTRolesOrUsersSet> of_set;
 
     String getID(char) const override;
     ASTPtr clone() const override;

@@ -59,6 +59,9 @@ struct RolesOrUsersSet
     /// Returns a list of matching users and roles.
     std::vector<UUID> getMatchingIDs(const AccessControl & access_control) const;
 
+    /// Returns true if this set contains each element of another set.
+    bool contains(const RolesOrUsersSet & other) const;
+
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
 

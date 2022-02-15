@@ -202,12 +202,20 @@ namespace
             }
         }
 
-        if (!policy.to_roles.empty())
+        if (!policy.to_set.empty())
         {
             if (attach_mode)
-                query->roles = policy.to_roles.toAST();
+                query->to_set = policy.to_set.toAST();
             else
-                query->roles = policy.to_roles.toASTWithNames(*access_control);
+                query->to_set = policy.to_set.toASTWithNames(*access_control);
+        }
+
+        if (!policy.of_set.empty())
+        {
+            if (attach_mode)
+                query->of_set = policy.of_set.toAST();
+            else
+                query->of_set = policy.of_set.toASTWithNames(*access_control);
         }
 
         return query;

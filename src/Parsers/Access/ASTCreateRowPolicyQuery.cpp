@@ -108,10 +108,23 @@ namespace
     }
 
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
+    void formatToSet(const ASTRolesOrUsersSet & to_set, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
-        roles.format(settings);
+        to_set.format(settings);
+    }
+
+    void formatOfSet(const ASTRolesOrUsersSet & of_set, bool same_as_to_set, const IAST::FormatSettings & settings)
+    {
+        if (same_as_to_set)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ONLY" << (settings.hilite ? IAST::hilite_none : "");
+        }
+        else
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " OF " << (settings.hilite ? IAST::hilite_none : "");
+            of_set.format(settings);
+        }
     }
 }
 
@@ -161,15 +174,22 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     formatForClauses(filters, alter, settings);
 
-    if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, settings);
+    if (to_set || of_set)
+    {
+        auto to_set_not_null = to_set ? to_set : std::make_shared<ASTRolesOrUsersSet>();
+        formatToSet(*to_set_not_null, settings);
+        if (of_set)
+            formatOfSet(*of_set, of_set->equals(*to_set_not_null), settings);
+    }
 }
 
 
 void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
-    if (roles)
-        roles->replaceCurrentUserTag(current_user_name);
+    if (to_set)
+        to_set->replaceCurrentUserTag(current_user_name);
+    if (of_set)
+        of_set->replaceCurrentUserTag(current_user_name);
 }
 
 void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const

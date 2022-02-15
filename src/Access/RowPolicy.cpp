@@ -53,9 +53,18 @@ bool RowPolicy::equal(const IAccessEntity & other) const
 {
     if (!IAccessEntity::equal(other))
         return false;
+
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
-    return (full_name == other_policy.full_name) && boost::range::equal(filters, other_policy.filters)
-        && (kind == other_policy.kind) && (to_roles == other_policy.to_roles);
+    if ((full_name != other_policy.full_name) || !boost::range::equal(filters, other_policy.filters)
+        || (kind != other_policy.kind) || (to_set != other_policy.to_set))
+        return false;
+
+    if (kind == RowPolicyKind::PERMISSIVE)
+    {
+        if (of_set != other_policy.of_set)
+            return false;
+    }
+    return true;
 }
 
 }

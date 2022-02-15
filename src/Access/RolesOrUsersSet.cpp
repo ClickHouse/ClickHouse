@@ -281,6 +281,46 @@ std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & access_c
 }
 
 
+bool RolesOrUsersSet::contains(const RolesOrUsersSet & other) const
+{
+    if (all && other.all)
+    {
+        for (const auto & id : except_ids)
+        {
+            if (!other.except_ids.contains(id))
+                return false;
+        }
+        return true;
+    }
+    else if (all /* && !other.all */)
+    {
+        for (const auto & id : other.ids)
+        {
+            if (other.except_ids.contains(id))
+                continue;
+            if (except_ids.contains(id))
+                return false;
+        }
+        return true;
+    }
+    else if (other.all /* && !all */)
+    {
+        return false;
+    }
+    else /* !all && !other.all */
+    {
+        for (const auto & id : other.ids)
+        {
+            if (other.except_ids.contains(id))
+                continue;
+            if (!ids.contains(id) || except_ids.contains(id))
+                return false;
+        }
+        return true;
+    }
+}
+
+
 bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs)
 {
     return (lhs.all == rhs.all) && (lhs.ids == rhs.ids) && (lhs.except_ids == rhs.except_ids);
