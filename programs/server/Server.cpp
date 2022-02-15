@@ -20,6 +20,7 @@
 #include <base/phdr_cache.h>
 #include <base/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
+#include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
 #include <Common/ClickHouseRevision.h>
@@ -588,8 +589,14 @@ static void sanityChecks(Server* server)
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
         server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
-    if (sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGE_SIZE) < (2l << 30))
-        server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+    try
+    {
+        if (getAvailableMemoryAmount() < (2l << 30))
+            server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+    }
+    catch (...)
+    {
+    }
 
     if (!enoughSpaceInDirectory(data_path, 1ull << 30))
         server->context()->addWarningMessage("Available disk space at server startup is too low (1GiB).");
