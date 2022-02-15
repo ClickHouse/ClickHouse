@@ -16,6 +16,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/OvercommitTracker.h>
 
 #include <condition_variable>
 #include <list>
@@ -76,6 +77,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend struct ::GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -132,6 +134,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
+        ThreadGroupStatusPtr && thread_group_,
         IAST::QueryKind query_kind_
         );
 
@@ -153,6 +156,13 @@ public:
     }
 
     ThrottlerPtr getUserNetworkThrottler();
+
+    MemoryTracker * getMemoryTracker() const
+    {
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
+    }
 
     bool updateProgressIn(const Progress & value)
     {
@@ -215,6 +225,8 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    UserOvercommitTracker user_overcommit_tracker;
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -335,6 +347,14 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    template <typename F>
+    void processEachQueryStatus(F && func) const
+    {
+        std::lock_guard lk(mutex);
+        for (auto && query : processes)
+            func(query);
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
