@@ -1,0 +1,24 @@
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int64,\n    `c` Int32,\n    `d` Float32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STAT st1 (a, b, c) TYPE tdigest,\n    STAT st2 d TYPE AUTO\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 500, index_granularity = 8192
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int64,\n    `c` Int32,\n    `d` Float32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STAT st1 (a, b, c) TYPE tdigest,\n    STAT st3 (d, k) TYPE tdigest\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 500, index_granularity = 8192
+CREATE TABLE default.alters_stats\n(\n    `a` Int32,\n    `b` Int64,\n    `c` Int32,\n    `d` Float32,\n    `k` Int32,\n    `heavy` String,\n    `heavy2` String,\n    STAT st1 (a, b, c) TYPE tdigest,\n    STAT st3 d TYPE AUTO\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS experimantal_stats_update_period = 500, index_granularity = 8192
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE (b = 100) AND (c = 0) AND (d = 100)
+WHERE ((b = 100) AND (c = 0) AND (d = 100)) AND (a = 10)
+0
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM alters_stats
+PREWHERE b = 100
+WHERE (b = 100) AND ((a = 10) AND (c = 0) AND (d = 100))

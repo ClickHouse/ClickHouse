@@ -14,6 +14,7 @@ Must be more efficient for PREWHERE optimization than simple tdigest (MergeTreeC
 due to the fact that granule is the smallest thing that can be read from disk by ClickHouse.
 It stores separately minimums and maximums per block.
 Minimums are used for lowerbound estimation and maximums for upperbound.
+This estimates are approximate, so they can not be used for data skipping.
 */
 class MergeTreeGranuleDistributionStatisticTDigest : public IDistributionStatistic
 {

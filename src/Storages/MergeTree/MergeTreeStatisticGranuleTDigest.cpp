@@ -124,7 +124,8 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(const
         || threshold > std::numeric_limits<Float32>::max())
         return 0.0;
     else
-        return min_sketch.cdf(threshold).first;
+        // -EPS to make it a bit lower than upper bound
+        return min_sketch.cdf(threshold).first - EPS;
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
@@ -139,7 +140,8 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(const
         || threshold > std::numeric_limits<Float32>::max())
         return 1.0;
     else
-        return max_sketch.cdf(threshold).second;
+        // +EPS to make it a bit upper than lower bound
+        return max_sketch.cdf(threshold).second + EPS;
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
