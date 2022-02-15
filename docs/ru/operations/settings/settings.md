@@ -1736,6 +1736,48 @@ ClickHouse генерирует исключение:
 Т.е. если `INSERT` в основную таблицу д.б. пропущен (сдедуплицирован), то автоматически не будет вставки и в материализованные представления. Это имплементировано для того, чтобы работали материализованные представления, которые сильно группируют данные основных `INSERT`, до такой степени что блоки вставляемые в материализованные представления получаются одинаковыми для разных `INSERT` в основную таблицу.
 Одновременно это «ломает» идемпотентность вставки в материализованные представления. Т.е. если `INSERT` был успешен в основную таблицу и неуспешен в таблицу материализованного представления (напр. из-за сетевого сбоя при коммуникации с Zookeeper), клиент получит ошибку и попытается повторить `INSERT`. Но вставки в материализованные представления произведено не будет, потому что дедупликация сработает на основной таблице. Настройка `deduplicate_blocks_in_dependent_materialized_views` позволяет это изменить. Т.е. при повторном `INSERT` будет произведена дедупликация на таблице материализованного представления, и повторный инсерт вставит данные в таблицу материализованного представления, которые не удалось вставить из-за сбоя первого `INSERT`.
 
+## insert_deduplication_token {#insert_deduplication_token}
+
+Этот параметр позволяет пользователю указать собственную семантику дедупликации в MergeTree/ReplicatedMergeTree.
+Например, предоставляя уникальное значение параметра в каждом операторе INSERT,
+пользователь может избежать дедупликации одних и тех же вставленных данных.
+
+Возможные значения:
+
+-  Любая строка
+
+Значение по умолчанию: пустая строка (выключено)
+
+`insert_deduplication_token` используется для дедупликации _только_ когда значение не пустое
+
+Example:
+
+```sql
+CREATE TABLE test_table
+( A Int64 )
+ENGINE = MergeTree
+ORDER BY A
+SETTINGS non_replicated_deduplication_window = 100;
+
+INSERT INTO test_table FORMAT Values SETTINGS insert_deduplication_token = 'test' (1);
+
+-- следующая вставка не будет дедуплицирована, потому что insert_dedupplication_token отличается 
+INSERT INTO test_table FORMAT Values SETTINGS insert_deduplication_token = 'test1' (1);
+
+-- следующая вставка будет дедуплицирована, потому что insert_dedupplication_token
+-- тот же самый, что и один из предыдущих 
+INSERT INTO test_table FORMAT Values SETTINGS insert_deduplication_token = 'test' (2);
+
+SELECT * FROM test_table
+
+┌─A─┐
+│ 1 │
+└───┘
+┌─A─┐
+│ 1 │
+└───┘
+```
+
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
 Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
