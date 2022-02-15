@@ -28,6 +28,11 @@ namespace DB
   *     [DROP INDEX [IF EXISTS] index_name]
   *     [CLEAR INDEX [IF EXISTS] index_name IN PARTITION partition]
   *     [MATERIALIZE INDEX [IF EXISTS] index_name [IN PARTITION partition]]
+  *     [ADD STATISTIC [IF NOT EXISTS] statistic_name [AFTER statistic_name]]
+  *     [DROP STATISTIC [IF EXISTS] statistic_name]
+  *     [CLEAR STATISTIC [IF EXISTS] statistic_name IN PARTITION partition]
+  *     [MATERIALIZE STATISTIC [IF EXISTS] statistic_name [IN PARTITION partition]]
+  *     [MODIFY STATISTIC [IF EXISTS] statistic_to_modify]
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
   */

@@ -34,6 +34,9 @@ struct AlterCommand
         MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
+        ADD_STATISTIC,
+        DROP_STATISTIC,
+        MODIFY_STATISTIC,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         ADD_PROJECTION,
@@ -104,6 +107,13 @@ struct AlterCommand
 
     /// For ADD/DROP INDEX
     String index_name;
+
+    /// For ADD/MODIFY STATISTIC
+    ASTPtr statistic_decl = nullptr;
+    String after_statistic_name;
+
+    /// For ADD/DROP STATISTIC
+    String statistic_name;
 
     // For ADD CONSTRAINT
     ASTPtr constraint_decl = nullptr;

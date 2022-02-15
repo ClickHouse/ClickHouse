@@ -42,11 +42,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
+        ASTPtr new_statistics = InterpreterCreateQuery::formatStatistics(metadata.statistics);
         ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
         ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
         ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->stats, new_statistics);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
     }

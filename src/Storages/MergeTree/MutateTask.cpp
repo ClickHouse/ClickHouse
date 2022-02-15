@@ -2,6 +2,7 @@
 
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
+#include "Storages/MergeTree/MergeTreeStatistic.h"
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -62,6 +63,7 @@ static void splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -111,6 +113,7 @@ static void splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -512,6 +515,7 @@ struct MutationContext
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet materialized_statistics;
     MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
@@ -531,6 +535,7 @@ struct MutationContext
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    //MergeTreeStatisticsPtr statistics_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
@@ -934,6 +939,7 @@ private:
 
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
+        // Statistics are lightweight, so we caclucate them for all provided columns and don't need similar expression.
 
         if (!ctx->mutating_pipeline.initialized())
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1279,6 +1285,7 @@ bool MutateTask::prepare()
             storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+        ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
         ctx->mutating_pipeline = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
@@ -1339,6 +1346,11 @@ bool MutateTask::prepare()
             ctx->mutating_pipeline, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
             ctx->updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
+        // We don't need do the same with statistics since they will be recalculated on provided columns.
+        // Old data will be cleared in background.
+
+        //ctx->statistics_to_recalc = MutationHelpers::getIndicesToRecalculate(
+        //    ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_statistics, ctx->source_part);
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
@@ -1346,10 +1358,12 @@ bool MutateTask::prepare()
             ctx->indices_to_recalc,
             ctx->mrk_extension,
             ctx->projections_to_recalc);
+            //ctx->statistics_to_recalc);
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
 
         if (ctx->indices_to_recalc.empty() &&
             ctx->projections_to_recalc.empty() &&
+            //ctx->statistics_to_recalc->empty() &&
             ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
             && ctx->files_to_rename.empty())
         {

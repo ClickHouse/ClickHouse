@@ -396,6 +396,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                 AccessType::ALTER_UPDATE
                 | AccessType::ALTER_DELETE
                 | AccessType::ALTER_MATERIALIZE_INDEX
+                | AccessType::ALTER_MATERIALIZE_STATISTIC
                 | AccessType::ALTER_MATERIALIZE_COLUMN
                 | AccessType::ALTER_MATERIALIZE_TTL
             );

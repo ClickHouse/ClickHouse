@@ -45,6 +45,8 @@ TEST(ParserAlterCommand, AddAlterCommand)
     EXPECT_EQ(getIdentifierName(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[0]), "col_01");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[1]->as<ASTFunction>()->name, "col_02");
     EXPECT_EQ(getIdentifierName(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[2]), "col_03");
+
+    // TODO: add statistics test
 }
 
 TEST(ParserAlterCommand, DropAlterCommand)

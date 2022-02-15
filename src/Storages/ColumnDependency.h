@@ -20,6 +20,9 @@ struct ColumnDependency
         /// Exists any projection, that requires @column_name
         PROJECTION,
 
+        /// Exists any statistic, that requires @column_name
+        STATISTIC,
+
         /// Exists any TTL expression, that requires @column_name
         TTL_EXPRESSION,
 

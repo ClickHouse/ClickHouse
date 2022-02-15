@@ -44,6 +44,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_clear_index("CLEAR INDEX");
     ParserKeyword s_materialize_index("MATERIALIZE INDEX");
 
+    ParserKeyword s_add_statistic("ADD STATISTIC");
+    ParserKeyword s_drop_statistic("DROP STATISTIC");
+    ParserKeyword s_clear_statistic("CLEAR STATISTIC");
+    ParserKeyword s_materialize_statistic("MATERIALIZE STATISTIC");
+    ParserKeyword s_modify_statistic("MODIFY STATISTIC");
+
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
 
@@ -112,6 +118,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
+    ParserStatisticDeclaration parser_stat_decl;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
@@ -326,6 +333,81 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command->partition, expected))
                         return false;
                 }
+            }
+            else if (s_add_statistic.ignore(pos, expected))
+            {
+                if (s_if_not_exists.ignore(pos, expected))
+                    command->if_not_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::ADD_STATISTIC;
+
+                if (s_first.ignore(pos, expected))
+                    command->first = true;
+                else if (s_after.ignore(pos, expected))
+                {
+                    if (!parser_name.parse(pos, command->statistic, expected))
+                        return false;
+                }
+            }
+            else if (s_drop_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command->statistic, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::DROP_STATISTIC;
+                command->detach = false;
+            }
+            else if (s_clear_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command->statistic, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::DROP_STATISTIC;
+                command->clear_statistic = true;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
+            }
+            else if (s_materialize_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command->statistic, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MATERIALIZE_STATISTIC;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
+            }
+            else if (s_modify_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_STATISTIC;
+                command->detach = false;
             }
             else if (s_add_projection.ignore(pos, expected))
             {

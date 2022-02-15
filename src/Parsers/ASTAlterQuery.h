@@ -47,6 +47,11 @@ public:
         DROP_INDEX,
         MATERIALIZE_INDEX,
 
+        ADD_STATISTIC, // metadata
+        DROP_STATISTIC, // metadata + mutation
+        MATERIALIZE_STATISTIC, // mutation
+        MODIFY_STATISTIC, // metadata
+
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
 
@@ -129,6 +134,19 @@ public:
      */
     ASTPtr projection;
 
+    /** The ADD STATISTIC query stores the StatisticDeclaration there.
+     *  The MODIFY STATISTIC query stores the StatisticDeclaration there.
+     */
+    ASTPtr statistic_decl;
+
+    /** The ADD STATISTIC query stores the name of the statistic following AFTER.
+     *  The DROP STATISTIC query stores the name for deletion.
+     *  The MATERIALIZE STATISTIC query stores the name of the statistic to materialize.
+     *  The CLEAR STATISTIC query stores the name of the statistic to clear.
+     *  --The MODIFY STATISTIC query stores the name of the statistic to modify.--
+     */
+    ASTPtr statistic;
+
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -168,6 +186,8 @@ public:
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
+
+    bool clear_statistic = false; /// for CLEAR STATISTIC (do not drop statistic from metadata)
 
     bool if_not_exists = false; /// option for ADD_COLUMN
 

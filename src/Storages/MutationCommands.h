@@ -38,6 +38,8 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        //DROP_STATISTIC,
+        MATERIALIZE_STATISTIC,
     };
 
     Type type = EMPTY;
@@ -48,9 +50,10 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX and PROJECTION
+    /// For MATERIALIZE INDEX, PROJECTION and STATISTIC
     String index_name;
     String projection_name;
+    String statistic_name;
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;

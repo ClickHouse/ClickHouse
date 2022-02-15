@@ -416,8 +416,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
+    const StatisticDescriptions & statistics_desc = metadata_snapshot->getStatistics();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
-    // TODO: MATERIALIZE STATS
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -584,7 +584,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -601,9 +601,25 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
             materialized_indices.emplace(command.index_name);
         }
+        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            auto it = std::find_if(
+                    std::cbegin(statistics_desc), std::end(statistics_desc),
+                    [&](const StatisticDescription & statistic)
+                    {
+                        return statistic.name == command.statistic_name;
+                    });
+            if (it == std::cend(statistics_desc))
+                throw Exception("Unknown statistic: " + command.statistic_name, ErrorCodes::BAD_ARGUMENTS);
+
+            for (const auto & column : it->column_names)
+                dependencies.emplace(column, ColumnDependency::STATISTIC);
+            materialized_statistics.emplace(command.statistic_name);
+        }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             for (const auto & column : projection.required_columns)
                 dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -611,12 +627,17 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_indices.erase(command.index_name);
         }
+        /*else if (command.type == MutationCommand::DROP_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            materialized_statistics.erase(command.statistic_name);
+        }*/
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -996,7 +1017,7 @@ QueryPipeline MutationsInterpreter::execute()
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
