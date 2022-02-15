@@ -76,7 +76,7 @@ DiskHDFS::DiskHDFS(
 
 std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
-    auto metadata = readMeta(path);
+    auto metadata = readMetadata(path);
 
     LOG_TEST(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
@@ -90,8 +90,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 
 std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    auto metadata = readOrCreateMetaForWriting(path, mode);
-
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
     auto hdfs_path = remote_fs_root_path + file_name;
@@ -103,10 +101,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
                                                              config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
+    auto create_metadata_callback = [this, path, mode, file_name] (size_t count)
+    {
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
+    };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
-                                                                                std::move(metadata),
-                                                                                file_name);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(
+        std::move(hdfs_buffer), std::move(create_metadata_callback), path);
 }
 
 
