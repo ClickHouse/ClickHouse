@@ -139,7 +139,7 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, "runlog.log")
-    with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=40) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
