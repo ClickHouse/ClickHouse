@@ -86,7 +86,9 @@ struct AddMicrosecondsImpl
         {
             auto division = std::div( (t.fractional + delta), static_cast<Int64>(10e6));
             return {t.whole * multiplier + division.quot, division.rem};
-        } else {
+        }
+        else
+        {
             auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(10e6 * multiplier));
             return {t.whole + division.quot, division.rem};
         }
@@ -99,7 +101,9 @@ struct AddMicrosecondsImpl
         if (scale <= 6)
         {
             return t * multiplier + delta;
-        } else {
+        }
+        else
+        {
             return t + delta * multiplier;
         }
 
@@ -134,7 +138,9 @@ struct AddMillisecondsImpl
         {
             auto division = std::div( (t.fractional + delta), static_cast<Int64>(1000));
             return {t.whole * multiplier + division.quot, division.rem};
-        } else {
+        }
+        else
+        {
             auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(1000 * multiplier));
             return {t.whole + division.quot,division.rem};
         }
@@ -147,7 +153,9 @@ struct AddMillisecondsImpl
         if (scale <= 3)
         {
             return t * multiplier + delta;
-        } else {
+        }
+        else
+        {
             return t + delta * multiplier;
         }
 
@@ -181,9 +189,9 @@ struct AddSecondsImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t;
+        return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -214,9 +222,9 @@ struct AddMinutesImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t;
+        return t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -247,9 +255,9 @@ struct AddHoursImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t;
+        return t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -280,9 +288,11 @@ struct AddDaysImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
-        return t;
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -312,9 +322,11 @@ struct AddWeeksImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int32, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
-        return t;
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -344,9 +356,11 @@ struct AddMonthsImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
-        return t;
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -376,9 +390,11 @@ struct AddQuartersImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int32, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
-        return t;
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -408,9 +424,11 @@ struct AddYearsImpl
     }
 
     static inline DateTime64
-    execute(DateTime64 t, Int64, const DateLUTImpl &, UInt16 = 0)
+    execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
-        return t;
+        auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        auto d = std::div(t, multiplier);
+        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -522,7 +540,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale = DataTypeDateTime64::default_scale)
+    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale = 0)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
