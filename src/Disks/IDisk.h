@@ -277,9 +277,19 @@ public:
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
+    /// Quite leaky abstraction. Some disks can use additional disk to store
+    /// some parts of metadata. In general case we have only one disk itself and
+    /// return pointer to it.
+    ///
+    /// Actually it's a part of IDiskRemote implementation but we have so
+    /// complex hierarchy of disks (with decorators), so we cannot even
+    /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
     virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
 
-    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> &) const { return {}; }
+    /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
+    /// it will return mapping for each required path: path -> metadata as string.
+    /// Only for IDiskRemote.
+    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & /* paths */) const { return {}; }
 
     /// Return reference count for remote FS.
     /// You can ask -- why we have zero and what does it mean? For some unknown reason

@@ -3814,6 +3814,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 }
             }
 
+            /// Checking both checksums and columns hash. For example we can have empty part
+            /// with same checksums but different columns. And we attaching it exception will
+            /// be thrown.
             if (desired_part_header
                 && source_part_header.getColumnsHash() == desired_part_header->getColumnsHash()
                 && source_part_header.getChecksums() == desired_part_header->getChecksums())
