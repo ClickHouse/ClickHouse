@@ -1761,10 +1761,10 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 
--- следующая вставка не будет дедуплицирована, потому что insert_dedupplication_token отличается 
+-- следующая вставка не будет дедуплицирована, потому что insert_deduplication_token отличается 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
--- следующая вставка будет дедуплицирована, потому что insert_dedupplication_token
+-- следующая вставка будет дедуплицирована, потому что insert_deduplication_token
 -- тот же самый, что и один из предыдущих 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
