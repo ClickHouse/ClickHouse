@@ -855,6 +855,8 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    using namespace ProfileEvents;
+
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
@@ -862,7 +864,7 @@ void TCPHandler::sendProfileEvents()
         { "host_name",    std::make_shared<DataTypeString>()   },
         { "current_time", std::make_shared<DataTypeDateTime>() },
         { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         ProfileEvents::TypeEnum              },
+        { "type",         TypeEnum              },
         { "name",         std::make_shared<DataTypeString>()   },
         { "value",        std::make_shared<DataTypeInt64>()   },
     };
@@ -873,7 +875,6 @@ void TCPHandler::sendProfileEvents()
 
     Block block(std::move(temp_columns));
 
-    using namespace ProfileEvents;
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
     auto const current_thread_id = CurrentThread::get().thread_id;
