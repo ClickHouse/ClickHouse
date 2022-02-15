@@ -250,7 +250,7 @@ IDiskRemote::Metadata IDiskRemote::createUpdateAndStoreMetadata(const String & p
 
 std::unordered_map<String, String> IDiskRemote::getSerializedMetadata(const std::vector<std::string> & file_paths) const
 {
-    std::unordered_map<std::string, std::string> metadatas;
+    std::unordered_map<String, String> metadatas;
 
     std::shared_lock lock(metadata_mutex);
 
