@@ -921,8 +921,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         auto reader_settings = getMergeTreeReaderSettings(context);
 
-        bool use_skip_indexes = context->getSettings().use_skip_indexes;
-        if (select.final() && !context->getSettings().use_skip_indexes_if_final)
+        bool use_skip_indexes = settings.use_skip_indexes;
+        if (select.final() && !settings.use_skip_indexes_if_final)
             use_skip_indexes = false;
 
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
