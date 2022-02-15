@@ -130,7 +130,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-static ActionsDAGPtr createExpressions(
+ActionsDAGPtr createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
