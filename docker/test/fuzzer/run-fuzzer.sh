@@ -185,15 +185,14 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
+gcore
 backtrace full
-info locals
+thread apply all backtrace full
 info registers
 disassemble /s
 up
-info locals
 disassemble /s
 up
-info locals
 disassemble /s
 p \"done\"
 detach
@@ -314,6 +313,11 @@ quit
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
+
+    if test -f core.*; then
+        pigz core.*
+        mv core.*.gz core.gz
+    fi
 }
 
 case "$stage" in
@@ -345,6 +349,10 @@ case "$stage" in
     time fuzz
     ;&
 "report")
+CORE_LINK=''
+if [ -f core.gz ]; then
+    CORE_LINK='<a href="core.gz">core.gz</a>'
+fi
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -386,6 +394,7 @@ th { cursor: pointer; }
 <a href="fuzzer.log">fuzzer.log</a>
 <a href="server.log">server.log</a>
 <a href="main.log">main.log</a>
+${CORE_LINK}
 </p>
 <table>
 <tr><th>Test name</th><th>Test status</th><th>Description</th></tr>

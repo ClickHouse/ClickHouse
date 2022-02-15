@@ -54,6 +54,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & bucket_,
     const String & key_,
     size_t minimum_upload_part_size_,
+    size_t upload_part_size_multiply_factor_,
+    size_t upload_part_size_multiply_threshold_,
     size_t max_single_part_upload_size_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
@@ -63,7 +65,9 @@ WriteBufferFromS3::WriteBufferFromS3(
     , key(key_)
     , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
-    , minimum_upload_part_size(minimum_upload_part_size_)
+    , upload_part_size(minimum_upload_part_size_)
+    , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
+    , upload_part_size_multiply_threshold(upload_part_size_multiply_threshold_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , schedule(std::move(schedule_))
 {
@@ -85,9 +89,10 @@ void WriteBufferFromS3::nextImpl()
     if (multipart_upload_id.empty() && last_part_size > max_single_part_upload_size)
         createMultipartUpload();
 
-    if (!multipart_upload_id.empty() && last_part_size > minimum_upload_part_size)
+    if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
         writePart();
+
         allocateBuffer();
     }
 
@@ -96,6 +101,9 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::allocateBuffer()
 {
+    if (total_parts_uploaded != 0 && total_parts_uploaded % upload_part_size_multiply_threshold == 0)
+        upload_part_size *= upload_part_size_multiply_factor;
+
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);
     last_part_size = 0;
@@ -246,6 +254,8 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+
+    total_parts_uploaded++;
 }
 
 void WriteBufferFromS3::completeMultipartUpload()
