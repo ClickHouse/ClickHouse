@@ -274,7 +274,7 @@ void FileSegment::complete()
     {
         std::lock_guard segment_lock(mutex);
 
-        if (download_state == State::SKIP_CACHE)
+        if (download_state == State::SKIP_CACHE || detached)
             return;
 
         if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
@@ -295,13 +295,13 @@ void FileSegment::complete()
 
 void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
 {
+    std::lock_guard cache_lock(cache->mutex);
+
     bool download_can_continue = false;
 
     if (download_state == State::PARTIALLY_DOWNLOADED
                 || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
     {
-        std::lock_guard cache_lock(cache->mutex);
-
         bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock);
         download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
 
@@ -312,6 +312,8 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
                 download_state = State::SKIP_CACHE;
                 LOG_TEST(log, "Remove cell {} (downloaded: {})", range().toString(), downloaded_size);
                 cache->remove(key(), offset(), cache_lock);
+
+                detached = true;
             }
             else if (is_last_holder)
             {
@@ -323,6 +325,8 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
                 */
                 LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
                 cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
+
+                detached = true;
             }
         }
     }
