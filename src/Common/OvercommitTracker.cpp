@@ -91,6 +91,8 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
 {
     MemoryTracker * query_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
+    // At this moment query list must be read only.
+    // BlockQueryIfMemoryLimit is used in ProcessList to guarantee this.
     process_list->processEachQueryStatus([&](DB::QueryStatus const & query)
     {
         if (query.isKilled())

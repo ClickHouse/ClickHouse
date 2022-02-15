@@ -9,6 +9,9 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include "Common/MemoryTracker.h"
+#include "Common/OvercommitTracker.h"
+#include "Common/tests/gtest_global_context.h"
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -226,8 +229,12 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             ///  since allocation and deallocation could happen in different threads
         }
 
-        auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind);
+        Container::iterator process_it;
+        {
+            BlockQueryIfMemoryLimit block_query{total_memory_tracker.getOvercommitTracker()};
+            process_it = processes.emplace(processes.end(),
+                query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind);
+        }
 
         increaseQueryKindAmount(query_kind);
 
@@ -236,7 +243,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         process_it->setUserProcessList(&user_process_list);
 
         {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
+            BlockQueryIfMemoryLimit block_query{&user_process_list.user_overcommit_tracker};
             user_process_list.queries.emplace(client_info.current_query_id, &res->get());
         }
 
@@ -289,14 +296,17 @@ ProcessListEntry::~ProcessListEntry()
     {
         if (running_query->second == process_list_element_ptr)
         {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
+            BlockQueryIfMemoryLimit block_query{&user_process_list.user_overcommit_tracker};
             user_process_list.queries.erase(running_query->first);
             found = true;
         }
     }
 
-    /// This removes the memory_tracker of one request.
-    parent.processes.erase(it);
+    {
+        BlockQueryIfMemoryLimit block_query{total_memory_tracker.getOvercommitTracker()};
+        /// This removes the memory_tracker of one request.
+        parent.processes.erase(it);
+    }
 
     if (!found)
     {

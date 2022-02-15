@@ -349,10 +349,11 @@ public:
         max_size = max_size_;
     }
 
+    // Before calling this method you should be sure
+    // that lock is acquired.
     template <typename F>
     void processEachQueryStatus(F && func) const
     {
-        std::lock_guard lk(mutex);
         for (auto && query : processes)
             func(query);
     }
