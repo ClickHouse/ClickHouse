@@ -313,9 +313,15 @@ void LocalServer::cleanup()
 }
 
 
+static bool checkIfStdinIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -337,8 +343,9 @@ std::string LocalServer::getInitialCreateTableQuery()
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    auto data_format
-        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
 
     if (table_structure == "auto")
         table_structure = "";
@@ -518,22 +525,17 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
-
-        load_suggestions = true;
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+
     print_stack_trace = config().getBool("stacktrace", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
