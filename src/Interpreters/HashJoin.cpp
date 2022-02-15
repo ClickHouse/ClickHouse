@@ -1524,13 +1524,13 @@ void HashJoin::joinBlockImpl(
                     continue;
 
                 const auto & col = block.getByName(left_name);
-                bool is_nullable = nullable_right_side || right_key.type->isNullable();
+                bool is_nullable = JoinCommon::isNullable(right_key.type);
                 auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
                 ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
                 right_col = correctNullability(std::move(right_col), is_nullable);
-                block.insert(right_col);
+                block.insert(std::move(right_col));
             }
         }
     }
@@ -1556,7 +1556,7 @@ void HashJoin::joinBlockImpl(
                     continue;
 
                 const auto & col = block.getByName(left_name);
-                bool is_nullable = nullable_right_side || right_key.type->isNullable();
+                bool is_nullable = JoinCommon::isNullable(right_key.type);
 
                 ColumnPtr thin_column = filterWithBlanks(col.column, filter);
 
@@ -1564,7 +1564,7 @@ void HashJoin::joinBlockImpl(
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
                 right_col = correctNullability(std::move(right_col), is_nullable, null_map_filter);
-                block.insert(right_col);
+                block.insert(std::move(right_col));
 
                 if constexpr (jf.need_replication)
                     right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
@@ -2088,7 +2088,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {
-    /// It should be nullable if nullable_right_side is true
+    /// It should be nullable when right side is nullable
     return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
 }
 
