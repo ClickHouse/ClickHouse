@@ -4,6 +4,7 @@
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -1057,6 +1058,13 @@ private:
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->disk->createDirectories(ctx->new_part_tmp_path);
+
+        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
+        /// NOTE do not pass context for writing to system.transactions_info_log,
+        /// because part may have temporary name (with temporary block numbers). Will write it later.
+        ctx->new_data_part->version.setCreationTID(tid, nullptr);
+        ctx->new_data_part->storeVersionMetadata();
 
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())

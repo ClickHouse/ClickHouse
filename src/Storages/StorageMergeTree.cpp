@@ -1504,6 +1504,12 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_name);
+        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+        auto txn = local_context->getCurrentTransaction();
+        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+        loaded_parts[i]->version.setCreationTID(tid, nullptr);
+        loaded_parts[i]->storeVersionMetadata();
+
         String old_name = renamed_parts.old_and_new_names[i].old_name;
         renameTempPartAndAdd(loaded_parts[i], local_context->getCurrentTransaction().get(), &increment);
         renamed_parts.old_and_new_names[i].old_name.clear();

@@ -36,15 +36,12 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
-    if (storage.supportsTransactions())
-    {
-        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        /// NOTE do not pass context for writing to system.transactions_info_log,
-        /// because part may have temporary name (with temporary block numbers). Will write it later.
-        data_part->version.setCreationTID(tid, nullptr);
-        data_part->storeVersionMetadata();
-    }
+    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+    /// NOTE do not pass context for writing to system.transactions_info_log,
+    /// because part may have temporary name (with temporary block numbers). Will write it later.
+    data_part->version.setCreationTID(tid, nullptr);
+    data_part->storeVersionMetadata();
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
 }
