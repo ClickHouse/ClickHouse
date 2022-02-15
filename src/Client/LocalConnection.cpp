@@ -64,11 +64,13 @@ void LocalConnection::updateProgress(const Progress & value)
 
 void LocalConnection::getProfileEvents(Block & block)
 {
+    using namespace ProfileEvents;
+
     static const NamesAndTypesList column_names_and_types = {
         {"host_name", std::make_shared<DataTypeString>()},
         {"current_time", std::make_shared<DataTypeDateTime>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"type", ProfileEvents::TypeEnum},
+        {"type", TypeEnum},
         {"name", std::make_shared<DataTypeString>()},
         {"value", std::make_shared<DataTypeInt64>()},
     };
@@ -77,7 +79,6 @@ void LocalConnection::getProfileEvents(Block & block)
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 
-    using namespace ProfileEvents;
     block = Block(std::move(temp_columns));
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();

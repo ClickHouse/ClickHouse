@@ -13,12 +13,12 @@ constexpr size_t VALUE_COLUMN_INDEX = 5;
 struct ProfileEventsSnapshot
 {
     UInt64 thread_id;
-    ProfileEvents::CountersIncrement counters;
+    CountersIncrement counters;
     Int64 memory_usage;
     time_t current_time;
 };
 
-using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, ProfileEvents::Counters::Snapshot>;
+using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot>;
 
 /// Dumps profile events to columns Map(String, UInt64)
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);

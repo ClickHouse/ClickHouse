@@ -37,7 +37,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
         if (nonzero_only && 0 == value)
             continue;
 
-        const char * desc = ProfileEvents::getName(event);
+        const char * desc = getName(event);
         key_column.insertData(desc, strlen(desc));
         value_column.insert(value);
         size++;
@@ -52,14 +52,14 @@ void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::MutableColumn
     size_t rows = 0;
     auto & name_column = columns[NAME_COLUMN_INDEX];
     auto & value_column = columns[VALUE_COLUMN_INDEX];
-    for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
+    for (Event event = 0; event < Counters::num_counters; ++event)
     {
         Int64 value = snapshot.counters[event];
 
         if (value == 0)
             continue;
 
-        const char * desc = ProfileEvents::getName(event);
+        const char * desc = getName(event);
         name_column->insertData(desc, strlen(desc));
         value_column->insert(value);
         rows++;
@@ -72,7 +72,7 @@ void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::MutableColumn
         columns[i++]->insertData(host_name.data(), host_name.size());
         columns[i++]->insert(UInt64(snapshot.current_time));
         columns[i++]->insert(UInt64{snapshot.thread_id});
-        columns[i++]->insert(ProfileEvents::Type::INCREMENT);
+        columns[i++]->insert(Type::INCREMENT);
     }
 }
 
@@ -83,7 +83,7 @@ void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::MutableColumn
         columns[i++]->insertData(host_name.data(), host_name.size());
         columns[i++]->insert(UInt64(snapshot.current_time));
         columns[i++]->insert(UInt64{snapshot.thread_id});
-        columns[i++]->insert(ProfileEvents::Type::GAUGE);
+        columns[i++]->insert(Type::GAUGE);
 
         columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
         columns[i++]->insert(snapshot.memory_usage);
