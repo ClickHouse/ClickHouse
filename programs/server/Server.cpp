@@ -539,24 +539,54 @@ static void sanityChecks(Server* server)
     std::string logs_path = server->config().getString("logger.log", "");
 
 #if defined(OS_LINUX)
-    if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-        server->context()->addWarningMessage("Linux is not using fast TSC clock source. Performance could be degraded.");
+    try
+    {
+        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
+            server->context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+    }
+    catch (...)
+    {
+    }
 
-    if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-        server->context()->addWarningMessage("Linux memory overcommit is disabled.");
+    try
+    {
+        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
+            server->context()->addWarningMessage("Linux memory overcommit is disabled.");
+    }
+    catch (...)
+    {
+    }
 
-    if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-        server->context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+    try
+    {
+        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
+            server->context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+    }
+    catch (...)
+    {
+    }
 
-    if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-        server->context()->addWarningMessage("Linux max PID is too low.");
+    try
+    {
+        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
+            server->context()->addWarningMessage("Linux max PID is too low.");
+    }
+    catch (...)
+    {
+    }
 
-    if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-        server->context()->addWarningMessage("Linux threads max count is too low.");
+    try
+    {
+        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
+            server->context()->addWarningMessage("Linux threads max count is too low.");
+    }
+    catch (...)
+    {
+    }
 
     std::string devId = getBlockDeviceId(data_path);
     if (getBlockDeviceType(devId) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(devId) == 0)
-        server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance could be degraded.");
+        server->context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
     if (sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGE_SIZE) < (2l << 30))
         server->context()->addWarningMessage("Available memory at server startup is too low (2GiB).");

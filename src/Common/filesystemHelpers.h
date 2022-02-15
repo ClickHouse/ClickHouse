@@ -18,22 +18,25 @@ using TemporaryFile = Poco::TemporaryFile;
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 
+// Determine what block device is responsible for specified path
 #if !defined(__linux__)
 [[noreturn]]
 #endif
 String getBlockDeviceId(const String & path);
 
 enum class BlockDeviceType {
-    UNKNOWN = 0,
-    NONROT = 1,
-    ROT = 2
+    UNKNOWN = 0, // we were unable to determine device type
+    NONROT = 1, // not a rotational device (SSD, NVME, etc)
+    ROT = 2 // rotational device (HDD)
 };
 
+// Try to determine block device type
 #if !defined(__linux__)
 [[noreturn]]
 #endif
 BlockDeviceType getBlockDeviceType(const String & deviceId);
 
+// Get size of read-ahead in bytes for specified block device
 #if !defined(__linux__)
 [[noreturn]]
 #endif
