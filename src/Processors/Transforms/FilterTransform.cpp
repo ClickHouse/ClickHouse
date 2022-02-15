@@ -161,7 +161,7 @@ void FilterTransform::transform(Chunk & chunk)
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
     {
-        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column]);
+        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
         num_filtered_rows = columns[first_non_constant_column]->size();
     }
     else
@@ -211,7 +211,7 @@ void FilterTransform::transform(Chunk & chunk)
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            current_column = filter_description->filter(*current_column);
+            current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
     chunk.setColumns(std::move(columns), num_filtered_rows);
