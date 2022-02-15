@@ -16,7 +16,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-
+#include <deque>
 
 namespace DB
 {
@@ -176,18 +176,56 @@ static Paths extractPath(const ASTPtr & query, ContextPtr context)
     return extractPathImpl(*select.where(), res, context) ? res : Paths();
 }
 
+static void addRow(MutableColumns & res_columns, const String& node, const String& path, const Coordination::GetResponse& res)
+{
+    if (res.error == Coordination::Error::ZNONODE)
+        return; /// Node was deleted meanwhile.
+
+    const Coordination::Stat & stat = res.stat;
+
+    size_t col_num = 0;
+    res_columns[col_num++]->insert(node);
+    res_columns[col_num++]->insert(res.data);
+    res_columns[col_num++]->insert(stat.czxid);
+    res_columns[col_num++]->insert(stat.mzxid);
+    res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
+    res_columns[col_num++]->insert(UInt64(stat.mtime / 1000));
+    res_columns[col_num++]->insert(stat.version);
+    res_columns[col_num++]->insert(stat.cversion);
+    res_columns[col_num++]->insert(stat.aversion);
+    res_columns[col_num++]->insert(stat.ephemeralOwner);
+    res_columns[col_num++]->insert(stat.dataLength);
+    res_columns[col_num++]->insert(stat.numChildren);
+    res_columns[col_num++]->insert(stat.pzxid);
+    res_columns[col_num++]->insert(path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+}
 
 void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
+    bool recursive;
     const Paths & paths = extractPath(query_info.query, context);
-    if (paths.empty())
-        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
+    std::deque<String> queue;
+
+    if (paths.empty()) {
+        recursive = true;
+        queue.push_back("/");
+    } else {
+        recursive = false; // do not recurse if path was specified
+        for (const auto & path : paths)
+        {
+            queue.push_back(path);
+        }
+    }
+
     std::unordered_set<String> paths_corrected;
-    for (const auto & path : paths)
+    while (!queue.empty())
     {
+        const String path = queue.front();
+        queue.pop_front();
+
         const String & path_corrected = pathCorrected(path);
         auto [it, inserted] = paths_corrected.emplace(path_corrected);
         if (!inserted) /// Do not repeat processing.
@@ -207,27 +245,11 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         for (size_t i = 0, size = nodes.size(); i < size; ++i)
         {
             auto res = futures[i].get();
-            if (res.error == Coordination::Error::ZNONODE)
-                continue; /// Node was deleted meanwhile.
-
-            const Coordination::Stat & stat = res.stat;
-
-            size_t col_num = 0;
-            res_columns[col_num++]->insert(nodes[i]);
-            res_columns[col_num++]->insert(res.data);
-            res_columns[col_num++]->insert(stat.czxid);
-            res_columns[col_num++]->insert(stat.mzxid);
-            res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
-            res_columns[col_num++]->insert(UInt64(stat.mtime / 1000));
-            res_columns[col_num++]->insert(stat.version);
-            res_columns[col_num++]->insert(stat.cversion);
-            res_columns[col_num++]->insert(stat.aversion);
-            res_columns[col_num++]->insert(stat.ephemeralOwner);
-            res_columns[col_num++]->insert(stat.dataLength);
-            res_columns[col_num++]->insert(stat.numChildren);
-            res_columns[col_num++]->insert(stat.pzxid);
-            res_columns[col_num++]->insert(
-                path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+            addRow(res_columns, nodes[i], path, res);
+            if (recursive && res.stat.numChildren > 0)
+            {
+                queue.push_back(path_part + '/' + nodes[i]);
+            }
         }
     }
 }
