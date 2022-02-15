@@ -141,6 +141,8 @@ private:
     FileCache * cache;
 
     Poco::Logger * log;
+
+    bool detached = false;
 };
 
 struct FileSegmentsHolder : boost::noncopyable

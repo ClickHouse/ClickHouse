@@ -38,6 +38,8 @@ private:
 
     SeekableReadBufferPtr getCacheReadBuffer(size_t offset) const;
 
+    std::optional<size_t> getLastNonDownloadedOffset() const;
+
     enum class ReadType
     {
         CACHED,
