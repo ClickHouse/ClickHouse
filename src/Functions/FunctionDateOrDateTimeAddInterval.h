@@ -1,4 +1,6 @@
 #pragma once
+#include <type_traits>
+#include <Core/AccurateComparison.h>
 #include <Common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
@@ -280,7 +282,7 @@ struct Adder
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], delta, time_zone);
+            vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta), time_zone);
     }
 
     template <typename FromVectorType, typename ToVectorType>
@@ -310,12 +312,22 @@ struct Adder
     }
 
 private:
+
+    template <typename Value>
+    static Int64 checkOverflow(Value val)
+    {
+        Int64 result;
+        if (accurate::convertNumeric(val, result))
+            return result;
+        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    }
+
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
         const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
+            vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
@@ -323,7 +335,7 @@ private:
         const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
+            vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone);
     }
 };
 
@@ -346,10 +358,9 @@ struct DateTimeAddIntervalImpl
         auto result_col = result_type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
+        const IColumn & delta_column = *arguments[1].column;
         if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
         {
-            const IColumn & delta_column = *arguments[1].column;
-
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
                 op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
             else
@@ -360,13 +371,12 @@ struct DateTimeAddIntervalImpl
             op.constantVector(
                 sources_const->template getValue<FromValueType>(),
                 col_to->getData(),
-                *arguments[1].column, time_zone);
+                delta_column, time_zone);
         }
         else
         {
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                            arguments[0].column->getName(), Transform::name);
         }
 
         return result_col;
