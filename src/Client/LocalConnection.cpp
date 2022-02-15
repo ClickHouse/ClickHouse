@@ -6,6 +6,9 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Core/Protocol.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <Interpreters/ProfileEventsExt.h>
 
 
 namespace DB
@@ -18,10 +21,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
+    , send_profile_events(send_profile_events_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -58,6 +62,88 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
+void LocalConnection::updateProfileEvents(Block & block)
+{
+    static const NamesAndTypesList column_names_and_types = {
+        {"host_name", std::make_shared<DataTypeString>()},
+        {"current_time", std::make_shared<DataTypeDateTime>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"type", ProfileEvents::TypeEnum},
+        {"name", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeInt64>()},
+    };
+
+    ColumnsWithTypeAndName temp_columns;
+    for (auto const & name_and_type : column_names_and_types)
+        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
+
+    using namespace ProfileEvents;
+    block = Block(std::move(temp_columns));
+    MutableColumns columns = block.mutateColumns();
+    auto thread_group = CurrentThread::getGroup();
+    auto const current_thread_id = CurrentThread::get().thread_id;
+    std::vector<ProfileEventsSnapshot> snapshots;
+    ThreadIdToCountersSnapshot new_snapshots;
+    ProfileEventsSnapshot group_snapshot;
+    {
+        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
+        snapshots.reserve(stats.size());
+
+        for (auto & stat : stats)
+        {
+            auto const thread_id = stat.thread_id;
+            if (thread_id == current_thread_id)
+                continue;
+            auto current_time = time(nullptr);
+            auto previous_snapshot = last_sent_snapshots.find(thread_id);
+            auto increment =
+                previous_snapshot != last_sent_snapshots.end()
+                ? CountersIncrement(stat.counters, previous_snapshot->second)
+                : CountersIncrement(stat.counters);
+            snapshots.push_back(ProfileEventsSnapshot{
+                thread_id,
+                std::move(increment),
+                stat.memory_usage,
+                current_time
+            });
+            new_snapshots[thread_id] = std::move(stat.counters);
+        }
+
+        group_snapshot.thread_id    = 0;
+        group_snapshot.current_time = time(nullptr);
+        group_snapshot.memory_usage = thread_group->memory_tracker.get();
+        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto prev_group_snapshot    = last_sent_snapshots.find(0);
+        group_snapshot.counters     =
+            prev_group_snapshot != last_sent_snapshots.end()
+            ? CountersIncrement(group_counters, prev_group_snapshot->second)
+            : CountersIncrement(group_counters);
+        new_snapshots[0]            = std::move(group_counters);
+    }
+    last_sent_snapshots = std::move(new_snapshots);
+
+    const String server_display_name = "localhost";
+    for (auto & snapshot : snapshots)
+    {
+        dumpProfileEvents(snapshot, columns, server_display_name);
+        dumpMemoryTracker(snapshot, columns, server_display_name);
+    }
+    dumpProfileEvents(group_snapshot, columns, server_display_name);
+    dumpMemoryTracker(group_snapshot, columns, server_display_name);
+
+    MutableColumns logs_columns;
+    Block curr_block;
+    size_t rows = 0;
+
+    for (; state->profile_queue->tryPop(curr_block); ++rows)
+    {
+        auto curr_columns = curr_block.getColumns();
+        for (size_t j = 0; j < curr_columns.size(); ++j)
+            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
+    }
+
+}
+
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
@@ -85,9 +171,14 @@ void LocalConnection::sendQuery(
     state->query_id = query_id;
     state->query = query;
     state->stage = QueryProcessingStage::Enum(stage);
+    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
 
     if (send_progress)
         state->after_send_progress.restart();
+
+    if (send_profile_events)
+        state->after_send_profile_events.restart();
 
     next_packet_type.reset();
 
@@ -228,6 +319,13 @@ bool LocalConnection::poll(size_t)
         {
             state->after_send_progress.restart();
             next_packet_type = Protocol::Server::Progress;
+            return true;
+        }
+
+        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+        {
+            state->after_send_profile_events.restart();
+            next_packet_type = Protocol::Server::ProfileEvents;
             return true;
         }
 
