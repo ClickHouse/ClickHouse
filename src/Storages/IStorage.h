@@ -159,6 +159,8 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    virtual bool supportsDynamicSubcolumns() const { return false; }
+
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
@@ -598,7 +600,15 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
-    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const;
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+    {
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    }
+
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/) const
+    {
+        return getStorageSnapshot(metadata_snapshot);
+    }
 
     /// Should table->drop be called at once or with delay (in case of atomic database engine).
     /// Needed for integration engines, when there must be no delay for calling drop() method.

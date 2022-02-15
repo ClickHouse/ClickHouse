@@ -204,11 +204,6 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-StorageSnapshotPtr IStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
-{
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-}
-
 bool IStorage::isStaticStorage() const
 {
     auto storage_policy = getStoragePolicy();

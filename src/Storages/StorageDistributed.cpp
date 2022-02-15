@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
@@ -56,6 +57,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Functions/IFunction.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -588,10 +590,40 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
+static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
+{
+    if (!hasObjectColumns(all_columns))
+        return false;
+
+    if (!query)
+        return true;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(query);
+
+    auto required_columns = columns_context.requiredColumns();
+    for (const auto & required_column : required_columns)
+    {
+        auto name_in_storage = Nested::splitName(required_column).first;
+        auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
+
+        if (column_in_storage && isObject(column_in_storage->type))
+            return true;
+    }
+
+    return false;
+}
+
 StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr);
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const
+{
     auto snapshot_data = std::make_unique<SnapshotData>();
-    if (!hasObjectColumns(metadata_snapshot->getColumns()))
+    if (!requiresObjectColumns(metadata_snapshot->getColumns(), query))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
