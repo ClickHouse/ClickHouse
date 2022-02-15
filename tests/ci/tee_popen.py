@@ -11,11 +11,12 @@ import os
 # stdout.
 class TeePopen:
     # pylint: disable=W0102
-    def __init__(self, command, log_file, env=os.environ.copy()):
+    def __init__(self, command, log_file, env=os.environ.copy(), timeout=None):
         self.command = command
         self.log_file = log_file
         self.env = env
         self.process = None
+        self.timeout = timeout
 
     def __enter__(self):
         self.process = Popen(
@@ -35,7 +36,7 @@ class TeePopen:
             sys.stdout.write(line)
             self.log_file.write(line)
 
-        self.process.wait()
+        self.process.wait(self.timeout)
         self.log_file.close()
 
     def wait(self):
@@ -43,4 +44,4 @@ class TeePopen:
             sys.stdout.write(line)
             self.log_file.write(line)
 
-        return self.process.wait()
+        return self.process.wait(self.timeout)
