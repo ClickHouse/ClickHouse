@@ -1,8 +1,7 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/FunctionMapMapped.h>
+#include <Functions/FunctionMapAdvance.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -19,8 +18,6 @@ namespace ErrorCodes
 struct MapFilterImpl
 {
     static bool needBoolean() { return true; }
-    static bool needExpression() { return true; }
-    static bool needOneMap() { return true; }
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypes & elems)
     {
@@ -75,7 +72,7 @@ struct MapFilterImpl
 };
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
-using FunctionMapFilter = FunctionMapMapped<MapFilterImpl, NameMapFilter>;
+using FunctionMapFilter = FunctionMapAdvance<MapFilterImpl, NameMapFilter>;
 
 void registerFunctionMapFilter(FunctionFactory & factory)
 {
@@ -83,20 +80,17 @@ void registerFunctionMapFilter(FunctionFactory & factory)
 }
 
 
-/** mapMap((k,v) -> expression, map) - apply the expression to the map.
+/** mapApply((k,v) -> expression, map) - apply the expression to the map.
   */
-struct MapMapImpl
+struct MapApplyImpl
 {
     /// true if the expression (for an overload of f(expression, maps)) or a map (for f(map)) should be boolean.
     static bool needBoolean() { return false; }
-    /// true if the f(map) overload is unavailable.
-    static bool needExpression() { return true; }
-    /// true if the map must be exactly one.
-    static bool needOneMap() { return true; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & , const DataTypes & elems)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & )
     {
-        return std::make_shared<DataTypeMap>(elems);
+        const auto * date_type_tuple = typeid_cast<const DataTypeTuple *>(&*expression_return);
+        return std::make_shared<DataTypeMap>(date_type_tuple->getElements());
     }
 
     static ColumnPtr execute(const ColumnMap & map, ColumnPtr mapped)
@@ -116,12 +110,12 @@ struct MapMapImpl
     }
 };
 
-struct NameMapMap { static constexpr auto name = "mapMap"; };
-using FunctionMapMap = FunctionMapMapped<MapMapImpl, NameMapMap>;
+struct NameMapApply { static constexpr auto name = "mapApply"; };
+using FunctionMapApply = FunctionMapAdvance<MapApplyImpl, NameMapApply>;
 
-void registerFunctionMapMap(FunctionFactory & factory)
+void registerFunctionMapApply(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMapMap>();
+    factory.registerFunction<FunctionMapApply>();
 }
 
 }

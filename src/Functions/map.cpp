@@ -518,11 +518,11 @@ public:
     }
 };
 
-class FunctionMapReplace : public IFunction
+class FunctionMapUpdate : public IFunction
 {
 public:
-    static constexpr auto name = "mapReplace";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapReplace>(); }
+    static constexpr auto name = "mapUpdate";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapUpdate>(); }
 
     String getName() const override
     {
@@ -637,7 +637,7 @@ void registerFunctionsMap(FunctionFactory & factory)
     factory.registerFunction<FunctionMapValues>();
     factory.registerFunction<FunctionMapContainsKeyLike>();
     factory.registerFunction<FunctionExtractKeyLike>();
-    factory.registerFunction<FunctionMapReplace>();
+    factory.registerFunction<FunctionMapUpdate>();
 }
 
 }
