@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/StorageSystemStatistics.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
@@ -122,6 +123,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemErrors>(context, system_database, "errors");
     attach<StorageSystemWarnings>(context, system_database, "warnings");
     attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
+    attach<StorageSystemStatistics>(context, system_database, "statistics");
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
 #ifdef OS_LINUX

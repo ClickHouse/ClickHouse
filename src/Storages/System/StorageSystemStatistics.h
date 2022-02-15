@@ -1,0 +1,32 @@
+#pragma once
+
+#include <base/shared_ptr_helper.h>
+#include <Storages/IStorage.h>
+
+
+namespace DB
+{
+
+/// For system.statistics table - describes the statistics in tables, similar to system.columns.
+class StorageSystemStatistics : public shared_ptr_helper<StorageSystemStatistics>, public IStorage
+{
+    friend struct shared_ptr_helper<StorageSystemStatistics>;
+public:
+    std::string getName() const override { return "SystemDataSkippingIndices"; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    bool isSystemStorage() const override { return true; }
+
+protected:
+    StorageSystemStatistics(const StorageID & table_id_);
+};
+
+}
