@@ -1,4 +1,5 @@
 #include <sys/mman.h>
+#include <cerrno>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -207,7 +208,7 @@ void KeeperStateMachine::create_snapshot(
                 auto [path, error_code]= snapshot_manager.serializeSnapshotToDisk(*snapshot);
                 if (error_code)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot {} was created failed, error: {}",
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Snapshot {} was created failed, error: {}",
                             snapshot->snapshot_meta->get_last_log_idx(), error_code.message());
                 }
                 latest_snapshot_path = path;
@@ -284,6 +285,36 @@ void KeeperStateMachine::save_logical_snp_obj(
     }
 }
 
+static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
+{
+    if (path.empty() || !std::filesystem::exists(path))
+    {
+        LOG_WARNING(log, "Snapshot file {} does not exist", path);
+        return -1;
+    }
+
+    int fd = ::open(path.c_str(), O_RDONLY);
+    LOG_INFO(log, "Opening file {} for read_logical_snp_obj", path);
+    if (fd < 0)
+    {
+        LOG_WARNING(log, "Error opening {}, error: {}", path, std::strerror(errno));
+        return errno;
+    }
+    auto file_size = ::lseek(fd, 0, SEEK_END);
+    ::lseek(fd, 0, SEEK_SET);
+    auto* chunk = reinterpret_cast<nuraft::byte*>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
+    if (chunk == MAP_FAILED)
+    {
+        LOG_WARNING(log, "Error mmapping {}, error: {}", path, std::strerror(errno));
+        ::close(fd);
+        return errno;
+    }
+    data_out->put_raw(chunk, file_size);
+    ::munmap(chunk, file_size);
+    ::close(fd);
+    return 0;
+}
+
 int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s,
     void* & /*user_snp_ctx*/,
@@ -311,25 +342,11 @@ int KeeperStateMachine::read_logical_snp_obj(
                             s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
             return -1;
         }
-        int fd = ::open(latest_snapshot_path.c_str(), O_RDONLY);
-        LOG_INFO(log, "Opening file {} for read_logical_snp_obj", latest_snapshot_path);
-        if (fd < 0)
+        if (bufferFromFile(log, latest_snapshot_path, data_out))
         {
-            LOG_WARNING(log, "Error opening {}.", latest_snapshot_path);
+            LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
             return -1;
         }
-        auto file_size = ::lseek(fd, 0, SEEK_END);
-        ::lseek(fd, 0, SEEK_SET);
-        auto* chunk = reinterpret_cast<nuraft::byte*>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
-        if (chunk == MAP_FAILED)
-        {
-            LOG_WARNING(log, "Error mmapping {}.", latest_snapshot_path);
-            ::close(fd);
-            return -1;
-        }
-        data_out->put_raw(chunk, file_size);
-        ::munmap(chunk, file_size);
-        ::close(fd);
         is_last_obj = true;
     }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <system_error>
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperStorage.h>
@@ -133,7 +134,12 @@ public:
     std::string getLatestSnapshotPath() const
     {
         if (!existing_snapshots.empty())
-            return existing_snapshots.at(getLatestSnapshotIndex());
+        {
+            auto & path = existing_snapshots.at(getLatestSnapshotIndex());
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+                return path;
+        }
         return "";
     }
 
