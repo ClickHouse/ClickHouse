@@ -208,6 +208,7 @@ struct ContextSharedPart
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
+    GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
@@ -275,7 +276,9 @@ struct ContextSharedPart
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextSharedPart()
-        : access_control(std::make_unique<AccessControl>()), macros(std::make_unique<Macros>())
+        : access_control(std::make_unique<AccessControl>())
+        , global_overcommit_tracker(&process_list)
+        , macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -474,6 +477,7 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 
 ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
+OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }

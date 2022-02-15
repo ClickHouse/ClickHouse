@@ -32,6 +32,7 @@
         "dependent": []
     },
     "docker/test/pvs": {
+        "only_amd64": true,
         "name": "clickhouse/pvs-test",
         "dependent": []
     },
@@ -72,6 +73,7 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
@@ -124,6 +126,7 @@
         "dependent": []
     },
     "docker/test/integration/kerberos_kdc": {
+        "only_amd64": true,
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
@@ -137,6 +140,7 @@
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
         "name": "clickhouse/kerberized-hadoop",
         "dependent": []
     },
