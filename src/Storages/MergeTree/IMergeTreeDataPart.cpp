@@ -1106,24 +1106,24 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
 {
-    assert(storage.supportsTransactions());
     TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;
     if (version.creation_tid != expected_tid)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "CreationTID of part {} (table {}) is set to unexpected value {}, it's a bug. Current transaction: {}",
                         name, storage.getStorageID().getNameForLogs(), version.creation_tid, txn ? txn->dumpDescription() : "<none>");
 
+    assert(!txn || storage.supportsTransactions());
     assert(!txn || volume->getDisk()->exists(fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME));
 }
 
 void IMergeTreeDataPart::storeVersionMetadata() const
 {
-    assert(storage.supportsTransactions());
     assert(!version.creation_tid.isEmpty());
     if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
         return;
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+    assert(storage.supportsTransactions());
 
     if (!isStoredOnDisk())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",

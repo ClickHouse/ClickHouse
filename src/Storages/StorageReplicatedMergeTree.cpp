@@ -1504,6 +1504,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this, nullptr);
 
+            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 

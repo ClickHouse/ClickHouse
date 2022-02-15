@@ -259,6 +259,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
+        part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         commitPart(zookeeper, part, "");
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
