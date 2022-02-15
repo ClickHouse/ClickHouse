@@ -239,12 +239,6 @@ Chain InterpreterInsertQuery::buildChainImpl(
 
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
 
-    /// Non-physical columns may be necessary up to this point. Sink requires only physical columns, so
-    /// add this transform to remove non-physical columns.
-    out.addSource(std::make_shared<ReduceToPhysicalTransform>(
-        ExpressionTransform::transformHeader(query_sample_block, *adding_missing_defaults_dag),
-        metadata_snapshot->getColumns()));
-
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out.addSource(std::make_shared<ConvertingTransform>(query_sample_block, adding_missing_defaults_actions));
