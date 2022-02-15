@@ -853,82 +853,12 @@ void TCPHandler::sendExtremes(const Block & extremes)
     }
 }
 
-
-namespace
-{
-    using namespace ProfileEvents;
-
-    constexpr size_t NAME_COLUMN_INDEX  = 4;
-    constexpr size_t VALUE_COLUMN_INDEX = 5;
-
-    struct ProfileEventsSnapshot
-    {
-        UInt64 thread_id;
-        ProfileEvents::CountersIncrement counters;
-        Int64 memory_usage;
-        time_t current_time;
-    };
-
-    /*
-     * Add records about provided non-zero ProfileEvents::Counters.
-     */
-    void dumpProfileEvents(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        size_t rows = 0;
-        auto & name_column = columns[NAME_COLUMN_INDEX];
-        auto & value_column = columns[VALUE_COLUMN_INDEX];
-        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
-        {
-            Int64 value = snapshot.counters[event];
-
-            if (value == 0)
-                continue;
-
-            const char * desc = ProfileEvents::getName(event);
-            name_column->insertData(desc, strlen(desc));
-            value_column->insert(value);
-            rows++;
-        }
-
-        // Fill the rest of the columns with data
-        for (size_t row = 0; row < rows; ++row)
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
-        }
-    }
-
-    void dumpMemoryTracker(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::GAUGE);
-
-            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-            columns[i++]->insert(snapshot.memory_usage);
-        }
-    }
-}
-
-
 void TCPHandler::sendProfileEvents()
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
-    NamesAndTypesList column_names_and_types = {
+    static const NamesAndTypesList column_names_and_types = {
         { "host_name",    std::make_shared<DataTypeString>()   },
         { "current_time", std::make_shared<DataTypeDateTime>() },
         { "thread_id",    std::make_shared<DataTypeUInt64>()   },
@@ -943,6 +873,7 @@ void TCPHandler::sendProfileEvents()
 
     Block block(std::move(temp_columns));
 
+    using namespace ProfileEvents;
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
     auto const current_thread_id = CurrentThread::get().thread_id;

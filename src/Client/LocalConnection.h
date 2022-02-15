@@ -5,6 +5,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -29,6 +30,7 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
     std::unique_ptr<PushingPipelineExecutor> pushing_executor;
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
+    InternalProfileEventsQueuePtr profile_queue;
 
     std::optional<Exception> exception;
 
@@ -50,13 +52,15 @@ struct LocalQueryState
     Progress progress;
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
+    Stopwatch after_send_profile_events;
+
 };
 
 
 class LocalConnection : public IServerConnection, WithContext
 {
 public:
-    explicit LocalConnection(ContextPtr context_, bool send_progress_ = false);
+    explicit LocalConnection(ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false);
 
     ~LocalConnection() override;
 
@@ -129,12 +133,15 @@ private:
 
     void updateProgress(const Progress & value);
 
+    void updateProfileEvents(Block & block);
+
     bool pollImpl();
 
     ContextMutablePtr query_context;
     Session session;
 
     bool send_progress;
+    bool send_profile_events;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
@@ -144,5 +151,7 @@ private:
     std::optional<UInt64> next_packet_type;
 
     String current_database;
+
+    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 };
 }
