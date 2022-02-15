@@ -232,8 +232,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
-    , nullable_right_side(false)
-    , nullable_left_side(false)
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
@@ -272,9 +270,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     initRightBlockStructure(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
-
-    if (nullable_right_side)
-        JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
 
     size_t disjuncts_num = table_join->getClauses().size();
     data->maps.resize(disjuncts_num);
@@ -716,12 +711,6 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
             saved_block_sample.insert(column);
         }
     }
-
-    if (nullable_right_side)
-    {
-        JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) && !multiple_disjuncts ? right_table_keys.columns() : 0));
-    }
-
 }
 
 Block HashJoin::structureRightBlock(const Block & block) const
@@ -1473,9 +1462,6 @@ void HashJoin::joinBlockImpl(
     if constexpr (jf.right || jf.full)
     {
         materializeBlockInplace(block);
-
-        if (nullable_left_side)
-            JoinCommon::convertColumnsToNullable(block);
     }
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
@@ -1751,8 +1737,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full)
     {
         materializeBlockInplace(block);
-        if (nullable_left_side)
-            JoinCommon::convertColumnsToNullable(block);
     }
 
     if (overDictionary())
