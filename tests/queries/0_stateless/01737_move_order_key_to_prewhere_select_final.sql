@@ -1,5 +1,5 @@
 SET optimize_move_to_prewhere = 1;
-SET convert_query_to_cnf = 1;
+SET convert_query_to_cnf = 0;
 
 DROP TABLE IF EXISTS prewhere_move_select_final;
 
