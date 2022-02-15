@@ -2606,7 +2606,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         addPartContributionToColumnAndSecondaryIndexSizes(part);
 
         if (covered_parts.empty())
-            updateObjectColumns(object_columns, (*part_it)->getColumns());
+            updateObjectColumns(*part_it, lock);
         else
             resetObjectColumnsFromActiveParts(lock);
 
@@ -3852,6 +3852,7 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorUnlocked(
     const DataPartStates & affordable_states,
+    const DataPartsLock & /*lock*/,
     DataPartStateVector * out_states,
     bool require_projection_parts) const
 {
@@ -3902,7 +3903,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
     bool require_projection_parts) const
 {
     auto lock = lockParts();
-    return getDataPartsVectorUnlocked(affordable_states, out_states, require_projection_parts);
+    return getDataPartsVectorUnlocked(affordable_states, lock, out_states, require_projection_parts);
 }
 
 MergeTreeData::DataPartsVector
@@ -4378,7 +4379,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         if (reduce_parts == 0)
         {
             for (const auto & part : precommitted_parts)
-                updateObjectColumns(data.object_columns, part->getColumns());
+                data.updateObjectColumns(part, parts_lock);
         }
         else
             data.resetObjectColumnsFromActiveParts(parts_lock);
@@ -6098,8 +6099,21 @@ ColumnsDescription MergeTreeData::getObjectColumns(
 
 void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lock*/)
 {
+    const auto & columns = getInMemoryMetadataPtr()->getColumns();
+    if (!hasObjectColumns(columns))
+        return;
+
     auto range = getDataPartsStateRange(DataPartState::Active);
-    object_columns = getObjectColumns(range, getInMemoryMetadataPtr()->getColumns());
+    object_columns = getObjectColumns(range, columns);
+}
+
+void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPartsLock & /*lock*/)
+{
+    const auto & columns = getInMemoryMetadataPtr()->getColumns();
+    if (!hasObjectColumns(columns))
+        return;
+
+    DB::updateObjectColumns(object_columns, part->getColumns());
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
@@ -6107,7 +6121,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     auto snapshot_data = std::make_unique<SnapshotData>();
 
     auto lock = lockParts();
-    snapshot_data->parts = getDataPartsVectorUnlocked({DataPartState::Active});
+    snapshot_data->parts = getDataPartsVectorUnlocked({DataPartState::Active}, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 

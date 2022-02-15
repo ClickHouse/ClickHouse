@@ -52,6 +52,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     /// Do not apply moving to PREWHERE optimization for distributed tables,
@@ -66,6 +67,8 @@ public:
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+    StorageSnapshotPtr getStorageSnapshotForQuery(
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;

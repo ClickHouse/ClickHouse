@@ -517,7 +517,7 @@ ColumnPtr flattenTuple(const ColumnPtr & column)
 
 DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_types)
 {
-    assert(paths.size() == types.size());
+    assert(paths.size() == tuple_types.size());
     Columns tuple_columns;
     tuple_columns.reserve(tuple_types.size());
     for (const auto & type : tuple_types)
@@ -531,8 +531,8 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const DataTypes & tuple_types,
     const Columns & tuple_columns)
 {
-    assert(paths.size() == types.size());
-    assert(paths.size() == columns.size());
+    assert(paths.size() == tuple_types.size());
+    assert(paths.size() == tuple_columns.size());
 
     SubcolumnsTreeWithTypes tree;
 
@@ -564,7 +564,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
                 if (kind == Node::NESTED)
                 {
                     size_t dimensions_to_reduce = array_level - nested_level;
-                    assert(is_nested.test(pos));
+                    assert(parts[pos].is_nested);
 
                     ++dimensions_to_reduce;
                     --nested_level;

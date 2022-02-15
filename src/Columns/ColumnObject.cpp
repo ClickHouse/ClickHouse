@@ -411,7 +411,7 @@ void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
 
 void ColumnObject::Subcolumn::popBack(size_t n)
 {
-    assert(n <= size);
+    assert(n <= size());
 
     size_t num_removed = 0;
     for (auto it = data.rbegin(); it != data.rend(); ++it)
@@ -442,7 +442,7 @@ Field ColumnObject::Subcolumn::getLastField() const
         return Field();
 
     const auto & last_part = data.back();
-    assert(!last_part.empty());
+    assert(!last_part->empty());
     return (*last_part)[last_part->size() - 1];
 }
 

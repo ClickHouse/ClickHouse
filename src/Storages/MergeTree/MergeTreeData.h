@@ -416,6 +416,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -439,6 +441,7 @@ public:
 
     DataPartsVector getDataPartsVectorUnlocked(
         const DataPartStates & affordable_states,
+        const DataPartsLock & lock,
         DataPartStateVector * out_states = nullptr,
         bool require_projection_parts = false) const;
 
@@ -1224,6 +1227,7 @@ private:
         DataPartsLock & part_lock);
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
+    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
