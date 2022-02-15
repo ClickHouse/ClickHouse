@@ -1807,7 +1807,7 @@ ignoring check result for the source table, and will insert rows lost because of
 
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
 For example, by providing a unique value for the setting in each INSERT statement,
-user can avoid the same inserted data being deduplicated
+user can avoid the same inserted data being deduplicated.
 
 Possilbe values:
 
@@ -1815,7 +1815,7 @@ Possilbe values:
 
 Default value: empty string (disabled)
 
-`insert_deduplication_token` is used for deduplication _only_ when not empty
+`insert_deduplication_token` is used for deduplication _only_ when not empty.
 
 Example:
 
