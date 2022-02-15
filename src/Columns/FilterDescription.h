@@ -35,7 +35,7 @@ struct FilterDescription final : public IFilterDescription
 
     explicit FilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column) const override { return column.filter(*data, - 1); }
+    ColumnPtr filter(const IColumn & column) const override { return column.filter(*data, -1); }
     size_t countBytesInFilter() const override { return DB::countBytesInFilter(*data); }
 };
 
