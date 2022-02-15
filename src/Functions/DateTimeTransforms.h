@@ -41,6 +41,11 @@ namespace ErrorCodes
         throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
+    static inline UInt32 dateTimeIsNotSupported(const char * name)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
