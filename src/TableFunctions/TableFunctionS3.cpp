@@ -86,19 +86,20 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         if (args.size() == 4)
         {
-            auto last_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            if (FormatFactory::instance().getAllFormats().contains(last_arg))
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
-            else
+            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
+
+            else
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
         }
         /// For 3 arguments we support 2 possible variants:
         /// s3(source, format, structure) and s3(source, access_key_id, access_key_id)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         else if (args.size() == 3)
         {
-            auto third_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            if (FormatFactory::instance().getAllFormats().contains(third_arg))
+            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
