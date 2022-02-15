@@ -60,7 +60,7 @@ bool FileCache::shouldBypassCache()
 {
     return !CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
-        || !CurrentThread::getQueryId().size;
+        || CurrentThread::getQueryId().size == 0;
 }
 
 LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_)
@@ -401,7 +401,6 @@ void LRUFileCache::remove(
     auto cache_file_path = path(key, offset);
     if (fs::exists(cache_file_path))
     {
-        std::cerr << "\n\n\nRemoving cache file for file segment key: " << keyToStr(key) << " and offset: " << offset << "\n\n\n";
         try
         {
             fs::remove(cache_file_path);
@@ -444,7 +443,7 @@ void LRUFileCache::restore()
                 if (!parsed)
                 {
                     LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
-                    continue; /// Or remove? Some unexpected file.
+                    continue; /// Or just remove? Some unexpected file.
                 }
 
                 size = offset_it->file_size();
@@ -572,8 +571,7 @@ bool LRUFileCache::isLastFileSegmentHolder(
     if (!cell)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
 
-    /// The caller of this method is last file segment holder if use count is 2 and the second
-    /// pointer is cache itself,
+    /// The caller of this method is last file segment holder if use count is 2 (the second pointer is cache itself)
     return cell->file_segment.use_count() == 2;
 }
 

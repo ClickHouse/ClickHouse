@@ -113,7 +113,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void complete(State state, bool error = false);
+    void complete(State state, bool complete_because_of_error = false);
 
     String getInfoForLog() const;
 

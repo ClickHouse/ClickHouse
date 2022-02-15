@@ -123,7 +123,6 @@ void FileSegment::write(const char * from, size_t size)
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
 
-    std::cerr << "\n\n\nWRITE: " << size << ", file info: " << getInfoForLog() << "\n\n\n";
     if (!cache_writer)
     {
         auto download_path = cache->path(key(), offset());
@@ -137,7 +136,7 @@ void FileSegment::write(const char * from, size_t size)
     }
     catch (...)
     {
-        /// TODO: Mark this segment as NO_DOWNLOAD and remove from cache?
+        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
         throw;
     }
 
@@ -165,7 +164,7 @@ FileSegment::State FileSegment::wait()
         }
 #endif
 
-        cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: pass through settings
+        cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: make configurable by setting
     }
 
     return download_state;
@@ -213,8 +212,6 @@ void FileSegment::completeBatchAndResetDownloader()
         std::lock_guard segment_lock(mutex);
 
         bool is_downloader = downloader_id == getCallerId();
-        std::cerr << "caller id: " << getCallerId() << "\n";
-        std::cerr << "downloader id: " << downloader_id << "\n";
         if (!is_downloader)
         {
             cv.notify_all();
@@ -237,7 +234,7 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state, bool error)
+void FileSegment::complete(State state, bool complete_because_of_error)
 {
     {
         std::lock_guard segment_lock(mutex);
@@ -249,10 +246,6 @@ void FileSegment::complete(State state, bool error)
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
         }
-        else if (error)
-        {
-            remote_file_reader.reset();
-        }
 
         if (state != State::DOWNLOADED
             && state != State::PARTIALLY_DOWNLOADED
@@ -261,6 +254,12 @@ void FileSegment::complete(State state, bool error)
             cv.notify_all();
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "Cannot complete file segment with state: {}", stateToString(state));
+        }
+
+        if (complete_because_of_error)
+        {
+            /// Let's use a new buffer on the next attempt in this case.
+            remote_file_reader.reset();
         }
 
         download_state = state;
