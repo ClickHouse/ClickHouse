@@ -1,22 +1,22 @@
 ---
 toc_priority: 43
-toc_title: CONSTRAINT
+toc_title: 约束
 ---
 
-# Manipulating Constraints {#manipulations-with-constraints}
+# 操作约束 {#manipulations-with-constraints}
 
-Constraints could be added or deleted using following syntax:
+约束可以使用以下语法添加或删除:
 
 ``` sql
 ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
 ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 ```
 
-See more on [constraints](../../../sql-reference/statements/create/table.md#constraints).
+查看[constraints](../../../sql-reference/statements/create/table.md#constraints)。
 
-Queries will add or remove metadata about constraints from table so they are processed immediately.
+查询将从表中添加或删除关于约束的元数据，因此它们将被立即处理。
 
-!!! warning "Warning"
-    Constraint check **will not be executed** on existing data if it was added.
+!!! warning "警告"
+    如果已有数据被添加，约束检查**将不会被执行**。
 
-All changes on replicated tables are broadcasted to ZooKeeper and will be applied on other replicas as well.
+复制表上的所有更改都会被广播到ZooKeeper，并应用到其他副本上。
