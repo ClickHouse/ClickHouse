@@ -886,3 +886,12 @@ S3 disk can be configured as `main` or `cold` storage:
 ```
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
+
+## Virtual Columns {#virtual-columns}
+
+-   `_part` — Name of a part.
+-   `_part_index` — Sequential index of the part in the query result.
+-   `_partition_id` — Name of a partition.
+-   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+-   `_partition_value` — Values (a tuple) of a `partition by` expression.
+-   `_sample_factor` — Sample factor (from the query).

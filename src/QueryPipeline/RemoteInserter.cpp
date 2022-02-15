@@ -24,7 +24,9 @@ RemoteInserter::RemoteInserter(
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_)
-    : connection(connection_), query(query_)
+    : connection(connection_)
+    , query(query_)
+    , server_revision(connection.getServerRevision(timeouts))
 {
     ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
