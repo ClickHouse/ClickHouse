@@ -189,7 +189,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     bool recursive = true;
     if (paths.empty())
     {
-        queue.push_back("/");
+        if (context->getSettingsRef().allow_unrestricted_reads_from_keeper)
+            queue.push_back("/");
+        else
+            throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
     }
     else
     {
