@@ -490,7 +490,7 @@ private:
         size_t size = time_data.size();
 
         auto result_col = result_type->createColumn();
-        auto col_to = assert_cast<ToColumnType *>(result_col.get());
+        auto *col_to = assert_cast<ToColumnType *>(result_col.get());
         auto & result_data = col_to->getData();
         result_data.resize(size);
 
