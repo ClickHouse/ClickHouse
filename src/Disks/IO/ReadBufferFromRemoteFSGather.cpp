@@ -153,6 +153,15 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     else
         return false;
 
+    if (!moveToNextBuffer())
+        return false;
+
+    return readImpl();
+}
+
+
+bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
+{
     /// If there is no available buffers - nothing to read.
     if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
         return false;
@@ -162,11 +171,13 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     const auto & [path, size] = metadata.remote_fs_objects[current_buf_idx];
     current_buf = createImplementationBuffer(path, size);
 
-    return readImpl();
+    return true;
 }
+
 
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
+    std::cerr << "\n\nkssenii remote fs objects: " << metadata.remote_fs_objects.size() << "\n\n";
     swap(*current_buf);
 
     bool result = false;
@@ -186,11 +197,25 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (!result)
         result = current_buf->next();
 
-    file_offset_of_buffer_end = current_buf->getFileOffsetOfBufferEnd();
+    if (metadata.remote_fs_objects.size() == 1)
+    {
+        file_offset_of_buffer_end = current_buf->getFileOffsetOfBufferEnd();
+    }
+    else
+    {
+        /// For log family engines there are multiple s3 files for the same clickhouse file
+        file_offset_of_buffer_end += current_buf->available();
+    }
 
     swap(*current_buf);
 
     return result;
+}
+
+
+size_t ReadBufferFromRemoteFSGather::getFileOffsetOfBufferEnd() const
+{
+    return file_offset_of_buffer_end;
 }
 
 

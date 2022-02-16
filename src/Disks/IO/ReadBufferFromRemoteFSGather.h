@@ -46,7 +46,7 @@ public:
 
     size_t getFileSize() const;
 
-    size_t offset() const { return file_offset_of_buffer_end; }
+    size_t getFileOffsetOfBufferEnd() const;
 
     bool initialized() const { return current_buf != nullptr; }
 
@@ -71,6 +71,8 @@ private:
     void initialize();
 
     bool readImpl();
+
+    bool moveToNextBuffer();
 
     SeekableReadBufferPtr current_buf;
 

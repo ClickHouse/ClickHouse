@@ -197,8 +197,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
     }
 
-    if (file_offset_of_buffer_end != impl->offset())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected equality {} == {}. It's a bug", file_offset_of_buffer_end, impl->offset());
+    if (file_offset_of_buffer_end != impl->getFileOffsetOfBufferEnd())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected equality {} == {}. It's a bug", file_offset_of_buffer_end, impl->getFileOffsetOfBufferEnd());
 
     prefetch_future = {};
     return size;
@@ -257,7 +257,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
-    off_t file_offset_before_seek = impl->offset();
+    off_t file_offset_before_seek = impl->getFileOffsetOfBufferEnd();
     if (impl->initialized()
         && read_until_position && file_offset_of_buffer_end < *read_until_position
         && static_cast<off_t>(file_offset_of_buffer_end) > file_offset_before_seek
