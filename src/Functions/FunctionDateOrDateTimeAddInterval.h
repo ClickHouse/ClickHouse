@@ -24,9 +24,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
@@ -317,7 +318,7 @@ private:
     static Int64 checkOverflow(Value val)
     {
         Int64 result;
-        if (accurate::convertNumeric(val, result))
+        if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
