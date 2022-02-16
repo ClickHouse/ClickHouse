@@ -3,8 +3,6 @@
 #if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <arrow/adapters/orc/adapter.h>
 #include <arrow/io/memory.h>
 #include <arrow/io/api.h>
@@ -13,6 +11,7 @@
 #include <parquet/arrow/reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
+#include <orc/Statistics.hh>
 
 #include <fmt/core.h>
 #include <Core/Types.h>
@@ -131,7 +130,9 @@ void HiveOrcFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool());
+    THROW_ARROW_NOT_OK(result.status());
+    reader = std::move(result).ValueOrDie();
 }
 
 void HiveOrcFile::prepareColumnMapping()
