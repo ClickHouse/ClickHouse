@@ -85,6 +85,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         cached_buffer = std::move(buffer);
         data_buffer = cached_buffer.get();
+        compressed_data_buffer = cached_buffer.get();
     }
     else
     {
@@ -102,6 +103,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
+        compressed_data_buffer = non_cached_buffer.get();
     }
 }
 
@@ -197,10 +199,7 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
     }
     catch (Exception & e)
     {
@@ -220,10 +219,7 @@ void MergeTreeReaderStream::seekToStart()
 {
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(0, 0);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(0, 0);
+        compressed_data_buffer->seek(0, 0);
     }
     catch (Exception & e)
     {
@@ -250,10 +246,7 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
             return;
 
         last_right_offset = 0; // Zero value means the end of file.
-        if (cached_buffer)
-            cached_buffer->setReadUntilEnd();
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilEnd();
+        data_buffer->setReadUntilEnd();
     }
     else
     {
@@ -261,10 +254,7 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
             return;
 
         last_right_offset = right_offset;
-        if (cached_buffer)
-            cached_buffer->setReadUntilPosition(right_offset);
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilPosition(right_offset);
+        data_buffer->setReadUntilPosition(right_offset);
     }
 }
 
