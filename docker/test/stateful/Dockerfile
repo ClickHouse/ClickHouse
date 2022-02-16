@@ -13,6 +13,7 @@ COPY s3downloader /s3downloader
 
 ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 ENV DATASETS="hits visits"
+ENV EXPORT_S3_STORAGE_POLICIES=1
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \

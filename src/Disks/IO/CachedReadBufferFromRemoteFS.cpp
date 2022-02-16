@@ -71,7 +71,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer([[mayb
             * Each downloader is elected to download at most buffer_size bytes and then any other can
             * continue. The one who continues download should reuse download buffer.
             *
-            * Also implementation (s3, hdfs, web) buffer might be passed through file segments.
+            * TODO: Also implementation (s3, hdfs, web) buffer might be passed through file segments.
             * E.g. consider for query1 and query2 we need intersecting ranges like this:
             *
             *     [___________]         -- read_range_1 for query1
