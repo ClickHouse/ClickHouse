@@ -1,3 +1,5 @@
+#pragma once
+
 #include <DataTypes/Serializations/PathInData.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>

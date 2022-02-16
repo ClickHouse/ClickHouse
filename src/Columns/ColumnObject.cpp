@@ -706,7 +706,7 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
 
     if (nested_node)
     {
-        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto & ) { return true; });
+        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
         auto new_subcolumn = leaf->data.recreateWithDefaultValues(field_info);

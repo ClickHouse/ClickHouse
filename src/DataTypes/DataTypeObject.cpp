@@ -50,7 +50,7 @@ String DataTypeObject::doGetName() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() < 1 || arguments->children.size() > 2)
+    if (!arguments || arguments->children.empty() || arguments->children.size() > 2)
         throw Exception("Object data type family must have one or two arguments -"
             " name of schema format and type of default value",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
