@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# TODO: Make this file shared with stateful tests
+# TODO: Make this file shared with stateless tests
 #
 # Usage for local run:
 #
@@ -57,3 +57,10 @@ for FILE in $(ls "${MINIO_DATA_PATH}"); do
     echo "$FILE";
     ./mc cp "${MINIO_DATA_PATH}"/"$FILE" clickminio/test/"$FILE";
 done
+
+mkdir -p ~/.aws
+ cat <<EOT >> ~/.aws/credentials
+ [default]
+ aws_access_key_id=clickhouse
+ aws_secret_access_key=clickhouse
+ EOT

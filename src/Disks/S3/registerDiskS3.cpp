@@ -186,24 +186,7 @@ void registerDiskS3(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        FileCachePtr cache;
-        bool data_cache_enabled = config.getBool(config_prefix + ".data_cache_enabled", false);
-        if (data_cache_enabled)
-        {
-            auto cache_base_path = config.getString(config_prefix + ".data_cache_path", fs::path(context->getPath()) / "disks" / name / "data_cache/");
-            if (!fs::exists(cache_base_path))
-                fs::create_directories(cache_base_path);
-
-            LOG_INFO(&Poco::Logger::get("Disks3(" + name + ")"), "Disk registered with cache path: {}", cache_base_path);
-
-            if (metadata_path == cache_base_path)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata path and cache base path must be different: {}", metadata_path);
-
-            size_t max_cache_size = config.getUInt64(config_prefix + ".data_cache_max_size", 1024*1024*1024);
-            size_t max_cache_elements = config.getUInt64(config_prefix + ".data_cache_max_elements", 1024*1024);
-
-            cache = FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements);
-        }
+        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
