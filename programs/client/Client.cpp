@@ -1119,7 +1119,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+            config().setString(name, options[name].as<Strings>().back());
     }
 
     if (options.count("config-file") && options.count("config"))

@@ -1873,7 +1873,7 @@ void ClientBase::readArguments(
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
