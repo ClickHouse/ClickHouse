@@ -11,7 +11,9 @@ private:
     SerializationPtr nested;
 
 public:
-    SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+
+    String getName() const override { return "Array"; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;

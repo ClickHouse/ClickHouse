@@ -15,7 +15,9 @@ private:
     SerializationPtr dict_inner_serialization;
 
 public:
-    SerializationLowCardinality(const DataTypePtr & dictionary_type);
+    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+
+    String getName() const override { return "LowCardinality"; }
 
     void enumerateStreams(
         SubstreamPath & path,

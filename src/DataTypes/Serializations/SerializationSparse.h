@@ -23,7 +23,9 @@ namespace DB
 class SerializationSparse final : public ISerialization
 {
 public:
-    SerializationSparse(const SerializationPtr & nested_);
+    explicit SerializationSparse(const SerializationPtr & nested_);
+
+    String getName() const override { return "Sparse"; }
 
     Kind getKind() const override { return Kind::SPARSE; }
 

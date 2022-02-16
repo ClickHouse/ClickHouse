@@ -107,7 +107,7 @@ void SerializationMap::serializeTextImpl(
 }
 
 template <typename Reader>
-void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
+void SerializationMap::deserializeOrdinaryTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
 
@@ -161,8 +161,46 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
     }
 }
 
+template <typename Reader>
+void SerializationMap::deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader, const FormatSettings & settings) const
+{
+    auto & column_map = assert_cast<ColumnMap &>(column);
+
+    auto & nested_array = column_map.getNestedColumn();
+    auto & nested_tuple = column_map.getNestedData();
+    auto & offsets = nested_array.getOffsets();
+
+    auto & key_column = nested_tuple.getColumn(0);
+    auto & value_column = nested_tuple.getColumn(1);
+
+    size_t size = 0;
+    bool first = true;
+    while (!istr.eof())
+    {
+        if (!first)
+        {
+            if (*istr.position() == settings.hive_text.collection_items_delimiter)
+                ++istr.position();
+            else
+                throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+        }
+
+        first = false;
+        if (istr.eof())
+            break;
+
+        reader(istr, key, key_column);
+        assertChar(settings.hive_text.map_keys_delimiter, istr);
+
+        ++size;
+        reader(istr, value, value_column);
+    }
+    offsets.push_back(offsets.back() + size);
+}
+
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// TODO implement serializeText for hive
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
         subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
@@ -173,14 +211,21 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    deserializeTextImpl(column, istr,
-        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-        {
-            subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
-        });
+    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+    { subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings); };
+
+    switch (settings.default_simple_text_format)
+    {
+        case FormatSettings::SimpleTextFormat::Ordinary:
+            deserializeOrdinaryTextImpl(column, istr, reader);
+            break;
+        case FormatSettings::SimpleTextFormat::Hive:
+            deserializeHiveTextImpl(column, istr, reader, settings);
+            break;
+    }
 
     if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Map");
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, getName());
 }
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -201,7 +246,7 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr,
+    deserializeOrdinaryTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
             subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
@@ -257,9 +302,8 @@ void SerializationMap::enumerateStreams(
     SubstreamData next_data =
     {
         nested,
-        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr,
-        data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr,
-        data.serialization_info,
+        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() :
+            nullptr, data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr, data.serialization_info,
     };
 
     nested->enumerateStreams(path, callback, next_data);

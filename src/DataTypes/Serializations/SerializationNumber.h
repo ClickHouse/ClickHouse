@@ -15,6 +15,8 @@ public:
     using FieldType = T;
     using ColumnType = ColumnVector<T>;
 
+    String getName() const override { return TypeName<FieldType>.data(); }
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

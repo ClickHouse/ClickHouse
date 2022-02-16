@@ -59,17 +59,25 @@ TEST_P(ParseDataTypeTest, parseStringValue)
 {
     const auto & p = GetParam();
 
-    auto col = data_type->createColumn();
-    for (const auto & value : p.values)
+    for (const auto & simple_text_format : {FormatSettings::SimpleTextFormat::Ordinary, FormatSettings::SimpleTextFormat::Hive})
     {
-        ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-        data_type->getDefaultSerialization()->deserializeWholeText(*col, buffer, FormatSettings{});
-    }
+        auto col = data_type->createColumn();
+        for (const auto & value : p.values)
+        {
+            ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
+            data_type->getDefaultSerialization()->deserializeWholeText(
+                *col,
+                buffer,
+                FormatSettings{
+                    .default_simple_text_format = simple_text_format,
+                });
+        }
 
-    ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
-    for (size_t i = 0; i < col->size(); ++i)
-    {
-        ASSERT_EQ(p.expected_values[i], (*col)[i]);
+        ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
+        for (size_t i = 0; i < col->size(); ++i)
+        {
+            ASSERT_EQ(p.expected_values[i], (*col)[i]);
+        }
     }
 }
 

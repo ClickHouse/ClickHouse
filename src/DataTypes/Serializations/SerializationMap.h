@@ -18,6 +18,8 @@ private:
 public:
     SerializationMap(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_);
 
+    String getName() const override { return "Map"; }
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -67,7 +69,10 @@ private:
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
 
     template <typename Reader>
-    void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
+    void deserializeOrdinaryTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
+
+    template <typename Reader>
+    void deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader, const FormatSettings & settings) const;
 };
 
 }

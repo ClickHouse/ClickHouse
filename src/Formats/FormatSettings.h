@@ -41,8 +41,14 @@ struct FormatSettings
         Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
         BestEffort  /// Use sophisticated rules to parse whatever possible.
     };
-
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
+
+    enum class SimpleTextFormat
+    {
+        Ordinary = 0,
+        Hive
+    };
+    SimpleTextFormat default_simple_text_format = SimpleTextFormat::Ordinary;
 
     enum class DateTimeOutputFormat
     {

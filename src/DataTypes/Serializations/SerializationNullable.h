@@ -11,7 +11,9 @@ private:
     SerializationPtr nested;
 
 public:
-    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+
+    String getName() const override { return "Nullable"; }
 
     void enumerateStreams(
         SubstreamPath & path,

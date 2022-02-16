@@ -2650,11 +2650,8 @@ namespace
 
             *root_serializer_ptr = message_serializer.get();
 
-#if 0
-            LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
-#endif
-
-            return message_serializer;
+            LOG_DEBUG(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+            return std::move(message_serializer);
         }
 
     private:

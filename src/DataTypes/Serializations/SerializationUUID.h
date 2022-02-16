@@ -8,6 +8,8 @@ namespace DB
 class SerializationUUID : public SimpleTextSerialization
 {
 public:
+    String getName() const override { return "UUID"; }
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

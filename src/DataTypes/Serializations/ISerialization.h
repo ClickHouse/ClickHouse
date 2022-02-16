@@ -53,6 +53,8 @@ public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
 
+    virtual String getName() const = 0;
+
     enum class Kind : UInt8
     {
         DEFAULT = 0,

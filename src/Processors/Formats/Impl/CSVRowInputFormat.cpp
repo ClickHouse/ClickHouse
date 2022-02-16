@@ -254,6 +254,8 @@ bool CSVFormatReader::readField(
     {
         /// Read the column normally.
         serialization->deserializeTextCSV(column, *in, format_settings);
+
+        // TODO map struct union
         return true;
     }
 }

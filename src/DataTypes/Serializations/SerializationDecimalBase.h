@@ -20,6 +20,8 @@ public:
     SerializationDecimalBase(UInt32 precision_, UInt32 scale_)
         : precision(precision_), scale(scale_) {}
 
+    String getName() const override { return TypeName<FieldType>.data(); }
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
