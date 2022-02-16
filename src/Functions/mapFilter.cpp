@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** MapFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
@@ -87,10 +88,14 @@ struct MapApplyImpl
     /// true if the expression (for an overload of f(expression, maps)) or a map (for f(map)) should be boolean.
     static bool needBoolean() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & )
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & /*elems*/)
     {
-        const auto * date_type_tuple = typeid_cast<const DataTypeTuple *>(&*expression_return);
-        return std::make_shared<DataTypeMap>(date_type_tuple->getElements());
+        const auto & tuple_types = typeid_cast<const DataTypeTuple *>(&*expression_return)->getElements();
+        if (tuple_types.size() != 2)
+            throw Exception("Expected 2 columns as map's key and value, but found "
+                + toString(tuple_types.size()) + " columns", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return std::make_shared<DataTypeMap>(tuple_types);
     }
 
     static ColumnPtr execute(const ColumnMap & map, ColumnPtr mapped)
