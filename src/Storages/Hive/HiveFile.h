@@ -7,8 +7,6 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
-#include <orc/Statistics.hh>
-#include <arrow/filesystem/filesystem.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
