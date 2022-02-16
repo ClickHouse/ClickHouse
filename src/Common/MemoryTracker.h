@@ -179,11 +179,6 @@ public:
         overcommit_tracker = tracker;
     }
 
-    OvercommitTracker * getOvercommitTracker() noexcept
-    {
-        return overcommit_tracker;
-    }
-
     /// Reset the accumulated data
     void resetCounters();
 
