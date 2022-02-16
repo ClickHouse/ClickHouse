@@ -1205,31 +1205,32 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        bool should_execute_on_single_replica = merge_strategy_picker.shouldMergeOnSingleReplica(entry);
-        if (!should_execute_on_single_replica)
+        const auto data_settings = data.getSettings();
+        if (data_settings->allow_remote_fs_zero_copy_replication)
         {
-            /// Separate check. If we use only s3, check remote_fs_execute_merges_on_single_replica_time_threshold as well.
             auto disks = storage.getDisks();
             bool only_s3_storage = true;
             for (const auto & disk : disks)
                 if (disk->getType() != DB::DiskType::S3)
                     only_s3_storage = false;
 
-            if (!disks.empty() && only_s3_storage)
-                should_execute_on_single_replica = merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry);
+            if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0]))
+            {
+                out_postpone_reason =  "Not executing merge/mutation for the part " + entry.new_part_name
+                    +  ", waiting other replica to execute it and will fetch after.";
+                return false;
+            }
         }
 
-        if (should_execute_on_single_replica)
+        if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
         {
-
             auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
 
             if (replica_to_execute_merge && !merge_strategy_picker.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
             {
-                out_postpone_reason = fmt::format(
-                    "Not executing merge for the part {}, waiting for {} to execute merge.",
-                    entry.new_part_name, replica_to_execute_merge.value());
-                LOG_DEBUG(log, fmt::runtime(out_postpone_reason));
+                String reason = "Not executing merge for the part " + entry.new_part_name
+                    +  ", waiting for " + replica_to_execute_merge.value() + " to execute merge.";
+                out_postpone_reason = reason;
                 return false;
             }
         }
@@ -1242,7 +1243,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
-        const auto data_settings = data.getSettings();
         bool ignore_max_size = false;
         if (entry.type == LogEntry::MERGE_PARTS)
         {
@@ -1674,6 +1674,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                mutation.latest_fail_reason.clear();
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)
                 {
@@ -1718,6 +1719,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                it->second.latest_fail_reason.clear();
                 if (entry->isAlterMutation())
                 {
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);

@@ -994,3 +994,26 @@ def test_format_detection(started_cluster):
     assert(int(result) == 1)
 
 
+def test_signatures(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"create table test_signatures (x UInt64) engine=S3(s3_arrow)")
+    instance.query(f"truncate table test_signatures")
+    instance.query(f"insert into test_signatures select 1")
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64', 'auto')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', 'Arrow')")
+    assert(int(result) == 1)
+
