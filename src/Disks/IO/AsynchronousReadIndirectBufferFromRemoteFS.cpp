@@ -251,7 +251,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
         prefetch_future = {};
     }
 
-    pos = working_buffer.end();
+    resetWorkingBuffer();
 
     /**
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
