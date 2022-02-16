@@ -40,7 +40,7 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
-            return [step, scale, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<DecimalField<DateTime64>>(field).getValue(), step, date_lut, scale); };
+            return [step, scale, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<T>(field), step, date_lut, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -113,7 +113,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = get<DecimalField<DateTime64>>(field); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, field_decimal.getScaleMultiplier()); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, field_decimal.getScale()); \
                         field = DecimalField(res, field_decimal.getScale()); \
                     }; \
                     break;

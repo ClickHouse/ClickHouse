@@ -157,11 +157,13 @@ namespace
 
         static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone, Int64) {
+        static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone, Int64)
+        {
             return time_zone.toStartOfHourInterval(t, hours);
         }
 
-        static UInt32 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier) {
+        static UInt32 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        {
             return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
         }
     };
