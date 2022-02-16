@@ -1,17 +1,18 @@
 #pragma once
 
+#include <cstdint>
 #include <math.h>
 
 #include <base/types.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
-#include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/HashTable/HashTableAllocator.h>
 
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
@@ -63,25 +64,280 @@
   */
 struct UniquesHashSetDefaultHash
 {
-    size_t operator() (UInt64 x) const
-    {
-        return intHash32<0>(x);
-    }
+    size_t operator()(UInt64 x) const { return intHash32<0>(x); }
 };
 
 
-template <typename Hash = UniquesHashSetDefaultHash>
-class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
+#define ADDR_HAS_TYPE(NAME) \
+    template <typename, typename = void> \
+    struct addr_has_type_##NAME : std::false_type \
+    { \
+    }; \
+    template <typename T> \
+    struct addr_has_type_##NAME<T, std::void_t<typename T::NAME>> : std::true_type \
+    { \
+    };
+
+ADDR_HAS_TYPE(Buf);
+ADDR_HAS_TYPE(Value);
+template <class T>
+concept UniqueHashAddressable
+    = addr_has_type_Buf<T>::value && addr_has_type_Value<T>::value && std::is_pointer<typename T::Buf>::value && requires(
+        typename T::Buf buf, size_t start_index, size_t max_index, typename T::Value x, size_t mask)
+{
+    {
+        T::place(x, mask)
+        } -> std::same_as<size_t>;
+    {
+        T::addressingForResize(buf, start_index, max_index, x)
+        } -> std::same_as<size_t>;
+    {
+        T::addressingForInsert(buf, start_index, max_index, x)
+        } -> std::same_as<size_t>;
+    {
+        T::addressingForReInsert(buf, start_index, max_index)
+        } -> std::same_as<size_t>;
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+    {
+        T::setCollisions(nullptr)
+    }
+#endif
+};
+
+
+template <typename HashValue>
+class HashAddressingForNoneSIMD
+{
+public:
+    using Buf = HashValue *;
+    using Value = HashValue;
+    static uint64_t * pcollisions;
+    inline static size_t place(HashValue x, size_t mask) { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask; }
+    inline static size_t addressingForResize(Buf buf, size_t start_index, size_t max_index, HashValue x)
+    {
+        size_t place_value = start_index;
+        while (buf[place_value] && buf[place_value] != x)
+        {
+            ++place_value;
+            place_value &= max_index;
+
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            ++(*pcollisions);
+#endif
+        }
+        return place_value;
+    }
+    inline static size_t addressingForInsert(Buf buf, size_t start_index, size_t max_index, HashValue x)
+    {
+        size_t place_value = start_index;
+        while (buf[place_value] && buf[place_value] != x)
+        {
+            ++place_value;
+            place_value &= max_index;
+
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            ++(*pcollisions);
+#endif
+        }
+        return place_value;
+    }
+    inline static size_t addressingForReInsert(Buf buf, size_t start_index, size_t max_index)
+    {
+        size_t place_value = start_index;
+        while (buf[place_value])
+        {
+            ++place_value;
+            place_value &= max_index;
+
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            ++(*pcollisions);
+#endif
+        }
+        return place_value;
+    }
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+    static void setCollisions(uint64_t * p) { pcollisions = p; }
+#endif
+};
+
+#if defined(__SSE2__)
+template <typename HashValue>
+class HashAddressingForSSE2
+{
+private:
+    inline static const __m128i zero16 = _mm_setzero_si128();
+    /**For sse2 processing, we should process 4 continues number
+    * in one shot. And for current buffer resize aglo, it can 
+    * keep our buffer size always modular by 4. So if start index
+    * can modular by 4, it will always satisfy sse2 processing in
+    * hash addressing. If start index can not modular 4, we should 
+    * start with aligned start index to make processing more simple
+    * and more effiency. When start index can not modular 4, we still
+    * use aligned start index to calc address. But some test case
+    * (eg 01890_state_of_state) need our data distribute the same as 
+    * original algo, this made us ignore some part that ahead start index. 
+    * Or the data's distribution will different with original aglo. 
+    * This will cause some fast test case fail
+    **/
+    inline static size_t alignedStart(size_t start_index) { return (start_index & 0xFFFFFFFFFFFFFFFC); }
+    inline static UInt16 calcInitIgnoreMask(size_t start_index, size_t aligned_start)
+    {
+        if (start_index == aligned_start)
+            return 0xffff;
+        auto offset_sse2 = ((start_index - aligned_start) << 2);
+        //clear lower offset bits
+        return (0xFFFF >> offset_sse2) << offset_sse2;
+    }
+
+public:
+    using Buf = HashValue *;
+    using Value = HashValue;
+    static uint64_t * pcollisions;
+
+    inline static size_t place(HashValue x, size_t mask) { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask; }
+
+    inline static size_t addressingForResize(Buf buf, size_t start_index, size_t max_index, HashValue x)
+    {
+        if (0 == buf[start_index] || x == buf[start_index])
+        {
+            return start_index;
+        }
+        size_t place_value = start_index;
+        __m128i x4s = _mm_set_epi32(x, x, x, x);
+        size_t aligned_start = alignedStart(start_index);
+        UInt16 ignore_mask = calcInitIgnoreMask(start_index, aligned_start);
+        start_index = aligned_start;
+        bool is_first = true;
+        while (true)
+        {
+            start_index &= max_index;
+            HashValue * cstart_addr = buf + start_index;
+            __m128i c128v = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cstart_addr));
+            if (!is_first)
+            {
+                ignore_mask = (static_cast<UInt16>(0xFFFF));
+            }
+            is_first = false;
+            UInt16 cmask = ((_mm_movemask_epi8(_mm_cmpeq_epi32(c128v, x4s) | _mm_cmpeq_epi32(c128v, zero16))));
+            cmask &= ignore_mask;
+            if (cmask)
+            {
+                size_t offset = __builtin_ctz(cmask);
+                place_value = start_index + (offset >> 2);
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+                *pcollisions += (offset >> 2) - 1;
+#    endif
+                break;
+            }
+            start_index += 4;
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            *pcollisions += 4;
+#    endif
+        }
+        return place_value;
+    }
+
+    inline static size_t addressingForInsert(Buf buf, size_t start_index, size_t max_index, HashValue x)
+    {
+        if (0 == buf[start_index] || x == buf[start_index])
+        {
+            return start_index;
+        }
+        auto place_value = start_index;
+        __m128i x4s = _mm_set_epi32(x, x, x, x);
+        size_t aligned_start = alignedStart(start_index);
+        UInt16 ignore_mask = calcInitIgnoreMask(start_index, aligned_start);
+        start_index = aligned_start;
+        bool is_first = true;
+        while (true)
+        {
+            start_index &= max_index;
+            HashValue * cstart_addr = buf + start_index;
+            __m128i c128v = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cstart_addr));
+            if (!is_first)
+            {
+                ignore_mask = (static_cast<UInt16>(0xFFFF));
+            }
+
+            is_first = false;
+            UInt16 cmask = ((_mm_movemask_epi8(_mm_cmpeq_epi32(c128v, x4s) | _mm_cmpeq_epi32(c128v, zero16))));
+            cmask &= ignore_mask;
+            if (cmask)
+            {
+                size_t offset = __builtin_ctz(cmask);
+                place_value = start_index + (offset >> 2);
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+                collisions += (offset >> 2) - 1;
+#    endif
+                break;
+            }
+            start_index += 4;
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            *pcollisions += 4;
+#    endif
+        }
+        return place_value;
+    }
+
+    inline static size_t addressingForReInsert(Buf buf, size_t start_index, size_t max_index)
+    {
+        if (0 == buf[start_index])
+        {
+            return start_index;
+        }
+        auto place_value = start_index;
+        size_t aligned_start = alignedStart(start_index);
+        UInt16 ignore_mask = calcInitIgnoreMask(start_index, aligned_start);
+        start_index = aligned_start;
+        bool is_first = true;
+        while (true)
+        {
+            start_index &= max_index;
+            HashValue * cstart_addr = buf + start_index;
+            __m128i c128v = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cstart_addr));
+
+            if (!is_first)
+            {
+                ignore_mask = (static_cast<UInt16>(0xFFFF));
+            }
+            is_first = false;
+            UInt16 cmask = ((_mm_movemask_epi8(_mm_cmpeq_epi32(c128v, zero16))) & ignore_mask);
+
+            if (cmask)
+            {
+                size_t offset = __builtin_ctz(cmask);
+                place_value = start_index + (offset >> 2);
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+                *pcollisions += (offset >> 2) - 1;
+#    endif
+                break;
+            }
+            start_index += 4;
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+            *pcollisions += 4;
+#    endif
+        }
+        return place_value;
+    }
+
+#    ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+    static void setCollisions(uint64_t * p) { pcollisions = p; }
+#    endif
+};
+#endif
+
+template <typename Hash = UniquesHashSetDefaultHash, UniqueHashAddressable AddrPolicy = HashAddressingForNoneSIMD<UInt32>>
+class UniquesHashSetBase : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
 {
 private:
     using Value = UInt64;
     using HashValue = UInt32;
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
-    UInt32 m_size;          /// Number of elements
-    UInt8 size_degree;      /// The size of the table as a power of 2
-    UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
-    bool has_zero;          /// The hash table contains an element with a hash value of 0.
+    UInt32 m_size; /// Number of elements
+    UInt8 size_degree; /// The size of the table as a power of 2
+    UInt8 skip_degree; /// Skip elements not divisible by 2 ^ skip_degree
+    bool has_zero; /// The hash table contains an element with a hash value of 0.
 
     HashValue * buf;
 
@@ -105,21 +361,15 @@ private:
         }
     }
 
-    inline size_t buf_size() const           { return 1ULL << size_degree; }
-    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); }
-    inline size_t mask() const               { return buf_size() - 1; }
-    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    inline size_t buf_size() const { return 1ULL << size_degree; }
+    inline size_t max_fill() const { return 1ULL << (size_degree - 1); }
+    inline size_t mask() const { return buf_size() - 1; }
+    inline size_t place(HashValue x) const { return AddrPolicy::place(x, mask()); }
 
     /// The value is divided by 2 ^ skip_degree
-    inline bool good(HashValue hash) const
-    {
-        return hash == ((hash >> skip_degree) << skip_degree);
-    }
+    inline bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
-    HashValue hash(Value key) const
-    {
-        return Hash()(key);
-    }
+    HashValue hash(Value key) const { return Hash()(key); }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
@@ -195,17 +445,7 @@ private:
             /// The element is in its place.
             if (place_value == i)
                 continue;
-
-            while (buf[place_value] && buf[place_value] != x)
-            {
-                ++place_value;
-                place_value &= mask();
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-                ++collisions;
-#endif
-            }
-
+            place_value = AddrPolicy::addressingForResize(buf, place_value, mask(), x);
             /// The element remained in its place.
             if (buf[place_value] == x)
                 continue;
@@ -226,16 +466,7 @@ private:
         }
 
         size_t place_value = place(x);
-        while (buf[place_value] && buf[place_value] != x)
-        {
-            ++place_value;
-            place_value &= mask();
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            ++collisions;
-#endif
-        }
-
+        place_value = AddrPolicy::addressingForInsert(buf, place_value, mask(), x);
         if (buf[place_value] == x)
             return;
 
@@ -249,16 +480,7 @@ private:
     void reinsertImpl(HashValue x)
     {
         size_t place_value = place(x);
-        while (buf[place_value])
-        {
-            ++place_value;
-            place_value &= mask();
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-            ++collisions;
-#endif
-        }
-
+        place_value = AddrPolicy::addressingForReInsert(buf, place_value, mask());
         buf[place_value] = x;
     }
 
@@ -286,25 +508,22 @@ private:
 public:
     using value_type = Value;
 
-    UniquesHashSet() :
-        m_size(0),
-        skip_degree(0),
-        has_zero(false)
+    UniquesHashSetBase() : m_size(0), skip_degree(0), has_zero(false)
     {
         alloc(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE);
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
         collisions = 0;
+        AddrPolicy::setCollisions(&collisions);
 #endif
     }
 
-    UniquesHashSet(const UniquesHashSet & rhs)
-        : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
+    UniquesHashSetBase(const UniquesHashSetBase & rhs) : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
     }
 
-    UniquesHashSet & operator= (const UniquesHashSet & rhs)
+    UniquesHashSetBase & operator=(const UniquesHashSetBase & rhs)
     {
         if (size_degree != rhs.size_degree)
         {
@@ -321,10 +540,7 @@ public:
         return *this;
     }
 
-    ~UniquesHashSet()
-    {
-        free();
-    }
+    ~UniquesHashSetBase() { free(); }
 
     void insert(Value x)
     {
@@ -359,7 +575,7 @@ public:
         return fixed_res;
     }
 
-    void merge(const UniquesHashSet & rhs)
+    void merge(const UniquesHashSetBase & rhs)
     {
         if (rhs.skip_degree > skip_degree)
         {
@@ -415,9 +631,8 @@ public:
 
         free();
 
-        UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
+        UInt8 new_size_degree = m_size <= 1 ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
+                                            : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
 
         alloc(new_size_degree);
 
@@ -511,9 +726,8 @@ public:
 
         free();
 
-        UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
+        UInt8 new_size_degree = m_size <= 1 ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
+                                            : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
 
         alloc(new_size_degree);
 
@@ -539,13 +753,17 @@ public:
     }
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-    size_t getCollisions() const
-    {
-        return collisions;
-    }
+    size_t getCollisions() const { return collisions; }
 #endif
 };
 
+
+template <typename Hash = UniquesHashSetDefaultHash>
+#if defined(__SSE2__)
+using UniquesHashSet = UniquesHashSetBase<Hash, HashAddressingForSSE2<UInt32>>;
+#else
+using UniquesHashSet = UniquesHashSetBase<Hash, HashAddressingForNoneSIMD<UInt32>>;
+#endif
 
 #undef UNIQUES_HASH_MAX_SIZE_DEGREE
 #undef UNIQUES_HASH_MAX_SIZE
