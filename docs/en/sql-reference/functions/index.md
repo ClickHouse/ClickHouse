@@ -74,7 +74,7 @@ A function configuration contains the following settings:
 
 -   `name` - a function name.
 -   `command` - script name to execute or command if `execute_direct` is false.
--   `argument` - argument description with the `type` of an argument. Each argument is described in a separate setting.
+-   `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 -   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 -   `return_type` - the type of a returned value.
 -   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
@@ -100,6 +100,7 @@ File test_function.xml.
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>
+            <name>value</name>
         </argument>
         <format>TabSeparated</format>
         <command>test_function.py</command>
@@ -144,9 +145,11 @@ File test_function.xml.
         <return_type>UInt64</return_type>
         <argument>
             <type>UInt64</type>
+            <name>lhs</name>
         </argument>
         <argument>
             <type>UInt64</type>
+            <name>rhs</name>
         </argument>
         <format>TabSeparated</format>
         <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
