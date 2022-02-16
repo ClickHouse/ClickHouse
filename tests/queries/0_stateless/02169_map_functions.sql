@@ -9,4 +9,5 @@ SELECT mapApply((k,v)->(k,v+1), col)  FROM table_map ORDER BY id;
 SELECT mapApply((x, y) -> (x, x + 1), map(1, 0, 2, 0));
 SELECT mapFilter((k,v)->0, col) from table_map;
 SELECT mapUpdate(map(1, 3, 3, 2), map(1, 0, 2, 0));
+SELECT mapApply((k, v) -> tuple(v + 9223372036854775806), col) FROM table_map;  -- { serverError 42 }
 DROP TABLE table_map;

@@ -70,7 +70,7 @@ public:
         const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
         if (!function_type || function_type->getArgumentTypes().size() != 2)
             throw Exception("First argument for this overload of " + getName() + " must be a function with 2 arguments. Found "
-                            + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
@@ -79,8 +79,8 @@ public:
     {
         if (arguments.size() != 2)
             throw Exception("Function " + getName() + " needs at least 2 argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                + toString(arguments.size()) + ".",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
