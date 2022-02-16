@@ -83,10 +83,10 @@ ActionsDAGPtr addMissingDefaults(
     /// Computes explicitly specified values by default and materialized columns.
     if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context, true, null_as_default))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
-    else
-        /// Removes unused columns and reorders result.
-        /// The same is done in evaluateMissingDefaults if not empty dag is returned.
-        actions->removeUnusedActions(required_columns.getNames());
+
+    /// Removes unused columns and reorders result.
+    actions->removeUnusedActions(required_columns.getNames(), false);
+    actions->addMaterializingOutputActions();
 
     return actions;
 }

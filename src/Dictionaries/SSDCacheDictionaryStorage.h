@@ -12,9 +12,11 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <base/unaligned.h>
+#include <base/sort.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/HashMap.h>
@@ -23,6 +25,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace CurrentMetrics
 {
@@ -1092,7 +1095,7 @@ private:
         }
 
         /// Sort blocks by offset before start async io requests
-        std::sort(blocks_to_request.begin(), blocks_to_request.end());
+        ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
         file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
         {

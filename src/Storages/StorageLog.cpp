@@ -732,8 +732,21 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
+    const Settings & settings = context->getSettingsRef();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
+    return std::chrono::seconds{lock_timeout};
+}
+
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
+{
+    WriteLock lock{rwlock, getLockTimeout(context)};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
     disk->clearDirectory(table_path);
 
     for (auto & data_file : data_files)
@@ -747,16 +760,6 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     marks_loaded = true;
     num_marks_saved = 0;
-}
-
-
-static std::chrono::seconds getLockTimeout(ContextPtr context)
-{
-    const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
-    return std::chrono::seconds{lock_timeout};
 }
 
 
