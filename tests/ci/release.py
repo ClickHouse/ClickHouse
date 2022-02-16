@@ -159,14 +159,21 @@ class Release:
             f"git commit -m 'Update version to {new_version.string}' '{cmake_path}'"
         )
         with self._push(release_branch, args):
-            self.run(
-                f"gh pr create --repo {args.repo} --title 'Release pull request for "
-                f"branch {release_branch}' --head {release_branch} --body 'This "
-                "PullRequest is a part of ClickHouse release cycle. It is used by CI "
-                "system only. Do not perform any changes with it.' --label release"
-            )
-            # Here the prestable part is done
-            yield
+            with self._create_gh_label(
+                f"v{release_branch}-must-backport", "10dbed", args
+            ):
+                with self._create_gh_label(
+                    f"v{release_branch}-affected", "c2bfff", args
+                ):
+                    self.run(
+                        f"gh pr create --repo {args.repo} --title 'Release pull "
+                        f"request for branch {release_branch}' --head {release_branch} "
+                        "--body 'This PullRequest is a part of ClickHouse release "
+                        "cycle. It is used by CI system only. Do not perform any "
+                        "changes with it.' --label release"
+                    )
+                    # Here the prestable part is done
+                    yield
 
     @contextmanager
     def _create_gh_release(self, args: argparse.Namespace):
@@ -204,6 +211,14 @@ class Release:
             logging.warning("Rolling back pushed ref %s", ref)
             self.run(f"git push -d git@github.com:{args.repo}.git {ref}")
             raise
+
+    @contextmanager
+    def _create_gh_label(self, label: str, color: str, args: argparse.Namespace):
+        self.run(f"gh api repos/{args.repo}/labels -f name={label} -f color={color}")
+        try:
+            yield
+        except BaseException:
+            self.run(f"gh api repos/{args.repo}/labels/{label} -X DELETE")
 
     def do(self, args: argparse.Namespace):
         self.release_commit = args.commit
@@ -289,39 +304,6 @@ def main():
     release = Release(get_version_from_repo())
 
     release.do(args)
-
-    # if not args.no_publish_release:
-    #    # Publish release on github for the current HEAD (master, if checked)
-    #    git.run(f"gh release create --draft {git.new_tag} --target {git.sha}")
-
-    ## Commit updated versions to HEAD and push to remote
-    # write_versions(versions_file, new_versions)
-    # git.run(f"git checkout -b {git.new_branch}-helper")
-    # git.run(
-    #    f"git commit -m 'Auto version update to [{new_versions['VERSION_STRING']}] "
-    #    f"[{new_versions['VERSION_REVISION']}]' {versions_file}"
-    # )
-    # git.run(f"git push -u origin {git.new_branch}-helper")
-    # git.run(
-    #    f"gh pr create --title 'Update version after release {git.new_branch}' "
-    #    f"--body-file '{git.root}/.github/PULL_REQUEST_TEMPLATE.md'"
-    # )
-
-    ## Create a new branch from the previous commit and push there with creating
-    ## a PR
-    # git.run(f"git checkout -b {git.new_branch} HEAD~")
-    # write_versions(versions_file, versions)
-    # git.run(
-    #    f"git commit -m 'Auto version update to [{versions['VERSION_STRING']}] "
-    #    f"[{versions['VERSION_REVISION']}]' {versions_file}"
-    # )
-    # git.run(f"git push -u origin {git.new_branch}")
-    # git.run(
-    #    "gh pr create --title 'Release pull request for branch "
-    #    f"{versions['VERSION_MAJOR']}.{versions['VERSION_MINOR']}' --body "
-    #    "'This PullRequest is part of ClickHouse release cycle. It is used by CI "
-    #    "system only. Do not perform any changes with it.' --label release"
-    # )
 
 
 if __name__ == "__main__":
