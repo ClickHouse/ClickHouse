@@ -1,20 +1,19 @@
 #pragma once
 
-#include <optional>
-#include <variant>
+#include <algorithm>
+#include <cassert>
 #include <list>
 #include <mutex>
-#include <algorithm>
-
-#include <base/sort.h>
-
-#include <Common/Arena.h>
-#include <Columns/IColumn.h>
-#include <Interpreters/asof.h>
+#include <optional>
+#include <variant>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/asof.h>
+#include <base/sort.h>
+#include <Common/Arena.h>
+
 
 namespace DB
 {
@@ -153,19 +152,28 @@ public:
     using TKey = decltype(TEntry::asof_value);
     using Keys = std::vector<TKey>;
 
-    void insert(const TKey & key, const Block * block, size_t row_num)
+    void insert(const IColumn & asof_column, const Block * block, size_t row_num)
     {
+        using ColumnType = ColumnVectorOrDecimal<TKey>;
+        const auto & column = assert_cast<const ColumnType &>(asof_column);
+        TKey k = column.getElement(row_num);
+
         assert(!sorted.load(std::memory_order_acquire));
-        array.emplace_back(key, block, row_num);
+        array.emplace_back(k, block, row_num);
     }
 
     /// Find an element based on the inequality rules
     /// Note that this function uses 2 arrays, one with only the keys (so it's smaller and more memory efficient)
     /// and a second one with both the key and the Rowref to be returned
     /// Both are sorted only once, in a concurrent safe manner
-    const RowRef * find(const TKey & k, ASOF::Inequality inequality)
+    const RowRef * find(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num)
     {
         sort();
+
+        using ColumnType = ColumnVectorOrDecimal<TKey>;
+        const auto & column = assert_cast<const ColumnType &>(asof_column);
+        TKey k = column.getElement(row_num);
+
         auto it = keys.cend();
         switch (inequality)
         {
@@ -286,32 +294,14 @@ public:
     // This will be synchronized by the rwlock mutex in Join.h
     void insert(const IColumn & asof_column, const Block * block, size_t row_num)
     {
-        std::visit([&](auto && arg)
-            {
-                using T = typename std::decay_t<decltype(arg)>::element_type::TKey;
-                using ColumnType = ColumnVectorOrDecimal<T>;
-                const auto & column = assert_cast<const ColumnType &>(asof_column);
-
-                T key = column.getElement(row_num);
-                arg->insert(key, block, row_num);
-            },
-            lookups);
+        std::visit([&](auto && arg) { arg->insert(asof_column, block, row_num); }, lookups);
     }
 
     // This will internally synchronize
     const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const
     {
         const RowRef * out = nullptr;
-        std::visit([&](auto && arg)
-            {
-                using T = typename std::decay_t<decltype(arg)>::element_type::TKey;
-                using ColumnType = ColumnVectorOrDecimal<T>;
-                const auto & column = assert_cast<const ColumnType &>(asof_column);
-
-                T key = column.getElement(row_num);
-                out = arg->find(key, inequality);
-            },
-            lookups);
+        std::visit([&](auto && arg) { out = arg->find(inequality, asof_column, row_num); }, lookups);
         return out;
     }
 
