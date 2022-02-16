@@ -167,12 +167,7 @@ public:
     void reset()
     {
         std::lock_guard lock(mutex);
-        queue.clear();
-        cells.clear();
-        insert_tokens.clear();
-        current_size = 0;
-        hits = 0;
-        misses = 0;
+        resetImpl();
     }
 
     virtual ~LRUCache() = default;
@@ -193,6 +188,17 @@ protected:
     Cells cells TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
+
+    void resetImpl()
+    {
+        queue.clear();
+        cells.clear();
+        insert_tokens.clear();
+        current_size = 0;
+        hits = 0;
+        misses = 0;
+    }
+
 private:
 
     /// Represents pending insertion attempt.
@@ -275,7 +281,7 @@ private:
 
     const WeightFunction weight_function;
 
-    MappedPtr getImpl(const Key & key) TSA_REQUIRES(mutex)
+    virtual MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -291,7 +297,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped) TSA_REQUIRES(mutex)
+    virtual void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
