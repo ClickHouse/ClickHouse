@@ -10,12 +10,18 @@
 namespace DB
 {
 
+struct UserDefinedExecutableFunctionArgument
+{
+    DataTypePtr type;
+    std::optional<String> name;
+};
+
 struct UserDefinedExecutableFunctionConfiguration
 {
     std::string name;
     std::string command;
     std::vector<std::string> command_arguments;
-    std::vector<DataTypePtr> argument_types;
+    std::vector<UserDefinedExecutableFunctionArgument> arguments;
     DataTypePtr result_type;
 };
 
