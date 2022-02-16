@@ -79,6 +79,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
+add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
@@ -507,6 +508,10 @@ endif()
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
+
+if (TARGET ch_contrib::minizip)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::minizip)
+endif ()
 
 if (TARGET ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)

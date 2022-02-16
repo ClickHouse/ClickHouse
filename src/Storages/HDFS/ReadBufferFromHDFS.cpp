@@ -173,7 +173,7 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
         return getPosition();
     }
 
-    pos = working_buffer.end();
+    resetWorkingBuffer();
     impl->seek(offset_, whence);
     return impl->getPosition();
 }
