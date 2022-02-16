@@ -84,12 +84,12 @@ struct AddMicrosecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
         if (scale <= 6)
         {
-            auto division = std::div( (t.fractional + delta), static_cast<Int64>(10e6));
+            auto division = std::div((t.fractional + delta), static_cast<Int64>(10e6));
             return {t.whole * multiplier + division.quot, division.rem};
         }
         else
         {
-            auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(10e6 * multiplier));
+            auto division = std::div((t.fractional + delta * multiplier), static_cast<Int64>(10e6 * multiplier));
             return {t.whole + division.quot, division.rem};
         }
     }
@@ -136,12 +136,12 @@ struct AddMillisecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
         if (scale <= 3)
         {
-            auto division = std::div( (t.fractional + delta), static_cast<Int64>(1000));
+            auto division = std::div((t.fractional + delta), static_cast<Int64>(1000));
             return {t.whole * multiplier + division.quot, division.rem};
         }
         else
         {
-            auto division = std::div( (t.fractional + delta * multiplier), static_cast<Int64>(1000 * multiplier));
+            auto division = std::div((t.fractional + delta * multiplier), static_cast<Int64>(1000 * multiplier));
             return {t.whole + division.quot,division.rem};
         }
     }
