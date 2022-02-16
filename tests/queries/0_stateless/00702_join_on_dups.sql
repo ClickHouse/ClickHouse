@@ -33,7 +33,7 @@ select s.*, j.* from (select * from X) as s right join (select * from Y) as j on
 select 'full';
 select X.*, Y.* from X full join Y on X.id = Y.id order by X.id, X.x_a, X.x_b, Y.id, Y.y_a, Y.y_b;
 select 'full subs';
-select s.*, j.* from (select * from X) as s full join (select * from Y) as j on s.id = j.id order by s.id, s.x_a;
+select s.*, j.* from (select * from X) as s full join (select * from Y) as j on s.id = j.id order by s.id, s.x_a, s.x_b, j.id, j.y_a, j.y_b;
 --select 'full expr';
 --select X.*, Y.* from X full join Y on (X.id + 1) = (Y.id + 1) order by id;
 
@@ -48,14 +48,14 @@ select 'self inner nullable vs not nullable 2';
 select Y.*, s.* from Y inner join (select * from Y) as s on concat('n', Y.y_a) = s.y_b order by Y.id, Y.y_a, Y.y_b, s.id, s.y_a, s.y_b;
 
 select 'self left';
-select X.*, s.* from X left join (select * from X) as s on X.id = s.id order by X.id, X.x_a, s.x_a;
+select X.*, s.* from X left join (select * from X) as s on X.id = s.id order by X.id, X.x_a, X.x_b, s.id, s.x_a, s.x_b;
 select 'self left nullable';
-select X.*, s.* from X left join (select * from X) as s on X.x_b = s.x_b order by X.id, X.x_a;
+select X.*, s.* from X left join (select * from X) as s on X.x_b = s.x_b order by X.id, X.x_a, X.x_b, s.id, s.x_a, s.x_b;
 select 'self left nullable vs not nullable';
-select X.*, s.* from X left join (select * from X) as s on X.id = s.x_b order by X.id, X.x_a;
+select X.*, s.* from X left join (select * from X) as s on X.id = s.x_b order by X.id, X.x_a, X.x_b, s.id, s.x_a, s.x_b;
 -- TODO: s.y_b == '' instead of NULL
 select 'self left nullable vs not nullable 2';
-select Y.*, s.* from Y left join (select * from Y) as s on concat('n', Y.y_a) = s.y_b order by Y.id, Y.y_a;
+select Y.*, s.* from Y left join (select * from Y) as s on concat('n', Y.y_a) = s.y_b order by Y.id, Y.y_a, Y.y_b, s.id, s.y_a, s.y_b;
 
 select 'self right';
 select X.*, s.* from X right join (select * from X) as s on X.id = s.id order by X.id, X.x_a, X.x_b, s.id, s.x_a, s.x_b;

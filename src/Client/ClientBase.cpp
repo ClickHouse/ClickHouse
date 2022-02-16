@@ -1317,7 +1317,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert = global_context->getSettings().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
@@ -1721,7 +1721,12 @@ void ClientBase::showClientVersion()
 }
 
 
-void ClientBase::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments)
+void ClientBase::readArguments(
+    int argc,
+    char ** argv,
+    Arguments & common_arguments,
+    std::vector<Arguments> & external_tables_arguments,
+    std::vector<Arguments> & hosts_and_ports_arguments)
 {
     /** We allow different groups of arguments:
         * - common arguments;
@@ -1732,6 +1737,10 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         */
 
     bool in_external_group = false;
+
+    std::string prev_host_arg;
+    std::string prev_port_arg;
+
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         const char * arg = argv[arg_num];
@@ -1792,10 +1801,74 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
             }
+            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
+            {
+                std::string host_arg;
+                /// --host host
+                if (arg == "--host"sv || arg == "-h"sv)
+                {
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    host_arg = "--host=";
+                    host_arg.append(arg);
+                }
+                else
+                    host_arg = arg;
+
+                /// --port port1 --host host1
+                if (!prev_port_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
+                    prev_port_arg.clear();
+                }
+                else
+                {
+                    /// --host host1 --host host2
+                    if (!prev_host_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_host_arg});
+
+                    prev_host_arg = host_arg;
+                }
+            }
+            else if (startsWith(arg, "--port"))
+            {
+                std::string port_arg = arg;
+                /// --port port
+                if (arg == "--port"sv)
+                {
+                    port_arg.push_back('=');
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    port_arg.append(arg);
+                }
+
+                /// --host host1 --port port1
+                if (!prev_host_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
+                    prev_host_arg.clear();
+                }
+                else
+                {
+                    /// --port port1 --port port2
+                    if (!prev_port_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_port_arg});
+
+                    prev_port_arg = port_arg;
+                }
+            }
             else
                 common_arguments.emplace_back(arg);
         }
     }
+    if (!prev_host_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_host_arg});
+    if (!prev_port_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_port_arg});
 }
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
@@ -1838,8 +1911,9 @@ void ClientBase::init(int argc, char ** argv)
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
+    std::vector<Arguments> hosts_and_ports_arguments;
 
-    readArguments(argc, argv, common_arguments, external_tables_arguments);
+    readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     po::variables_map options;
     OptionsDescription options_description;
@@ -1929,7 +2003,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Output of help message.
     if (options.count("help")
-        || (options.count("host") && options["host"].as<std::vector<HostPort>>()[0].host == "elp")) /// If user writes -help instead of --help.
+        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
         exit(0);
@@ -1992,7 +2066,7 @@ void ClientBase::init(int argc, char ** argv)
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
-    processOptions(options_description, options, external_tables_arguments);
+    processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
 

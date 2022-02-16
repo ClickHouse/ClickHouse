@@ -392,44 +392,47 @@ String HDFSSource::getName() const
 
 Chunk HDFSSource::generate()
 {
-    if (!reader)
-        return {};
-
-    Chunk chunk;
-    if (reader->pull(chunk))
+    while (true)
     {
-        Columns columns = chunk.getColumns();
-        UInt64 num_rows = chunk.getNumRows();
+        if (!reader || isCancelled())
+            break;
 
-        /// Enrich with virtual columns.
-        if (need_path_column)
+        Chunk chunk;
+        if (reader->pull(chunk))
         {
-            auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
-            columns.push_back(column->convertToFullColumnIfConst());
+            Columns columns = chunk.getColumns();
+            UInt64 num_rows = chunk.getNumRows();
+
+            /// Enrich with virtual columns.
+            if (need_path_column)
+            {
+                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                columns.push_back(column->convertToFullColumnIfConst());
+            }
+
+            if (need_file_column)
+            {
+                size_t last_slash_pos = current_path.find_last_of('/');
+                auto file_name = current_path.substr(last_slash_pos + 1);
+
+                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                columns.push_back(column->convertToFullColumnIfConst());
+            }
+
+            return Chunk(std::move(columns), num_rows);
         }
 
-        if (need_file_column)
         {
-            size_t last_slash_pos = current_path.find_last_of('/');
-            auto file_name = current_path.substr(last_slash_pos + 1);
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
 
-            auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
-            columns.push_back(column->convertToFullColumnIfConst());
+            if (!initialize())
+                break;
         }
-
-        return Chunk(std::move(columns), num_rows);
     }
-
-    {
-        std::lock_guard lock(reader_mutex);
-        reader.reset();
-        pipeline.reset();
-        read_buf.reset();
-
-        if (!initialize())
-            return {};
-    }
-    return generate();
+    return {};
 }
 
 
