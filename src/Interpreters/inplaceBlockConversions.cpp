@@ -24,6 +24,11 @@
 namespace DB
 {
 
+namespace ErrorCode
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 

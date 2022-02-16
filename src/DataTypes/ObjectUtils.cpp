@@ -13,7 +13,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -363,7 +362,7 @@ void flattenTupleImpl(const ColumnPtr & column, Columns & new_columns, Columns &
     {
         const auto & subcolumns = column_tuple->getColumns();
         for (const auto & subcolumn : subcolumns)
-            flattenTupleImpl(subcolumn, new_columns,offsets_columns );
+            flattenTupleImpl(subcolumn, new_columns,offsets_columns);
     }
     else if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
     {

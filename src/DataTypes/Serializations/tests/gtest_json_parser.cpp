@@ -47,12 +47,34 @@ TEST(JSONDataParser, ReadJSON)
     }
 }
 
+struct JSONPathAndValue
+{
+    String path;
+    Field value;
+    std::vector<bool> is_nested;
+
+    JSONPathAndValue(const String & path_, const Field & value_, const std::vector<bool> & is_nested_)
+        : path(path_), value(value_), is_nested(is_nested_)
+    {
+    }
+
+    JSONPathAndValue(const PathInData & path_, const Field & value_)
+        : path(path_.getPath()), value(value_)
+    {
+        for (const auto & part : path_.getParts())
+            is_nested.push_back(part.is_nested);
+    }
+
+    bool operator==(const JSONPathAndValue & other) const = default;
+    bool operator<(const JSONPathAndValue & other) const { return path < other.path; }
+};
+
+using JSONValues = std::vector<JSONPathAndValue>;
+
 static void check(
     const String & json_str,
-    const Strings & expected_paths,
-    const std::vector<Field> & expected_values,
-    const std::vector<std::vector<bool>> & expected_nested,
-    const String & tag)
+    const String & tag,
+    JSONValues expected_values)
 {
     JSONDataParser<SimdJSONParser> parser;
     auto res = parser.parse(json_str.data(), json_str.size());
@@ -60,42 +82,36 @@ static void check(
 
     const auto & [paths, values] = *res;
 
-    ASSERT_EQ(paths.size(), expected_paths.size()) << tag;
+    ASSERT_EQ(paths.size(), expected_values.size()) << tag;
     ASSERT_EQ(values.size(), expected_values.size()) << tag;
 
-    Strings paths_str;
-    std::vector<std::vector<bool>> paths_is_nested;
+    JSONValues result_values;
+    for (size_t i = 0; i < paths.size(); ++i)
+        result_values.emplace_back(paths[i], values[i]);
 
-    for (const auto & path : paths)
-    {
-        paths_str.push_back(path.getPath());
-        paths_is_nested.emplace_back();
-        for (size_t i = 0; i < path.getParts().size(); ++i)
-            paths_is_nested.back().push_back(path.isNested(i));
-    }
+    std::sort(expected_values.begin(), expected_values.end());
+    std::sort(result_values.begin(), result_values.end());
 
-    ASSERT_EQ(paths_str, expected_paths) << tag;
-    ASSERT_EQ(values, expected_values) << tag;
-    ASSERT_EQ(paths_is_nested, expected_nested) << tag;
+    ASSERT_EQ(result_values, expected_values) << tag;
 }
 
 TEST(JSONDataParser, Parse)
 {
     {
-        check(json1,
-            {"k1", "k2.k3", "k2.k4"},
-            {1, "aa", 2},
-            {{false}, {false, false}, {false, false}},
-            "json1");
+        check(json1, "json1",
+            {
+                {"k1", 1, {false}},
+                {"k2.k3", "aa", {false, false}},
+                {"k2.k4", 2, {false, false}},
+            });
     }
 
     {
-        Strings paths = {"k1.k3.k4", "k1.k2"};
-
-        auto k1k3k4 = Array{Array{"bbb", "ccc"}, Array{"eee", "fff"}};
-        auto k1k2 = Array{"aaa", "ddd"};
-
-        check(json2, paths, {k1k3k4, k1k2}, {{true, true, false}, {true, false}}, "json2");
+        check(json2, "json2",
+            {
+                {"k1.k2", Array{"aaa", "ddd"}, {true, false}},
+                {"k1.k3.k4", Array{Array{"bbb", "ccc"}, Array{"eee", "fff"}}, {true, true, false}},
+            });
     }
 
     {
@@ -120,14 +136,14 @@ TEST(JSONDataParser, Parse)
 
         Strings paths = {"k1.k2.k4", "k1.k5", "k1.k2.k3"};
 
-        auto k1k2k3 = Array{Array{1, 2}, Array{5, 6}};
         auto k1k2k4 = Array{Array{3, 4}, Array{7, 8}};
-        auto k1k5 = Array{"foo", "bar"};
 
-        check(json3, paths,
-            {k1k2k4, k1k5, k1k2k3},
-            {{true, false, false}, {true, false}, {true, false, false}},
-            "json3");
+        check(json3, "json3",
+            {
+                {"k1.k5", Array{"foo", "bar"}, {true, false}},
+                {"k1.k2.k3", Array{Array{1, 2}, Array{5, 6}}, {true, false, false}},
+                {"k1.k2.k4", Array{Array{3, 4}, Array{7, 8}}, {true, false, false}},
+            });
     }
 
     {
@@ -144,21 +160,17 @@ TEST(JSONDataParser, Parse)
             }
         ]})";
 
-        Strings paths = {"k1.k2.k4", "k1.k5", "k1.k2.k3"};
-
-        auto k1k2k3 = Array{Array{1, 2}, Array{5, 6}};
-        auto k1k2k4 = Array{Array{3, 4}, Array{7, 8}};
-        auto k1k5 = Array{"foo", "bar"};
-
-        check(json4, paths,
-            {k1k2k4, k1k5, k1k2k3},
-            {{true, true, false}, {true, false}, {true, true, false}},
-            "json4");
+        check(json4, "json4",
+            {
+                {"k1.k5", Array{"foo", "bar"}, {true, false}},
+                {"k1.k2.k3", Array{Array{1, 2}, Array{5, 6}}, {true, true, false}},
+                {"k1.k2.k4", Array{Array{3, 4}, Array{7, 8}}, {true, true, false}},
+            });
     }
 
     {
         const String json5 = R"({"k1": [[1, 2, 3], [4, 5], [6]]})";
-        check(json5, {"k1"}, {Array{Array{1, 2, 3}, Array{4, 5}, Array{6}}}, {{false}}, "json5");
+        check(json5, "json5", {{"k1", Array{Array{1, 2, 3}, Array{4, 5}, Array{6}}, {false}}});
     }
 
     {
@@ -175,7 +187,11 @@ TEST(JSONDataParser, Parse)
         auto k1k2 = Array{Array{1, 3}, Array{5}};
         auto k1k3 = Array{Array{2, 4}, Array{6}};
 
-        check(json6, paths, {k1k2, k1k3}, {{true, true}, {true, true}}, "json6");
+        check(json6, "json6",
+            {
+                {"k1.k2", Array{Array{1, 3}, Array{5}}, {true, false}},
+                {"k1.k3", Array{Array{2, 4}, Array{6}}, {true, false}},
+            });
     }
 
     {
@@ -187,12 +203,11 @@ TEST(JSONDataParser, Parse)
             ]
         })";
 
-        Strings paths = {"k1.k2", "k1.k3"};
-
-        auto k1k2 = Array{Array{1, 3}, Array{5}};
-        auto k1k3 = Array{Array{2, 4}, Array{6}};
-
-        check(json7, paths, {k1k2, k1k3}, {{true, false}, {true, false}}, "json7");
+        check(json7, "json7",
+            {
+                {"k1.k2", Array{Array{1, 3}, Array{5}}, {true, false}},
+                {"k1.k3", Array{Array{2, 4}, Array{6}}, {true, false}},
+            });
     }
 }
 
