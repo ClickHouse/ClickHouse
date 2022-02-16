@@ -218,15 +218,15 @@ namespace
             if (scale_multiplier < 1000)
             {
                 Int64 t_milliseconds = t * (static_cast<Int64>(1000) / scale_multiplier);
-                return t_milliseconds - t_milliseconds % milliseconds;
+                return t_milliseconds - std::abs(t_milliseconds % milliseconds);
             }
             else if (scale_multiplier > 1000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-                return (t - t % (milliseconds * (scale_diff))) / scale_diff;
+                return (t - t % std::abs(milliseconds * scale_diff)) / scale_diff;
             }
             else
-                return t - t % milliseconds;
+                return t - std::abs(t % milliseconds);
         }
     };
 
@@ -244,15 +244,15 @@ namespace
             if (scale_multiplier < 1000000)
             {
                 Int64 t_microseconds = t * (static_cast<Int64>(1000000) / scale_multiplier);
-                return t_microseconds - t_microseconds % microseconds;
+                return t_microseconds - std::abs(t_microseconds % microseconds);
             }
             else if (scale_multiplier > 1000000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-                return (t - t % (microseconds * (scale_diff))) / scale_diff;
+                return (t - t % std::abs(microseconds * scale_diff)) / scale_diff;
             }
             else
-                return t - t % microseconds;
+                return t - std::abs(t % microseconds);
         }
     };
 
@@ -270,10 +270,10 @@ namespace
             if (scale_multiplier < 1000000000)
             {
                 Int64 t_nanoseconds = t * (static_cast<Int64>(1000000000) / scale_multiplier);
-                return t_nanoseconds - t_nanoseconds % nanoseconds;
+                return t_nanoseconds - std::abs(t_nanoseconds % nanoseconds);
             }
             else
-                return t - t % nanoseconds;
+                return t - std::abs(t % nanoseconds);
         }
     };
 
