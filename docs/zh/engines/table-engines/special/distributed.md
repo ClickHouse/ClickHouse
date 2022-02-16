@@ -1,6 +1,6 @@
 ---
 toc_priority: 33
-toc_title: Distributed
+toc_title: 分布式引擎
 ---
 
 # 分布式引擎 {#distributed}
@@ -69,16 +69,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
     **稳定性设置** (`fsync_...`):
 
-    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
-    - May significantly decrease the inserts' performance
-    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+    - 只影响异步插入(例如:`insert_distributed_sync=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
+    — 可能会显著降低`insert`的性能
+    - 影响将存储在分布式表文件夹中的数据写入 **接受您插入的节点** 。如果你需要保证写入数据到底层的MergeTree表中，请参阅 `system.merge_tree_settings` 中的持久性设置(`...fsync...`)
 
-    For **Insert limit settings** (`..._insert`) see also:
+    **插入限制设置** (`..._insert`) 请见:
 
-    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
-    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
-    - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
-
+    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) 设置
+    - `bytes_to_throw_insert` 在 `bytes_to_delay_insert` 之前处理，所以你不应该设置它的值小于 `bytes_to_delay_insert`
 **示例**
 
 ``` sql
@@ -89,11 +88,11 @@ SETTINGS
     fsync_directories=0;
 ```
 
-Data will be read from all servers in the `logs` cluster, from the `default.hits` table located on every server in the cluster.
-Data is not only read but is partially processed on the remote servers (to the extent that this is possible).
-For example, for a query with `GROUP BY`, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
+数据将从`logs`集群中的所有服务器中，从位于集群中的每个服务器上的`default.hits`表读取。。
+数据不仅在远程服务器上读取，而且在远程服务器上进行部分处理(在可能的范围内)。
+例如，对于带有 `GROUP BY`的查询，数据将在远程服务器上聚合，聚合函数的中间状态将被发送到请求者服务器。然后将进一步聚合数据。
 
-Instead of the database name, you can use a constant expression that returns a string. For example: `currentDatabase()`.
+您可以使用一个返回字符串的常量表达式来代替数据库名称。例如: `currentDatabase()`。
 
 ## 集群 {#distributed-clusters}
 
@@ -103,24 +102,23 @@ Instead of the database name, you can use a constant expression that returns a s
 ``` xml
 <remote_servers>
     <logs>
-        <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+        <!-- 分布式查询的服务器间集群密码
+             默认值:无密码(将不执行身份验证)
 
-             If set, then Distributed queries will be validated on shards, so at least:
-             - such cluster should exist on the shard,
-             - such cluster should have the same secret.
+             如果设置了，那么分布式查询将在分片上验证，所以至少:
+             - 这样的集群应该存在于shard上
+             - 这样的集群应该有相同的密码。
 
-             And also (and which is more important), the initial_user will
-             be used as current user for the query.
+             而且(这是更重要的)，initial_user将作为查询的当前用户使用。
         -->
         <!-- <secret></secret> -->
         <shard>
-            <!-- Optional. Shard weight when writing data. Default: 1. -->
+            <!-- 可选的。写数据时分片权重。 默认: 1. -->
             <weight>1</weight>
-            <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+            <!-- 可选的。是否只将数据写入其中一个副本。默认值:false(将数据写入所有副本)。 -->
             <internal_replication>false</internal_replication>
             <replica>
-                <!-- Optional. Priority of the replica for load balancing (see also load_balancing setting). Default: 1 (less value has more priority). -->
+                <!-- 可选的。负载均衡副本的优先级，请参见（load_balancing 设置)。默认值:1(值越小优先级越高)。 -->
                 <priority>1</priority>
                 <host>example01-01-1</host>
                 <port>9000</port>
