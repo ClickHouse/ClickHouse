@@ -216,7 +216,7 @@ struct ProcessListForUserInfo
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    ProcessListForUser();
+    ProcessListForUser(ProcessList * global_process_list);
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatus *>;
@@ -291,6 +291,8 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend struct ::UserOvercommitTracker;
+    friend struct ::GlobalOvercommitTracker;
 
     mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
