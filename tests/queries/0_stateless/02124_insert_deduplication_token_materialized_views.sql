@@ -23,6 +23,7 @@ INSERT INTO test SELECT number%3, 1 FROM numbers(9); -- { serverError 252 }
 SET max_partitions_per_insert_block = 0;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9);
 INSERT INTO test SELECT number%3, 2 FROM numbers(9);
+INSERT INTO test SELECT number%3, 2 FROM numbers(9);
 
 select
   (select count() from test),
@@ -55,6 +56,7 @@ SET max_partitions_per_insert_block = 1;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9) ; -- { serverError 252 }
 SET max_partitions_per_insert_block = 0;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9);
+INSERT INTO test SELECT number%3, 2 FROM numbers(9);
 INSERT INTO test SELECT number%3, 2 FROM numbers(9);
 
 select
@@ -89,13 +91,13 @@ INSERT INTO test SELECT number%3, 1 FROM numbers(9) SETTINGS insert_deduplicatio
 SET max_partitions_per_insert_block = 0;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'test1';
 INSERT INTO test SELECT number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'test2';
+INSERT INTO test SELECT number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'test2';
 
 select 
   (select count() from test),
   (select sum(c) from test_mv_a),
   (select sum(c) from test_mv_b),
   (select sum(c) from test_mv_c);
-
 
 select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results consitent';
 
@@ -122,6 +124,7 @@ SET max_partitions_per_insert_block = 1;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'test1' ; -- { serverError 252 }
 SET max_partitions_per_insert_block = 0;
 INSERT INTO test SELECT number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'test1';
+INSERT INTO test SELECT number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'test2';
 INSERT INTO test SELECT number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'test2';
 
 select 
