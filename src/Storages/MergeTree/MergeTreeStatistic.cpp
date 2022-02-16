@@ -25,9 +25,10 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-String generateFileNameForStatistics() {
-    return fmt::format("{}_{}.{}",
+String generateFileNameForStatistics(const String & name) {
+    return fmt::format("{}_{}_{}.{}",
         PART_STATS_FILE_NAME,
+        name,
         std::uniform_int_distribution<UInt64>()(thread_local_rng),
         PART_STATS_FILE_EXT);
 }
@@ -65,29 +66,38 @@ void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionS
 std::optional<double> MergeTreeDistributionStatistics::estimateProbability(const String& column, const Field& lower, const Field& upper) const
 {
     Poco::Logger::get("MergeTreeDistributionStatistics").information("estimateProbability");
-    if (!column_to_stats.contains(column)) {
+    if (!column_to_stats.contains(column))
+    {
         Poco::Logger::get("MergeTreeDistributionStatistics").information("no column " + column);
         return std::nullopt;
     }
     Poco::Logger::get("MergeTreeDistributionStatistics").information("column " + column);
     const auto & stat = column_to_stats.at(column);
-    if (stat->empty()) {
+    if (stat->empty())
+    {
         return 1;
     }
     return stat->estimateProbability(lower, upper);
 }
 
-void MergeTreeDistributionStatistics::add(const String & name, const IDistributionStatisticPtr & stat) {
+void MergeTreeDistributionStatistics::add(const String & column, const IDistributionStatisticPtr & stat)
+{
     if (stat == nullptr)
     {
-        column_to_stats.erase(name);
+        column_to_stats.erase(column);
         return;
     }
-    column_to_stats[name] = stat;
+    column_to_stats[column] = stat;
 }
 
-void MergeTreeDistributionStatistics::remove(const String & name) {
-    column_to_stats.erase(name);
+Names MergeTreeDistributionStatistics::getStatisticsNames() const
+{
+    std::set<String> statistics;
+    for (const auto & [column, stat] : column_to_stats)
+    {
+        statistics.insert(stat->name());
+    }
+    return Names(std::begin(statistics), std::end(statistics)); 
 }
 
 bool MergeTreeStatistics::empty() const
@@ -110,6 +120,11 @@ void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
     column_distributions->merge(merge_tree_stats->column_distributions);
 }
 
+Names MergeTreeStatistics::getStatisticsNames() const
+{
+    return column_distributions->getStatisticsNames();
+}
+
 // Serialization:
 // <Count:u64>
 // <TYPE&VERSION:u64><Count:u64>
@@ -121,14 +136,14 @@ void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
 //      <Column/Name:string><DataSizeBytes:u64><data:...>
 //      ...
 // ...
-void MergeTreeStatistics::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     size_serialization->serializeBinary(1, ostr);
     // TODO: support versions and multiple distrs
     size_serialization->serializeBinary(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION), ostr);
-    column_distributions->serializeBinary(ostr);
+    column_distributions->serializeBinary(name, ostr);
 }
 
 void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
@@ -163,18 +178,24 @@ void MergeTreeStatistics::setDistributionStatistics(IDistributionStatisticsPtr &
     column_distributions = std::move(merge_tree_stat);
 }
 
-void MergeTreeDistributionStatistics::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeDistributionStatistics::serializeBinary(const String & name, WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
 
-    size_serialization->serializeBinary(column_to_stats.size(), ostr);
+    size_serialization->serializeBinary(
+        std::count_if(
+            std::begin(column_to_stats), std::end(column_to_stats),
+            [&name](const auto & elem) { return name == elem.second->name(); }), ostr);
     for (const auto & [column, stat] : column_to_stats)
     {
-        str_serialization->serializeBinary(column, ostr);
-        stat->serializeBinary(ostr);
+        if (stat->name() == name)
+        {
+            str_serialization->serializeBinary(column, ostr);
+            stat->serializeBinary(ostr);
+        }
     }
 }
 

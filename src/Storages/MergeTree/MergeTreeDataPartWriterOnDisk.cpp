@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Poco/Logger.h>
 #include "Common/Exception.h"
 #include "Disks/IDisk.h"
 #include "Storages/MergeTree/MergeTreeStatistic.h"
@@ -347,34 +348,41 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
     if (stats_collectors.empty())
         return;
 
-    // Different stats can be stored in different files
-    // in order not to interfere with vertical merges.
-    // It is possible because one stat is calculated exactly for one column.
-    const auto filename = generateFileNameForStatistics();
-    auto stats_file_stream = data_part->volume->getDisk()->writeFile(
-        part_path + filename,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode::Rewrite);
-    auto stats_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
-
+    std::set<String> statistic_names;
     auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
     for (auto & stats_collector : stats_collectors)
     {
-        column_distribution_stats->add(stats_collector->column(), stats_collector->getStatisticAndReset());
+        auto stat = stats_collector->getStatisticAndReset();
+        statistic_names.insert(stat->name());
+        column_distribution_stats->add(stats_collector->column(), std::move(stat));
     }
 
-    MergeTreeStatistics stats;
-    stats.setDistributionStatistics(std::move(column_distribution_stats));
-    stats.serializeBinary(*stats_stream);
+    // Different stats can be stored in different files
+    // in order not to interfere with vertical merges.
+    // It is possible because one stat is calculated exactly for one column.
+    for (const String & statistic_name : statistic_names)
+    {
+        LOG_DEBUG(&Poco::Logger::get("finishStatisticsSerialization"), "Stat: {}", statistic_name);
+        const auto filename = generateFileNameForStatistics(statistic_name);
+        auto stats_file_stream = data_part->volume->getDisk()->writeFile(
+            part_path + filename,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            WriteMode::Rewrite);
+        auto stats_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
 
-    // TODO: compression
-    stats_stream->next();
-    checksums.files[filename].file_size = stats_stream->count();
-    checksums.files[filename].file_hash = stats_stream->getHash();
-    stats_file_stream->finalize();
-    
-    if (sync)
-        stats_file_stream->sync();
+        MergeTreeStatistics stats;
+        stats.setDistributionStatistics(std::move(column_distribution_stats));
+        stats.serializeBinary(statistic_name, *stats_stream);
+
+        // TODO: compression???
+        stats_stream->next();
+        checksums.files[filename].file_size = stats_stream->count();
+        checksums.files[filename].file_hash = stats_stream->getHash();
+        stats_file_stream->finalize();
+        
+        if (sync)
+            stats_file_stream->sync();
+    }
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const

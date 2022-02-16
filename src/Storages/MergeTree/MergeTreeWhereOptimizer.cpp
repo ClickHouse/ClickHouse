@@ -573,7 +573,6 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
 
 void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 {
-    // TODO: basic support for tuples (a, b, c) < (d, e, f) => estimate a <= d and add to prewhere
     Conditions where_conditions = analyze(select.where(), select.final());
     std::unordered_map<std::string, Conditions> column_to_simple_conditions;
     Conditions complex_conditions;
@@ -659,57 +658,6 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
             ++it;
         }
     }
-
-    // Now let's move other columns from smaller to bigger while totals are less than threasholds.
-    // Just repeat the old algorithm, but order conditions by ranks instead of only sizes.
-
-    /// Move condition and all other conditions depend on the same set of columns.
-    /*auto move_condition = [&](Conditions::iterator cond_it)
-    {
-        prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
-        total_size_of_moved_conditions += cond_it->columns_size;
-        total_number_of_moved_columns += cond_it->identifiers.size();
-
-        /// Move all other viable conditions that depend on the same set of columns.
-        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
-        {
-            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->identifiers == cond_it->identifiers)
-                prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
-            else
-                ++jt;
-        }
-    };*/
-
-    /// TODO: use columns in expr
-    /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
-    /*while (!where_conditions.empty())
-    {
-        /// Move the best condition to PREWHERE if it is viable.
-        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
-
-        if (!it->viable)
-            break;
-
-        bool moved_enough = false;
-        if (total_size_of_queried_columns > 0)
-        {
-            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-            moved_enough = total_size_of_moved_conditions > 0
-                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-        }
-        else
-        {
-            /// Otherwise, use number of moved columns as a fallback.
-            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-            moved_enough = total_number_of_moved_columns > 0
-                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
-        }
-
-        if (moved_enough)
-            break;
-
-        move_condition(it);
-    }*/
 
     /// Nothing was moved.
     if (prewhere_conditions.empty())

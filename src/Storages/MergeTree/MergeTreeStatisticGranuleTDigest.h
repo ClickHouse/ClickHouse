@@ -19,14 +19,16 @@ This estimates are approximate, so they can not be used for data skipping.
 class MergeTreeGranuleDistributionStatisticTDigest : public IDistributionStatistic
 {
 public:
-    explicit MergeTreeGranuleDistributionStatisticTDigest(const String & column_name_);
+    explicit MergeTreeGranuleDistributionStatisticTDigest(
+        const String & name_,
+        const String & column_name_);
     MergeTreeGranuleDistributionStatisticTDigest(
         QuantileTDigest<Float32>&& min_sketch_,
         QuantileTDigest<Float32>&& max_sketch_,
         const String & column_name_);
 
     const String& name() const override;
-
+    const String& type() const override;
     bool empty() const override;
     void merge(const IStatisticPtr & other) override;
 
@@ -40,6 +42,7 @@ public:
     double estimateProbability(const Field& lower, const Field& upper) const override;
 
 private:
+    const String stat_name;
     const String column_name;
     mutable QuantileTDigest<Float32> min_sketch;
     mutable QuantileTDigest<Float32> max_sketch;
@@ -49,9 +52,12 @@ private:
 class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
 {
 public:
-    explicit MergeTreeGranuleDistributionStatisticCollectorTDigest(const String & column_name_);
+    explicit MergeTreeGranuleDistributionStatisticCollectorTDigest(
+        const String & name_,
+        const String & column_name_);
 
-    const String & name() const override;
+    const String& name() const override;
+    const String & type() const override;
     const String & column() const override;
     bool empty() const override;
     IDistributionStatisticPtr getStatisticAndReset() override;
@@ -60,6 +66,7 @@ public:
     void granuleFinished() override;
 
 private:
+    const String stat_name;
     const String column_name;
     std::optional<QuantileTDigest<Float32>> min_sketch;
     std::optional<QuantileTDigest<Float32>> max_sketch;

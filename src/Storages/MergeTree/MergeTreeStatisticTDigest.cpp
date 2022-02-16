@@ -15,8 +15,10 @@ extern int INCORRECT_QUERY;
 }
 
 MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
+    const String & name_,
     const String & column_name_)
-    : column_name(column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
     , is_empty(true)
 {
 }
@@ -30,6 +32,11 @@ MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisti
 }
 
 const String& MergeTreeColumnDistributionStatisticTDigest::name() const
+{
+    return stat_name;
+}
+
+const String& MergeTreeColumnDistributionStatisticTDigest::type() const
 {
     static String name = "tdigest";
     return name;
@@ -154,12 +161,20 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
         return 1.0 - 0.0;
 }
 
-MergeTreeColumnDistributionStatisticCollectorTDigest::MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_)
-    : column_name(column_name_)
+MergeTreeColumnDistributionStatisticCollectorTDigest::MergeTreeColumnDistributionStatisticCollectorTDigest(
+    const String & name_,
+    const String & column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
 {
 }
 
 const String & MergeTreeColumnDistributionStatisticCollectorTDigest::name() const
+{
+    return stat_name;
+}
+
+const String & MergeTreeColumnDistributionStatisticCollectorTDigest::type() const
 {
     static String name = "tdigest";
     return name;
@@ -217,7 +232,7 @@ IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
     validatorColumnDistributionStatisticTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(stat.name, column.name);
 }
 
 IMergeTreeDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
@@ -226,7 +241,7 @@ IMergeTreeDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCo
     validatorColumnDistributionStatisticTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(stat.name, column.name);
 }
 
 void validatorColumnDistributionStatisticTDigest(

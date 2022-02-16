@@ -19,8 +19,10 @@ extern int INCORRECT_QUERY;
 }
 
 MergeTreeGranuleDistributionStatisticTDigest::MergeTreeGranuleDistributionStatisticTDigest(
+    const String & name_,
     const String & column_name_)
-    : column_name(column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
     , is_empty(true)
 {
 }
@@ -37,6 +39,11 @@ MergeTreeGranuleDistributionStatisticTDigest::MergeTreeGranuleDistributionStatis
 }
 
 const String& MergeTreeGranuleDistributionStatisticTDigest::name() const
+{
+    return stat_name;
+}
+
+const String& MergeTreeGranuleDistributionStatisticTDigest::type() const
 {
     static String name = "granule_tdigest";
     return name;
@@ -62,10 +69,6 @@ void MergeTreeGranuleDistributionStatisticTDigest::merge(const IStatisticPtr & o
     {
         throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
     }
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(
-    //        "MERGE: 50% = " + std::to_string(sketch.getFloat(0.5))
-    //        + " 90% = " + std::to_string(sketch.getFloat(0.9))
-    //        + " 1% = " + std::to_string(sketch.getFloat(0.01)));
 }
 
 const String& MergeTreeGranuleDistributionStatisticTDigest::getColumnsRequiredForStatisticCalculation() const
@@ -83,10 +86,6 @@ void MergeTreeGranuleDistributionStatisticTDigest::deserializeBinary(ReadBuffer 
 {
     min_sketch.deserialize(istr);
     max_sketch.deserialize(istr);
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(
-    //    "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
-    //    + " 90% = " + std::to_string(sketch.getFloat(0.9))
-    //    + " 1% = " + std::to_string(sketch.getFloat(0.01)));
     is_empty = false;
 }
 
@@ -162,12 +161,20 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const F
         return 1.0 - 0.0;
 }
 
-MergeTreeGranuleDistributionStatisticCollectorTDigest::MergeTreeGranuleDistributionStatisticCollectorTDigest(const String & column_name_)
-    : column_name(column_name_)
+MergeTreeGranuleDistributionStatisticCollectorTDigest::MergeTreeGranuleDistributionStatisticCollectorTDigest(
+    const String & name_,
+    const String & column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
 {
 }
 
 const String & MergeTreeGranuleDistributionStatisticCollectorTDigest::name() const
+{
+    return stat_name;
+}
+
+const String & MergeTreeGranuleDistributionStatisticCollectorTDigest::type() const
 {
     static String name = "granule_tdigest";
     return name;
@@ -244,7 +251,7 @@ IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
     validatorGranuleDistributionStatisticTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeGranuleDistributionStatisticTDigest>(column.name);
+    return std::make_shared<MergeTreeGranuleDistributionStatisticTDigest>(stat.name, column.name);
 }
 
 IMergeTreeDistributionStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
@@ -253,7 +260,7 @@ IMergeTreeDistributionStatisticCollectorPtr creatorGranuleDistributionStatisticC
     validatorGranuleDistributionStatisticTDigest(stat, column);
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
-    return std::make_shared<MergeTreeGranuleDistributionStatisticCollectorTDigest>(column.name);
+    return std::make_shared<MergeTreeGranuleDistributionStatisticCollectorTDigest>(stat.name, column.name);
 }
 
 void validatorGranuleDistributionStatisticTDigest(

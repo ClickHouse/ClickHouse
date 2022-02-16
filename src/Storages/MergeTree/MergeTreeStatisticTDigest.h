@@ -15,11 +15,15 @@ Includes each value.
 class MergeTreeColumnDistributionStatisticTDigest : public IDistributionStatistic
 {
 public:
-    explicit MergeTreeColumnDistributionStatisticTDigest(const String & column_name_);
-    MergeTreeColumnDistributionStatisticTDigest(QuantileTDigest<Float32>&& sketch_, const String & column_name_);
+    explicit MergeTreeColumnDistributionStatisticTDigest(
+        const String & name_,
+        const String & column_name_);
+    MergeTreeColumnDistributionStatisticTDigest(
+        QuantileTDigest<Float32>&& sketch_,
+        const String & column_name_);
 
     const String& name() const override;
-
+    const String& type() const override;
     bool empty() const override;
     void merge(const IStatisticPtr & other) override;
 
@@ -33,6 +37,7 @@ public:
     double estimateProbability(const Field& lower, const Field& upper) const override;
 
 private:
+    const String stat_name;
     const String column_name;
     mutable QuantileTDigest<Float32> sketch;
     bool is_empty;
@@ -41,9 +46,12 @@ private:
 class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
 {
 public:
-    explicit MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_);
+    explicit MergeTreeColumnDistributionStatisticCollectorTDigest(
+        const String & name_,
+        const String & column_name_);
 
-    const String & name() const override;
+    const String& name() const override;
+    const String & type() const override;
     const String & column() const override;
     bool empty() const override;
     IDistributionStatisticPtr getStatisticAndReset() override;
@@ -52,6 +60,7 @@ public:
     void granuleFinished() override;
 
 private:
+    const String stat_name;
     const String column_name;
     std::optional<QuantileTDigest<Float32>> sketch;
 };

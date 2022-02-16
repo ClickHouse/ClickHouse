@@ -36,6 +36,8 @@ public:
 
     virtual const String& name() const = 0;
 
+    virtual const String& type() const = 0;
+
     virtual bool empty() const = 0;
     virtual void merge(const std::shared_ptr<IStatistic> & other) = 0;
 
@@ -70,12 +72,12 @@ public:
 
     virtual void merge(const std::shared_ptr<IDistributionStatistics> & other) = 0;
 
-    virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+    virtual Names getStatisticsNames() const = 0;
+    virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
-    virtual void remove(const String & name) = 0;
 };
 
 using IDistributionStatisticsPtr = std::shared_ptr<IDistributionStatistics>;
@@ -90,7 +92,8 @@ public:
 
     virtual void merge(const std::shared_ptr<IStatistics>& other) = 0;
 
-    virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+    virtual Names getStatisticsNames() const = 0;
+    virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual void setDistributionStatistics(IDistributionStatisticsPtr && stat) = 0;

@@ -12,19 +12,21 @@
 #include <Storages/StatisticsDescription.h>
 #include <Storages/Statistics.h>
 
-constexpr auto PART_STATS_FILE_NAME = "part_stats";
+constexpr auto PART_STATS_FILE_NAME = "part_stat";
 constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 
 namespace DB
 {
 
-String generateFileNameForStatistics();
+String generateFileNameForStatistics(const String & name);
 
 class IMergeTreeDistributionStatisticCollector {
 public:
     virtual ~IMergeTreeDistributionStatisticCollector() = default;
 
-    virtual const String & name() const = 0;
+    virtual const String& name() const = 0;
+
+    virtual const String & type() const = 0;
     virtual const String & column() const = 0;
     virtual bool empty() const = 0;
     virtual IDistributionStatisticPtr getStatisticAndReset() = 0;
@@ -45,12 +47,13 @@ public:
 
     void merge(const std::shared_ptr<IDistributionStatistics> & other)  override;
 
-    void serializeBinary(WriteBuffer & ostr) const  override;
-    void deserializeBinary(ReadBuffer & istr)  override;
+    Names getStatisticsNames() const override;
+
+    void serializeBinary(const String & name, WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
     std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const override;
-    void add(const String & name, const IDistributionStatisticPtr & stat) override;
-    void remove(const String & name) override;
+    void add(const String & column, const IDistributionStatisticPtr & stat) override;
 
 private:
     std::unordered_map<String, IDistributionStatisticPtr> column_to_stats;
@@ -65,7 +68,9 @@ public:
 
     void merge(const std::shared_ptr<IStatistics>& other) override;
 
-    void serializeBinary(WriteBuffer & ostr) const override;
+    Names getStatisticsNames() const override;
+
+    void serializeBinary(const String & name, WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
     void setDistributionStatistics(IDistributionStatisticsPtr && stat) override;
