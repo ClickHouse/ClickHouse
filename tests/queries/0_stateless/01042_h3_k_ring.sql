@@ -1,16 +1,17 @@
 -- Tags: no-fasttest
 
-SELECT arraySort(h3kRing(581276613233082367, 1));
-SELECT h3kRing(581276613233082367, 0);
-SELECT h3kRing(581276613233082367, -1); -- { serverError 12 }
+SELECT arraySort(h3kRing(581276613233082367, toUInt16(1)));
+SELECT h3kRing(581276613233082367, toUInt16(0));
+SELECT h3kRing(581276613233082367, -1); -- { serverError 43 }
+SELECT h3kRing(581276613233082367, toUInt16(-1)); -- { serverError 12 }
 
 
 DROP TABLE IF EXISTS h3_indexes;
 
-CREATE TABLE h3_indexes (h3_index UInt64, res UInt8) ENGINE = Memory;
+-- Test h3 indices and k selected from original test fixture: https://github.com/uber/h3/blob/master/src/apps/testapps
 
--- Random geo coordinates were generated using the H3 tool: https://github.com/ClickHouse-Extras/h3/blob/master/src/apps/testapps/mkRandGeo.c at various resolutions from 0 to 15.
--- Corresponding H3 index values were in turn generated with those geo coordinates using `geoToH3(lon, lat, res)` ClickHouse function for the following test.
+CREATE TABLE h3_indexes (h3_index UInt64, k UInt16) ENGINE = Memory;
+
 
 INSERT INTO h3_indexes VALUES (579205133326352383,1);
 INSERT INTO h3_indexes VALUES (581263419093549055,2);
@@ -30,6 +31,6 @@ INSERT INTO h3_indexes VALUES (639763125756281263,15);
 INSERT INTO h3_indexes VALUES (644178757620501158,16);
 
 
-SELECT arraySort(h3kRing(h3_index, res)) FROM h3_indexes ORDER BY h3_index;
+SELECT arraySort(h3kRing(h3_index, k)) FROM h3_indexes ORDER BY h3_index;
 
 DROP TABLE h3_indexes;

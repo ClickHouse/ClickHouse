@@ -12,8 +12,7 @@ namespace
         static constexpr auto name = "degrees";
     };
 
-    template <typename T>
-    Float64 degrees(T r)
+    Float64 degrees(Float64 r)
     {
         Float64 degrees = r * (180 / M_PI);
         return degrees;

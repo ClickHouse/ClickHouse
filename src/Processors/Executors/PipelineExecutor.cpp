@@ -301,11 +301,6 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-                );
-
                 try
                 {
                     executeSingleThread(thread_num);

@@ -12,8 +12,7 @@ namespace
         static constexpr auto name = "radians";
     };
 
-    template <typename T>
-    Float64 radians(T d)
+    Float64 radians(Float64 d)
     {
         Float64 radians = d * (M_PI / 180);
         return radians;

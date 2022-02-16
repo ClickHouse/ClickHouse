@@ -228,6 +228,8 @@ String MonitorCommand::run()
     print(ret, "watch_count", state_machine.getTotalWatchesCount());
     print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
     print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
+    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
 #if defined(__linux__) || defined(__APPLE__)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
