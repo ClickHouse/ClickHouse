@@ -28,7 +28,10 @@ class Release:
         self._release_commit = ""
 
     def run(self, cmd: str, cwd: Optional[str] = None) -> str:
-        logging.info("Running in directory %s, command:\n    %s", cwd or "$CWD", cmd)
+        cwd_text = ""
+        if cwd:
+            cwd_text = f" (CWD='{cwd}')"
+        logging.info("Running command%s:\n    %s", cwd_text, cmd)
         return self._git.run(cmd, cwd)
 
     def update(self):
@@ -201,8 +204,9 @@ class Release:
         try:
             yield
         except BaseException:
-            logging.warning("Rolling back label {label}")
+            logging.warning("Rolling back label %s", label)
             self.run(f"gh api repos/{args.repo}/labels/{label} -X DELETE")
+            raise
 
     @contextmanager
     def _create_gh_release(self, args: argparse.Namespace):
@@ -285,11 +289,6 @@ def parse_args() -> argparse.Namespace:
         help="by default, 'major' and 'minor' types work only for master, and 'patch' "
         "works only for a release branches, that name should be the same as "
         "'$MAJOR.$MINOR' version, e.g. 22.2",
-    )
-    parser.add_argument(
-        "--no-publish-release",
-        action="store_true",
-        help="by default, 'major' and 'minor' types work only for master, and 'patch' ",
     )
 
     return parser.parse_args()
