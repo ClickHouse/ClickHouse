@@ -49,14 +49,16 @@ class Release:
             self.check_branch(args.release_type)
 
         if args.release_type in self.BIG:
-            if args.no_prestable:
-                logging.info("Skipping prestable stage")
-            else:
-                with self.prestable(args):
-                    logging.info("Prestable part of the releasing is done")
+            # Checkout to the commit, it will provide the correct current version
+            with self._checkout(self.release_commit, True):
+                if args.no_prestable:
+                    logging.info("Skipping prestable stage")
+                else:
+                    with self.prestable(args):
+                        logging.info("Prestable part of the releasing is done")
 
-            with self.testing(args):
-                logging.info("Testing part of the releasing is done")
+                with self.testing(args):
+                    logging.info("Testing part of the releasing is done")
 
     def check_no_tags_after(self):
         tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
@@ -84,8 +86,6 @@ class Release:
     def prestable(self, args: argparse.Namespace):
         self.check_no_tags_after()
         # Create release branch
-        # TODO: this place is wrong. If we are in stale branch, it will produce
-        # a wrong version
         self.update()
         release_branch = f"{self.version.major}.{self.version.minor}"
         with self._create_branch(release_branch, self.release_commit):
@@ -101,8 +101,6 @@ class Release:
     def testing(self, args: argparse.Namespace):
         # Create branch for a version bump
         self.update()
-        # TODO: this place is wrong. If we are in stale branch, it will produce
-        # a wrong version
         self.version = self.version.update(args.release_type)
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
@@ -132,7 +130,9 @@ class Release:
 
     @contextmanager
     def _bump_prestable_version(self, release_branch: str, args: argparse.Namespace):
+        self._git.update()
         new_version = self.version.patch_update()
+        new_version.with_description("prestable")
         update_cmake_version(new_version)
         cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
         self.run(
@@ -157,6 +157,7 @@ class Release:
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str, args: argparse.Namespace):
+        self.version.with_description("testing")
         update_cmake_version(self.version)
         cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
         self.run(
@@ -172,7 +173,7 @@ class Release:
             yield
 
     @contextmanager
-    def _checkout(self, ref: str, with_rollback: bool = False):
+    def _checkout(self, ref: str, with_checkout_back: bool = False):
         orig_ref = self._git.branch or self._git.sha
         need_rollback = False
         if ref not in (self._git.branch, self._git.sha):
@@ -185,7 +186,7 @@ class Release:
             self.run(f"git reset --hard; git checkout {orig_ref}")
             raise
         else:
-            if with_rollback and need_rollback:
+            if with_checkout_back and need_rollback:
                 self.run(f"git checkout {orig_ref}")
 
     @contextmanager
@@ -214,7 +215,8 @@ class Release:
             # Preserve tag if version is changed
             tag = self.version.describe
             self.run(
-                f"gh release create --prerelease --draft --repo {args.repo} '{tag}'"
+                f"gh release create --prerelease --draft --repo {args.repo} "
+                f"--title 'Release {tag}' '{tag}'"
             )
             try:
                 yield
