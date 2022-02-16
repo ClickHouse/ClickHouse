@@ -106,7 +106,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     if (config.has(key_in_config + ".lifetime"))
         lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
-    std::vector<DataTypePtr> argument_types;
+    std::vector<UserDefinedExecutableFunctionArgument> arguments;
 
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(key_in_config, config_elems);
@@ -116,9 +116,16 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         if (!startsWith(config_elem, "argument"))
             continue;
 
+        UserDefinedExecutableFunctionArgument argument;
+
         const auto argument_prefix = key_in_config + '.' + config_elem + '.';
-        auto argument_type = DataTypeFactory::instance().get(config.getString(argument_prefix + "type"));
-        argument_types.emplace_back(std::move(argument_type));
+
+        argument.type = DataTypeFactory::instance().get(config.getString(argument_prefix + "type"));
+
+        if (config.has(argument_prefix + "name"))
+            argument.name = config.getString(argument_prefix + "name");
+
+        arguments.emplace_back(std::move(argument));
     }
 
     UserDefinedExecutableFunctionConfiguration function_configuration
@@ -126,7 +133,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .name = std::move(name), //-V1030
         .command = std::move(command_value), //-V1030
         .command_arguments = std::move(command_arguments), //-V1030
-        .argument_types = std::move(argument_types), //-V1030
+        .arguments = std::move(arguments), //-V1030
         .result_type = std::move(result_type), //-V1030
     };
 
