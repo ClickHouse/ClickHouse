@@ -294,7 +294,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_name, count] (Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(create_metadata_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(create_metadata_callback), path);
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
