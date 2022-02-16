@@ -1,23 +1,12 @@
-<<<<<<< HEAD
 #include <Storages/Hive/HiveFile.h>
-=======
-
-#include <Common/config.h>
->>>>>>> d9558cbca4... add minmax index for hivengine; remove libhdfspp dependency for hive engine
 
 #if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
-<<<<<<< HEAD
-#include <fmt/core.h>
-
-#include <arrow/api.h>
-=======
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <arrow/adapters/orc/adapter.h>
 #include <arrow/io/memory.h>
->>>>>>> d9558cbca4... add minmax index for hivengine; remove libhdfspp dependency for hive engine
 #include <arrow/io/api.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
@@ -34,11 +23,6 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 namespace DB
 {
