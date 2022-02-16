@@ -156,10 +156,10 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, settings);
 
+    formatForClauses(filters, alter, settings);
+
     if (kind)
         formatAsKind(*kind, settings);
-
-    formatForClauses(filters, alter, settings);
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
