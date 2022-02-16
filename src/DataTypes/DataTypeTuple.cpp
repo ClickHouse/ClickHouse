@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int ILLEGAL_INDEX;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -156,8 +157,19 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
 {
-    const auto & element_serializations =
-        assert_cast<const SerializationTuple &>(serialization).getElementsSerializations();
+    /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
+    /// several times to allow to reconstruct the substream path name.
+    /// Here we don't need substream path name, so we drop first several wrapper serializations.
+
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
+        current_serialization = serialization_named->getNested().get();
+
+    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
+    if (!serialization_tuple)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
+
+    const auto & element_serializations = serialization_tuple->getElementsSerializations();
 
     size_t size = elems.size();
     assert(element_serializations.size() == size);

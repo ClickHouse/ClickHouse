@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 SET use_uncompressed_cache = 0;
 
 SELECT '====array====';
