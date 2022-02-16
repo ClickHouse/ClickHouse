@@ -445,11 +445,22 @@ class TestCase:
 
         return testcase_args
 
-    def configure_test_settings(self, client_options):
+    def add_random_settings(self, client_options):
         if self.tags and 'no-random-settings' in self.tags:
             return client_options
 
-        return client_options + " --" + " --".join(self.random_settings)
+        if len(self.base_url_params) == 0:
+            os.environ['CLICKHOUSE_URL_PARAMS'] = '&'.join(self.random_settings)
+        else:
+            os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params + '&' + '&'.join(self.random_settings)
+
+        new_options = " --" + " --".join(self.random_settings)
+        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options + new_options
+        return client_options + new_options
+
+    def remove_random_settings_from_env(self):
+        os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params
+        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options
 
     def add_info_about_settings(self, description):
         if self.tags and 'no-random-settings' in self.tags:
@@ -471,7 +482,10 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+
         self.random_settings = SettingsRandomizer.get_random_settings()
+        self.base_url_params = os.environ['CLICKHOUSE_URL_PARAMS'] if 'CLICKHOUSE_URL_PARAMS' in os.environ else ''
+        self.base_client_options = os.environ['CLICKHOUSE_CLIENT_OPT'] if 'CLICKHOUSE_CLIENT_OPT' in os.environ else ''
 
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
@@ -710,7 +724,7 @@ class TestCase:
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path)
-            client_options = self.configure_test_settings(client_options)
+            client_options = self.add_random_settings(client_options)
             proc, stdout, stderr, total_time = self.run_single_test(server_logs_level, client_options)
 
             result = self.process_result_impl(proc, stdout, stderr, total_time)
@@ -735,6 +749,9 @@ class TestCase:
                               FailureReason.INTERNAL_ERROR,
                               0.,
                               self.get_description_from_exception_info(sys.exc_info()))
+        finally:
+            self.remove_random_settings_from_env()
+
 
 class TestSuite:
     @staticmethod
@@ -1502,16 +1519,6 @@ if __name__ == '__main__':
     else:
         args.client_database = 'default'
 
-    # Add random settings to url parameters
-    if 'CLICKHOUSE_URL_PARAMS' in os.environ:
-        os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
-    else:
-        os.environ['CLICKHOUSE_URL_PARAMS'] = ''
-
-    random_settings = SettingsRandomizer.get_random_settings()
-    print("Add random settings to CLICKHOUSE_URL_PARAMS:", ', '.join(random_settings))
-    os.environ['CLICKHOUSE_URL_PARAMS'] += '&'.join(random_settings)
-
     if args.client_option:
         # Set options for client
         if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
@@ -1521,10 +1528,15 @@ if __name__ == '__main__':
 
         os.environ['CLICKHOUSE_CLIENT_OPT'] += get_additional_client_options(args)
 
+        # Set options for curl
+        if 'CLICKHOUSE_URL_PARAMS' in os.environ:
+            os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
+        else:
+            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
+
         client_options_query_str = get_additional_client_options_url(args)
         args.client_options_query_str = client_options_query_str + '&'
-        # Set options for curl
-        os.environ['CLICKHOUSE_URL_PARAMS'] += '&' + client_options_query_str
+        os.environ['CLICKHOUSE_URL_PARAMS'] += client_options_query_str
     else:
         args.client_options_query_str = ''
 
