@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-msan, no-replicated-database
+-- Tags: no-tsan, no-asan, no-msan, no-replicated-database, no-random-settings
 -- Tag no-tsan: Fine thresholds on memory usage
 -- Tag no-asan: Fine thresholds on memory usage
 -- Tag no-msan: Fine thresholds on memory usage

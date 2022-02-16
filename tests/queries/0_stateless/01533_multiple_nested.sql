@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;
+SET use_uncompressed_cache = 0;
 
 CREATE TABLE nested
 (
