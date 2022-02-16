@@ -43,7 +43,7 @@ namespace ErrorCodes
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {
-    /// null values or NaN/Inf values of double type.
+    /// Null values or NaN/Inf values of double type.
     if (stats->hasMinimum() && stats->hasMaximum())
     {
         return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
@@ -130,7 +130,8 @@ void HiveOrcFile::prepareReader()
 {
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef());
     auto format_settings = getFormatSettings(getContext());
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &reader));
+    std::atomic<int> is_stopped{0};
+    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
 }
 
 void HiveOrcFile::prepareColumnMapping()
@@ -139,7 +140,7 @@ void HiveOrcFile::prepareColumnMapping()
     size_t size = type.getSubtypeCount();
     for (size_t pos = 0; pos < size; pos++)
     {
-        // hive中字符串不区分大小写。所以这里统一改成小写，方便匹配
+        /// Column names in hive is case-insensitive.
         String column{type.getFieldName(pos)};
         boost::to_lower(column);
         orc_column_positions[column] = pos;
@@ -148,7 +149,7 @@ void HiveOrcFile::prepareColumnMapping()
 
 bool HiveOrcFile::hasMinMaxIndex() const
 {
-    return !storage_settings->disable_orc_file_minmax_index;
+    return !storage_settings->enable_orc_file_minmax_index;
 }
 
 
@@ -170,16 +171,13 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(c
         if (it == orc_column_positions.end())
         {
             idx->hyperrectangle[i] = buildRange(nullptr);
-            // std::cerr << "statistics:nullptr" << std::endl;
         }
         else
         {
             size_t pos = it->second;
-            // 注意：column statistics从1开始. 0有特殊用途
+            /// Attention: column statistics start from 1. 0 has special purpose.
             const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(pos + 1);
             idx->hyperrectangle[i] = buildRange(col_stats);
-            // std::cerr << "statistics:" << col_stats->toString();
-            // std::cerr << "name:" << column << ", pos" << pos << ", range:" << idx->hyperrectangle[i].toString() << std::endl;
         }
         ++i;
     }
@@ -202,7 +200,7 @@ void HiveOrcFile::loadMinMaxIndex()
 
 bool HiveOrcFile::hasSubMinMaxIndex() const
 {
-    return !storage_settings->disable_orc_stripe_minmax_index;
+    return !storage_settings->enable_orc_stripe_minmax_index;
 }
 
 
@@ -232,14 +230,15 @@ void HiveOrcFile::loadSubMinMaxIndex()
 
 bool HiveParquetFile::hasSubMinMaxIndex() const
 {
-    return !storage_settings->disable_parquet_rowgroup_minmax_index;
+    return !storage_settings->enable_parquet_rowgroup_minmax_index;
 }
 
 void HiveParquetFile::prepareReader()
 {
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef());
     auto format_settings = getFormatSettings(getContext());
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &reader));
+    std::atomic<int> is_stopped{0};
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped), arrow::default_memory_pool(), &reader));
 }
 
 void HiveParquetFile::loadSubMinMaxIndex()
@@ -270,7 +269,6 @@ void HiveParquetFile::loadSubMinMaxIndex()
         auto it = index_names_and_types.begin();
         for (; it != index_names_and_types.end(); ++j, ++it)
         {
-            // 如果parquet file中不存在该字段，使用空Range
             String name{it->name};
             boost::to_lower(name);
             auto mit = parquet_column_positions.find(name);
@@ -292,7 +290,6 @@ void HiveParquetFile::loadSubMinMaxIndex()
             }
             else if (auto int32_stats = std::dynamic_pointer_cast<parquet::Int32Statistics>(stats))
             {
-                // Hive中没有unsigned interger, 这里不用考虑相关case
                 sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int32>(int32_stats);
             }
             else if (auto int64_stats = std::dynamic_pointer_cast<parquet::Int64Statistics>(stats))
@@ -311,7 +308,7 @@ void HiveParquetFile::loadSubMinMaxIndex()
             {
                 sub_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics(string_stats);
             }
-            // 其他类型无法使用minmax index, 跳过
+            /// Other types are not supported for minmax index, skip
         }
         sub_minmax_idxes[i]->initialized = true;
     }
