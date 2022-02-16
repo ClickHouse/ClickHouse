@@ -14,5 +14,15 @@ COPY s3downloader /s3downloader
 ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 ENV DATASETS="hits visits"
 
+# Download Minio-related binaries
+RUN arch=${TARGETARCH:-amd64} \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/minio" \
+    && chmod +x ./minio \
+    && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
+    && chmod +x ./mc
+ENV MINIO_ROOT_USER="clickhouse"
+ENV MINIO_ROOT_PASSWORD="clickhouse"
+COPY setup_minio.sh /
+
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

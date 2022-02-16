@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3disk>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/stateful/</endpoint>
+                <access_key_id>test</access_key_id>
+                <secret_access_key>testtest</secret_access_key>
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+            </s3disk>
+            <hdd>
+                <type>local</type>
+                <path>/home/ubuntu/CH-server/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3disk</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
