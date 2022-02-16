@@ -2,6 +2,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/ITableFunction.h>
