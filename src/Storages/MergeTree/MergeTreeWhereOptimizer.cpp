@@ -73,7 +73,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
     , stats(storage_->getStatisticsByPartitionPredicate(query_info, context))
-    , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr)
+    , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr && !stats->empty())
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
@@ -591,8 +591,8 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     Conditions prewhere_conditions;
     std::unordered_set<std::string> columns_in_prewhere;
 
-    UInt64 total_size_of_moved_conditions = 0;
-    UInt64 total_number_of_moved_columns = 0;
+    //UInt64 total_size_of_moved_conditions = 0;
+    //UInt64 total_number_of_moved_columns = 0;
 
     // First we'll move simple expressions (one column) while estimated amount of data get's lower. (only for conditions with selectivity estimates)
     std::vector<ColumnWithRank> rank_to_column = getSimpleColumns(column_to_simple_conditions);
@@ -636,8 +636,8 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 
         columns_in_prewhere.insert(column);
 
-        total_size_of_moved_conditions += column_size;
-        total_number_of_moved_columns += 1;
+        //total_size_of_moved_conditions += column_size;
+        //total_number_of_moved_columns += 1;
     }
 
     // Let's collect conditions that can be calculated in prewhere using columns_in_prewhere.
@@ -664,7 +664,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     // Just repeat the old algorithm, but order conditions by ranks instead of only sizes.
 
     /// Move condition and all other conditions depend on the same set of columns.
-    auto move_condition = [&](Conditions::iterator cond_it)
+    /*auto move_condition = [&](Conditions::iterator cond_it)
     {
         prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
@@ -678,11 +678,11 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
             else
                 ++jt;
         }
-    };
+    };*/
 
     /// TODO: use columns in expr
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
-    while (!where_conditions.empty())
+    /*while (!where_conditions.empty())
     {
         /// Move the best condition to PREWHERE if it is viable.
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
@@ -709,7 +709,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
             break;
 
         move_condition(it);
-    }
+    }*/
 
     /// Nothing was moved.
     if (prewhere_conditions.empty())
