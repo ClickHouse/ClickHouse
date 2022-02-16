@@ -2,7 +2,7 @@
 
 
 from contextlib import contextmanager
-from typing import Optional
+from typing import List, Optional
 import argparse
 import logging
 
@@ -26,6 +26,7 @@ class Release:
         self._version = version
         self._git = version._git
         self._release_commit = ""
+        self._rollback_stack = []  # type: List[str]
 
     def run(self, cmd: str, cwd: Optional[str] = None) -> str:
         cwd_text = ""
@@ -60,6 +61,8 @@ class Release:
                 with self.testing(args):
                     logging.info("Testing part of the releasing is done")
 
+        self.log_rollback()
+
     def check_no_tags_after(self):
         tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
         if tags_after_commit:
@@ -81,6 +84,15 @@ class Release:
             branch = f"{self.version.major}.{self.version.minor}"
             if self._git.branch != branch:
                 raise Exception(f"branch must be '{branch}' for {release_type} release")
+
+    def log_rollback(self):
+        if self._rollback_stack:
+            rollback = self._rollback_stack
+            rollback.reverse()
+            logging.info(
+                "To rollback the action run the following commands:\n  %s",
+                "\n  ".join(rollback),
+            )
 
     @contextmanager
     def prestable(self, args: argparse.Namespace):
@@ -179,6 +191,8 @@ class Release:
         if ref not in (self._git.branch, self._git.sha):
             need_rollback = True
             self.run(f"git checkout {ref}")
+            # checkout is not put into rollback_stack intentionally
+            rollback_cmd = f"git checkout {orig_ref}"
         try:
             yield
         except BaseException:
@@ -187,26 +201,30 @@ class Release:
             raise
         else:
             if with_checkout_back and need_rollback:
-                self.run(f"git checkout {orig_ref}")
+                self.run(rollback_cmd)
 
     @contextmanager
     def _create_branch(self, name: str, start_point: str = ""):
         self.run(f"git branch {name} {start_point}")
+        rollback_cmd = f"git branch -D {name}"
+        self._rollback_stack.append(rollback_cmd)
         try:
             yield
         except BaseException:
             logging.warning("Rolling back created branch %s", name)
-            self.run(f"git branch -D {name}")
+            self.run(rollback_cmd)
             raise
 
     @contextmanager
     def _create_gh_label(self, label: str, color: str, args: argparse.Namespace):
         self.run(f"gh api repos/{args.repo}/labels -f name={label} -f color={color}")
+        rollback_cmd = f"gh api repos/{args.repo}/labels/{label} -X DELETE"
+        self._rollback_stack.append(rollback_cmd)
         try:
             yield
         except BaseException:
             logging.warning("Rolling back label %s", label)
-            self.run(f"gh api repos/{args.repo}/labels/{label} -X DELETE")
+            self.run(rollback_cmd)
             raise
 
     @contextmanager
@@ -218,33 +236,39 @@ class Release:
                 f"gh release create --prerelease --draft --repo {args.repo} "
                 f"--title 'Release {tag}' '{tag}'"
             )
+            rollback_cmd = f"gh release delete --yes --repo {args.repo} '{tag}'"
+            self._rollback_stack.append(rollback_cmd)
             try:
                 yield
             except BaseException:
                 logging.warning("Rolling back release publishing")
-                self.run(f"gh release delete --yes --repo {args.repo} '{tag}'")
+                self.run(rollback_cmd)
                 raise
 
     @contextmanager
     def _create_tag(self, args: argparse.Namespace):
         tag = self.version.describe
         self.run(f"git tag -a -m 'Release {tag}' '{tag}'")
+        rollback_cmd = f"git tag -d '{tag}'"
+        self._rollback_stack.append(rollback_cmd)
         try:
             with self._push(f"'{tag}'", args):
                 yield
         except BaseException:
             logging.warning("Rolling back tag %s", tag)
-            self.run(f"git tag -d '{tag}'")
+            self.run(rollback_cmd)
             raise
 
     @contextmanager
     def _push(self, ref: str, args: argparse.Namespace):
         self.run(f"git push git@github.com:{args.repo}.git {ref}")
+        rollback_cmd = f"git push -d git@github.com:{args.repo}.git {ref}"
+        self._rollback_stack.append(rollback_cmd)
         try:
             yield
         except BaseException:
             logging.warning("Rolling back pushed ref %s", ref)
-            self.run(f"git push -d git@github.com:{args.repo}.git {ref}")
+            self.run(rollback_cmd)
             raise
 
 
