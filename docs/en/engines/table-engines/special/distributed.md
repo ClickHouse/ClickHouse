@@ -222,6 +222,8 @@ To learn more about how distibuted `in` and `global in` queries are processed, r
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
 -   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting
--   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
-
+-   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num)
+-   [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count)
+-   [shardHostName()](../../../sql-reference/functions/other-functions.md#shard-host-name)
+-   [shardPort()](../../../sql-reference/functions/other-functions.md#shard-port)
 

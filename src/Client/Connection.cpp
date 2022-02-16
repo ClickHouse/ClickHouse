@@ -2,6 +2,9 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -22,7 +25,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
@@ -650,7 +652,19 @@ void Connection::sendScalarsData(Scalars & data)
     for (auto & elem : data)
     {
         rows += elem.second.rows();
-        sendData(elem.second, elem.first, true /* scalar */);
+        sendData(elem.second, elem.first, /* scalar= */ true);
+    }
+
+    /// Send additional scalars for shardHostName()/shardPort()
+    Scalars connection_scalars;
+    connection_scalars["_shard_host_name"]
+        = Block{{DataTypeString().createColumnConst(1, host), std::make_shared<DataTypeString>(), "_shard_host_name"}};
+    connection_scalars["_shard_port"]
+        = Block{{DataTypeUInt16().createColumnConst(1, port), std::make_shared<DataTypeUInt16>(), "_shard_port"}};
+    for (auto & elem : connection_scalars)
+    {
+        rows += elem.second.rows();
+        sendData(elem.second, elem.first, /* scalar= */ true);
     }
 
     out_bytes = out->count() - out_bytes;

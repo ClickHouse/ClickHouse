@@ -11,6 +11,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <Common/DNSResolver.h>
 #include <Common/checkStackSize.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -82,8 +83,11 @@ static std::unique_ptr<QueryPlan> createLocalPlan(
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(
+        shard_num,
+        shard_count,
+        DNSResolver::instance().getHostName(),
+        context->getServerPort("tcp_port")));
     interpreter.buildQueryPlan(*query_plan);
 
     addConvertingActions(*query_plan, header);

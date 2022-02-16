@@ -1092,6 +1092,8 @@
 "SHA512"
 "shardCount"
 "shardNum"
+"shardHostName"
+"shardPort"
 "SHOW"
 "SHOW PROCESSLIST"
 "sigmoid"

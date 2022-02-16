@@ -242,6 +242,8 @@
 "isConstant"
 "getSetting"
 "shardNum"
+"shardHostName"
+"shardPort"
 "__getScalar"
 "position"
 "__bitBoolMaskOr"

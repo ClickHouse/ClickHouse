@@ -4,28 +4,13 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
-        : query_ptr(query_ptr_)
-        , context(Context::createCopy(context_))
-        , options(options_)
-        , max_streams(context->getSettingsRef().max_threads)
-    {
-        if (options.shard_num)
-            context->addLocalScalar(
-                "_shard_num",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
-        if (options.shard_count)
-            context->addLocalScalar(
-                "_shard_count",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-    }
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_);
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
     QueryPipelineBuilder buildQueryPipeline();

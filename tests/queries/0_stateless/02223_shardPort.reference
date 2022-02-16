@@ -1,0 +1,5 @@
+-- { echo }
+select shardPort() from remote('127.1', system.one);
+9000
+select shardPort() from remote('127.2', system.one);
+9000

@@ -71,6 +71,8 @@ class FunctionGetSpecialScalar : public IFunction
 {
 public:
     static constexpr auto name = Scalar::name;
+    using ScalarType = typename Scalar::Type;
+
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionGetSpecialScalar<Scalar>>(context_);
@@ -85,7 +87,7 @@ public:
             if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
                 return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);
         }
-        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), Scalar::scalar_name};
+        return {ScalarType().createColumnConst(1, ScalarType().getDefault()), std::make_shared<ScalarType>(), Scalar::scalar_name};
     }
 
     explicit FunctionGetSpecialScalar(ContextPtr context_)
@@ -133,12 +135,28 @@ struct GetShardNum
 {
     static constexpr auto name = "shardNum";
     static constexpr auto scalar_name = "_shard_num";
+    using Type = DataTypeUInt32;
 };
 
 struct GetShardCount
 {
     static constexpr auto name = "shardCount";
     static constexpr auto scalar_name = "_shard_count";
+    using Type = DataTypeUInt32;
+};
+
+struct GetShardHostName
+{
+    static constexpr auto name = "shardHostName";
+    static constexpr auto scalar_name = "_shard_host_name";
+    using Type = DataTypeString;
+};
+
+struct GetShardPort
+{
+    static constexpr auto name = "shardPort";
+    static constexpr auto scalar_name = "_shard_port";
+    using Type = DataTypeUInt16;
 };
 
 }
@@ -148,6 +166,8 @@ void registerFunctionGetScalar(FunctionFactory & factory)
     factory.registerFunction<FunctionGetScalar>();
     factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>();
     factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>();
+    factory.registerFunction<FunctionGetSpecialScalar<GetShardHostName>>();
+    factory.registerFunction<FunctionGetSpecialScalar<GetShardPort>>();
 }
 
 }

@@ -55,6 +55,8 @@ struct SelectQueryOptions
     /// instance might have multiple shards and scalars can only hold one value.
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
+    std::optional<String> shard_host_name;
+    std::optional<UInt16> shard_port;
 
     SelectQueryOptions(
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -144,10 +146,12 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & setShardInfo(UInt32 shard_num_, UInt32 shard_count_)
+    SelectQueryOptions & setShardInfo(UInt32 shard_num_, UInt32 shard_count_, String shard_host_name_, UInt16 shard_port_)
     {
         shard_num = shard_num_;
         shard_count = shard_count_;
+        shard_host_name = shard_host_name_;
+        shard_port = shard_port_;
         return *this;
     }
 };

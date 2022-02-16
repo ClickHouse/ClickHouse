@@ -1,0 +1,5 @@
+-- { echo }
+select shardHostName() from remote('127.1', system.one);
+localhost
+select shardHostName() from remote('127.2', system.one);
+127.2

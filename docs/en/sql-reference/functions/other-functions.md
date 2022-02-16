@@ -2428,6 +2428,42 @@ Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 - [shardNum()](#shard-num) function example also contains `shardCount()` function call.
 
+## shardHostName {#shard-host-name}
+
+Returns hostname of the shard.
+
+**Syntax**
+
+``` sql
+shardHostName()
+```
+
+**Returned value**
+
+-   Hostname of the shard
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+## shardPort {#shard-port}
+
+Returns port of the shard.
+
+**Syntax**
+
+``` sql
+shardPort()
+```
+
+**Returned value**
+
+-   Port of the shard
+
+Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**See Also**
+
+- [shardHostName()](#shard-host-name)
+
 ## getOSKernelVersion {#getoskernelversion}
 
 Returns a string with the current OS kernel version.

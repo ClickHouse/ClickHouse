@@ -4,6 +4,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/DNSResolver.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -79,8 +80,11 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(
+        shard_num,
+        shard_count,
+        DNSResolver::instance().getHostName(),
+        context->getServerPort("tcp_port")));
     interpreter.buildQueryPlan(*query_plan);
 
     addConvertingActions(*query_plan, header);
