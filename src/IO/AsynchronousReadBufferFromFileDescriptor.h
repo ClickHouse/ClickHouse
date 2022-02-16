@@ -24,6 +24,7 @@ protected:
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
+    size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
 
     bool nextImpl() override;
