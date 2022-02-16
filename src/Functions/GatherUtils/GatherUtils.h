@@ -35,7 +35,7 @@ enum class ArraySearchType
     Any, // Corresponds to the hasAny array function
     All, // Corresponds to the hasAll array function
     Substr, // Corresponds to the hasSubstr array function
-    StartsWith, // TODO: EndsWith
+    StartsWith,
     EndsWith
 };
 

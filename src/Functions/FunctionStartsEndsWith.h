@@ -70,7 +70,9 @@ public:
         if (isArray(arguments[0]) && isArray(arguments[1]))
             return std::make_shared<DataTypeUInt8>();
 
-        throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types {} {} of arguments of function {}. Both must be String or Array",
+            arguments[0]->getName(), arguments[1]->getName(), getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
