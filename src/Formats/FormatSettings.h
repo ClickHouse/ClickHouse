@@ -45,7 +45,7 @@ struct FormatSettings
 
     enum class SimpleTextFormat
     {
-        Ordinary = 0,
+        Ordinary,
         Hive
     };
     SimpleTextFormat default_simple_text_format = SimpleTextFormat::Ordinary;

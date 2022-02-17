@@ -107,7 +107,7 @@ void SerializationMap::serializeTextImpl(
 }
 
 template <typename Reader>
-void SerializationMap::deserializeOrdinaryTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
+void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
 
@@ -200,7 +200,6 @@ void SerializationMap::deserializeHiveTextImpl(IColumn & column, ReadBuffer & is
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// TODO implement serializeText for hive
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
         subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
@@ -211,18 +210,11 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    { subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings); };
-
-    switch (settings.default_simple_text_format)
-    {
-        case FormatSettings::SimpleTextFormat::Ordinary:
-            deserializeOrdinaryTextImpl(column, istr, reader);
-            break;
-        case FormatSettings::SimpleTextFormat::Hive:
-            deserializeHiveTextImpl(column, istr, reader, settings);
-            break;
-    }
+    deserializeTextImpl(column, istr,
+        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+        {
+            subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
+        });
 
     if (whole && !istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, getName());
@@ -246,7 +238,7 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeOrdinaryTextImpl(column, istr,
+    deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
             subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
@@ -292,6 +284,23 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
     deserializeText(column, rb, settings, true);
+}
+
+void SerializationMap::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    readCSV(s, istr, settings.csv);
+    ReadBufferFromString rb(s);
+
+    deserializeHiveTextImpl(
+        column,
+        istr,
+        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+        { subcolumn_serialization->deserializeTextHiveText(subcolumn, buf, settings); },
+        settings);
+
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, getName());
 }
 
 void SerializationMap::enumerateStreams(

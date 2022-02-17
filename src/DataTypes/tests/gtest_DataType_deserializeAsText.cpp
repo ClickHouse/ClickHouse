@@ -31,7 +31,10 @@ using namespace DB;
 
 struct ParseDataTypeTestCase
 {
+    using SimpleTextFormat = FormatSettings::SimpleTextFormat;
+
     const char * type_name;
+    SimpleTextFormat simple_text_format = SimpleTextFormat::Ordinary;
     std::vector<String> values;
     FieldVector expected_values;
 };
@@ -59,25 +62,22 @@ TEST_P(ParseDataTypeTest, parseStringValue)
 {
     const auto & p = GetParam();
 
-    for (const auto & simple_text_format : {FormatSettings::SimpleTextFormat::Ordinary, FormatSettings::SimpleTextFormat::Hive})
+    auto col = data_type->createColumn();
+    for (const auto & value : p.values)
     {
-        auto col = data_type->createColumn();
-        for (const auto & value : p.values)
-        {
-            ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-            data_type->getDefaultSerialization()->deserializeWholeText(
-                *col,
-                buffer,
-                FormatSettings{
-                    .default_simple_text_format = simple_text_format,
-                });
-        }
+        ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
+        data_type->getDefaultSerialization()->deserializeWholeText(
+            *col,
+            buffer,
+            FormatSettings{
+                .default_simple_text_format = p.simple_text_format,
+            });
+    }
 
-        ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
-        for (size_t i = 0; i < col->size(); ++i)
-        {
-            ASSERT_EQ(p.expected_values[i], (*col)[i]);
-        }
+    ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
+    for (size_t i = 0; i < col->size(); ++i)
+    {
+        ASSERT_EQ(p.expected_values[i], (*col)[i]);
     }
 }
 
@@ -88,8 +88,8 @@ INSTANTIATE_TEST_SUITE_P(ParseDecimal,
         std::initializer_list<ParseDataTypeTestCase>{
             {
                 "Decimal(8, 0)",
+                FormatSettings::SimpleTextFormat::Ordinary,
                 {"0", "5", "8", "-5", "-8", "12345678", "-12345678"},
-
                 std::initializer_list<Field>{
                     DecimalField<Decimal32>(0, 0),
                     DecimalField<Decimal32>(5, 0),
@@ -98,6 +98,48 @@ INSTANTIATE_TEST_SUITE_P(ParseDecimal,
                     DecimalField<Decimal32>(-8, 0),
                     DecimalField<Decimal32>(12345678, 0),
                     DecimalField<Decimal32>(-12345678, 0)
+                }
+            },
+            {
+                "Decimal(8, 0)",
+                FormatSettings::SimpleTextFormat::Hive,
+                {"0", "5", "8", "-5", "-8", "12345678", "-12345678"},
+                std::initializer_list<Field>{
+                    DecimalField<Decimal32>(0, 0),
+                    DecimalField<Decimal32>(5, 0),
+                    DecimalField<Decimal32>(8, 0),
+                    DecimalField<Decimal32>(-5, 0),
+                    DecimalField<Decimal32>(-8, 0),
+                    DecimalField<Decimal32>(12345678, 0),
+                    DecimalField<Decimal32>(-12345678, 0),
+                }
+            }
+        }
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ParseMap,
+    ParseDataTypeTest,
+    ::testing::ValuesIn(
+        std::initializer_list<ParseDataTypeTestCase>{
+            {
+                "Map(string, string)",
+                FormatSettings::SimpleTextFormat::Ordinary,
+                {"{}", "{\"a\":\"b\"}", "{\"a\":\"b\",\"c\":\"d\"}"},
+                std::initializer_list<Field>{
+                    Map{},
+                    Map{Tuple{"a", "b"}},
+                    Map{Tuple{"a", "b"}, Tuple{"c", "d"}}
+                }
+            },
+            {
+                "Map(string, string)",
+                FormatSettings::SimpleTextFormat::Hive,
+                {"", "a\x03b", "a\x03b\x02c\x03d"},
+                std::initializer_list<Field>{
+                    Map{},
+                    Map{Tuple{"a", "b"}},
+                    Map{Tuple{"a", "b"}, Tuple{"c", "d"}}
                 }
             }
         }

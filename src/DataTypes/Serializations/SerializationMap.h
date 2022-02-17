@@ -33,6 +33,8 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    void deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
@@ -69,7 +71,7 @@ private:
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
 
     template <typename Reader>
-    void deserializeOrdinaryTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
+    void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
 
     template <typename Reader>
     void deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader, const FormatSettings & settings) const;

@@ -445,6 +445,39 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     offsets.push_back(offsets.back() + size);
 }
 
+template <typename Reader>
+static void deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested, const FormatSettings & settings)
+{
+    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
+    IColumn & nested_column = column_array.getData();
+    size_t size = 0;
+
+    bool first = true;
+    while (!istr.eof())
+    {
+        if (!first)
+        {
+            if (*istr.position() == settings.hive_text.collection_items_delimiter)
+                ++istr.position();
+            else
+                throw ParsingException(
+                    ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                    "Cannot read array from text, expected {} or end of array, found '{}'",
+                    settings.hive_text.collection_items_delimiter,
+                    *istr.position());
+        }
+
+        first = false;
+        if (istr.eof())
+            break;
+
+        read_nested(nested_column);
+        ++size;
+    }
+    offsets.push_back(offsets.back() + size);
+}
+
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -458,14 +491,11 @@ void SerializationArray::serializeText(const IColumn & column, size_t row_num, W
 
 void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    deserializeTextImpl(column, istr,
-        [&](IColumn & nested_column)
-        {
-            nested->deserializeTextQuoted(nested_column, istr, settings);
-        }, false);
+    deserializeTextImpl(
+        column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr, settings); }, false);
 
     if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, getName());
 }
 
 void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -551,6 +581,15 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
                 nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
     }
+}
+
+void SerializationArray::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    readCSV(s, istr, settings.csv);
+    ReadBufferFromString rb(s);
+    deserializeHiveTextImpl(
+        column, rb, [&](IColumn & nested_column) { nested->deserializeTextCSV(nested_column, rb, settings); }, settings);
 }
 
 }
