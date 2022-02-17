@@ -149,8 +149,8 @@ if __name__ == "__main__":
     build_name = get_build_name_for_check(CHECK_NAME)
 
     if pr_info.number == 0:
-        version = get_version_from_repo(REPO_COPY)
-        release_or_pr = ".".join(version.as_tuple()[:2])
+        version = get_version_from_repo()
+        release_or_pr = f"{version.major}.{version.minor}"
     else:
         # PR number for anything else
         release_or_pr = str(pr_info.number)
