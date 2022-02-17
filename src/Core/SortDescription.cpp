@@ -85,6 +85,9 @@ static Poco::Logger * getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & description_types)
 {
+    if (description_types.empty())
+        return;
+
     for (const auto & type : description_types)
     {
         if (!type->createColumn()->isComparatorCompilable())
