@@ -126,7 +126,6 @@ Builds ClickHouse in various configurations for use in further steps. You have t
   - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
   - `clickhouse-common-staticXXX_amd64.deb`
   - `clickhouse-server_XXX_all.deb`
-  - `clickhouse-test_XXX_all.deb`
   - `clickhouse_XXX_amd64.buildinfo`
   - `clickhouse_XXX_amd64.changes`
   - `clickhouse`: Main built binary.
