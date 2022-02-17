@@ -33,22 +33,22 @@ namespace
     template <>
     struct Transform<IntervalKind::Year>
     {
-        static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt16 d, Int64 years, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfYearInterval(DayNum(d), years);
         }
 
-        static UInt16 execute(Int32 d, UInt64 years, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
         }
 
-        static UInt16 execute(UInt32 t, UInt64 years, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt32 t, Int64 years, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
         }
 
-        static UInt16 execute(Int64 t, UInt64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt16 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
         }
@@ -57,22 +57,22 @@ namespace
     template <>
     struct Transform<IntervalKind::Quarter>
     {
-        static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt16 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
         }
 
-        static UInt16 execute(Int32 d, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(Int32 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
         }
 
-        static UInt16 execute(UInt32 t, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt32 t, Int64 quarters, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
         }
 
-        static UInt16 execute(Int64 t, UInt64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt16 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
         }
@@ -81,22 +81,22 @@ namespace
     template <>
     struct Transform<IntervalKind::Month>
     {
-        static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt16 d, Int64 months, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfMonthInterval(DayNum(d), months);
         }
 
-        static UInt16 execute(Int32 d, UInt64 months, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(Int32 d, Int64 months, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
         }
 
-        static UInt16 execute(UInt32 t, UInt64 months, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt32 t, Int64 months, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
         }
 
-        static UInt16 execute(Int64 t, UInt64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt16 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
         }
@@ -105,22 +105,22 @@ namespace
     template <>
     struct Transform<IntervalKind::Week>
     {
-        static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt16 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
         }
 
-        static UInt16 execute(Int32 d, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
         }
 
-        static UInt16 execute(UInt32 t, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+        static UInt16 execute(UInt32 t, Int64 weeks, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
         }
 
-        static UInt16 execute(Int64 t, UInt64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
         }
@@ -129,22 +129,22 @@ namespace
     template <>
     struct Transform<IntervalKind::Day>
     {
-        static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
-        static UInt32 execute(Int32 d, UInt64 days, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
-        static UInt32 execute(UInt32 t, UInt64 days, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(UInt32 t, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
         }
 
-        static Int64 execute(Int64 t, UInt64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
         }
@@ -153,16 +153,16 @@ namespace
     template <>
     struct Transform<IntervalKind::Hour>
     {
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfHourInterval(t, hours);
         }
 
-        static UInt32 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt32 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
         }
@@ -171,16 +171,16 @@ namespace
     template <>
     struct Transform<IntervalKind::Minute>
     {
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(UInt32 t, Int64 minutes, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfMinuteInterval(t, minutes);
         }
 
-        static UInt32 execute(Int64 t, UInt64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt32 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
         }
@@ -189,16 +189,16 @@ namespace
     template <>
     struct Transform<IntervalKind::Second>
     {
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone, Int64)
+        static UInt32 execute(UInt32 t, Int64 seconds, const DateLUTImpl & time_zone, Int64)
         {
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
 
-        static UInt32 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+        static UInt32 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
         {
             return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
         }
@@ -218,15 +218,24 @@ namespace
             if (scale_multiplier < 1000)
             {
                 Int64 t_milliseconds = t * (static_cast<Int64>(1000) / scale_multiplier);
-                return t_milliseconds - std::abs(t_milliseconds % milliseconds);
+                if (likely(t >= 0))
+                    return t_milliseconds / milliseconds * milliseconds;
+                else
+                    return (t_milliseconds + 1 - milliseconds) / milliseconds * milliseconds;
             }
             else if (scale_multiplier > 1000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-                return (t - std::abs(t % milliseconds * scale_diff)) / scale_diff;
+                if (likely(t >= 0))
+                    return t / milliseconds / scale_diff * milliseconds;
+                else
+                    return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
             }
             else
-                return t - std::abs(t % milliseconds);
+                if (likely(t >= 0))
+                    return t / milliseconds * milliseconds;
+                else
+                    return (t + 1 - milliseconds) / milliseconds * milliseconds;
         }
     };
 
@@ -244,15 +253,24 @@ namespace
             if (scale_multiplier < 1000000)
             {
                 Int64 t_microseconds = t * (static_cast<Int64>(1000000) / scale_multiplier);
-                return t_microseconds - std::abs(t_microseconds % microseconds);
+                if (likely(t >= 0))
+                    return t_microseconds / microseconds * microseconds;
+                else
+                    return (t_microseconds + 1 - microseconds) / microseconds * microseconds;
             }
             else if (scale_multiplier > 1000000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-                return (t - std::abs(t % microseconds * scale_diff)) / scale_diff;
+                if (likely(t >= 0))
+                    return t / microseconds / scale_diff * microseconds;
+                else
+                    return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
             }
             else
-                return t - std::abs(t % microseconds);
+                if (likely(t >= 0))
+                    return t / microseconds * microseconds;
+                else
+                    return (t + 1 - microseconds) / microseconds * microseconds;
         }
     };
 
@@ -270,10 +288,16 @@ namespace
             if (scale_multiplier < 1000000000)
             {
                 Int64 t_nanoseconds = t * (static_cast<Int64>(1000000000) / scale_multiplier);
-                return t_nanoseconds - std::abs(t_nanoseconds % nanoseconds);
+                if (likely(t >= 0))
+                    return t_nanoseconds / nanoseconds * nanoseconds;
+                else
+                    return (t_nanoseconds + 1 - nanoseconds) / nanoseconds * nanoseconds;
             }
             else
-                return t - std::abs(t % nanoseconds);
+                if (likely(t >= 0))
+                    return t / nanoseconds * nanoseconds;
+                else
+                    return (t + 1 - nanoseconds) / nanoseconds * nanoseconds;
         }
     };
 
