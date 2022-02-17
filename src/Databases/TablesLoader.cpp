@@ -133,10 +133,14 @@ void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
         /// Table exists and it's already loaded
         if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
             return remove_loaded;
-        /// It's XML dictionary. It was loaded before tables and DDL dictionaries.
+        /// It's XML dictionary.
         if (dependency_name.database == metadata.default_database &&
             global_context->getExternalDictionariesLoader().has(dependency_name.table))
-            return remove_loaded;
+        {
+            LOG_WARNING(log, "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
+                        "Consider converting it to DDL dictionary.", fmt::join(info.dependent_database_objects, ", "), dependency_name);
+            return true;
+        }
 
         /// Some tables depends on table "dependency_name", but there is no such table in DatabaseCatalog and we don't have its metadata.
         /// We will ignore it and try to load dependent tables without "dependency_name"

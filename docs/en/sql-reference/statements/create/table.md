@@ -16,13 +16,13 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
 
-Creates a table named `name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
+Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
 The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
@@ -111,6 +111,13 @@ Normal default value. If the INSERT query does not specify the corresponding col
 Materialized expression. Such a column can’t be specified for INSERT, because it is always calculated.
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+
+### EPHEMERAL {#ephemeral}
+
+`EPHEMERAL expr`
+
+Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement.
+INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
 ### ALIAS {#alias}
 
@@ -252,7 +259,6 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-
 ### Encryption Codecs {#create-query-encryption-codecs}
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
@@ -260,6 +266,7 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 Encryption codecs:
 
 -   `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode. 
+
 -   `CODEC('AES-256-GCM-SIV')` — Encrypts data with AES-256 in GCM-SIV mode. 
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
@@ -269,7 +276,7 @@ These codecs use a fixed nonce and encryption is therefore deterministic. This m
 
 !!! attention "Attention"
     If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
-    
+
 **Example**
 
 ```sql

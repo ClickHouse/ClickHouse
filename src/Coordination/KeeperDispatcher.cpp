@@ -276,7 +276,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup();
+        server->startup(configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)

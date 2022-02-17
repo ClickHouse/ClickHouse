@@ -117,7 +117,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])

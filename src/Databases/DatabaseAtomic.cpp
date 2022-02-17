@@ -43,6 +43,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
+    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
@@ -79,7 +80,7 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
     fs::remove_all(getMetadataPath());
 }
@@ -468,7 +469,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -481,7 +482,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -526,7 +527,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);

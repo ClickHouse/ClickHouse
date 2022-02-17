@@ -7,6 +7,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Parsers/formatAST.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -14,7 +15,8 @@
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/TraceCollector.h>
+#include <Common/setThreadName.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -23,12 +25,6 @@
 #   include <sys/time.h>
 #   include <sys/resource.h>
 #endif
-
-namespace ProfileEvents
-{
-    extern const Event InsertedRows;
-    extern const Event InsertedBytes;
-}
 
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
@@ -310,7 +306,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_profiled_enabled)
+    if (!query_profiler_enabled)
         return;
 
     /// query profilers are useless without trace collector
@@ -326,11 +322,11 @@ void ThreadStatus::initQueryProfiler()
     {
         if (settings.query_profiler_real_time_period_ns > 0)
             query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+                /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
             query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+                /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
     }
     catch (...)
     {
@@ -347,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
@@ -447,9 +443,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
 
-    /// TODO: Use written_rows and written_bytes when run time progress is implemented
-    elem.written_rows = progress_out.read_rows.load(std::memory_order_relaxed);
-    elem.written_bytes = progress_out.read_bytes.load(std::memory_order_relaxed);
+    elem.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
+    elem.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
     elem.memory_usage = memory_tracker.get();
     elem.peak_memory_usage = memory_tracker.getPeak();
 
@@ -520,8 +515,8 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
     element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
-    element.written_rows = (*events)[ProfileEvents::InsertedRows];
-    element.written_bytes = (*events)[ProfileEvents::InsertedBytes];
+    element.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
+    element.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
     element.peak_memory_usage = memory_tracker.getPeak() > 0 ? memory_tracker.getPeak() : 0;
     if (query_context_ptr->getSettingsRef().log_profile_events != 0)
     {

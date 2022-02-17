@@ -20,7 +20,7 @@ ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
 
 off_t ReadIndirectBufferFromRemoteFS::getPosition()
 {
-    return impl->absolute_position - available();
+    return impl->file_offset_of_buffer_end - available();
 }
 
 
@@ -35,38 +35,38 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
     if (whence == SEEK_CUR)
     {
         /// If position within current working buffer - shift pos.
-        if (!working_buffer.empty() && size_t(getPosition() + offset_) < impl->absolute_position)
+        if (!working_buffer.empty() && size_t(getPosition() + offset_) < impl->file_offset_of_buffer_end)
         {
             pos += offset_;
             return getPosition();
         }
         else
         {
-            impl->absolute_position += offset_;
+            impl->file_offset_of_buffer_end += offset_;
         }
     }
     else if (whence == SEEK_SET)
     {
         /// If position within current working buffer - shift pos.
         if (!working_buffer.empty()
-            && size_t(offset_) >= impl->absolute_position - working_buffer.size()
-            && size_t(offset_) < impl->absolute_position)
+            && size_t(offset_) >= impl->file_offset_of_buffer_end - working_buffer.size()
+            && size_t(offset_) < impl->file_offset_of_buffer_end)
         {
-            pos = working_buffer.end() - (impl->absolute_position - offset_);
+            pos = working_buffer.end() - (impl->file_offset_of_buffer_end - offset_);
             return getPosition();
         }
         else
         {
-            impl->absolute_position = offset_;
+            impl->file_offset_of_buffer_end = offset_;
         }
     }
     else
         throw Exception("Only SEEK_SET or SEEK_CUR modes are allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     impl->reset();
-    pos = working_buffer.end();
+    resetWorkingBuffer();
 
-    return impl->absolute_position;
+    return impl->file_offset_of_buffer_end;
 }
 
 

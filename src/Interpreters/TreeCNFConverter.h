@@ -3,7 +3,6 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
-#include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 

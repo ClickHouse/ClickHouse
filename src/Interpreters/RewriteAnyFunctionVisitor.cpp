@@ -63,7 +63,12 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
 void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->is_window_function)
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)

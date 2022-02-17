@@ -198,7 +198,9 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
     for (const auto i : collections::range(0, parts.size()))
     {
         const auto & part = parts[i];
-        is_part_on_remote_disk[i] = part.data_part->isStoredOnRemoteDisk();
+        bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
+        is_part_on_remote_disk[i] = part_on_remote_disk;
+        do_not_steal_tasks |= part_on_remote_disk;
 
         /// Read marks for every data part.
         size_t sum_marks = 0;

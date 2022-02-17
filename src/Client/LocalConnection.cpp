@@ -74,6 +74,8 @@ void LocalConnection::sendQuery(
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
         query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
     }
+    if (!current_database.empty())
+        query_context->setCurrentDatabase(current_database);
 
     CurrentThread::QueryScope query_scope_holder(query_context);
 
@@ -214,15 +216,21 @@ bool LocalConnection::poll(size_t)
     if (next_packet_type)
         return true;
 
-    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+    if (state->exception)
     {
-        state->after_send_progress.restart();
-        next_packet_type = Protocol::Server::Progress;
+        next_packet_type = Protocol::Server::Exception;
         return true;
     }
 
     if (!state->is_finished)
     {
+        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+        {
+            state->after_send_progress.restart();
+            next_packet_type = Protocol::Server::Progress;
+            return true;
+        }
+
         try
         {
             pollImpl();
@@ -278,6 +286,18 @@ bool LocalConnection::poll(size_t)
         {
             next_packet_type = Protocol::Server::Extremes;
             state->block.emplace(extremes);
+            return true;
+        }
+    }
+
+    if (state->is_finished && !state->sent_profile_info)
+    {
+        state->sent_profile_info = true;
+
+        if (state->executor)
+        {
+            next_packet_type = Protocol::Server::ProfileInfo;
+            state->profile_info = state->executor->getProfileInfo();
             return true;
         }
     }
@@ -349,6 +369,16 @@ Packet LocalConnection::receivePacket()
             next_packet_type.reset();
             break;
         }
+        case Protocol::Server::ProfileInfo:
+        {
+            if (state->profile_info)
+            {
+                packet.profile_info = std::move(*state->profile_info);
+                state->profile_info.reset();
+            }
+            next_packet_type.reset();
+            break;
+        }
         case Protocol::Server::TableColumns:
         {
             if (state->columns_description)
@@ -399,9 +429,9 @@ void LocalConnection::getServerVersion(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::setDefaultDatabase(const String &)
+void LocalConnection::setDefaultDatabase(const String & database)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    current_database = database;
 }
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
@@ -420,6 +450,11 @@ const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
 }
 
 void LocalConnection::sendExternalTablesData(ExternalTablesData &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

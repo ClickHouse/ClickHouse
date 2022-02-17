@@ -35,7 +35,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         size_t fields_count;
-        String fields_str;
 
         const auto * tuple_ast = value->as<ASTFunction>();
         bool surrounded_by_parens = false;
@@ -58,7 +57,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             else
             {
                 fields_count = 1;
-                fields_str = String(begin->begin, pos->begin - begin->begin);
             }
         }
         else
@@ -78,13 +76,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 --right_paren;
             if (right_paren->type != TokenType::ClosingRoundBracket)
                 return false;
-
-            fields_str = String(left_paren->end, right_paren->begin - left_paren->end);
         }
 
         partition->value = value;
         partition->children.push_back(value);
-        partition->fields_str = std::move(fields_str);
         partition->fields_count = fields_count;
     }
 

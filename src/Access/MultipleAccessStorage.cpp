@@ -13,8 +13,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
 }
 
 using Storage = IAccessStorage;
@@ -129,7 +129,7 @@ std::vector<UUID> MultipleAccessStorage::findAllImpl(AccessEntityType type) cons
 }
 
 
-bool MultipleAccessStorage::existsImpl(const UUID & id) const
+bool MultipleAccessStorage::exists(const UUID & id) const
 {
     return findStorage(id) != nullptr;
 }
@@ -180,39 +180,59 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
-AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id) const
+AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return getStorage(id)->read(id);
+    if (auto storage = findStorage(id))
+        return storage->read(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return nullptr;
 }
 
 
-String MultipleAccessStorage::readNameImpl(const UUID & id) const
+std::optional<String> MultipleAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return getStorage(id)->readName(id);
+    if (auto storage = findStorage(id))
+        return storage->readName(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return std::nullopt;
 }
 
 
-bool MultipleAccessStorage::canInsertImpl(const AccessEntityPtr & entity) const
+bool MultipleAccessStorage::isReadOnly() const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
-        if (storage->canInsert(entity))
-            return true;
+        if (!storage->isReadOnly())
+            return false;
     }
+    return true;
+}
+
+
+bool MultipleAccessStorage::isReadOnly(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    if (storage)
+        return storage->isReadOnly(id);
     return false;
 }
 
 
-UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists)
+std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    auto storages = getStoragesInternal();
-
     std::shared_ptr<IAccessStorage> storage_for_insertion;
+
+    auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
-        if (storage->canInsert(entity) ||
-            storage->find(entity->getType(), entity->getName()))
+        if (!storage->isReadOnly() || storage->find(entity->getType(), entity->getName()))
         {
             storage_for_insertion = storage;
             break;
@@ -220,49 +240,73 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     }
 
     if (!storage_for_insertion)
-        throw Exception("Not found a storage to insert " + entity->formatTypeWithName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND,
+            "Could not insert {} because there is no writeable access storage in {}",
+            entity->formatTypeWithName(),
+            getStorageName());
+    }
 
-    auto id = replace_if_exists ? storage_for_insertion->insertOrReplace(entity) : storage_for_insertion->insert(entity);
-    std::lock_guard lock{mutex};
-    ids_cache.set(id, storage_for_insertion);
+    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
+    if (id)
+    {
+        std::lock_guard lock{mutex};
+        ids_cache.set(*id, storage_for_insertion);
+    }
     return id;
 }
 
 
-void MultipleAccessStorage::removeImpl(const UUID & id)
+bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
-    getStorage(id)->remove(id);
+    if (auto storage = findStorage(id))
+        return storage->remove(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return false;
 }
 
 
-void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    auto storage_for_updating = getStorage(id);
+    auto storage_for_updating = findStorage(id);
+    if (!storage_for_updating)
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     /// If the updating involves renaming check that the renamed entity will be accessible by name.
     auto storages = getStoragesInternal();
     if ((storages->size() > 1) && (storages->front() != storage_for_updating))
     {
-        auto old_entity = storage_for_updating->read(id);
-        auto new_entity = update_func(old_entity);
-        if (new_entity->getName() != old_entity->getName())
+        if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            for (const auto & storage : *storages)
+            auto new_entity = update_func(old_entity);
+            if (new_entity->getName() != old_entity->getName())
             {
-                if (storage == storage_for_updating)
-                    break;
-                if (storage->find(new_entity->getType(), new_entity->getName()))
+                for (const auto & storage : *storages)
                 {
-                    throw Exception(
-                        old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
-                            + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
-                        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                    if (storage == storage_for_updating)
+                        break;
+                    if (storage->find(new_entity->getType(), new_entity->getName()))
+                    {
+                        throw Exception(
+                            old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
+                                + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
+                            ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                    }
                 }
             }
         }
     }
 
-    storage_for_updating->update(id, update_func);
+    return storage_for_updating->update(id, update_func, throw_if_not_exists);
 }
 
 
@@ -275,7 +319,7 @@ scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, cons
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool MultipleAccessStorage::hasSubscription(const UUID & id) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -307,7 +351,7 @@ scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool MultipleAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -405,57 +449,26 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 }
 
 
-UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+std::optional<UUID> MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const
 {
     auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
+    for (size_t i = 0; i != storages->size(); ++i)
     {
-        try
+        const auto & storage = (*storages)[i];
+        bool is_last_storage = (i == storages->size() - 1);
+        auto id = storage->authenticate(credentials, address, external_authenticators, throw_if_user_not_exists && is_last_storage);
+        if (id)
         {
-            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
-            ids_cache.set(id, storage);
+            ids_cache.set(*id, storage);
             return id;
         }
-        catch (...)
-        {
-            if (!storage->find(AccessEntityType::USER, credentials.getUserName()))
-            {
-                /// The authentication failed because there no users with such name in the `storage`
-                /// thus we can try to search in other nested storages.
-                continue;
-            }
-            throw;
-        }
     }
-    throwNotFound(AccessEntityType::USER, credentials.getUserName());
-}
 
-
-UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-    {
-        try
-        {
-            auto id = storage->getIDOfLoggedUser(user_name);
-            std::lock_guard lock{mutex};
-            ids_cache.set(id, storage);
-            return id;
-        }
-        catch (...)
-        {
-            if (!storage->find(AccessEntityType::USER, user_name))
-            {
-                /// The authentication failed because there no users with such name in the `storage`
-                /// thus we can try to search in other nested storages.
-                continue;
-            }
-            throw;
-        }
-    }
-    throwNotFound(AccessEntityType::USER, user_name);
+    if (throw_if_user_not_exists)
+        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+    else
+        return std::nullopt;
 }
 
 }

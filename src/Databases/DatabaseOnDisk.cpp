@@ -76,10 +76,20 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// - the database has not been loaded yet;
         /// - the code is simpler, since the query is already brought to a suitable form.
         if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+        {
+            if (!ast_create_query.storage || !ast_create_query.storage->engine)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
+                                                           "it's a bug or result of manual intervention in metadata files");
 
-        columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+            if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(ast_create_query.storage->engine->name))
+                throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+            /// Leave columns empty.
+        }
+        else
+        {
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+        }
     }
 
     return
@@ -310,7 +320,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(__PRETTY_FUNCTION__)));
         attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);

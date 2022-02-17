@@ -20,6 +20,7 @@ from . import rabbitmq_pb2
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/rabbitmq.xml', 'configs/macros.xml', 'configs/named_collection.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_rabbitmq=True)
 
 
@@ -34,6 +35,17 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
         else:
             return TSV(result) == TSV(reference)
 
+def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            if instance.cluster.check_rabbitmq_is_available(rabbitmq_docker_id):
+                logging.debug("RabbitMQ is available")
+                return
+            time.sleep(0.5)
+        except Exception as ex:
+            logging.debug("Can't connect to RabbitMQ " + str(ex))
+            time.sleep(0.5)
 
 def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'stop', rabbitmq_id), stdout=subprocess.PIPE)
@@ -44,7 +56,7 @@ def kill_rabbitmq(rabbitmq_id):
 def revive_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'start', rabbitmq_id), stdout=subprocess.PIPE)
     p.communicate()
-    return p.returncode == 0
+    wait_rabbitmq_to_start(rabbitmq_id)
 
 
 # Fixtures
@@ -66,8 +78,8 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    for table_name in ['view', 'consumer', 'rabbitmq']:
-        instance.query(f'DROP TABLE IF EXISTS test.{table_name}')
+    instance.query('DROP DATABASE test NO DELAY')
+    instance.query('CREATE DATABASE test')
 
 
 # Tests
@@ -78,6 +90,7 @@ def test_rabbitmq_select(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'select',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -113,6 +126,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'empty',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -125,6 +139,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -167,6 +182,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'csv',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'CSV',
                      rabbitmq_row_delimiter = '\\n';
         ''')
@@ -202,6 +218,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -238,6 +255,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
                      rabbitmq_format = '{rabbitmq_format}'
         ''')
@@ -277,6 +295,12 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.rabbitmq;
+
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.rabbitmq group by (key, value);
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -290,13 +314,25 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='mv', routing_key='', body=message)
 
-    while True:
+    time_limit_sec = 60
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
         result = instance.query('SELECT * FROM test.view ORDER BY key')
         if (rabbitmq_check_result(result)):
             break
 
-    connection.close()
     rabbitmq_check_result(result, True)
+
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
+        result = instance.query('SELECT * FROM test.view2 ORDER BY key')
+        if (rabbitmq_check_result(result)):
+            break
+
+    rabbitmq_check_result(result, True)
+    connection.close()
 
 
 def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):

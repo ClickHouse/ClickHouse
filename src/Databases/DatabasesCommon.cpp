@@ -30,27 +30,33 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
     bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
+
     if (ast_create_query.as_table_function && !has_structure)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
-    assert(has_structure);
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
-    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
+    if (!has_structure && !ast_create_query.is_dictionary)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure", backQuote(ast_create_query.getTable()));
 
-    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
+    if (!ast_create_query.is_dictionary)
+    {
+        ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+        ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
+        ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
+        ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
+
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
+    }
 
     if (metadata.select.select_query)
     {
         query->replace(ast_create_query.select, metadata.select.select_query);
     }
 
-    /// MaterializedView is one type of CREATE query without storage.
+    /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {
         ASTStorage & storage_ast = *ast_create_query.storage;

@@ -60,7 +60,8 @@ StorageMaterializedView::StorageMaterializedView(
     ContextPtr local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    bool attach_)
+    bool attach_,
+    const String & comment)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -81,6 +82,9 @@ StorageMaterializedView::StorageMaterializedView(
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
     storage_metadata.setSelectQuery(select);
+    if (!comment.empty())
+        storage_metadata.setComment(comment);
+
     setInMemoryMetadata(storage_metadata);
 
     bool point_to_itself_by_uuid = has_inner_table && query.to_inner_uuid != UUIDHelpers::Nil
@@ -131,6 +135,10 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageMetadataPtr &,
     SelectQueryInfo & query_info) const
 {
+    /// TODO: Find a way to support projections for StorageMaterializedView. Why do we use different
+    /// metadata for materialized view and target table? If they are the same, we can get rid of all
+    /// converting and use it just like a normal view.
+    query_info.ignore_projections = true;
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
 }
 
@@ -408,6 +416,11 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
     return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
 }
 
+NamesAndTypesList StorageMaterializedView::getVirtuals() const
+{
+    return getTargetTable()->getVirtuals();
+}
+
 Strings StorageMaterializedView::getDataPaths() const
 {
     if (auto table = tryGetTargetTable())
@@ -432,7 +445,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.attach);
+            args.columns, args.attach, args.comment);
     });
 }
 

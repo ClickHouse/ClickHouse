@@ -46,7 +46,7 @@ void ClusterCopier::init()
     reloadTaskDescription();
 
     task_cluster->loadTasks(*task_cluster_current_config);
-    getContext()->setClustersConfig(task_cluster_current_config, task_cluster->clusters_prefix);
+    getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
     task_cluster->random_engine.seed(task_cluster->random_device());

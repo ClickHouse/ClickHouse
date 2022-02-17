@@ -51,7 +51,7 @@ public:
     ///Not supported for FileDictionarySource
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
 
     std::string toString() const override;
 

@@ -13,8 +13,9 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/parseRemoteDescription.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -35,12 +36,20 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+
+static bool urlWithGlobs(const String & uri)
+{
+    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos)
+        || uri.find('|') != std::string::npos;
 }
 
 
 IStorageURLBase::IStorageURLBase(
     const String & uri_,
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const StorageID & table_id_,
     const String & format_name_,
     const std::optional<FormatSettings> & format_settings_,
@@ -61,11 +70,20 @@ IStorageURLBase::IStorageURLBase(
     , partition_by(partition_by_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
+
 
 namespace
 {
@@ -95,11 +113,41 @@ namespace
 
     class StorageURLSource : public SourceWithProgress
     {
+
     using URIParams = std::vector<std::pair<String, String>>;
 
     public:
+        struct URIInfo
+        {
+            using FailoverOptions = std::vector<String>;
+            std::vector<FailoverOptions> uri_list_to_read;
+            std::atomic<size_t> next_uri_to_read = 0;
+        };
+        using URIInfoPtr = std::shared_ptr<URIInfo>;
+
+        void onCancel() override
+        {
+            std::lock_guard lock(reader_mutex);
+            if (reader)
+                reader->cancel();
+        }
+
+        static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
+        {
+            const auto & user_info = request_uri.getUserInfo();
+            if (!user_info.empty())
+            {
+                std::size_t n = user_info.find(':');
+                if (n != std::string::npos)
+                {
+                    credentials.setUsername(user_info.substr(0, n));
+                    credentials.setPassword(user_info.substr(n + 1));
+                }
+            }
+        }
+
         StorageURLSource(
-            const std::vector<String> & uri_options,
+            URIInfoPtr uri_info_,
             const std::string & http_method,
             std::function<void(std::ostream &)> callback,
             const String & format,
@@ -112,48 +160,53 @@ namespace
             const ConnectionTimeouts & timeouts,
             const String & compression_method,
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-            const URIParams & params = {})
+            const URIParams & params = {},
+            bool glob_url = false)
             : SourceWithProgress(sample_block), name(std::move(name_))
+            , uri_info(uri_info_)
         {
             auto headers = getHeaders(headers_);
+
             /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
-            initialize = [=, this]
+            initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
             {
-                WriteBufferFromOwnString error_message;
-                for (auto option = uri_options.begin(); option < uri_options.end(); ++option)
+                if (uri_options.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+
+                if (uri_options.size() > 1)
                 {
-                    auto request_uri = Poco::URI(*option);
+                    read_buf = getFirstAvailableURLReadBuffer(
+                        uri_options, context, params, http_method,
+                        callback, timeouts, compression_method, credentials, headers);
+                }
+                else
+                {
+                    ReadSettings read_settings = context->getReadSettings();
+                    bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs;
+                    auto request_uri = Poco::URI(uri_options[0]);
+
                     for (const auto & [param, value] : params)
                         request_uri.addQueryParameter(param, value);
 
-                    try
-                    {
-                        read_buf = wrapReadBufferWithCompressionMethod(
-                            std::make_unique<ReadWriteBufferFromHTTP>(
-                                request_uri,
-                                http_method,
-                                callback,
-                                timeouts,
-                                credentials,
-                                context->getSettingsRef().max_http_get_redirects,
-                                DBMS_DEFAULT_BUFFER_SIZE,
-                                context->getReadSettings(),
-                                headers,
-                                ReadWriteBufferFromHTTP::Range{},
-                                context->getRemoteHostFilter()),
-                            chooseCompressionMethod(request_uri.getPath(), compression_method));
-                    }
-                    catch (...)
-                    {
-                        if (uri_options.size() == 1)
-                            throw;
+                    setCredentials(credentials, request_uri);
 
-                        if (option == uri_options.end() - 1)
-                            throw Exception(ErrorCodes::NETWORK_ERROR, "All uri options are unreachable. {}", error_message.str());
-
-                        error_message << *option << " error: " << getCurrentExceptionMessage(false) << "\n";
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                    }
+                    read_buf = wrapReadBufferWithCompressionMethod(
+                        std::make_unique<ReadWriteBufferFromHTTP>(
+                            request_uri,
+                            http_method,
+                            callback,
+                            timeouts,
+                            credentials,
+                            context->getSettingsRef().max_http_get_redirects,
+                            DBMS_DEFAULT_BUFFER_SIZE,
+                            read_settings,
+                            headers,
+                            ReadWriteBufferFromHTTP::Range{},
+                            context->getRemoteHostFilter(),
+                            /* delay_initiliazation */true,
+                            /* use_external_buffer */false,
+                            /* skip_url_not_found_error */skip_url_not_found_error),
+                        chooseCompressionMethod(request_uri.getPath(), compression_method));
                 }
 
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
@@ -177,34 +230,107 @@ namespace
 
         Chunk generate() override
         {
-            if (initialize)
+            while (true)
             {
-                initialize();
-                initialize = {};
+
+                if (!reader)
+                {
+                    auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
+                    if (current_uri_pos >= uri_info->uri_list_to_read.size())
+                        return {};
+
+                    auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
+
+                    std::lock_guard lock(reader_mutex);
+                    initialize(current_uri);
+                }
+
+                Chunk chunk;
+                if (reader->pull(chunk))
+                    return chunk;
+
+                {
+                    std::lock_guard lock(reader_mutex);
+                    pipeline->reset();
+                    reader.reset();
+                }
+            }
+        }
+
+        static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
+            const std::vector<String> & urls,
+            ContextPtr context,
+            const URIParams & params,
+            const String & http_method,
+            std::function<void(std::ostream &)> callback,
+            const ConnectionTimeouts & timeouts,
+            const String & compression_method,
+            Poco::Net::HTTPBasicCredentials & credentials,
+            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers)
+        {
+            String first_exception_message;
+            ReadSettings read_settings = context->getReadSettings();
+
+            for (auto option = urls.begin(); option != urls.end(); ++option)
+            {
+                bool skip_url_not_found_error = read_settings.http_skip_not_found_url_for_globs && option == std::prev(urls.end());
+                auto request_uri = Poco::URI(*option);
+
+                for (const auto & [param, value] : params)
+                    request_uri.addQueryParameter(param, value);
+
+                setCredentials(credentials, request_uri);
+
+                try
+                {
+                    return wrapReadBufferWithCompressionMethod(
+                        std::make_unique<ReadWriteBufferFromHTTP>(
+                            request_uri,
+                            http_method,
+                            callback,
+                            timeouts,
+                            credentials,
+                            context->getSettingsRef().max_http_get_redirects,
+                            DBMS_DEFAULT_BUFFER_SIZE,
+                            read_settings,
+                            headers,
+                            ReadWriteBufferFromHTTP::Range{},
+                            context->getRemoteHostFilter(),
+                            /* delay_initiliazation */false,
+                            /* use_external_buffer */false,
+                            /* skip_url_not_found_error */skip_url_not_found_error),
+                        chooseCompressionMethod(request_uri.getPath(), compression_method));
+                }
+                catch (...)
+                {
+                    if (first_exception_message.empty())
+                        first_exception_message = getCurrentExceptionMessage(false);
+
+                    if (urls.size() == 1)
+                        throw;
+
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
             }
 
-            if (!reader)
-                return {};
-
-            Chunk chunk;
-            if (reader->pull(chunk))
-                return chunk;
-
-            pipeline->reset();
-            reader.reset();
-
-            return {};
+            throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", urls.size(), first_exception_message);
         }
 
     private:
-        std::function<void()> initialize;
+        using InitializeFunc = std::function<void(const URIInfo::FailoverOptions &)>;
+        InitializeFunc initialize;
 
         String name;
+        URIInfoPtr uri_info;
+
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        /// onCancell and generate can be called concurrently and both of them
+        /// have R/W access to reader pointer.
+        std::mutex reader_mutex;
 
-        Poco::Net::HTTPBasicCredentials credentials{};
+        Poco::Net::HTTPBasicCredentials credentials;
     };
 }
 
@@ -219,8 +345,11 @@ StorageURLSink::StorageURLSink(
     const String & http_method)
     : SinkToStorage(sample_block)
 {
+    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+    std::string content_encoding = toContentEncodingName(compression_method);
+
     write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, timeouts),
+            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, timeouts),
             compression_method, 3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
@@ -312,6 +441,71 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 }
 
 
+ColumnsDescription IStorageURLBase::getTableStructureFromData(
+    const String & format,
+    const String & uri,
+    const String & compression_method,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context)
+{
+    ReadBufferCreator read_buffer_creator;
+    Poco::Net::HTTPBasicCredentials credentials;
+
+    if (urlWithGlobs(uri))
+    {
+        std::vector<String> urls_to_check;
+
+        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+        auto uri_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+        for (const auto & description : uri_descriptions)
+        {
+            auto options = parseRemoteDescription(description, 0, description.size(), '|', max_addresses);
+            urls_to_check.insert(urls_to_check.end(), options.begin(), options.end());
+        }
+
+        read_buffer_creator = [&, urls_to_check]()
+        {
+            return StorageURLSource::getFirstAvailableURLReadBuffer(
+                urls_to_check,
+                context,
+                {},
+                Poco::Net::HTTPRequest::HTTP_GET,
+                {},
+                ConnectionTimeouts::getHTTPTimeouts(context),
+                compression_method,
+                credentials,
+                headers);
+        };
+    }
+    else
+    {
+        read_buffer_creator = [&]()
+        {
+            auto parsed_uri = Poco::URI(uri);
+            StorageURLSource::setCredentials(credentials, parsed_uri);
+
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadWriteBufferFromHTTP>(
+                    parsed_uri,
+                    Poco::Net::HTTPRequest::HTTP_GET,
+                    nullptr,
+                    ConnectionTimeouts::getHTTPTimeouts(context),
+                    credentials,
+                    context->getSettingsRef().max_http_get_redirects,
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    context->getReadSettings(),
+                    headers,
+                    ReadWriteBufferFromHTTP::Range{},
+                    context->getRemoteHostFilter(),
+                    /* delay_initiliazation */true),
+                chooseCompressionMethod(parsed_uri.getPath(), compression_method));
+        };
+    }
+
+    return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
+}
+
 Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -319,27 +513,30 @@ Pipe IStorageURLBase::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
-    bool with_globs = (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos)
-                    || uri.find('|') != std::string::npos;
 
-    if (with_globs)
+    if (urlWithGlobs(uri))
     {
         size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
-        std::vector<String> url_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
-        std::vector<String> uri_options;
+        auto uri_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+
+        if (num_streams > uri_descriptions.size())
+            num_streams = uri_descriptions.size();
+
+        /// For each uri (which acts like shard) check if it has failover options
+        auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+        for (const auto & description : uri_descriptions)
+            uri_info->uri_list_to_read.emplace_back(parseRemoteDescription(description, 0, description.size(), '|', max_addresses));
 
         Pipes pipes;
-        for (const auto & url_description : url_descriptions)
-        {
-            /// For each uri (which acts like shard) check if it has failover options
-            uri_options = parseRemoteDescription(url_description, 0, url_description.size(), '|', max_addresses);
-            StoragePtr shard;
+        pipes.reserve(num_streams);
 
+        for (size_t i = 0; i < num_streams; ++i)
+        {
             pipes.emplace_back(std::make_shared<StorageURLSource>(
-                uri_options,
+                uri_info,
                 getReadMethod(),
                 getReadPOSTDataCallback(
                     column_names, metadata_snapshot, query_info,
@@ -352,15 +549,16 @@ Pipe IStorageURLBase::read(
                 metadata_snapshot->getColumns(),
                 max_block_size,
                 ConnectionTimeouts::getHTTPTimeouts(local_context),
-                compression_method, headers, params));
+                compression_method, headers, params, /* glob_url */true));
         }
         return Pipe::unitePipes(std::move(pipes));
     }
     else
     {
-        std::vector<String> uri_options{uri};
+        auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+        uri_info->uri_list_to_read.emplace_back(std::vector<String>{uri});
         return Pipe(std::make_shared<StorageURLSource>(
-            uri_options,
+            uri_info,
             getReadMethod(),
             getReadPOSTDataCallback(
                 column_names, metadata_snapshot, query_info,
@@ -389,8 +587,10 @@ Pipe StorageURLWithFailover::read(
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
 
+    auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+    uri_info->uri_list_to_read.emplace_back(uri_options);
     auto pipe =  Pipe(std::make_shared<StorageURLSource>(
-        uri_options,
+        uri_info,
         getReadMethod(),
         getReadPOSTDataCallback(
             column_names, metadata_snapshot, query_info,
@@ -543,19 +743,23 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     }
     else
     {
-        if (args.size() != 2 && args.size() != 3)
+        if (args.empty() || args.size() > 3)
             throw Exception(
-                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.",
+                "Storage URL requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
 
         configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (args.size() > 1)
+            configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
         if (args.size() == 3)
             configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
+
+    if (configuration.format == "auto")
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     return configuration;
 }
@@ -598,6 +802,7 @@ void registerStorageURL(StorageFactory & factory)
     },
     {
         .supports_settings = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::URL,
     });
 }

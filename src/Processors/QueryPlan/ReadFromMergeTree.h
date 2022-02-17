@@ -97,7 +97,8 @@ public:
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_,
-        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
+        bool enable_parallel_reading
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -172,7 +173,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
         const Names & column_names,
-        const ActionsDAGPtr & sorting_key_prefix_expr,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
@@ -184,6 +184,8 @@ private:
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
+
+    std::optional<MergeTreeReadTaskCallback> read_task_callback;
 };
 
 struct MergeTreeDataSelectAnalysisResult

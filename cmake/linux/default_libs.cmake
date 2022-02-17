@@ -29,14 +29,6 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-# glibc-compatibility library relies to constant version of libc headers
-# (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
-# This is for x86_64. For other architectures we have separate toolchains.
-if (ARCH_AMD64 AND NOT CMAKE_CROSSCOMPILING)
-    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
-    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
-endif ()
-
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -50,17 +42,14 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
-include (cmake/find/unwind.cmake)
-include (cmake/find/cxx.cmake)
+include (cmake/unwind.cmake)
+include (cmake/cxx.cmake)
 
-add_library(global-group INTERFACE)
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
     -Wl,--end-group
 )
-
-link_libraries(global-group)
 
 # FIXME: remove when all contribs will get custom cmake lists
 install(

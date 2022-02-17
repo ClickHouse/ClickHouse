@@ -19,6 +19,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/config.h>
+#include <Common/config_version.h>
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
@@ -129,6 +130,8 @@ namespace detail
         /// In case of redirects, save result uri to use it if we retry the request.
         std::optional<Poco::URI> saved_uri_redirect;
 
+        bool http_skip_not_found_url;
+
         ReadSettings settings;
         Poco::Logger * log;
 
@@ -146,7 +149,7 @@ namespace detail
             return read_range.begin + offset_from_begin_pos;
         }
 
-        std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
+        std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri_.getPath().empty())
@@ -211,7 +214,7 @@ namespace detail
             {
                 try
                 {
-                    call(uri, response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    call(response, Poco::Net::HTTPRequest::HTTP_HEAD);
 
                     while (isRedirect(response.getStatus()))
                     {
@@ -220,7 +223,7 @@ namespace detail
 
                         session->updateSession(uri_redirect);
 
-                        istr = call(uri_redirect, response, method);
+                        istr = callImpl(uri_redirect, response, method);
                     }
 
                     break;
@@ -236,6 +239,17 @@ namespace detail
 
             return read_range.end;
         }
+
+        enum class InitializeError
+        {
+            /// If error is not retriable, `exception` variable must be set.
+            NON_RETRIABLE_ERROR,
+            /// Allows to skip not found urls for globs
+            SKIP_NOT_FOUND_URL,
+            NONE,
+        };
+
+        InitializeError initialization_error = InitializeError::NONE;
 
     public:
         using NextCallback = std::function<void(size_t)>;
@@ -253,7 +267,8 @@ namespace detail
             Range read_range_ = {},
             const RemoteHostFilter & remote_host_filter_ = {},
             bool delay_initialization = false,
-            bool use_external_buffer_ = false)
+            bool use_external_buffer_ = false,
+            bool http_skip_not_found_url_ = false)
             : SeekableReadBufferWithSize(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -265,6 +280,7 @@ namespace detail
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
             , read_range(read_range_)
+            , http_skip_not_found_url(http_skip_not_found_url_)
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
         {
@@ -276,18 +292,58 @@ namespace detail
                                 "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
                                 settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
 
+            // Configure User-Agent if it not already set.
+            const std::string user_agent = "User-Agent";
+            auto iter = std::find_if(http_header_entries.begin(), http_header_entries.end(), [&user_agent](const HTTPHeaderEntry & entry)
+            {
+                return std::get<0>(entry) == user_agent;
+            });
+
+            if (iter == http_header_entries.end())
+            {
+                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
+            }
+
             if (!delay_initialization)
+            {
                 initialize();
+                if (exception)
+                    std::rethrow_exception(exception);
+            }
+        }
+
+        void call(Poco::Net::HTTPResponse & response, const String & method_)
+        {
+            try
+            {
+                istr = callImpl(saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
+            }
+            catch (...)
+            {
+                if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
+                    && http_skip_not_found_url)
+                {
+                    initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
+                }
+                else
+                {
+                    throw;
+                }
+            }
         }
 
         /**
-         * Note: In case of error return false if error is not retriable, otherwise throw.
+         * Throws if error is retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
+         * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
+         * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
          */
-        bool initialize()
+        void initialize()
         {
             Poco::Net::HTTPResponse response;
 
-            istr = call(saved_uri_redirect ? *saved_uri_redirect : uri, response, method);
+            call(response, method);
+            if (initialization_error != InitializeError::NONE)
+                return;
 
             while (isRedirect(response.getStatus()))
             {
@@ -296,7 +352,7 @@ namespace detail
 
                 session->updateSession(uri_redirect);
 
-                istr = call(uri_redirect, response, method);
+                istr = callImpl(uri_redirect, response, method);
                 saved_uri_redirect = uri_redirect;
             }
 
@@ -310,7 +366,8 @@ namespace detail
                             Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                                       "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
 
-                    return false;
+                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    return;
                 }
                 else if (read_range.end)
                 {
@@ -345,12 +402,14 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
-
-            return true;
         }
 
         bool nextImpl() override
         {
+            if (initialization_error == InitializeError::SKIP_NOT_FOUND_URL)
+                return false;
+            assert(initialization_error == InitializeError::NONE);
+
             if (next_callback)
                 next_callback(count());
 
@@ -392,13 +451,15 @@ namespace detail
                 {
                     if (!impl)
                     {
-                        /// If error is not retriable -- false is returned and exception is set.
-                        /// Otherwise the error is thrown and retries continue.
-                        bool initialized = initialize();
-                        if (!initialized)
+                        initialize();
+                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
                         {
                             assert(exception);
                             break;
+                        }
+                        else if (initialization_error == InitializeError::SKIP_NOT_FOUND_URL)
+                        {
+                            return false;
                         }
 
                         if (use_external_buffer)
@@ -427,7 +488,7 @@ namespace detail
                     LOG_ERROR(log,
                               "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i, settings.http_max_tries,
+                              uri.toString(), i + 1, settings.http_max_tries,
                               getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
                               e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
@@ -498,7 +559,7 @@ namespace detail
                 impl.reset();
             }
 
-            pos = working_buffer.end();
+            resetWorkingBuffer();
             read_range.begin = offset_;
             read_range.end = std::nullopt;
             offset_from_begin_pos = 0;
@@ -537,7 +598,7 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
     using Parent = UpdatableSessionBase<HTTPSessionPtr>;
 
 public:
-    explicit UpdatableSession(
+    UpdatableSession(
         const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
         const UInt64 max_redirects_)
@@ -557,7 +618,7 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
 
 public:
-        explicit ReadWriteBufferFromHTTP(
+        ReadWriteBufferFromHTTP(
         Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
@@ -570,11 +631,12 @@ public:
         Range read_range_ = {},
         const RemoteHostFilter & remote_host_filter_ = {},
         bool delay_initialization_ = true,
-        bool use_external_buffer_ = false)
+        bool use_external_buffer_ = false,
+        bool skip_not_found_url_ = false)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
             uri_, credentials_, method_, out_stream_callback_, buffer_size_,
             settings_, http_header_entries_, read_range_, remote_host_filter_,
-            delay_initialization_, use_external_buffer_)
+            delay_initialization_, use_external_buffer_, skip_not_found_url_)
     {
     }
 };

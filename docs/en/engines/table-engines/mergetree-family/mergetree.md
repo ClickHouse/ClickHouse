@@ -262,7 +262,7 @@ In the example below, the index can’t be used.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../../../operations/settings/settings.md#settings-force_index_by_date) and [force_primary_key](../../../operations/settings/settings.md).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../../../operations/settings/settings.md#settings-force_index_by_date) and [force_primary_key](../../../operations/settings/settings.md#force-primary-key).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
@@ -339,7 +339,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     For `Map` data type client can specify if index should be created for keys or values using [mapKeys](../../../sql-reference/functions/tuple-map-functions.md#mapkeys) or [mapValues](../../../sql-reference/functions/tuple-map-functions.md#mapvalues) function.
 
-    The following functions can use the filter: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem).
+    The following functions can use the filter: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions.md#hasany), [hasAll](../../../sql-reference/functions/array-functions.md#hasall).
 
     Example of index creation for `Map` data type
 
@@ -886,3 +886,12 @@ S3 disk can be configured as `main` or `cold` storage:
 ```
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
+
+## Virtual Columns {#virtual-columns}
+
+-   `_part` — Name of a part.
+-   `_part_index` — Sequential index of the part in the query result.
+-   `_partition_id` — Name of a partition.
+-   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+-   `_partition_value` — Values (a tuple) of a `partition by` expression.
+-   `_sample_factor` — Sample factor (from the query).

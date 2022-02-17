@@ -21,5 +21,14 @@
             <database>clickhouse</database>
             <table>test_table</table>
         </mysql3>
+        <mysql4>
+            <user>root</user>
+            <password>clickhouse</password>
+            <host>mysql57</host>
+            <port>3306</port>
+            <database>clickhouse</database>
+            <table>test_table</table>
+            <connection_pool_size>0</connection_pool_size>
+        </mysql4>
     </named_collections>
 </clickhouse>

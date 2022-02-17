@@ -15,10 +15,12 @@ struct SettingChange;
 
 class PostgreSQLReplicationHandler
 {
+friend class TemporaryReplicationSlot;
+
 public:
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
-            const String & remote_database_name_,
+            const String & postgres_database_,
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
@@ -27,7 +29,7 @@ public:
             bool is_materialized_postgresql_database_);
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
-    void startup();
+    void startup(bool delayed);
 
     /// Stop replication without cleanup.
     void shutdown();
@@ -51,6 +53,8 @@ public:
     void removeTableFromReplication(const String & postgres_table_name);
 
     void setSetting(const SettingChange & setting);
+
+    void cleanupFunc();
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
@@ -79,15 +83,19 @@ private:
 
     /// Methods to manage replication.
 
-    void waitConnectionAndStart();
+    void checkConnectionAndStart();
 
     void consumerFunc();
 
-    StoragePtr loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
+    StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
+
+    String doubleQuoteWithSchema(const String & table_name) const;
+
+    std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
     Poco::Logger * log;
     ContextPtr context;
@@ -95,7 +103,9 @@ private:
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
 
-    const String remote_database_name, current_database_name;
+    String postgres_database;
+    String postgres_schema;
+    String current_database_name;
 
     /// Connection string and address for logs.
     postgres::ConnectionInfo connection_info;
@@ -113,6 +123,12 @@ private:
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
 
+    String schema_list;
+
+    /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
+    /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
+    mutable bool schema_as_a_part_of_table_name = false;
+
     bool user_managed_slot = true;
     String user_provided_snapshot;
 
@@ -121,7 +137,9 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
 
-    BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
+    BackgroundSchedulePool::TaskHolder startup_task;
+    BackgroundSchedulePool::TaskHolder consumer_task;
+    BackgroundSchedulePool::TaskHolder cleanup_task;
 
     std::atomic<bool> stop_synchronization = false;
 
@@ -129,8 +147,6 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
-
-    String postgres_schema;
 };
 
 }

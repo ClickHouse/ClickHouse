@@ -6,6 +6,8 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <map>
+#include <string>
+#include <unordered_set>
 
 namespace Poco
 {
@@ -184,6 +186,8 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
+        size_t getRemoteNodeCount() const { return per_replica_pools.size() - local_addresses.size(); }
+        size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
@@ -293,12 +297,15 @@ public:
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-public:
     using Impl = std::map<String, ClusterPtr>;
 
     Impl getContainer() const;
 
 protected:
+
+    /// setup outside of this class, stored to prevent deleting from impl on config update
+    std::unordered_set<std::string> automatic_clusters;
+
     Impl impl;
     mutable std::mutex mutex;
 };

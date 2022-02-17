@@ -1,12 +1,14 @@
 #pragma once
 
+#include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace DB
 {
 
+class QueryStatus;
+class ThreadStatus;
 
 /// Proxy class which counts number of written block, rows, bytes
 class CountingTransform final : public ExceptionKeepingTransform
@@ -32,13 +34,20 @@ public:
         return progress;
     }
 
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override
+    {
+        GenerateResult res;
+        res.chunk = std::move(cur_chunk);
+        return res;
+    }
 
 protected:
     Progress progress;
     ProgressCallback progress_callback;
     QueryStatus * process_elem = nullptr;
     ThreadStatus * thread_status = nullptr;
+    Chunk cur_chunk;
 };
 
 }

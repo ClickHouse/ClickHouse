@@ -146,10 +146,15 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
         values.push_back(granule->met);
     }
 
-    if (const auto it = answer_cache.find(values); it != std::end(answer_cache))
-        return it->second;
+    const ComparisonGraph * graph = nullptr;
 
-    const auto & graph = getGraph(values);
+    {
+        std::lock_guard lock(cache_mutex);
+        if (const auto it = answer_cache.find(values); it != std::end(answer_cache))
+            return it->second;
+
+        graph = getGraph(values);
+    }
 
     bool always_false = false;
     expression_cnf->iterateGroups(
@@ -166,7 +171,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
                 if (func && func->arguments->children.size() == 2)
                 {
                     const auto expected = ComparisonGraph::atomToCompareResult(atom);
-                    if (graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
+                    if (graph->isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
                     {
                         /// If graph failed use matching.
                         /// We don't need to check constraints.
@@ -176,6 +181,8 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
             }
             always_false = true;
        });
+
+    std::lock_guard lock(cache_mutex);
 
     answer_cache[values] = !always_false;
     return !always_false;
@@ -195,11 +202,13 @@ std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildG
     return std::make_unique<ComparisonGraph>(active_atomic_formulas);
 }
 
-const ComparisonGraph & MergeTreeIndexhypothesisMergedCondition::getGraph(const std::vector<bool> & values) const
+const ComparisonGraph * MergeTreeIndexhypothesisMergedCondition::getGraph(const std::vector<bool> & values) const
 {
-    if (!graph_cache.contains(values))
-        graph_cache[values] = buildGraph(values);
-    return *graph_cache.at(values);
+    auto [it, inserted] = graph_cache.try_emplace(values);
+    if (inserted)
+        it->second = buildGraph(values);
+
+    return it->second.get();
 }
 
 }

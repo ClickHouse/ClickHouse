@@ -1,15 +1,16 @@
 #pragma once
 
+#include <memory>
+#include <mutex>
+
 #include <Core/Names.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
-#include <Columns/ColumnsNumber.h>
+#include <Interpreters/castColumn.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
-
-#include <memory>
-#include <mutex>
 
 
 namespace DB
@@ -17,9 +18,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
 }
 
-struct IDictionary;
+class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 /** DictionaryKeyType provides IDictionary client information about
@@ -47,15 +49,19 @@ enum class DictionarySpecialKeyType
 /**
  * Base class for Dictionaries implementation.
  */
-struct IDictionary : public IExternalLoadable
+class IDictionary : public IExternalLoadable
 {
+public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
-    , full_name(dictionary_id.getInternalDictionaryName())
     {
     }
 
-    const std::string & getFullName() const{ return full_name; }
+    std::string getFullName() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
+    }
 
     StorageID getDictionaryID() const
     {
@@ -70,7 +76,11 @@ struct IDictionary : public IExternalLoadable
         dictionary_id = new_name;
     }
 
-    const std::string & getLoadableName() const override final { return getFullName(); }
+    std::string getLoadableName() const override final
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
+    }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
@@ -99,18 +109,52 @@ struct IDictionary : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual const IDictionarySource * getSource() const = 0;
+    virtual DictionarySourcePtr getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
     /** Subclass must provide key type that is supported by dictionary.
-      * Client will use that key type to provide valid key columns for `getColumn` and `has` functions.
+      * Client will use that key type to provide valid key columns for `getColumn` and `hasKeys` functions.
       */
     virtual DictionaryKeyType getKeyType() const = 0;
 
     virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None; }
+
+    /** Convert key columns for getColumn, hasKeys functions to match dictionary key column types.
+      * Default implementation convert key columns into DictionaryStructure key types.
+      * Subclass can override this method if keys for getColumn, hasKeys functions
+      * are different from DictionaryStructure keys. Or to prevent implicit conversion of key columns.
+      */
+    virtual void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const
+    {
+        const auto & dictionary_structure = getStructure();
+        auto key_attributes_types = dictionary_structure.getKeyTypes();
+        size_t key_attributes_types_size = key_attributes_types.size();
+        size_t key_types_size = key_types.size();
+
+        if (key_types_size != key_attributes_types_size)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Dictionary {} key lookup structure does not match, expected {}",
+                getFullName(),
+                dictionary_structure.getKeyDescription());
+
+        for (size_t key_attribute_type_index = 0; key_attribute_type_index < key_attributes_types_size; ++key_attribute_type_index)
+        {
+            const auto & key_attribute_type = key_attributes_types[key_attribute_type_index];
+            auto & key_type = key_types[key_attribute_type_index];
+
+            if (key_attribute_type->equals(*key_type))
+                continue;
+
+            auto & key_column_to_cast = key_columns[key_attribute_type_index];
+            ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
+            auto casted_column = castColumnAccurate(std::move(column_to_cast), key_attribute_type);
+            key_column_to_cast = std::move(casted_column);
+            key_type = key_attribute_type;
+        }
+    }
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -200,7 +244,7 @@ struct IDictionary : public IExternalLoadable
 
     bool isModified() const override
     {
-        const auto * source = getSource();
+        const auto source = getSource();
         return source && source->isModified();
     }
 
@@ -233,7 +277,6 @@ private:
     mutable StorageID dictionary_id;
 
 protected:
-    const String full_name;
     String dictionary_comment;
 };
 

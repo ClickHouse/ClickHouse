@@ -82,7 +82,7 @@ Pipe StorageS3Cluster::read(
 {
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
@@ -126,7 +126,7 @@ Pipe StorageS3Cluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                callback);
+                RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -152,9 +152,8 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 

@@ -271,6 +271,7 @@ class ClickHouseCluster:
         self.with_cassandra = False
         self.with_jdbc_bridge = False
         self.with_nginx = False
+        self.with_hive = False
 
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
@@ -284,6 +285,8 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+
+        self.with_azurite = False
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
@@ -318,6 +321,8 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self.mongo_port = get_free_port()
+        self.mongo_no_cred_host = "mongo2"
+        self.mongo_no_cred_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -725,6 +730,8 @@ class ClickHouseCluster:
         env_variables['MONGO_HOST'] = self.mongo_host
         env_variables['MONGO_EXTERNAL_PORT'] = str(self.mongo_port)
         env_variables['MONGO_INTERNAL_PORT'] = "27017"
+        env_variables['MONGO_NO_CRED_EXTERNAL_PORT'] = str(self.mongo_no_cred_port)
+        env_variables['MONGO_NO_CRED_INTERNAL_PORT'] = "27017"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
         self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
@@ -741,6 +748,13 @@ class ClickHouseCluster:
         self.base_minio_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
         return self.base_minio_cmd
+
+    def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_azurite = True
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_azurite.yml')])
+        self.base_azurite_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+            '--file', p.join(docker_compose_yml_dir, 'docker_compose_azurite.yml')]
+        return self.base_azurite_cmd
 
     def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_cassandra = True
@@ -767,17 +781,24 @@ class ClickHouseCluster:
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_nginx.yml')]
         return self.base_nginx_cmd
 
+    def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hive = True
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hive.yml')])
+        self.base_hive_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', p.join(docker_compose_yml_dir, 'docker_compose_hive.yml')]
+        return self.base_hive_cmd
+
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None, with_zookeeper=False, with_zookeeper_secure=False,
                      with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False,
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
-                     with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
+                     with_redis=False, with_minio=False, with_azurite=False, with_cassandra=False, with_jdbc_bridge=False, with_hive=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse") -> 'ClickHouseInstance':
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse", extra_configs=[]) -> 'ClickHouseInstance':
 
         """Add an instance to the cluster.
 
@@ -787,6 +808,7 @@ class ClickHouseCluster:
         user_configs - a list of config files that will be added to users.d/ directory
         with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
         with_zookeeper_secure - if True, add ZooKeeper Secure configuration to configs and ZooKeeper instances to the cluster.
+        extra_configs - config files cannot put into config.d and users.d
         """
 
         if self.is_up:
@@ -829,8 +851,10 @@ class ClickHouseCluster:
             with_mongo=with_mongo or with_mongo_secure,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_azurite=with_azurite,
             with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
+            with_hive = with_hive,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -851,7 +875,8 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
-            config_root_name=config_root_name)
+            config_root_name=config_root_name,
+            extra_configs = extra_configs)
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -932,6 +957,9 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir))
 
+        if with_azurite and not self.with_azurite:
+            cmds.append(self.setup_azurite_cmd(instance, env_variables, docker_compose_yml_dir))
+
         if minio_certs_dir is not None:
             if self.minio_certs_dir is None:
                 self.minio_certs_dir = minio_certs_dir
@@ -943,6 +971,9 @@ class ClickHouseCluster:
 
         if with_jdbc_bridge and not self.with_jdbc_bridge:
             cmds.append(self.setup_jdbc_bridge_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if with_hive:
+            cmds.append(self.setup_hive(instance, env_variables, docker_compose_yml_dir))
 
         logging.debug("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
             self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
@@ -1086,15 +1117,13 @@ class ClickHouseCluster:
                 info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
                 if info['State']['Health']['Status'] == 'healthy':
                     logging.debug("Mysql Client Container Started")
-                    break
+                    return
                 time.sleep(1)
-
-                return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
@@ -1383,6 +1412,23 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_azurite_to_start(self, timeout=180):
+        from azure.storage.blob import BlobServiceClient
+        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        time.sleep(1)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+                logging.debug(blob_service_client.get_account_information())
+                self.blob_service_client = blob_service_client
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Azurite: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Azurite to start")
+
     def wait_schema_registry_to_start(self, timeout=180):
         sr_client = CachedSchemaRegistryClient({"url":'http://localhost:{}'.format(self.schema_registry_port)})
         start = time.time()
@@ -1446,6 +1492,18 @@ class ClickHouseCluster:
 
             common_opts = ['--verbose', 'up', '-d']
 
+            images_pull_cmd = self.base_cmd + ['pull']
+            # sometimes dockerhub/proxy can be flaky
+            for i in range(5):
+                try:
+                    run_and_check(images_pull_cmd)
+                    break
+                except Exception as ex:
+                    if i == 4:
+                        raise ex
+                    logging.info("Got exception pulling images: %s", ex)
+                    time.sleep(i * 3)
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
@@ -1497,7 +1555,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_dir):
                     shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.up_called = True
                 self.wait_mysql_to_start()
@@ -1507,7 +1565,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql8_dir):
                     shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
-                os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
 
@@ -1516,7 +1574,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir)
-                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
                 self.up_called = True
@@ -1527,7 +1585,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
@@ -1536,11 +1594,11 @@ class ClickHouseCluster:
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
                 os.makedirs(self.postgres2_logs_dir)
-                os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
-                os.chmod(self.postgres3_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres4_logs_dir)
-                os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
@@ -1561,7 +1619,7 @@ class ClickHouseCluster:
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
-                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -1574,7 +1632,7 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
-                os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api()
@@ -1583,7 +1641,7 @@ class ClickHouseCluster:
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
-                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api(kerberized=True)
@@ -1608,6 +1666,12 @@ class ClickHouseCluster:
                 self.up_called = True
                 time.sleep(10)
 
+            if self.with_hive and self.base_hive_cmd:
+                logging.debug('Setup hive')
+                subprocess_check_call(self.base_hive_cmd + common_opts)
+                self.up_called = True
+                time.sleep(300)
+
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
                 os.mkdir(self.minio_dir)
@@ -1624,6 +1688,14 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            if self.with_azurite and self.base_azurite_cmd:
+                azurite_start_cmd = self.base_azurite_cmd + common_opts
+                logging.info("Trying to create Azurite instance by command %s", ' '.join(map(str, azurite_start_cmd)))
+                run_and_check(azurite_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Azurite")
+                self.wait_azurite_to_start()
+
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.up_called = True
@@ -1631,7 +1703,7 @@ class ClickHouseCluster:
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
-                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
                 self.up_called = True
@@ -1843,13 +1915,13 @@ class ClickHouseInstance:
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_jdbc_bridge,
+            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge, with_hive,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse", extra_configs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1863,6 +1935,7 @@ class ClickHouseInstance:
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
+        self.custom_extra_config_paths = [p.abspath(p.join(base_path,c)) for c in extra_configs]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.kerberos_secrets_dir = p.abspath(p.join(base_path, 'secrets'))
         self.macros = macros if macros is not None else {}
@@ -1887,8 +1960,10 @@ class ClickHouseInstance:
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_jdbc_bridge = with_jdbc_bridge
+        self.with_hive = with_hive
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -2004,7 +2079,8 @@ class ClickHouseInstance:
                                                            user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
+    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False,
+                   port=8123, timeout=None, retry_strategy=None):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
@@ -2018,12 +2094,19 @@ class ClickHouseInstance:
             auth = requests.auth.HTTPBasicAuth(user, password)
         elif user:
             auth = requests.auth.HTTPBasicAuth(user, '')
-        url = "http://" + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
+        url = f"http://{self.ip_address}:{port}/?" + urllib.parse.urlencode(params)
 
-        if data:
-            r = requests.post(url, data, auth=auth)
+        if retry_strategy is None:
+            requester = requests
         else:
-            r = requests.get(url, auth=auth)
+            adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+            requester = requests.Session()
+            requester.mount("https://", adapter)
+            requester.mount("http://", adapter)
+        if data:
+            r = requester.post(url, data, auth=auth, timeout=timeout)
+        else:
+            r = requester.get(url, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code
@@ -2107,7 +2190,7 @@ class ClickHouseInstance:
                 except Exception as e:
                     logging.warning(f"Current start attempt failed. Will kill {pid} just in case.")
                     self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root', nothrow=True)
-                    time.sleep(time_to_sleep)        
+                    time.sleep(time_to_sleep)
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
@@ -2115,7 +2198,7 @@ class ClickHouseInstance:
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
-        while time.time() <= start_time + start_wait_sec:
+        while True:
             try:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
@@ -2129,6 +2212,8 @@ class ClickHouseInstance:
                     logging.warning(f"ERROR {err}")
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
+            if time.time() > start_time + start_wait_sec:
+                break
         logging.error(f"No time left to start. But process is still running. Will dump threads.")
         ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
@@ -2195,7 +2280,7 @@ class ClickHouseInstance:
         logging.debug('{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
-    def file_exists(self, path):
+    def path_exists(self, path):
         return self.exec_in_container(
             ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
@@ -2446,6 +2531,8 @@ class ClickHouseInstance:
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
+        extra_conf_dir = p.abspath(p.join(instance_config_dir, 'extra_conf.d'))
+        os.mkdir(extra_conf_dir)
 
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
@@ -2492,6 +2579,8 @@ class ClickHouseInstance:
         # Copy dictionaries configs to configs/dictionaries
         for path in self.custom_dictionaries_paths:
             shutil.copy(path, dictionaries_dir)
+        for path in self.custom_extra_config_paths:
+            shutil.copy(path, extra_conf_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         logging.debug(f"Setup database dir {db_dir}")
@@ -2549,6 +2638,9 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
+
+        if self.with_azurite:
+            depends_on.append("azurite1")
 
         self.cluster.env_variables.update(self.env_variables)
 
@@ -2629,6 +2721,20 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
+
+    def wait_for_path_exists(self, path, seconds):
+        while seconds > 0:
+            seconds -= 1
+            if self.path_exists(path):
+                return
+            time.sleep(1)
+
+    def get_backuped_s3_objects(self, disk, backup_name):
+        path = f'/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store'
+        self.wait_for_path_exists(path, 10)
+        command = ['find', path, '-type', 'f',
+            '-exec', 'grep', '-o', 'r[01]\\{64\\}-file-[[:lower:]]\\{32\\}', '{}', ';']
+        return self.exec_in_container(command).split('\n')
 
 
 class ClickHouseKiller(object):

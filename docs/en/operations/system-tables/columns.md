@@ -6,7 +6,7 @@ You can use this table to get information similar to the [DESCRIBE TABLE](../../
 
 Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field.
 
-Columns:
+The `system.columns` table contains the following columns (the column type is shown in brackets):
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
@@ -85,22 +85,5 @@ numeric_precision_radix: ᴺᵁᴸᴸ
 numeric_scale:           ᴺᵁᴸᴸ
 datetime_precision:      ᴺᵁᴸᴸ
 ```
-
-The `system.columns` table contains the following columns (the column type is shown in brackets):
-
--   `database` (String) — Database name.
--   `table` (String) — Table name.
--   `name` (String) — Column name.
--   `type` (String) — Column type.
--   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
--   `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
--   `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
--   `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
--   `marks_bytes` (UInt64) — The size of marks, in bytes.
--   `comment` (String) — Comment on the column, or an empty string if it is not defined.
--   `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in the partition expression.
--   `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in the sorting key expression.
--   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
--   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
 [Original article](https://clickhouse.com/docs/en/operations/system-tables/columns) <!--hide-->

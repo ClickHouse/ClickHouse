@@ -1,7 +1,16 @@
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONEachRowUtils.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/JSON/Parser.h>
+#include <Parsers/TokenIterator.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 namespace DB
 {
@@ -9,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
@@ -69,10 +79,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readEscapedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
-            /// FIXME: it skips only strings, not numbers, arrays or tuples.
-            ///        we should read until delimiter and skip all data between
-            ///        single quotes.
-            readQuotedString(tmp, buf);
+            readQuotedFieldIntoString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
             readCSVString(tmp, buf, format_settings.csv);
@@ -196,30 +203,145 @@ void writeStringByEscapingRule(const String & value, WriteBuffer & out, FormatSe
     }
 }
 
-String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+template <bool read_string>
+String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     String result;
     switch (escaping_rule)
     {
         case FormatSettings::EscapingRule::Quoted:
-            readQuotedString(result, buf);
+            if constexpr (read_string)
+                readQuotedString(result, buf);
+            else
+                readQuotedFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::JSON:
-            readJSONString(result, buf);
+            if constexpr (read_string)
+                readJSONString(result, buf);
+            else
+                readJSONFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
-            readCSVString(result, buf, format_settings.csv);
+            if constexpr (read_string)
+                readCSVString(result, buf, format_settings.csv);
+            else
+                readCSVField(result, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::Escaped:
             readEscapedString(result, buf);
             break;
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read string with {} escaping rule", escapingRuleToString(escaping_rule));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read value with {} escaping rule", escapingRuleToString(escaping_rule));
     }
     return result;
+}
+
+String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+{
+    return readByEscapingRule<false>(buf, escaping_rule, format_settings);
+}
+
+String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+{
+    return readByEscapingRule<true>(buf, escaping_rule, format_settings);
+}
+
+static bool evaluateConstantExpressionFromString(const StringRef & field, DataTypePtr & type, ContextPtr context)
+{
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "You must provide context to evaluate constant expression");
+
+    ParserExpression parser;
+    Expected expected;
+    Tokens tokens(field.data, field.data + field.size);
+    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+    ASTPtr ast;
+
+    /// FIXME: Our parser cannot parse maps in the form of '{key : value}' that is used in text formats.
+    bool parsed = parser.parse(token_iterator, ast, expected);
+    if (!parsed)
+        return false;
+
+    try
+    {
+        std::pair<Field, DataTypePtr> result = evaluateConstantExpression(ast, context);
+        type = generalizeDataType(result.second);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context)
+{
+    switch (escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Quoted:
+        {
+            DataTypePtr type;
+            bool parsed = evaluateConstantExpressionFromString(field, type, context);
+            return parsed ? type : nullptr;
+        }
+        case FormatSettings::EscapingRule::JSON:
+            return getDataTypeFromJSONField(field);
+        case FormatSettings::EscapingRule::CSV:
+        {
+            if (field.empty() || field == format_settings.csv.null_representation)
+                return nullptr;
+
+            if (field == format_settings.bool_false_representation || field == format_settings.bool_true_representation)
+                return std::make_shared<DataTypeUInt8>();
+
+            DataTypePtr type;
+            bool parsed;
+            if (field[0] == '\'' || field[0] == '"')
+            {
+                /// Try to evaluate expression inside quotes.
+                parsed = evaluateConstantExpressionFromString(StringRef(field.data() + 1, field.size() - 2), type, context);
+                /// If it's a number in quotes we determine it as a string.
+                if (parsed && type && isNumber(removeNullable(type)))
+                    return makeNullable(std::make_shared<DataTypeString>());
+            }
+            else
+                parsed = evaluateConstantExpressionFromString(field, type, context);
+
+            /// If we couldn't parse an expression, determine it as a string.
+            return parsed ? type : makeNullable(std::make_shared<DataTypeString>());
+        }
+        case FormatSettings::EscapingRule::Raw: [[fallthrough]];
+        case FormatSettings::EscapingRule::Escaped:
+            /// TODO: Try to use some heuristics here to determine the type of data.
+            return field.empty() ? nullptr : makeNullable(std::make_shared<DataTypeString>());
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the type for value with {} escaping rule", escapingRuleToString(escaping_rule));
+    }
+}
+
+DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context)
+{
+    DataTypes data_types;
+    data_types.reserve(fields.size());
+    for (const auto & field : fields)
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, escaping_rule, context));
+    return data_types;
+}
+
+DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escaping_rule)
+{
+    switch (escaping_rule)
+    {
+        case FormatSettings::EscapingRule::CSV: [[fallthrough]];
+        case FormatSettings::EscapingRule::Escaped: [[fallthrough]];
+        case FormatSettings::EscapingRule::Raw:
+            return makeNullable(std::make_shared<DataTypeString>());
+        default:
+            return nullptr;
+    }
 }
 
 }

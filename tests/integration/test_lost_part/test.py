@@ -178,18 +178,20 @@ def test_lost_part_mutation(start_cluster):
 def test_lost_last_part(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt3 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t3', '{}') ORDER BY tuple()".format(node.name))
+            "CREATE TABLE mt3 (id UInt64, p String) ENGINE ReplicatedMergeTree('/clickhouse/tables/t3', '{}') "
+            "ORDER BY tuple() PARTITION BY p".format(node.name))
 
     node1.query("SYSTEM STOP MERGES mt3")
     node2.query("SYSTEM STOP REPLICATION QUEUES")
 
     for i in range(1):
-        node1.query("INSERT INTO mt3 VALUES ({})".format(i))
+        node1.query("INSERT INTO mt3 VALUES ({}, 'x')".format(i))
 
     # actually not important
     node1.query("ALTER TABLE mt3 UPDATE id = 777 WHERE 1", settings={"mutations_sync": "0"})
 
-    remove_part_from_disk(node1, 'mt3', 'all_0_0_0')
+    partition_id = node1.query("select partitionId('x')").strip()
+    remove_part_from_disk(node1, 'mt3', '{}_0_0_0'.format(partition_id))
 
     # other way to detect broken parts
     node1.query("CHECK TABLE mt3")
@@ -199,13 +201,13 @@ def test_lost_last_part(start_cluster):
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
         assert int(result) <= 1, "Have a lot of entries in queue {}".format(node1.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
-        if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log("DROP PARTITION"):
+        if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log("DROP/DETACH PARTITION"):
             break
         time.sleep(1)
     else:
         assert False, "Don't have required messages in node1 log"
 
-    node1.query("ALTER TABLE mt3 DROP PARTITION ID 'all'")
+    node1.query("ALTER TABLE mt3 DROP PARTITION ID '{}'".format(partition_id))
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM mt3", "0")
     assert_eq_with_retry(node1, "SELECT COUNT() FROM system.replication_queue", "0")

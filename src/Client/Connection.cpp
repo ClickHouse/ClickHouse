@@ -405,7 +405,7 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_TRACE(log_wrapper.get(), e.displayText());
+        LOG_TRACE(log_wrapper.get(), fmt::runtime(e.displayText()));
         return false;
     }
 
@@ -600,6 +600,14 @@ void Connection::sendReadTaskResponse(const String & response)
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
     writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
     writeStringBinary(response, *out);
+    out->next();
+}
+
+
+void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
+{
+    writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out);
     out->next();
 }
 
@@ -872,6 +880,10 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
+            case Protocol::Server::MergeTreeReadTaskRequest:
+                res.request = receivePartitionReadRequest();
+                return res;
+
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
                 return res;
@@ -1021,6 +1033,13 @@ ProfileInfo Connection::receiveProfileInfo() const
     ProfileInfo profile_info;
     profile_info.read(*in);
     return profile_info;
+}
+
+PartitionReadRequest Connection::receivePartitionReadRequest() const
+{
+    PartitionReadRequest request;
+    request.deserialize(*in);
+    return request;
 }
 
 

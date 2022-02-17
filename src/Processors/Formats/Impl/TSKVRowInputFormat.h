@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -20,7 +21,7 @@ class ReadBuffer;
   * An equal sign can be escaped in the field name.
   * Also, as an additional element there may be a useless tskv fragment - it needs to be ignored.
   */
-class TSKVRowInputFormat : public IRowInputFormat
+class TSKVRowInputFormat final : public IRowInputFormat
 {
 public:
     TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
@@ -50,6 +51,18 @@ private:
     std::vector<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like ..., non-nullable column name=\N, ...
+};
+
+class TSKVSchemaReader : public IRowWithNamesSchemaReader
+{
+public:
+    TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+
+private:
+    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
+
+    const FormatSettings format_settings;
+    bool first_row = true;
 };
 
 }

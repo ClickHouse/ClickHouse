@@ -8,9 +8,9 @@
 
 #include <type_traits>
 
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
@@ -48,6 +48,7 @@ struct Memory;
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
@@ -183,6 +184,15 @@ inline void assertChar(char symbol, ReadBuffer & buf)
     }
 }
 
+inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertString(const String & s, ReadBuffer & buf)
 {
     assertString(s.c_str(), buf);
@@ -231,20 +241,45 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
-inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    if (*buf.position() == 't')
+    switch (*buf.position())
     {
-        assertString("true", buf);
-        x = true;
-    }
-    else
-    {
-        assertString("false", buf);
-        x = false;
+        case 't':
+            assertString("true", buf);
+            x = true;
+            break;
+        case 'f':
+            assertString("false", buf);
+            x = false;
+            break;
+        case 'T':
+        {
+            if (support_upper_case)
+            {
+                assertString("TRUE", buf);
+                x = true;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        case 'F':
+        {
+            if (support_upper_case)
+            {
+                assertString("FALSE", buf);
+                x = false;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        default:
+            throw ParsingException("Unexpected Bool value", ErrorCodes::CANNOT_PARSE_BOOL);
     }
 }
 
@@ -528,6 +563,8 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf);
   */
 void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
+/// Differ from readCSVString in that it doesn't remove quotes around field if any.
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 /// Read and append result to array of characters.
 template <typename Vector>
@@ -566,6 +603,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
@@ -864,13 +904,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
-
-        for (size_t i = 0; i < scale; ++i)
-        {
-            components.fractional *= 10;
-            components.fractional += components.whole % 10;
-            components.whole /= 10;
-        }
+        components.fractional =  components.whole % common::exp10_i32(scale);
+        components.whole = components.whole / common::exp10_i32(scale);
     }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
@@ -1036,7 +1071,6 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
     assertChar('"', buf);
 }
 
-
 /// CSV, for numbers, dates: quotes are optional, no special escaping rules.
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
@@ -1056,8 +1090,10 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void> readCSV(T & x, ReadBuffer & buf)
+{
+    readCSVSimple(x, buf);
+}
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
@@ -1348,5 +1384,9 @@ struct PcgDeserializer
         rng.state_ = state;
     }
 };
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+
+void readJSONFieldIntoString(String & s, ReadBuffer & buf);
 
 }

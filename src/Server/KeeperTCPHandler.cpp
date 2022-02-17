@@ -212,10 +212,14 @@ KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSoc
           0,
           global_context->getConfigRef().getUInt(
               "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(
+    , min_session_timeout(
           0,
           global_context->getConfigRef().getUInt(
-              "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+              "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
+    , max_session_timeout(
+          0,
+          global_context->getConfigRef().getUInt(
+              "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
@@ -227,9 +231,16 @@ void KeeperTCPHandler::sendHandshake(bool has_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
+    {
         Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
-    else /// Specially ignore connections if we are not leader, client will throw exception
-        Coordination::write(42, *out);
+    }
+    else
+    {
+        /// Ignore connections if we are not leader, client will throw exception
+        /// and reconnect to another replica faster. ClickHouse client provide
+        /// clear message for such protocol version.
+        Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, *out);
+    }
 
     Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
     Coordination::write(session_id, *out);
@@ -276,7 +287,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 
 void KeeperTCPHandler::runImpl()
 {
-    setThreadName("TstKprHandler");
+    setThreadName("KeeperHandler");
     ThreadStatus thread_status;
     auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
     auto global_send_timeout = global_context->getSettingsRef().send_timeout;
@@ -320,8 +331,10 @@ void KeeperTCPHandler::runImpl()
         int32_t handshake_length = header;
         auto client_timeout = receiveHandshake(handshake_length);
 
-        if (client_timeout != 0)
-            session_timeout = std::min(client_timeout, session_timeout);
+        if (client_timeout == 0)
+            client_timeout = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
+        session_timeout = std::max(client_timeout, min_session_timeout);
+        session_timeout = std::min(session_timeout, max_session_timeout);
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -557,6 +570,8 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
             std::lock_guard lock(conn_stats_mutex);
             conn_stats.updateLatency(elapsed);
         }
+
+        operations.erase(response->xid);
         keeper_dispatcher->updateKeeperStatLatency(elapsed);
 
         last_op.set(std::make_unique<LastOp>(LastOp{

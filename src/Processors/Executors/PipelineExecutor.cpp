@@ -1,6 +1,5 @@
 #include <queue>
 #include <IO/WriteBufferFromString.h>
-#include <Common/EventCounter.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
@@ -22,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -32,8 +30,6 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
-        if (process_list_element)
-            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -45,6 +41,12 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
         exception.addMessage("Query pipeline:\n" + buf.str());
 
         throw;
+    }
+    if (process_list_element)
+    {
+        // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
+        // as that would leave the executor "linked"
+        process_list_element->addPipelineExecutor(this);
     }
 }
 
@@ -73,6 +75,7 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    checkTimeLimit();
     if (num_threads < 1)
         num_threads = 1;
 
@@ -124,10 +127,33 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     return false;
 }
 
+bool PipelineExecutor::checkTimeLimitSoft()
+{
+    if (process_list_element)
+    {
+        bool continuing = process_list_element->checkTimeLimitSoft();
+        // We call cancel here so that all processors are notified and tasks waken up
+        // so that the "break" is faster and doesn't wait for long events
+        if (!continuing)
+            cancel();
+        return continuing;
+    }
+
+    return true;
+}
+
+bool PipelineExecutor::checkTimeLimit()
+{
+    bool continuing = checkTimeLimitSoft();
+    if (!continuing)
+        process_list_element->checkTimeLimit(); // Will throw if needed
+
+    return continuing;
+}
+
 void PipelineExecutor::finalizeExecution()
 {
-    if (process_list_element && process_list_element->isKilled())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    checkTimeLimit();
 
     if (cancelled)
         return;
@@ -188,6 +214,9 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 cancel();
 
             if (tasks.isFinished())
+                break;
+
+            if (!checkTimeLimitSoft())
                 break;
 
 #ifndef NDEBUG
@@ -271,11 +300,6 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
-
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-                );
 
                 try
                 {

@@ -12,7 +12,7 @@ namespace DB
 
 class Context;
 
-/* hdfs(name_node_ip:name_node_port, format, structure) - creates a temporary storage from hdfs file
+/* hdfs(URI, format[, structure, compression]) - creates a temporary storage from hdfs files
  *
  */
 class TableFunctionHDFS : public ITableFunctionFileLike
@@ -23,6 +23,8 @@ public:
     {
         return name;
     }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
 private:
     StoragePtr getStorage(

@@ -306,6 +306,18 @@ String transformQueryForExternalDatabase(
         throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
+    auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
+    UInt64 value;
+    if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
+    {
+        /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
+        if (value)
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+        else
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
+    }
+
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
 

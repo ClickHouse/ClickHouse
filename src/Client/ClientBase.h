@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Common/NamePrompter.h"
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -37,7 +39,7 @@ void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -47,6 +49,8 @@ public:
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
+
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -78,9 +82,6 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::optional<Exception> & current_exception);
 
-    /// For non-interactive multi-query mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
-
     static void clearTerminal();
     void showClientVersion();
 
@@ -91,18 +92,21 @@ protected:
     {
         std::optional<ProgramOptionsDescription> main_description;
         std::optional<ProgramOptionsDescription> external_description;
+        std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
-                                const std::vector<Arguments> & external_tables_arguments) = 0;
+                                const std::vector<Arguments> & external_tables_arguments,
+                                const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-private:
+protected:
     bool processQueryText(const String & text);
 
+private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
     void receiveLogs(ASTPtr parsed_query);
@@ -132,10 +136,21 @@ private:
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
+    void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
+    void updateSuggest(const ASTCreateQuery & ast_create);
+
+    void initQueryIdFormats();
+
 protected:
+    static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;
@@ -143,10 +158,13 @@ protected:
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
+
+    std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
@@ -233,6 +251,14 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+
+    struct HostAndPort
+    {
+        String host;
+        UInt16 port;
+    };
+
+    std::vector<HostAndPort> hosts_and_ports{};
 };
 
 }

@@ -81,7 +81,6 @@ public:
       */
     SelectPartsDecision selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPartPtr future_part,
-        UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
@@ -150,10 +149,11 @@ private:
         MutationCommands & for_file_renames);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
-    static NamesAndTypesList getColumnsForNewDataPart(
+    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
         NamesAndTypesList storage_columns,
+        const SerializationInfoByName & serialization_infos,
         const MutationCommands & commands_for_removes);
 
     static ExecuteTTLType shouldExecuteTTL(

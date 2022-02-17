@@ -146,4 +146,11 @@ void FieldVisitorHash::operator() (const Int256 & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const bool & x) const
+{
+    UInt8 type = Field::Types::Bool;
+    hash.update(type);
+    hash.update(x);
+}
+
 }

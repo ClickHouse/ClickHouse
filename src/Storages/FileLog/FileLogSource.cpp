@@ -54,12 +54,12 @@ FileLogSource::~FileLogSource()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-    storage.reduceStreams();
 }
 
 void FileLogSource::onFinish()
 {
     storage.closeFilesAndStoreMeta(start, end);
+    storage.reduceStreams();
     finished = true;
 }
 

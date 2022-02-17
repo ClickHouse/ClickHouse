@@ -41,8 +41,7 @@ def test_cleanup_dir_after_bad_zk_conn(start_cluster):
         pm.drop_instance_zk_connections(node1)
         time.sleep(3)
         error = node1.query_and_get_error(query_create)
-        assert "Poco::Exception. Code: 1000" and \
-               "All connection tries failed while connecting to ZooKeeper" in error
+        time.sleep(3)
         error = node1.query_and_get_error(query_create)
         assert "Directory for table data data/replica/test/ already exists" not in error
     node1.query_with_retry(query_create)

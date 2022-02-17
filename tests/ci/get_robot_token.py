@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import boto3
-from github import Github
+import boto3  # type: ignore
+from github import Github  # type: ignore
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
     if not client:

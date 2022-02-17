@@ -27,8 +27,15 @@ protected:
     std::string getFileName() const override;
 
 public:
-    ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), required_alignment(alignment), fd(fd_)
+    ReadBufferFromFileDescriptor(
+        int fd_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
+        , required_alignment(alignment)
+        , fd(fd_)
     {
     }
 
@@ -63,8 +70,13 @@ private:
 class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
 {
 public:
-    ReadBufferFromFileDescriptorPRead(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment)
+    ReadBufferFromFileDescriptorPRead(
+        int fd_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
     }

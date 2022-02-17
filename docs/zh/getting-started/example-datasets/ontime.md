@@ -15,16 +15,8 @@ toc_title: OnTime
 下载数据：
 
 ``` bash
-for s in `seq 1987 2018`
-do
-for m in `seq 1 12`
-do
-wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
-done
-done
+wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip
 ```
-
-(参考 https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 创建表结构：
 
@@ -40,7 +32,7 @@ CREATE TABLE `ontime`
     `Reporting_Airline`               String,
     `DOT_ID_Reporting_Airline`        Int32,
     `IATA_CODE_Reporting_Airline`     String,
-    `Tail_Number`                     Int32,
+    `Tail_Number`                     String,
     `Flight_Number_Reporting_Airline` String,
     `OriginAirportID`                 Int32,
     `OriginAirportSeqID`              Int32,

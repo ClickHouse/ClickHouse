@@ -1,5 +1,4 @@
 #include "PostgreSQLHandlerFactory.h"
-#include <Poco/Net/TCPServerConnectionFactory.h>
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
 
@@ -17,11 +16,11 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_)
     };
 }
 
-Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket)
+Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
     Int32 connection_id = last_connection_id++;
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
-    return new PostgreSQLHandler(socket, server, ssl_enabled, connection_id, auth_methods);
+    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, connection_id, auth_methods);
 }
 
 }

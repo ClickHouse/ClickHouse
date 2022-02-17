@@ -4,10 +4,10 @@ import logging
 import os
 import sys
 import subprocess
-import json
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -17,6 +17,8 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 
 IMAGE_NAME = 'clickhouse/unit-test'
@@ -93,21 +95,23 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    reports_path = os.getenv("REPORTS_PATH", "./reports")
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
+    reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
@@ -126,13 +130,12 @@ if __name__ == "__main__":
 
     logging.info("Going to run func tests: %s", run_command)
 
-    with open(run_log_path, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+    with TeePopen(run_command, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 

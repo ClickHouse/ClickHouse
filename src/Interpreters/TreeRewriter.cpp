@@ -465,8 +465,12 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
             ASTFunction * func = elem->as<ASTFunction>();
 
             /// Never remove untuple. It's result column may be in required columns.
-            /// It is not easy to analyze untuple here, because types were not calculated yes.
+            /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
+                new_elements.push_back(elem);
+
+            /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
                 new_elements.push_back(elem);
         }
     }
@@ -475,10 +479,11 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
+void executeScalarSubqueries(
+    ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, Scalars & local_scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, only_analyze};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, local_scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -788,6 +793,39 @@ void markTupleLiteralsAsLegacy(ASTPtr & query)
     MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
 }
 
+/// Rewrite _shard_num -> shardNum() AS _shard_num
+struct RewriteShardNum
+{
+    struct Data
+    {
+    };
+
+    static bool needChildVisit(const ASTPtr & parent, const ASTPtr & /*child*/)
+    {
+        /// ON section should not be rewritten.
+        return typeid_cast<ASTTableJoin  *>(parent.get()) == nullptr;
+    }
+
+    static void visit(ASTPtr & ast, Data &)
+    {
+        if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
+            visit(*identifier, ast);
+    }
+
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast)
+    {
+        if (identifier.shortName() != "_shard_num")
+            return;
+
+        String alias = identifier.tryGetAlias();
+        if (alias.empty())
+            alias = "_shard_num";
+        ast = makeASTFunction("shardNum");
+        ast->setAlias(alias);
+    }
+};
+using RewriteShardNumVisitor = InDepthNodeVisitor<RewriteShardNum, true>;
+
 }
 
 TreeRewriterResult::TreeRewriterResult(
@@ -953,11 +991,12 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         unknown_required_source_columns.erase(column_name);
 
         if (!required.count(column_name))
-            source_columns.erase(it++);
+            it = source_columns.erase(it);
         else
             ++it;
     }
 
+    has_virtual_shard_num = false;
     /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
     /// in columns list, so that when further processing they are also considered.
     if (storage)
@@ -969,10 +1008,22 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             if (column)
             {
                 source_columns.push_back(*column);
-                unknown_required_source_columns.erase(it++);
+                it = unknown_required_source_columns.erase(it);
             }
             else
                 ++it;
+        }
+
+        if (is_remote_storage)
+        {
+            for (const auto & name_type : storage_virtuals)
+            {
+                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", metadata_snapshot))
+                {
+                    has_virtual_shard_num = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -1108,7 +1159,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
+    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1116,8 +1167,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
 
+    TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+
     /// Only apply AST optimization for initial queries.
-    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !select_options.ignore_ast_optimizations)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
@@ -1159,6 +1212,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         }
     }
 
+    /// Rewrite _shard_num to shardNum()
+    if (result.has_virtual_shard_num)
+    {
+        RewriteShardNumVisitor::Data data_rewrite_shard_num;
+        RewriteShardNumVisitor(data_rewrite_shard_num).visit(query);
+    }
+
     result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)
@@ -1189,7 +1249,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, !execute_scalar_subqueries);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);

@@ -54,7 +54,8 @@ public:
     const char * end() const { return mapped + elf_size; }
     size_t size() const { return elf_size; }
 
-    /// Obtain build id from PT_NOTES section of program headers. Return empty string if does not exist.
+    /// Obtain build id from SHT_NOTE of section headers (fallback to PT_NOTES section of program headers).
+    /// Return empty string if does not exist.
     /// The string is returned in binary. Note that "readelf -n ./clickhouse-server" prints it in hex.
     String getBuildID() const;
     static String getBuildID(const char * nhdr_pos, size_t size);

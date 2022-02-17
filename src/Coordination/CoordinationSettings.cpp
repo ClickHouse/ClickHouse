@@ -41,6 +41,7 @@ const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "con
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
+    , enable_ipv6(true)
     , tcp_port(NOT_EXIST)
     , tcp_port_secure(NOT_EXIST)
     , standalone_keeper(false)
@@ -66,6 +67,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("server_id=", buf);
     write_int(server_id);
+
+    writeText("enable_ipv6=", buf);
+    write_bool(enable_ipv6);
 
     if (tcp_port != NOT_EXIST)
     {
@@ -94,6 +98,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
+    writeText("min_session_timeout_ms=", buf);
+    write_int(uint64_t(coordination_settings->min_session_timeout_ms));
     writeText("session_timeout_ms=", buf);
     write_int(uint64_t(coordination_settings->session_timeout_ms));
     writeText("operation_timeout_ms=", buf);
@@ -155,6 +161,8 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
 
     ret->server_id = config.getInt("keeper_server.server_id");
     ret->standalone_keeper = standalone_keeper_;
+
+    ret->enable_ipv6 = config.getBool("keeper_server.enable_ipv6", true);
 
     if (config.has("keeper_server.tcp_port"))
     {

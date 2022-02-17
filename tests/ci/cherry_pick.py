@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 
+from env_helper import GITHUB_WORKSPACE, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from ssh import SSHKey
 from cherry_pick_utils.backport import Backport
@@ -13,8 +14,8 @@ from cherry_pick_utils.cherrypick import CherryPick
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("TEMP_PATH"))
+    repo_path = GITHUB_WORKSPACE
+    temp_path = TEMP_PATH
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

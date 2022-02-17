@@ -27,6 +27,10 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
+    
+-- reset to default (use value from system.merge_tree_settings)
+ALTER TABLE foo
+    RESET SETTING max_suspicious_broken_parts;
 ```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
@@ -356,3 +360,24 @@ Possible values:
 -   1 — Parts are detached.
 
 Default value: `0`.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `60` seconds.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `1` second.
+

@@ -4,21 +4,25 @@
 #include <iomanip>
 #include <string_view>
 #include <filesystem>
+#include <map>
+#include <unordered_map>
 
 #include <base/argsToConfig.h>
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
-#include "Common/Exception.h"
-#include "Common/getNumberOfPhysicalCPUCores.h"
-#include "Common/tests/gtest_global_context.h"
-#include "Common/typeid_cast.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
-#include "Core/Block.h"
-#include "Core/Protocol.h"
-#include "Formats/FormatFactory.h"
+#include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
+#include <Common/config.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
+#include <Formats/FormatFactory.h>
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -44,6 +48,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -52,6 +57,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
@@ -61,6 +67,11 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -104,6 +115,99 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+static void incrementProfileEventsBlock(Block & dst, const Block & src)
+{
+    if (!dst)
+    {
+        dst = src;
+        return;
+    }
+
+    assertBlocksHaveEqualStructure(src, dst, "ProfileEvents");
+
+    std::unordered_map<String, size_t> name_pos;
+    for (size_t i = 0; i < dst.columns(); ++i)
+        name_pos[dst.getByPosition(i).name] = i;
+
+    size_t dst_rows = dst.rows();
+    MutableColumns mutable_columns = dst.mutateColumns();
+
+    auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
+    auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
+    auto & dst_array_thread_id = typeid_cast<ColumnUInt64 &>(*mutable_columns[name_pos["thread_id"]]).getData();
+    auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
+    auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
+    auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
+
+    const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
+    const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
+    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
+    const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
+
+    struct Id
+    {
+        StringRef name;
+        StringRef host_name;
+        UInt64 thread_id;
+
+        bool operator<(const Id & rhs) const
+        {
+            return std::tie(name, host_name, thread_id)
+                 < std::tie(rhs.name, rhs.host_name, rhs.thread_id);
+        }
+    };
+    std::map<Id, UInt64> rows_by_name;
+    for (size_t src_row = 0; src_row < src.rows(); ++src_row)
+    {
+        Id id{
+            src_column_name.getDataAt(src_row),
+            src_column_host_name.getDataAt(src_row),
+            src_array_thread_id[src_row],
+        };
+        rows_by_name[id] = src_row;
+    }
+
+    /// Merge src into dst.
+    for (size_t dst_row = 0; dst_row < dst_rows; ++dst_row)
+    {
+        Id id{
+            dst_column_name.getDataAt(dst_row),
+            dst_column_host_name.getDataAt(dst_row),
+            dst_array_thread_id[dst_row],
+        };
+
+        if (auto it = rows_by_name.find(id); it != rows_by_name.end())
+        {
+            size_t src_row = it->second;
+            dst_array_current_time[dst_row] = src_array_current_time[src_row];
+
+            switch (dst_array_type[dst_row])
+            {
+                case ProfileEvents::Type::INCREMENT:
+                    dst_array_value[dst_row] += src_array_value[src_row];
+                    break;
+                case ProfileEvents::Type::GAUGE:
+                    dst_array_value[dst_row] = src_array_value[src_row];
+                    break;
+            }
+
+            rows_by_name.erase(it);
+        }
+    }
+
+    /// Copy rows from src that dst does not contains.
+    for (const auto & [id, pos] : rows_by_name)
+    {
+        for (size_t col = 0; col < src.columns(); ++col)
+        {
+            mutable_columns[col]->insert((*src.getByPosition(col).column)[pos]);
+        }
+    }
+
+    dst.setColumns(std::move(mutable_columns));
+}
 
 
 std::atomic_flag exit_on_signal = ATOMIC_FLAG_INIT;
@@ -361,12 +465,13 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
+                out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
                 if (query_with_output->compression)
@@ -391,6 +496,12 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                     throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
+            }
+            else if (query_with_output->out_file)
+            {
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
@@ -442,6 +553,37 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
+void ClientBase::updateSuggest(const ASTCreateQuery & ast_create)
+{
+    std::vector<std::string> new_words;
+
+    if (ast_create.database)
+        new_words.push_back(ast_create.getDatabase());
+    new_words.push_back(ast_create.getTable());
+
+    if (ast_create.columns_list && ast_create.columns_list->columns)
+    {
+        for (const auto & elem : ast_create.columns_list->columns->children)
+        {
+            if (const auto * column = elem->as<ASTColumnDeclaration>())
+                new_words.push_back(column->name);
+        }
+    }
+
+    suggest->addWords(std::move(new_words));
+}
+
+bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context)
+{
+    if (!insert_query.data)
+        return false;
+
+    auto settings = context->getSettings();
+    if (insert_query.settings_ast)
+        settings.applyChanges(insert_query.settings_ast->as<ASTSetQuery>()->changes);
+
+    return !settings.async_insert;
+}
 
 void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
@@ -455,17 +597,31 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     String query_to_execute;
 
-    // An INSERT query may have the data that follow query text. Remove the
-    /// Send part of query without data, because data will be sent separately.
-    auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && insert->data)
+    /// Query will be parsed before checking the result because error does not
+    /// always means a problem, i.e. if table already exists, and it is no a
+    /// huge problem if suggestion will be added even on error, since this is
+    /// just suggestion.
+    if (auto * create = parsed_query->as<ASTCreateQuery>())
+    {
+        /// Do not update suggest, until suggestion will be ready
+        /// (this will avoid extra complexity)
+        if (suggest)
+            updateSuggest(*create);
+    }
+
+    /// An INSERT query may have the data that follows query text.
+    /// Send part of the query without data, because data will be sent separately.
+    /// But for asynchronous inserts we don't extract data, because it's needed
+    /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
+    const auto * insert = parsed_query->as<ASTInsertQuery>();
+    if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
     else
         query_to_execute = full_query;
 
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -704,12 +860,12 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (progress_indication.print_hardware_utilization)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+        const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
@@ -736,25 +892,26 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name][thread_id].memory_usage = value;
             }
         }
-        progress_indication.updateThreadEventData(thread_times);
-    }
+        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
+        progress_indication.updateThreadEventData(thread_times, elapsed_time);
 
-    if (profile_events.print)
-    {
-        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        if (profile_events.print)
         {
-            initLogsOutputStream();
-            progress_indication.clearProgressOutput();
-            logs_out_stream->writeProfileEvents(block);
-            logs_out_stream->flush();
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            {
+                initLogsOutputStream();
+                progress_indication.clearProgressOutput();
+                logs_out_stream->writeProfileEvents(block);
+                logs_out_stream->flush();
 
-            profile_events.watch.restart();
-            profile_events.last_block = {};
+                profile_events.last_block = {};
+            }
+            else
+            {
+                incrementProfileEventsBlock(profile_events.last_block, block);
+            }
         }
-        else
-        {
-            profile_events.last_block = block;
-        }
+        profile_events.watch.restart();
     }
 }
 
@@ -905,11 +1062,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
+        String current_format = parsed_insert_query->format;
+        if (current_format.empty())
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
+
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
-            parsed_insert_query->format,
+            current_format,
             getFormatSettings(global_context),
             compression_method,
             columns_description_for_query,
@@ -1080,7 +1241,7 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Progress:
                 onProgress(packet.progress);
-                return true;
+                break;
 
             default:
                 throw NetException(
@@ -1114,7 +1275,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, std_out);
-            writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
@@ -1156,8 +1317,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
+        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
                 throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -1287,16 +1450,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // row input formats (e.g. TSV) can't tell when the input stops,
     // unlike VALUES.
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    const char * query_to_execute_end = this_query_end;
+
     if (insert_ast && insert_ast->data)
     {
         this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
         insert_ast->end = this_query_end;
-        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), insert_ast->data - this_query_begin);
+        query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
-    else
-    {
-        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-    }
+
+    query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
 
     // Try to include the trailing comment with test hints. It is just
     // a guess for now, because we don't yet know where the query ends
@@ -1338,6 +1501,25 @@ String ClientBase::prompt() const
 }
 
 
+void ClientBase::initQueryIdFormats()
+{
+    if (!query_id_formats.empty())
+        return;
+
+    /// Initialize query_id_formats if any
+    if (config().has("query_id_formats"))
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config().keys("query_id_formats", keys);
+        for (const auto & name : keys)
+            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+    }
+
+    if (query_id_formats.empty())
+        query_id_formats.emplace_back("Query id:", " {query_id}\n");
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
@@ -1345,10 +1527,11 @@ void ClientBase::runInteractive()
     if (print_time_to_stderr)
         throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+    initQueryIdFormats();
+
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
-    std::optional<Suggest> suggest;
     suggest.emplace();
     if (load_suggestions)
     {
@@ -1365,18 +1548,6 @@ void ClientBase::runInteractive()
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
-
-    /// Initialize query_id_formats if any
-    if (config().has("query_id_formats"))
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config().keys("query_id_formats", keys);
-        for (const auto & name : keys)
-            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-    }
-
-    if (query_id_formats.empty())
-        query_id_formats.emplace_back("Query id:", " {query_id}\n");
 
     /// Load command history if present.
     if (config().has("history_file"))
@@ -1413,18 +1584,12 @@ void ClientBase::runInteractive()
         highlight_callback = highlight;
 
     ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
-
-#elif defined(USE_READLINE) && USE_READLINE
-    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
-    /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-    ///  disabled, so that we are able to paste and execute multiline queries in a whole
-    ///  instead of erroring out, while be less intrusive.
-    if (config().has("multiquery") && !config().has("multiline"))
-        lr.enableBracketedPaste();
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr.enableBracketedPaste();
 
     do
     {
@@ -1492,21 +1657,21 @@ void ClientBase::runInteractive()
 
 void ClientBase::runNonInteractive()
 {
+    if (delayed_interactive)
+        initQueryIdFormats();
+
     if (!queries_files.empty())
     {
         auto process_multi_query_from_file = [&](const String & file)
         {
-            auto text = getQueryTextPrefix();
             String queries_from_file;
 
             ReadBufferFromFile in(file);
             readStringUntilEOF(queries_from_file, in);
 
-            text += queries_from_file;
-            return executeMultiQuery(text);
+            return executeMultiQuery(queries_from_file);
         };
 
-        /// Read all queries into `text`.
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
@@ -1521,9 +1686,6 @@ void ClientBase::runNonInteractive()
     }
 
     String text;
-    if (is_multiquery)
-        text = getQueryTextPrefix();
-
     if (config().has("query"))
     {
         text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
@@ -1559,7 +1721,12 @@ void ClientBase::showClientVersion()
 }
 
 
-void ClientBase::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments)
+void ClientBase::readArguments(
+    int argc,
+    char ** argv,
+    Arguments & common_arguments,
+    std::vector<Arguments> & external_tables_arguments,
+    std::vector<Arguments> & hosts_and_ports_arguments)
 {
     /** We allow different groups of arguments:
         * - common arguments;
@@ -1570,6 +1737,10 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         */
 
     bool in_external_group = false;
+
+    std::string prev_host_arg;
+    std::string prev_port_arg;
+
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         const char * arg = argv[arg_num];
@@ -1630,10 +1801,74 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
             }
+            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
+            {
+                std::string host_arg;
+                /// --host host
+                if (arg == "--host"sv || arg == "-h"sv)
+                {
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    host_arg = "--host=";
+                    host_arg.append(arg);
+                }
+                else
+                    host_arg = arg;
+
+                /// --port port1 --host host1
+                if (!prev_port_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
+                    prev_port_arg.clear();
+                }
+                else
+                {
+                    /// --host host1 --host host2
+                    if (!prev_host_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_host_arg});
+
+                    prev_host_arg = host_arg;
+                }
+            }
+            else if (startsWith(arg, "--port"))
+            {
+                std::string port_arg = arg;
+                /// --port port
+                if (arg == "--port"sv)
+                {
+                    port_arg.push_back('=');
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    port_arg.append(arg);
+                }
+
+                /// --host host1 --port port1
+                if (!prev_host_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
+                    prev_host_arg.clear();
+                }
+                else
+                {
+                    /// --port port1 --port port2
+                    if (!prev_port_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_port_arg});
+
+                    prev_port_arg = port_arg;
+                }
+            }
             else
                 common_arguments.emplace_back(arg);
         }
     }
+    if (!prev_host_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_host_arg});
+    if (!prev_port_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_port_arg});
 }
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
@@ -1646,7 +1881,13 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     /// Check unrecognized options without positional options.
     auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
     if (!unrecognized_options.empty())
+    {
+        auto hints = this->getHints(unrecognized_options[0]);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
+
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+    }
 
     /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
     unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
@@ -1670,8 +1911,9 @@ void ClientBase::init(int argc, char ** argv)
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
+    std::vector<Arguments> hosts_and_ports_arguments;
 
-    readArguments(argc, argv, common_arguments, external_tables_arguments);
+    readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     po::variables_map options;
     OptionsDescription options_description;
@@ -1721,9 +1963,29 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
+
+    auto getter = [](const auto & op)
+    {
+        String op_long_name = op->long_name();
+        return "--" + String(op_long_name);
+    };
+
+    if (options_description.main_description)
+    {
+        const auto & main_options = options_description.main_description->options();
+        std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.external_description)
+    {
+        const auto & external_options = options_description.external_description->options();
+        std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -1799,16 +2061,23 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("hardware-utilization"))
-        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
-    processOptions(options_description, options, external_tables_arguments);
+    processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
+    {
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    }
 }
 
 }

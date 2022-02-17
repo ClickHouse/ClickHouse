@@ -1,9 +1,12 @@
+# rebuild in #33610
 # docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -26,12 +29,14 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
-    && chmod +x dpkg-deb \
-    && cp dpkg-deb /usr/bin
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /usr/bin/dpkg-deb https://github.com/ClickHouse-Extras/dpkg/releases/download/1.21.1-clickhouse/dpkg-deb-${arch}
 
 RUN apt-get update \
     && apt-get install \
@@ -62,8 +67,14 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes
 
 
-# This symlink required by gcc to find lld compiler
-RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
+# These symlinks are required:
+# /usr/bin/ld.lld: by gcc to find lld compiler
+# /usr/bin/aarch64-linux-gnu-obj*: for debug symbols stripping
+RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld \
+    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objcopy /usr/bin/aarch64-linux-gnu-strip \
+    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objcopy /usr/bin/aarch64-linux-gnu-objcopy \
+    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objdump /usr/bin/aarch64-linux-gnu-objdump
+
 
 COPY build.sh /
 

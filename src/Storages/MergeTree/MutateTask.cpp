@@ -315,8 +315,7 @@ NameSet collectFilesToSkip(
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
-        serialization->enumerateStreams(callback);
+        source_part->getSerialization({entry.name, entry.type})->enumerateStreams(callback);
     }
     for (const auto & index : indices_to_recalc)
     {
@@ -341,8 +340,7 @@ static NameToNameVector collectFilesForRenames(
     std::map<String, size_t> stream_counts;
     for (const auto & column : source_part->getColumns())
     {
-        auto serialization = source_part->getSerializationForColumn(column);
-        serialization->enumerateStreams(
+        source_part->getSerialization(column)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -386,10 +384,7 @@ static NameToNameVector collectFilesForRenames(
 
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-            {
-                auto serialization = source_part->getSerializationForColumn(*column);
-                serialization->enumerateStreams(callback);
-            }
+                source_part->getSerialization(*column)->enumerateStreams(callback);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
@@ -411,10 +406,7 @@ static NameToNameVector collectFilesForRenames(
 
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-            {
-                auto serialization = source_part->getSerializationForColumn(*column);
-                serialization->enumerateStreams(callback);
-            }
+                source_part->getSerialization(*column)->enumerateStreams(callback);
         }
     }
 
@@ -658,7 +650,6 @@ public:
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
-
             next_level_parts.back()->is_temp = true;
         }
 
@@ -813,8 +804,12 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             const auto & projection = *ctx->projections_to_build[i];
             auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
             if (projection_block)
-                projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            {
+                auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                tmp_part.finalize();
+                projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+            }
         }
 
         (*ctx->mutate_entry)->rows_written += cur_block.rows();
@@ -832,8 +827,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+            temp_part.finalize();
+            projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
     }
 
@@ -985,7 +982,7 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync);
         ctx->out.reset();
     }
 
@@ -1089,9 +1086,7 @@ private:
                 ctx->disk->createDirectories(destination);
                 for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
                 {
-                    String p_destination = destination + "/";
-                    String p_file_name = p_it->name();
-                    p_destination += p_it->name();
+                    String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
                 }
             }
@@ -1143,9 +1138,11 @@ private:
             ctx->mutating_pipeline.reset();
 
             auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->writeSuffixAndGetChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums, ctx->need_sync);
+                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
+                    ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
+
+            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
@@ -1301,7 +1298,13 @@ bool MutateTask::prepare()
 
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
-    ctx->new_data_part->setColumns(MergeTreeDataMergerMutator::getColumnsForNewDataPart(ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->for_file_renames));
+
+    auto [new_columns, new_infos] = MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+        ctx->source_part, ctx->updated_header, ctx->storage_columns,
+        ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
+
+    ctx->new_data_part->setColumns(new_columns);
+    ctx->new_data_part->setSerializationInfos(new_infos);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     ctx->disk = ctx->new_data_part->volume->getDisk();

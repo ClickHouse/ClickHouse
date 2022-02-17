@@ -1,0 +1,120 @@
+CREATE TABLE default.bool_test\n(\n    `value` Bool,\n    `f` String\n)\nENGINE = Memory
+false	test
+true	test
+false	test
+true	test
+false	test
+true	test
+false	test
+true	test
+false	test
+true	test
+{"value":false,"f":"test"}
+{"value":true,"f":"test"}
+{"value":false,"f":"test"}
+{"value":true,"f":"test"}
+{"value":false,"f":"test"}
+{"value":true,"f":"test"}
+{"value":false,"f":"test"}
+{"value":true,"f":"test"}
+{"value":false,"f":"test"}
+{"value":true,"f":"test"}
+0	test
+1	test
+0	test
+1	test
+0	test
+1	test
+0	test
+1	test
+0	test
+1	test
+true	test
+true	test
+true	test
+true	test
+true	test
+False,"test"
+False,"test"
+False,"test"
+False,"test"
+False,"test"
+False,"test"
+True,"test"
+True,"test"
+True,"test"
+True,"test"
+True,"test"
+True,"test"
+False	test
+False	test
+False	test
+False	test
+False	test
+False	test
+True	test
+True	test
+True	test
+True	test
+True	test
+True	test
+No,"test"
+No,"test"
+No,"test"
+No,"test"
+No,"test"
+No,"test"
+No,"test"
+Yes,"test"
+Yes,"test"
+Yes,"test"
+Yes,"test"
+Yes,"test"
+Yes,"test"
+Yes,"test"
+No	test
+No	test
+No	test
+No	test
+No	test
+No	test
+No	test
+Yes	test
+Yes	test
+Yes	test
+Yes	test
+Yes	test
+Yes	test
+Yes	test
+Off,"test"
+Off,"test"
+Off,"test"
+Off,"test"
+Off,"test"
+Off,"test"
+Off,"test"
+Off,"test"
+On,"test"
+On,"test"
+On,"test"
+On,"test"
+On,"test"
+On,"test"
+On,"test"
+On,"test"
+Off	test
+Off	test
+Off	test
+Off	test
+Off	test
+Off	test
+Off	test
+Off	test
+On	test
+On	test
+On	test
+On	test
+On	test
+On	test
+On	test
+On	test

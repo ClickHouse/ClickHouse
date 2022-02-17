@@ -31,6 +31,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 当创建数据库的新副本时，该副本会自己创建表。如果副本已经不可用很长一段时间，并且已经滞后于复制日志-它用ZooKeeper中的当前元数据检查它的本地元数据，将带有数据的额外表移动到一个单独的非复制数据库(以免意外地删除任何多余的东西)，创建缺失的表，如果表名已经被重命名，则更新表名。数据在`ReplicatedMergeTree`级别被复制，也就是说，如果表没有被复制，数据将不会被复制(数据库只负责元数据)。
 
+允许[`ALTER TABLE ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md)查询，但不允许复制。数据库引擎将只向当前副本添加/获取/删除分区/部件。但是，如果表本身使用了Replicated表引擎，那么数据将在使用`ATTACH`后被复制。
 ## 使用示例 {#usage-example}
 
 创建三台主机的集群:

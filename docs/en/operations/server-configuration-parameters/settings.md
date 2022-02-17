@@ -69,8 +69,6 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!--
-
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -150,7 +148,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
--->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -438,25 +435,57 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
+
+By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
 !!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+    `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 
-This section contains the following parameters:
+!!! note "Note"
+    These credentials are common for replication via `HTTP` and `HTTPS`.
 
--   `user` — username.
--   `password` — password.
+The section contains the following parameters:
 
-**Example**
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+
+**Credentials Rotation**
+
+ClickHouse supports dynamic interserver credentials rotation without stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
+
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
@@ -508,7 +537,7 @@ Keys:
 -   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
 -   `log` – The log file. Contains all the entries according to `level`.
 -   `errorlog` – Error log file.
--   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
 
 **Example**
@@ -643,7 +672,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table.
+Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Note"
 	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -651,12 +681,54 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `100`.
 
 **Example**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+The maximum number of simultaneously processed `INSERT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+The maximum number of simultaneously processed `SELECT` queries.
+
+!!! info "Note"
+    These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -666,7 +738,9 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -682,7 +756,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -753,9 +832,13 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-The maximum number of threads in the Global Thread pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Default value: 10000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -765,9 +848,13 @@ Default value: 10000.
 
 ## max_thread_pool_free_size {#max-thread-pool-free-size}
 
-The number of threads that are always held in the Global Thread pool.
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
-Default value: 1000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `1000`.
 
 **Example**
 
@@ -777,9 +864,13 @@ Default value: 1000.
 
 ## thread_pool_queue_size {#thread-pool-queue-size}
 
-The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
 
-Default value: 10000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -1197,6 +1288,20 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
+```
+
 ## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
@@ -1446,7 +1551,7 @@ You can also define sections `memory` — means storing information only in memo
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
--   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authenthication attept will fail as if the provided password was incorrect.
+-   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect.
 
 **Example**
 
@@ -1510,3 +1615,4 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+

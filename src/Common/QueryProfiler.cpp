@@ -1,9 +1,9 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
+#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
-#include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <base/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -26,6 +26,12 @@ namespace
 #if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
 #endif
+    /// Even after timer_delete() the signal can be delivered,
+    /// since it does not do anything with pending signals.
+    ///
+    /// And so to overcome this flag is exists,
+    /// to ignore delivered signals after timer_delete().
+    thread_local bool signal_handler_disarmed = true;
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -117,7 +123,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     if (sigaddset(&sa.sa_mask, pause_signal))
         throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
-    if (sigaction(pause_signal, &sa, previous_handler))
+    if (sigaction(pause_signal, &sa, nullptr))
         throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     try
@@ -133,7 +139,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 #else
         sev._sigev_un._tid = thread_id;
 #endif
-        if (timer_create(clock_type, &sev, &timer_id))
+        timer_t local_timer_id;
+        if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
@@ -143,6 +150,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
+        timer_id.emplace(local_timer_id);
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
@@ -154,8 +162,10 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
 
         struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
-        if (timer_settime(timer_id, 0, &timer_spec, nullptr))
+        if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
             throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+
+        signal_handler_disarmed = false;
     }
     catch (...)
     {
@@ -175,11 +185,14 @@ template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
-    if (timer_id != nullptr && timer_delete(timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+    if (timer_id.has_value())
+    {
+        if (timer_delete(*timer_id))
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        timer_id.reset();
+    }
 
-    if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+    signal_handler_disarmed = true;
 #endif
 }
 
@@ -192,6 +205,9 @@ QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (signal_handler_disarmed)
+        return;
+
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
@@ -202,6 +218,9 @@ QueryProfilerCPU::QueryProfilerCPU(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (signal_handler_disarmed)
+        return;
+
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
 }

@@ -139,7 +139,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
 
     return pipes;
 }
@@ -280,7 +280,8 @@ StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
     ContextPtr context_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
 {
@@ -291,6 +292,9 @@ StorageLiveView::StorageLiveView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    if (!comment.empty())
+        storage_metadata.setComment(comment);
+
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
@@ -557,7 +561,7 @@ Pipe StorageLiveView::read(
             refresh(false);
     }
 
-    return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
 }
 
 Pipe StorageLiveView::watch(
@@ -621,7 +625,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns);
+        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });
 }
 

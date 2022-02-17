@@ -192,6 +192,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 additional_columns, columns, metadata_snapshot->getColumns(), storage.getContext());
         if (dag)
         {
+            dag->addMaterializingOutputActions();
             auto actions = std::make_shared<
                 ExpressionActions>(std::move(dag),
                 ExpressionActionsSettings::fromSettings(storage.getContext()->getSettingsRef()));
@@ -297,7 +298,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part->getColumnPosition(part_column.name);
+            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }
