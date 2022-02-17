@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -28,6 +29,8 @@ struct MapFilterImpl
 {
     using data_type = DataTypeMap;
     using column_type = ColumnMap;
+
+    static constexpr auto name = "mapFilter";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
@@ -85,14 +88,6 @@ struct MapFilterImpl
     }
 };
 
-struct NameMapFilter { static constexpr auto name = "mapFilter"; };
-using FunctionMapFilter = FunctionArrayMapped<MapFilterImpl, NameMapFilter>;
-
-void registerFunctionMapFilter(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionMapFilter>();
-}
-
 
 /** mapApply((k,v) -> expression, map) - apply the expression to the map.
   */
@@ -101,6 +96,8 @@ struct MapApplyImpl
     using data_type = DataTypeMap;
     using column_type = ColumnMap;
 
+    static constexpr auto name = "mapApply";
+
     /// true if the expression (for an overload of f(expression, maps)) or a map (for f(map)) should be boolean.
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
@@ -108,12 +105,15 @@ struct MapApplyImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & /*elems*/)
     {
-        const auto & tuple_types = typeid_cast<const DataTypeTuple *>(&*expression_return)->getElements();
-        if (tuple_types.size() != 2)
-            throw Exception("Expected 2 columns as map's key and value, but found "
-                + toString(tuple_types.size()) + " columns", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        const auto * tuple_types = typeid_cast<const DataTypeTuple *>(expression_return.get());
+        if (!tuple_types)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Expected return type is tuple, got {}", expression_return->getName());
+        if (tuple_types->getElements().size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Expected 2 columns as map's key and value, but found {}", tuple_types->getElements().size());
 
-        return std::make_shared<DataTypeMap>(tuple_types);
+        return std::make_shared<DataTypeMap>(tuple_types->getElements());
     }
 
     static ColumnPtr execute(const ColumnMap & map, ColumnPtr mapped)
@@ -123,9 +123,9 @@ struct MapApplyImpl
         {
             const ColumnConst * column_const_tuple = checkAndGetColumnConst<ColumnTuple>(mapped.get());
             if (!column_const_tuple)
-                throw Exception("Expected tuple column, found " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
-            ColumnPtr column_tuple_ptr = recursiveRemoveLowCardinality(column_const_tuple->convertToFullColumn());
-            column_tuple = checkAndGetColumn<ColumnTuple>(column_tuple_ptr.get());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected tuple column, found {}", mapped->getName());
+            auto cols = convertConstTupleToConstantElements(*column_const_tuple);
+            return ColumnMap::create(cols[0]->convertToFullColumnIfConst(), cols[1]->convertToFullColumnIfConst(), map.getNestedColumn().getOffsetsPtr());
         }
 
         return ColumnMap::create(column_tuple->getColumnPtr(0), column_tuple->getColumnPtr(1),
@@ -133,12 +133,10 @@ struct MapApplyImpl
     }
 };
 
-struct NameMapApply { static constexpr auto name = "mapApply"; };
-using FunctionMapApply = FunctionArrayMapped<MapApplyImpl, NameMapApply>;
-
 void registerFunctionMapApply(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMapApply>();
+    factory.registerFunction<FunctionArrayMapped<MapFilterImpl, MapFilterImpl>>();
+    factory.registerFunction<FunctionArrayMapped<MapApplyImpl, MapApplyImpl>>();
 }
 
 }

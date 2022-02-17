@@ -180,11 +180,28 @@ public:
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+            static_assert(
+                std::is_same_v<typename Impl::data_type, DataTypeMap> ||
+                std::is_same_v<typename Impl::data_type, DataTypeArray>,
+                "unsupported type");
+
+            if (arguments.size() < 2)
+            {
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "{}", arguments.size());
+            }
+
             const auto * first_array_type = checkAndGetDataType<typename Impl::data_type>(arguments[1].type.get());
+
+            if (!first_array_type)
+                throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1].type->getName());
+
             if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
                 return Impl::getReturnType(return_type, first_array_type->getNestedType());
-            else
+
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeMap>)
                 return Impl::getReturnType(return_type, first_array_type->getKeyValueTypes());
+
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
         }
     }
 

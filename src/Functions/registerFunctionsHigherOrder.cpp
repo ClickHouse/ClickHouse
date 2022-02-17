@@ -18,7 +18,6 @@ void registerFunctionsArraySort(FunctionFactory & factory);
 void registerFunctionArrayCumSum(FunctionFactory & factory);
 void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory);
 void registerFunctionArrayDifference(FunctionFactory & factory);
-void registerFunctionMapFilter(FunctionFactory & factory);
 void registerFunctionMapApply(FunctionFactory & factory);
 
 void registerFunctionsHigherOrder(FunctionFactory & factory)
@@ -38,7 +37,6 @@ void registerFunctionsHigherOrder(FunctionFactory & factory)
     registerFunctionArrayCumSum(factory);
     registerFunctionArrayCumSumNonNegative(factory);
     registerFunctionArrayDifference(factory);
-    registerFunctionMapFilter(factory);
     registerFunctionMapApply(factory);
 }
 
