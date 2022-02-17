@@ -43,13 +43,6 @@ struct FormatSettings
     };
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
 
-    enum class SimpleTextFormat
-    {
-        Ordinary,
-        Hive
-    };
-    SimpleTextFormat default_simple_text_format = SimpleTextFormat::Ordinary;
-
     enum class DateTimeOutputFormat
     {
         Simple,
