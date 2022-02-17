@@ -43,6 +43,7 @@ class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 struct ZeroCopyLock;
 
@@ -391,6 +392,7 @@ public:
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
         DataPartsVector & normal_parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
     std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
@@ -874,7 +876,7 @@ public:
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &) const {}
+    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {}
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
@@ -1197,7 +1199,7 @@ private:
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
-    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr &, const DiskPtr &) { return std::nullopt; }
+    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

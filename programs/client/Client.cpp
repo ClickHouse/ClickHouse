@@ -481,48 +481,72 @@ catch (...)
 
 void Client::connect()
 {
-    connection_parameters = ConnectionParameters(config());
-
-    if (is_interactive)
-        std::cout << "Connecting to "
-                    << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                        : "")
-                    << connection_parameters.host << ":" << connection_parameters.port
-                    << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
-
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
-    try
+    for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
     {
-        connection = Connection::createConnection(connection_parameters, global_context);
-
-        if (max_client_network_bandwidth)
+        try
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-            connection->setThrottler(throttler);
-        }
+            connection_parameters
+                = ConnectionParameters(config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
 
-        connection->getServerVersion(
-            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
-    }
-    catch (const Exception & e)
-    {
-        /// It is typical when users install ClickHouse, type some password and instantly forget it.
-        if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-            && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (is_interactive)
+                std::cout << "Connecting to "
+                          << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                                                                              : "")
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+
+            connection = Connection::createConnection(connection_parameters, global_context);
+
+            if (max_client_network_bandwidth)
+            {
+                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                connection->setThrottler(throttler);
+            }
+
+            connection->getServerVersion(
+                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            config().setString("host", connection_parameters.host);
+            config().setInt("port", connection_parameters.port);
+            break;
+        }
+        catch (const Exception & e)
         {
-            std::cerr << std::endl
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                << "and deleting this file will reset the password." << std::endl
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                << std::endl;
-        }
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                std::cerr << std::endl
+                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                          << "and deleting this file will reset the password." << std::endl
+                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                          << std::endl;
+                throw;
+            }
+            else
+            {
+                if (attempted_address_index == hosts_and_ports.size() - 1)
+                    throw;
 
-        throw;
+                if (is_interactive)
+                {
+                    std::cerr << "Connection attempt to database at "
+                              << connection_parameters.host << ":" << connection_parameters.port
+                              << " resulted in failure"
+                              << std::endl
+                              << getExceptionMessage(e, false)
+                              << std::endl
+                              << "Attempting connection to the next provided address"
+                              << std::endl;
+                }
+            }
+        }
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
@@ -966,8 +990,6 @@ void Client::addOptions(OptionsDescription & options_description)
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
-        ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
-        ("port", po::value<int>()->default_value(9000), "server port")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -1013,12 +1035,24 @@ void Client::addOptions(OptionsDescription & options_description)
     (
         "types", po::value<std::string>(), "types"
     );
+
+    /// Commandline options related to hosts and ports.
+    options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
+    options_description.hosts_and_ports_description->add_options()
+        ("host,h", po::value<String>()->default_value("localhost"),
+         "Server hostname. Multiple hosts can be passed via multiple arguments"
+         "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+         "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+         "if there is no such host, the port will be attached to the next first host or to default host.")
+         ("port", po::value<UInt16>()->default_value(DBMS_DEFAULT_PORT), "server ports")
+    ;
 }
 
 
 void Client::processOptions(const OptionsDescription & options_description,
                             const CommandLineOptions & options,
-                            const std::vector<Arguments> & external_tables_arguments)
+                            const std::vector<Arguments> & external_tables_arguments,
+                            const std::vector<Arguments> & hosts_and_ports_arguments)
 {
     namespace po = boost::program_options;
 
@@ -1050,6 +1084,25 @@ void Client::processOptions(const OptionsDescription & options_description,
             exit(exit_code);
         }
     }
+
+    if (hosts_and_ports_arguments.empty())
+    {
+        hosts_and_ports.emplace_back(HostAndPort{"localhost", DBMS_DEFAULT_PORT});
+    }
+    else
+    {
+        for (const auto & hosts_and_ports_argument : hosts_and_ports_arguments)
+        {
+            /// Parse commandline options related to external tables.
+            po::parsed_options parsed_hosts_and_ports
+                = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
+            po::variables_map host_and_port_options;
+            po::store(parsed_hosts_and_ports, host_and_port_options);
+            hosts_and_ports.emplace_back(
+                HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
+        }
+    }
+
     send_external_tables = true;
 
     shared_context = Context::createShared();
@@ -1074,12 +1127,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.count("host") && !options["host"].defaulted())
-        config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("port") && !options["port"].defaulted())
-        config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
         config().setBool("secure", true);
     if (options.count("user") && !options["user"].defaulted())

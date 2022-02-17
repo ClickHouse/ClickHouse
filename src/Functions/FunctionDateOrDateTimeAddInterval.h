@@ -1,4 +1,6 @@
 #pragma once
+#include <type_traits>
+#include <Core/AccurateComparison.h>
 #include <Common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
@@ -22,10 +24,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
-    extern const int SYNTAX_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
@@ -65,12 +67,12 @@ struct AddNanosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addNanoSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addNanoSeconds() cannot be used with Date32", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addNanoSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -117,12 +119,12 @@ struct AddMicrosecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addMicroSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMicroSeconds() cannot be used with Date32", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addMicroSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -169,12 +171,12 @@ struct AddMillisecondsImpl
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(UInt16, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addMilliSeconds() cannot be used with Date", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     static inline NO_SANITIZE_UNDEFINED DateTime64 execute(Int32, Int64, const DateLUTImpl &, UInt16 = 0)
     {
-        throw Exception("addMilliSeconds() cannot be used with Date32", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("addMilliSeconds() cannot be used with Date32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -489,7 +491,7 @@ struct Adder
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], delta, time_zone, scale);
+            vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta), time_zone, scale);
     }
 
     template <typename FromVectorType, typename ToVectorType>
@@ -519,12 +521,22 @@ struct Adder
     }
 
 private:
+
+    template <typename Value>
+    static Int64 checkOverflow(Value val)
+    {
+        Int64 result;
+        if (accurate::convertNumeric<Value, Int64, false>(val, result))
+            return result;
+        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    }
+
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
         const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone, scale);
+            vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, scale);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
@@ -532,7 +544,7 @@ private:
         const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(from, delta.getData()[i], time_zone, scale);
+            vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, scale);
     }
 };
 
@@ -555,10 +567,9 @@ struct DateTimeAddIntervalImpl
         auto result_col = result_type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
+        const IColumn & delta_column = *arguments[1].column;
         if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
         {
-            const IColumn & delta_column = *arguments[1].column;
-
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
                 op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone, scale);
             else
@@ -568,14 +579,12 @@ struct DateTimeAddIntervalImpl
         {
             op.constantVector(
                 sources_const->template getValue<FromValueType>(),
-                col_to->getData(),
-                *arguments[1].column, time_zone, scale);
+                col_to->getData(), delta_column, time_zone, scale);
         }
         else
         {
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                            arguments[0].column->getName(), Transform::name);
         }
 
         return result_col;
