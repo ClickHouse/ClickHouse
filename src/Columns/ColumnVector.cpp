@@ -196,7 +196,7 @@ template <typename T>
 bool ColumnVector<T>::isComparatorCompilable() const
 {
     /// TODO: for std::is_floating_point_v<T> we need implement is_nan in LLVM IR.
-    return std::is_arithmetic_v<T>;
+    return std::is_integral_v<T>;
 }
 
 template <typename T>
