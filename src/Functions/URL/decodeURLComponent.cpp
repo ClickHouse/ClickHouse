@@ -113,7 +113,7 @@ enum URLCodeStrategy
 };
 
 /// Percent decode of URL data.
-template <bool plus_space_swap, URLCodeStrategy code_strategy>
+template <URLCodeStrategy code_strategy, bool plus_space_swap>
 struct CodeURLComponentImpl
 {
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
@@ -158,10 +158,10 @@ struct NameDecodeURLComponent { static constexpr auto name = "decodeURLComponent
 struct NameEncodeURLComponent { static constexpr auto name = "encodeURLComponent"; };
 struct NameDecodeURLFormComponent { static constexpr auto name = "decodeURLFormComponent"; };
 struct NameEncodeURLFormComponent { static constexpr auto name = "encodeURLFormComponent"; };
-using FunctionDecodeURLComponent = FunctionStringToString<CodeURLComponentImpl<false, decode>, NameDecodeURLComponent>;
-using FunctionEncodeURLComponent = FunctionStringToString<CodeURLComponentImpl<false, encode>, NameEncodeURLComponent>;
-using FunctionDecodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<true, decode>, NameDecodeURLFormComponent>;
-using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<true, encode>, NameEncodeURLFormComponent>;
+using FunctionDecodeURLComponent = FunctionStringToString<CodeURLComponentImpl<decode, false>, NameDecodeURLComponent>;
+using FunctionEncodeURLComponent = FunctionStringToString<CodeURLComponentImpl<encode, false>, NameEncodeURLComponent>;
+using FunctionDecodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<decode, true>, NameDecodeURLFormComponent>;
+using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<encode, true>, NameEncodeURLFormComponent>;
 
 void registerFunctionEncodeAndDecodeURLComponent(FunctionFactory & factory)
 {
