@@ -1,6 +1,6 @@
 -- Tags: replica, distributed
 
-set allow_experimental_parallel_reading_from_replicas=1;
+set allow_experimental_parallel_reading_from_replicas=0;
 
 drop table if exists test_max_parallel_replicas_lr;
 
