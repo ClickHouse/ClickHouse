@@ -22,13 +22,13 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_
         /// which does not have any limits and sampling settings configured.
         /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
         /// that has limits and sampling configured.
-        MemoryTracker * parent;
-        if (background_thread_memory_tracker->level == VariableContext::Thread &&
-            (parent = background_thread_memory_tracker->getParent()) &&
-            parent != &total_memory_tracker)
-        {
-            background_thread_memory_tracker = parent;
-        }
+        // MemoryTracker * parent;
+        // if (background_thread_memory_tracker->level == VariableContext::Thread &&
+        //     (parent = background_thread_memory_tracker->getParent()) &&
+        //     parent != &total_memory_tracker)
+        // {
+        //     background_thread_memory_tracker = parent;
+        // }
 
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(&merge_list_entry->memory_tracker);
