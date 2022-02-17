@@ -606,6 +606,53 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<true>(s, buf);
 }
 
+template <typename Vector>
+void readStringUntilChar(Vector & s, ReadBuffer & buf, char delimiter)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    /// Emptiness and not even in quotation marks.
+    if (*buf.position() == delimiter)
+        return;
+
+    /// Unquoted case. Look for delimiter or \r or \n.
+    while (!buf.eof())
+    {
+        char * next_pos = buf.position();
+
+        [&]()
+        {
+#ifdef __SSE2__
+            auto rc = _mm_set1_epi8('\r');
+            auto nc = _mm_set1_epi8('\n');
+            auto dc = _mm_set1_epi8(delimiter);
+            for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+            {
+                __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
+                auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
+                uint16_t bit_mask = _mm_movemask_epi8(eq);
+                if (bit_mask)
+                {
+                    next_pos += __builtin_ctz(bit_mask);
+                    return;
+                }
+            }
+#endif
+            while (next_pos < buf.buffer().end() && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                ++next_pos;
+        }();
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        return;
+    }
+}
+
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)

@@ -282,6 +282,53 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     });
 }
 
+void SerializationTuple::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    const char item_delim = settings.hive_text.collection_items_delimiter;
+    const char pair_delim = settings.hive_text.map_keys_delimiter;
+
+    if (have_explicit_names)
+    {
+        addElementSafe(
+            elems.size(),
+            column,
+            [&]
+            {
+                const size_t size = elems.size();
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (i != 0)
+                        assertChar(item_delim, istr);
+
+                    String name;
+                    readStringUntilChar(name, istr, pair_delim);
+                    assertChar(pair_delim, istr);
+
+                    const size_t element_pos = getPositionByName(name);
+                    auto & element_column = extractElementColumn(column, element_pos);
+                    elems[element_pos]->deserializeTextHiveText(element_column, istr, settings);
+                }
+            });
+    }
+    else
+    {
+        addElementSafe(
+            elems.size(),
+            column,
+            [&]
+            {
+                const size_t size = elems.size();
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (i != 0)
+                        assertChar(item_delim, istr);
+
+                    elems[i]->deserializeTextHiveText(extractElementColumn(column, i), istr, settings);
+                }
+            });
+    }
+}
+
 void SerializationTuple::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,

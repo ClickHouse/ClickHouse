@@ -14,6 +14,8 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings)
 {
     FormatSettings updated = settings;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
+    updated.csv.allow_single_quotes = false;
+    updated.csv.allow_double_quotes = false;
     return updated;
 }
 

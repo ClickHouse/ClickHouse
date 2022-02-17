@@ -14,7 +14,7 @@ private:
 public:
     explicit SerializationFixedString(size_t n_) : n(n_) {}
 
-    String getName() const override { return "FixedString"; } 
+    String getName() const override { return "FixedString"; }
     size_t getN() const { return n; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;

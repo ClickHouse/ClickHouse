@@ -29,20 +29,20 @@ inline std::ostream& operator<<(std::ostream & ostr, const std::vector<T> & v)
 
 using namespace DB;
 
-struct ParseDataTypeTestCase
+struct ParseDataTypeFromHiveTestCase
 {
     const char * type_name;
     std::vector<String> values;
     FieldVector expected_values;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const ParseDataTypeTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const ParseDataTypeFromHiveTestCase & test_case)
 {
-    return ostr << "ParseDataTypeTestCase{\"" << test_case.type_name << "\", " << test_case.values << "}";
+    return ostr << "ParseDataTypeFromHiveTestCase{\"" << test_case.type_name << "\", " << test_case.values << "}";
 }
 
 
-class ParseDataTypeTest : public ::testing::TestWithParam<ParseDataTypeTestCase>
+class ParseDataTypeFromHiveTest : public ::testing::TestWithParam<ParseDataTypeFromHiveTestCase>
 {
 public:
     void SetUp() override
@@ -55,7 +55,7 @@ public:
     DataTypePtr data_type;
 };
 
-TEST_P(ParseDataTypeTest, parseStringValue)
+TEST_P(ParseDataTypeFromHiveTest, parseStringValue)
 {
     const auto & p = GetParam();
 
@@ -63,32 +63,45 @@ TEST_P(ParseDataTypeTest, parseStringValue)
     for (const auto & value : p.values)
     {
         ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-        data_type->getDefaultSerialization()->deserializeWholeText(*col, buffer, FormatSettings{});
+        data_type->getDefaultSerialization()->deserializeTextHiveText(*col, buffer, FormatSettings{});
     }
 
     ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
     for (size_t i = 0; i < col->size(); ++i)
     {
+        std::cout << "real value:" << toString((*col)[i]);
         ASSERT_EQ(p.expected_values[i], (*col)[i]);
     }
 }
 
-
-INSTANTIATE_TEST_SUITE_P(ParseDecimal,
-    ParseDataTypeTest,
+INSTANTIATE_TEST_SUITE_P(ParseMapFromHive,
+    ParseDataTypeFromHiveTest,
     ::testing::ValuesIn(
-        std::initializer_list<ParseDataTypeTestCase>{
+        std::initializer_list<ParseDataTypeFromHiveTestCase>{
             {
-                "Decimal(8, 0)",
-                {"0", "5", "8", "-5", "-8", "12345678", "-12345678"},
+                "Map(String, String)",
+                {"", "a\003b", "a\003b\002c\003d"},
                 std::initializer_list<Field>{
-                    DecimalField<Decimal32>(0, 0),
-                    DecimalField<Decimal32>(5, 0),
-                    DecimalField<Decimal32>(8, 0),
-                    DecimalField<Decimal32>(-5, 0),
-                    DecimalField<Decimal32>(-8, 0),
-                    DecimalField<Decimal32>(12345678, 0),
-                    DecimalField<Decimal32>(-12345678, 0)
+                    Map{},
+                    Map{Tuple{"a", "b"}},
+                    Map{Tuple{"a", "b"}, Tuple{"c", "d"}}
+                }
+            }
+        }
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ParseArrayFromHive,
+    ParseDataTypeFromHiveTest,
+    ::testing::ValuesIn(
+        std::initializer_list<ParseDataTypeFromHiveTestCase>{
+            {
+                "Array(String)",
+                {"", "a\002b", "a\002b\002c\002d"},
+                std::initializer_list<Field>{
+                    Array{},
+                    Array{"a", "b"},
+                    Array{"a", "b", "c", "d"}
                 }
             }
         }

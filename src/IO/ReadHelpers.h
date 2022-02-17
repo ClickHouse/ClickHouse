@@ -588,6 +588,12 @@ void readBackQuotedStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
+template <char... chars, typename Vector>
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilChar(Vector & s, ReadBuffer & buf, char delimiter);
+
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
