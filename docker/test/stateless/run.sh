@@ -12,7 +12,8 @@ dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-dpkg -i package_folder/clickhouse-test_*.deb
+
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -83,6 +84,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
         # Note that flaky check must be ran in parallel, but for now we run
         # everything in parallel except DatabaseReplicated. See below.
+    fi
+
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

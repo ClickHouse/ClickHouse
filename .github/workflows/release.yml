@@ -22,10 +22,9 @@ jobs:
     - name: Check out repository code
       uses: actions/checkout@v2
     - name: Download packages and push to Artifactory
-      env:
       run: |
-        rm -rf "$TEMP_PATH" && mkdir -p "$REPO_COPY"
-        cp -r "$GITHUB_WORKSPACE" "$REPO_COPY"
+        rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
+        cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
         cd "$REPO_COPY"
         python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
           --commit '${{ github.sha }}' --all

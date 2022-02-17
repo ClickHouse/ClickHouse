@@ -15,7 +15,19 @@ namespace DB
 /// If format doesn't have any schema reader or a schema reader
 /// couldn't determine the schema, an exception will be thrown.
 using ReadBufferCreator = std::function<std::unique_ptr<ReadBuffer>()>;
-ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferCreator read_buffer_creator, ContextPtr context);
+ColumnsDescription readSchemaFromFormat(
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    ReadBufferCreator read_buffer_creator,
+    ContextPtr context);
+
+/// If ReadBuffer is created, it will be written to buf_out.
+ColumnsDescription readSchemaFromFormat(
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    ReadBufferCreator read_buffer_creator,
+    ContextPtr context,
+    std::unique_ptr<ReadBuffer> & buf_out);
 
 /// Convert type to the most general type:
 /// - IntN, UIntN, FloatN, Decimal -> Float64
