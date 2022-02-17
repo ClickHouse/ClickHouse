@@ -40,7 +40,7 @@ struct VersionMetadata
     void lockMaxTID(const TransactionID & tid, const TransactionInfoContext & context);
     void unlockMaxTID(const TransactionID & tid, const TransactionInfoContext & context);
 
-    bool isMaxTIDLocked() const;
+    bool isRemovalTIDLocked() const;
 
     /// It can be called only from MergeTreeTransaction or on server startup
     void setCreationTID(const TransactionID & tid, TransactionInfoContext * context);
@@ -51,6 +51,9 @@ struct VersionMetadata
 
     void write(WriteBuffer & buf) const;
     void read(ReadBuffer & buf);
+
+    enum WhichCSN { CREATION, REMOVAL };
+    void writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool internal = false) const;
 
     String toString(bool one_line = true) const;
 

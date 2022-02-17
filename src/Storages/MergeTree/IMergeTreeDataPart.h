@@ -435,9 +435,23 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    /// Ensures that creation_tid was correctly set after part creation.
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
+
+    /// [Re]writes file with transactional metadata on disk
     void storeVersionMetadata() const;
+
+    /// Appends the corresponding CSN to file on disk (without fsync)
+    void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
+
+    /// Loads transactional metadata from disk
     void loadVersionMetadata() const;
+
+    /// Returns true if part was created or removed by a transaction
+    bool wasInvolvedInTransaction() const;
+
+    /// Moar hardening: this method is supposed to be used for debug assertions
+    bool assertHasValidVersionMetadata() const;
 
     /// Return hardlink count for part.
     /// Required for keep data on remote FS when part has shadow copies.

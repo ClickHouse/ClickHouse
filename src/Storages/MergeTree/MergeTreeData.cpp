@@ -1320,7 +1320,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
         auto creation_csn = (*it)->version.creation_csn.load(std::memory_order_relaxed);
-        if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !(*it)->version.isMaxTIDLocked())
+        if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !(*it)->version.isRemovalTIDLocked())
         {
             /// It's possible that covering part was created without transaction,
             /// but if covered part was created with transaction (i.e. creation_tid is not prehistoric),
@@ -1347,14 +1347,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         const DataPartPtr & part = *iter;
         part->loadVersionMetadata();
         VersionMetadata & version = part->version;
-        if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
+        if (part->wasInvolvedInTransaction())
         {
-            ++iter;
-            continue;
+            have_parts_with_version_metadata = true;
         }
         else
         {
-            have_parts_with_version_metadata = true;
+            ++iter;
+            continue;
         }
 
         /// Check if CSNs were witten after committing transaction, update and write if needed.
@@ -3891,8 +3891,11 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
             auto part = createPart(part_name, *part_info, single_disk_volume, relative_temp_part_dir);
+            /// TODO Transactions: Decide what to do with version metadata (if any). Let's just remove it for now.
+            disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             part->loadColumnsChecksumsIndexes(false, true);
-            renameTempPartAndAdd(part, nullptr, increment); //FIXME
+            renameTempPartAndAdd(part, nullptr, increment);
         };
 
         restore_tasks.emplace_back(std::move(restore_task));
@@ -5487,7 +5490,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     }
 
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
-    localBackup(disk, src_part_path, dst_part_path);
+    localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false);
     disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
     disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 

@@ -82,7 +82,7 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 
     storages.insert(storage);
     creating_parts.push_back(new_part);
-    new_part->storeVersionMetadata();
+    //new_part->storeVersionMetadata();
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
@@ -132,13 +132,13 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     for (const auto & part : creating_parts)
     {
         part->version.creation_csn.store(csn);
-        part->storeVersionMetadata();
+        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::CREATION);
     }
 
     for (const auto & part : removing_parts)
     {
         part->version.removal_csn.store(csn);
-        part->storeVersionMetadata();
+        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }
 }
 
