@@ -11,10 +11,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-static size_t encodeURL(const char * src, size_t src_size, char * dst, bool space_as_plus)
+static size_t encodeURL(const char * __restrict src, size_t src_size, char * __restrict dst, bool space_as_plus)
 {
     char * dst_pos = dst;
-    for (size_t i = 0; i < src_size - 1; i++)
+    for (size_t i = 0; i < src_size; i++)
     {
         if ((src[i] >= '0' && src[i] <= '9') || (src[i] >= 'a' && src[i] <= 'z') || (src[i] >= 'A' && src[i] <= 'Z')
             || src[i] == '-' || src[i] == '_' || src[i] == '.' || src[i] == '~')
@@ -32,12 +32,12 @@ static size_t encodeURL(const char * src, size_t src_size, char * dst, bool spac
             *dst_pos++ = hexDigitUppercase(src[i] & 0xf);
         }
     }
-    *dst_pos++ = src[src_size - 1];
+    *dst_pos++ = src[src_size];
     return dst_pos - dst;
 }
 
 /// We assume that size of the dst buf isn't less than src_size.
-static size_t decodeURL(const char * src, size_t src_size, char * dst, bool plus_as_space)
+static size_t decodeURL(const char * __restrict src, size_t src_size, char * __restrict dst, bool plus_as_space)
 {
     const char * src_prev_pos = src;
     const char * src_curr_pos = src;
@@ -113,7 +113,7 @@ enum URLCodeStrategy
 };
 
 /// Percent decode of URL data.
-template <URLCodeStrategy code_strategy, bool plus_space_swap>
+template <URLCodeStrategy code_strategy, bool space_as_plus>
 struct CodeURLComponentImpl
 {
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
@@ -124,6 +124,7 @@ struct CodeURLComponentImpl
             res_data.resize(data.size() * 3);
         else
             res_data.resize(data.size());
+
         size_t size = offsets.size();
         res_offsets.resize(size);
 
@@ -135,10 +136,18 @@ struct CodeURLComponentImpl
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
             size_t dst_size;
-            if (code_strategy == encode)
-                dst_size = encodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), plus_space_swap);
+
+            if constexpr (code_strategy == encode)
+            {
+                /// Skip encoding of zero terminated character
+                size_t src_encode_size = src_size - 1;
+                dst_size = encodeURL(src_data, src_encode_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
+            }
             else
-                dst_size = decodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), plus_space_swap);
+            {
+                dst_size = decodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
+            }
+
             res_offset += dst_size;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
