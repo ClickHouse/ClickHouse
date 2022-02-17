@@ -74,6 +74,8 @@ public:
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
+
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
 protected:

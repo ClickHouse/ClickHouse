@@ -1,4 +1,7 @@
 #include <Disks/HDFS/DiskHDFS.h>
+
+#if USE_HDFS
+
 #include <Disks/DiskLocal.h>
 #include <Disks/RemoteDisksCommon.h>
 
@@ -180,3 +183,4 @@ void registerDiskHDFS(DiskFactory & factory)
 }
 
 }
+#endif

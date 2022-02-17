@@ -481,29 +481,25 @@ catch (...)
 
 void Client::connect()
 {
-    UInt16 default_port = ConnectionParameters::getPortFromConfig(config());
-    connection_parameters = ConnectionParameters(config(), hosts_ports[0].host,
-                                                 hosts_ports[0].port.value_or(default_port));
-
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
-    for (size_t attempted_address_index = 0; attempted_address_index < hosts_ports.size(); ++attempted_address_index)
+    for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
     {
-        connection_parameters.host = hosts_ports[attempted_address_index].host;
-        connection_parameters.port = hosts_ports[attempted_address_index].port.value_or(default_port);
-
-        if (is_interactive)
-            std::cout << "Connecting to "
-                      << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                          : "")
-                      << connection_parameters.host << ":" << connection_parameters.port
-                      << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
-
         try
         {
+            connection_parameters
+                = ConnectionParameters(config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+
+            if (is_interactive)
+                std::cout << "Connecting to "
+                          << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                                                                              : "")
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+
             connection = Connection::createConnection(connection_parameters, global_context);
 
             if (max_client_network_bandwidth)
@@ -535,7 +531,7 @@ void Client::connect()
             }
             else
             {
-                if (attempted_address_index == hosts_ports.size() - 1)
+                if (attempted_address_index == hosts_and_ports.size() - 1)
                     throw;
 
                 if (is_interactive)
@@ -994,11 +990,6 @@ void Client::addOptions(OptionsDescription & options_description)
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
-        ("host,h", po::value<std::vector<HostPort>>()->multitoken()->default_value({{"localhost"}}, "localhost"),
-         "list of server hosts with optionally assigned port to connect. List elements are separated by a space."
-         "Every list element looks like '<host>[:<port>]'. If port isn't assigned, connection is made by port from '--port' param"
-         "Example of usage: '-h host1:1 host2 host3:3'")
-        ("port", po::value<int>()->default_value(9000), "server port, which is default port for every host from '--host' param")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -1044,12 +1035,24 @@ void Client::addOptions(OptionsDescription & options_description)
     (
         "types", po::value<std::string>(), "types"
     );
+
+    /// Commandline options related to hosts and ports.
+    options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
+    options_description.hosts_and_ports_description->add_options()
+        ("host,h", po::value<String>()->default_value("localhost"),
+         "Server hostname. Multiple hosts can be passed via multiple arguments"
+         "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+         "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+         "if there is no such host, the port will be attached to the next first host or to default host.")
+         ("port", po::value<UInt16>()->default_value(DBMS_DEFAULT_PORT), "server ports")
+    ;
 }
 
 
 void Client::processOptions(const OptionsDescription & options_description,
                             const CommandLineOptions & options,
-                            const std::vector<Arguments> & external_tables_arguments)
+                            const std::vector<Arguments> & external_tables_arguments,
+                            const std::vector<Arguments> & hosts_and_ports_arguments)
 {
     namespace po = boost::program_options;
 
@@ -1081,6 +1084,25 @@ void Client::processOptions(const OptionsDescription & options_description,
             exit(exit_code);
         }
     }
+
+    if (hosts_and_ports_arguments.empty())
+    {
+        hosts_and_ports.emplace_back(HostAndPort{"localhost", DBMS_DEFAULT_PORT});
+    }
+    else
+    {
+        for (const auto & hosts_and_ports_argument : hosts_and_ports_arguments)
+        {
+            /// Parse commandline options related to external tables.
+            po::parsed_options parsed_hosts_and_ports
+                = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
+            po::variables_map host_and_port_options;
+            po::store(parsed_hosts_and_ports, host_and_port_options);
+            hosts_and_ports.emplace_back(
+                HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
+        }
+    }
+
     send_external_tables = true;
 
     shared_context = Context::createShared();
@@ -1105,12 +1127,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.count("host"))
-        hosts_ports = options["host"].as<std::vector<HostPort>>();
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("port") && !options["port"].defaulted())
-        config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
         config().setBool("secure", true);
     if (options.count("user") && !options["user"].defaulted())
