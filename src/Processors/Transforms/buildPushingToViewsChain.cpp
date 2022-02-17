@@ -297,7 +297,11 @@ Chain buildPushingToViewsChain(
                     insert_columns.emplace_back(column.name);
             }
 
-            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
+            /// Create interpreter w/o squashing
+            /// since we have squashing (SquashingChunksTransform) for each block.
+            InterpreterInsertQuery interpreter(nullptr, insert_context,
+                /* allow_materialized_= */ false,
+                /* no_squash_= */ true);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, view_thread_status, view_counter_ms);
             out.addStorageHolder(dependent_table);
             out.addStorageHolder(inner_table);
