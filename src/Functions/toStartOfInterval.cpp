@@ -223,7 +223,7 @@ namespace
             else if (scale_multiplier > 1000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-                return (t - t % std::abs(milliseconds * scale_diff)) / scale_diff;
+                return (t - std::abs(t % milliseconds * scale_diff)) / scale_diff;
             }
             else
                 return t - std::abs(t % milliseconds);
@@ -249,7 +249,7 @@ namespace
             else if (scale_multiplier > 1000000)
             {
                 Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-                return (t - t % std::abs(microseconds * scale_diff)) / scale_diff;
+                return (t - std::abs(t % microseconds * scale_diff)) / scale_diff;
             }
             else
                 return t - std::abs(t % microseconds);
@@ -482,7 +482,7 @@ private:
     }
 
     template <typename FromDataType, typename ToDataType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const FromDataType &, const ColumnType & time_column_type, UInt64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
+    ColumnPtr execute(const FromDataType &, const ColumnType & time_column_type, Int64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
     {
         using ToColumnType = typename ToDataType::ColumnType;
 
