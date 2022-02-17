@@ -297,7 +297,7 @@ namespace
                 if (likely(t >= 0))
                     return t / nanoseconds * nanoseconds;
                 else
-                    return (t + 1 - nanoseconds) / nanoseconds * nanoseconds;
+                    return ((t + 1) / nanoseconds - 1) * nanoseconds;
         }
     };
 
