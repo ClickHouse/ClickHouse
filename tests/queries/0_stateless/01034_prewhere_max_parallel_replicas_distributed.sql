@@ -1,5 +1,7 @@
 -- Tags: replica, distributed
 
+set allow_experimental_parallel_reading_from_replicas=1;
+
 drop table if exists test_max_parallel_replicas_lr;
 
 -- If you wonder why the table is named with "_lr" suffix in this test.

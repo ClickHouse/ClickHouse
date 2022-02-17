@@ -743,12 +743,12 @@ class TestCase:
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.INTERNAL_QUERY_FAIL,
                               0.,
-                              self.get_description_from_exception_info(sys.exc_info()))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except (ConnectionRefusedError, ConnectionResetError):
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.SERVER_DIED,
                               0.,
-                              self.get_description_from_exception_info(sys.exc_info()))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except:
             return TestResult(self.name, TestStatus.UNKNOWN,
                               FailureReason.INTERNAL_ERROR,
