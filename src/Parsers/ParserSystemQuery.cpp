@@ -88,6 +88,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
+    ParserLiteral value_p;
 
     for (const auto & type : magic_enum::enum_values<Type>())
     {
@@ -316,6 +317,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
             break;
         }
+
+        case Type::SET_MERGE_POOL_SIZE:
+        case Type::SET_MOVE_POOL_SIZE:
+        case Type::SET_FETCH_POOL_SIZE:
+        case Type::SET_COMMON_POOL_SIZE:
+            if (!value_p.parse(pos, res->value, expected))
+                return false;
+            break;
 
         default:
         {

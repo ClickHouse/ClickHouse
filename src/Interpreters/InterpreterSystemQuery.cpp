@@ -228,6 +228,10 @@ BlockIO InterpreterSystemQuery::execute()
     if (!query.storage_policy.empty() && !query.volume.empty())
         volume_ptr = getContext()->getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
+    Field value;
+    if (query.value)
+        value = query.value->as<ASTLiteral &>().value;
+
     switch (query.type)
     {
         case Type::SHUTDOWN:
@@ -457,6 +461,18 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
+            break;
+        case Type::SET_MERGE_POOL_SIZE:
+            system_context->getMergeMutateExecutor()->setThreadPoolSize(value.safeGet<size_t>());
+            break;
+        case Type::SET_MOVE_POOL_SIZE:
+            system_context->getMovesExecutor()->setThreadPoolSize(value.safeGet<size_t>());
+            break;
+        case Type::SET_FETCH_POOL_SIZE:
+            system_context->getFetchesExecutor()->setThreadPoolSize(value.safeGet<size_t>());
+            break;
+        case Type::SET_COMMON_POOL_SIZE:
+            system_context->getCommonExecutor()->setThreadPoolSize(value.safeGet<size_t>());
             break;
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
@@ -898,6 +914,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES: break;
         case Type::STOP_THREAD_FUZZER: break;
         case Type::START_THREAD_FUZZER: break;
+        case Type::SET_MERGE_POOL_SIZE: break;
+        case Type::SET_MOVE_POOL_SIZE: break;
+        case Type::SET_FETCH_POOL_SIZE: break;
+        case Type::SET_COMMON_POOL_SIZE: break;
         case Type::UNKNOWN: break;
         case Type::END: break;
     }

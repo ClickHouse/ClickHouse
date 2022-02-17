@@ -163,11 +163,13 @@ public:
         String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_)
+        CurrentMetrics::Metric task_metric_,
+        CurrentMetrics::Metric pool_metric_)
         : name(name_)
         , threads_count(threads_count_)
         , max_tasks_count(max_tasks_count_)
-        , metric(metric_)
+        , task_metric(task_metric_)
+        , pool_metric(pool_metric_)
     {
         if (max_tasks_count == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -183,6 +185,31 @@ public:
             pool.scheduleOrThrowOnError([this] { threadFunction(); });
     }
 
+    void setThreadPoolSize(size_t thread_pool_size)
+    {
+        if (thread_pool_size == threads_count)
+            return;
+
+        bool is_add_thread = thread_pool_size > threads_count;
+        if (!is_add_thread)
+        {
+            /// When reducing threads, restart the background pool first, and then re-add threads
+            wait();
+            std::lock_guard lock(mutex);
+            shutdown = false;
+        }
+
+        pool.setMaxThreads(std::max(1UL, thread_pool_size));
+        pool.setMaxFreeThreads(std::max(1UL, thread_pool_size));
+        pool.setQueueSize(std::max(1UL, thread_pool_size));
+
+        size_t diff_count = is_add_thread ? thread_pool_size - threads_count : thread_pool_size;
+        for (size_t number = 0; number < diff_count; ++number)
+            pool.scheduleOrThrowOnError([this] { threadFunction(); });
+
+        threads_count = thread_pool_size;
+    }
+
     ~MergeTreeBackgroundExecutor()
     {
         wait();
@@ -196,7 +223,8 @@ private:
     String name;
     size_t threads_count{0};
     size_t max_tasks_count{0};
-    CurrentMetrics::Metric metric;
+    CurrentMetrics::Metric task_metric;
+    CurrentMetrics::Metric pool_metric;
 
     void routine(TaskRuntimeDataPtr item);
     void threadFunction();

@@ -37,11 +37,11 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     if (shutdown)
         return false;
 
-    auto & value = CurrentMetrics::values[metric];
+    auto & value = CurrentMetrics::values[task_metric];
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
+    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), task_metric));
 
     has_tasks.notify_one();
     return true;
@@ -173,6 +173,7 @@ template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
+    CurrentMetrics::values[pool_metric].fetch_add(1);
 
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -199,6 +200,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+    CurrentMetrics::values[pool_metric].fetch_sub(1);
 }
 
 

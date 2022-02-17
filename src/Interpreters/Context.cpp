@@ -101,13 +101,17 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundMovePool;
     extern const Metric BackgroundSchedulePoolTask;
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPool;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundFetchesPool;
     extern const Metric BackgroundCommonPoolTask;
+    extern const Metric BackgroundCommonPool;
 }
 
 namespace DB
@@ -3054,7 +3058,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "MergeMutate",
         /*max_threads_count*/getSettingsRef().background_pool_size,
         /*max_tasks_count*/max_merges_and_mutations,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPool
     );
 
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
@@ -3065,7 +3070,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Move",
         getSettingsRef().background_move_pool_size,
         getSettingsRef().background_move_pool_size,
-        CurrentMetrics::BackgroundMovePoolTask
+        CurrentMetrics::BackgroundMovePoolTask,
+        CurrentMetrics::BackgroundMovePool
     );
 
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
@@ -3076,7 +3082,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Fetch",
         getSettingsRef().background_fetches_pool_size,
         getSettingsRef().background_fetches_pool_size,
-        CurrentMetrics::BackgroundFetchesPoolTask
+        CurrentMetrics::BackgroundFetchesPoolTask,
+        CurrentMetrics::BackgroundFetchesPool
     );
 
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
@@ -3087,7 +3094,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Common",
         getSettingsRef().background_common_pool_size,
         getSettingsRef().background_common_pool_size,
-        CurrentMetrics::BackgroundCommonPoolTask
+        CurrentMetrics::BackgroundCommonPoolTask,
+        CurrentMetrics::BackgroundCommonPool
     );
 
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",

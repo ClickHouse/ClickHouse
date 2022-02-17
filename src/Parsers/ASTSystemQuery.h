@@ -63,6 +63,10 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        SET_MERGE_POOL_SIZE,
+        SET_MOVE_POOL_SIZE,
+        SET_FETCH_POOL_SIZE,
+        SET_COMMON_POOL_SIZE,
         END
     };
 
@@ -88,6 +92,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    ASTPtr value;
 
     String getID(char) const override { return "SYSTEM query"; }
 

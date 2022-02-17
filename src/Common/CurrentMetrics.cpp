@@ -10,9 +10,13 @@
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
     M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
+    M(BackgroundMergesAndMutationsPool, "The current number of threads in the merges and mutations background pool") \
     M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
+    M(BackgroundFetchesPool, "The current number of threads in the fetches background pool") \
     M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
+    M(BackgroundCommonPool, "The current number of threads in the common background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
+    M(BackgroundMovePool, "The current number of threads in the move background pool") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
     M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
