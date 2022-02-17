@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <base/types.h>
 
 
@@ -71,6 +72,7 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
+        bool allow_missing_columns = false;
     } arrow;
 
     struct
@@ -99,6 +101,14 @@ struct FormatSettings
         char tuple_delimiter = ',';
     } csv;
 
+    struct HiveText
+    {
+        char fields_delimiter = '\x01';
+        char collection_items_delimiter = '\x02';
+        char map_keys_delimiter = '\x03';
+        Names input_field_names;
+    } hive_text;
+
     struct Custom
     {
         std::string result_before_delimiter;
@@ -124,6 +134,7 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
+        bool allow_missing_columns = false;
     } parquet;
 
     struct Pretty
@@ -202,6 +213,7 @@ struct FormatSettings
     struct
     {
         bool import_nested = false;
+        bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
     } orc;
 
@@ -219,9 +231,17 @@ struct FormatSettings
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
     } capn_proto;
 
+    enum class MsgPackUUIDRepresentation
+    {
+        STR, // Output UUID as a string of 36 characters.
+        BIN, // Output UUID as 16-bytes binary.
+        EXT, // Output UUID as ExtType = 2
+    };
+
     struct
     {
         UInt64 number_of_columns = 0;
+        MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
 };
 

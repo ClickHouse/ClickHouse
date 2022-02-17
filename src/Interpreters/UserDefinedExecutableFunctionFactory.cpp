@@ -98,7 +98,7 @@ public:
             column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
             column_with_type.type = argument_type;
 
-            column_with_type = column_to_cast;
+            column_with_type = std::move(column_to_cast);
         }
 
         ColumnWithTypeAndName result(result_type, "result");
@@ -110,7 +110,7 @@ public:
 
         ShellCommandSourceConfiguration shell_command_source_configuration;
 
-        if (coordinator->getConfiguration().is_executable_pool)
+        if (coordinator_configuration.is_executable_pool)
         {
             shell_command_source_configuration.read_fixed_number_of_rows = true;
             shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
@@ -143,8 +143,8 @@ public:
         size_t result_column_size = result_column->size();
         if (result_column_size != input_rows_count)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {} wrong result rows count expected {} actual {}",
-                getName(),
+                "Function {}: wrong result, expected {} row(s), actual {}",
+                quoteString(getName()),
                 input_rows_count,
                 result_column_size);
 

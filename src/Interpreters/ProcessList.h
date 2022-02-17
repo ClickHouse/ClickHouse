@@ -9,12 +9,14 @@
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
+#include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/OvercommitTracker.h>
 
 #include <condition_variable>
 #include <list>
@@ -75,6 +77,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend struct ::GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -118,7 +121,11 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
-    String query_kind;
+    IAST::QueryKind query_kind;
+
+    /// This field is unused in this class, but it
+    /// increments/decrements metric in constructor/destructor.
+    CurrentMetrics::Increment num_queries_increment;
 
 public:
 
@@ -127,7 +134,8 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        const String & query_kind_
+        ThreadGroupStatusPtr && thread_group_,
+        IAST::QueryKind query_kind_
         );
 
     ~QueryStatus();
@@ -148,6 +156,13 @@ public:
     }
 
     ThrottlerPtr getUserNetworkThrottler();
+
+    MemoryTracker * getMemoryTracker() const
+    {
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
+    }
 
     bool updateProgressIn(const Progress & value)
     {
@@ -211,6 +226,8 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
 
+    UserOvercommitTracker user_overcommit_tracker;
+
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
@@ -270,7 +287,7 @@ public:
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
-    using QueryKindToAmount = std::unordered_map<String, QueryAmount>;
+    using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
 protected:
     friend class ProcessListEntry;
@@ -301,11 +318,11 @@ protected:
     size_t max_select_queries_amount = 0;
 
     /// amount of queries by query kind.
-    QueryKindToAmount query_kind_amounts;
+    QueryKindAmounts query_kind_amounts;
 
-    void increaseQueryKindAmount(const String & query_kind);
-    void decreaseQueryKindAmount(const String & query_kind);
-    QueryAmount getQueryKindAmount(const String & query_kind);
+    void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -330,6 +347,14 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    template <typename F>
+    void processEachQueryStatus(F && func) const
+    {
+        std::lock_guard lk(mutex);
+        for (auto && query : processes)
+            func(query);
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)

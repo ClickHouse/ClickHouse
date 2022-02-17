@@ -15,11 +15,19 @@ class TeePopen:
         self.command = command
         self.log_file = log_file
         self.env = env
+        self.process = None
 
     def __enter__(self):
-        # pylint: disable=W0201
-        self.process = Popen(self.command, shell=True, universal_newlines=True, env=self.env, stderr=STDOUT, stdout=PIPE, bufsize=1)
-        self.log_file = open(self.log_file, 'w', encoding='utf-8')
+        self.process = Popen(
+            self.command,
+            shell=True,
+            universal_newlines=True,
+            env=self.env,
+            stderr=STDOUT,
+            stdout=PIPE,
+            bufsize=1,
+        )
+        self.log_file = open(self.log_file, "w", encoding="utf-8")
         return self
 
     def __exit__(self, t, value, traceback):

@@ -1,5 +1,7 @@
 #include "PostgreSQLReplicationHandler.h"
 
+#include <base/sort.h>
+
 #include <Common/setThreadName.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
@@ -104,11 +106,16 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 }
 
 
-void PostgreSQLReplicationHandler::startup()
+void PostgreSQLReplicationHandler::startup(bool delayed)
 {
-    /// We load tables in a separate thread, because this database is not created yet.
-    /// (will get "database is currently dropped or renamed")
-    startup_task->activateAndSchedule();
+    if (delayed)
+    {
+        startup_task->activateAndSchedule();
+    }
+    else
+    {
+        startSynchronization(/* throw_on_error */ true);
+    }
 }
 
 
@@ -175,6 +182,7 @@ void PostgreSQLReplicationHandler::shutdown()
     startup_task->deactivate();
     consumer_task->deactivate();
     cleanup_task->deactivate();
+    consumer.reset(); /// Clear shared pointers to inner storages.
 }
 
 
@@ -185,7 +193,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
-    std::unordered_map<String, StoragePtr> nested_storages;
+    std::unordered_map<String, StorageInfo> nested_storages;
 
     /// snapshot_name is initialized only if a new replication slot is created.
     /// start_lsn is initialized in two places:
@@ -220,7 +228,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         {
             try
             {
-                nested_storages[table_name] = loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>());
+                nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>()));
             }
             catch (Exception & e)
             {
@@ -262,7 +270,12 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
-                nested_storages[table_name] = materialized_storage->getNested();
+                auto [postgres_table_schema, postgres_table_name] = getSchemaAndTableName(table_name);
+                auto table_structure = fetchPostgreSQLTableStructure(tx, postgres_table_name, postgres_table_schema, true, true, true);
+                if (!table_structure.physical_columns)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns");
+                auto storage_info = StorageInfo(materialized_storage->getNested(), table_structure.physical_columns->attributes);
+                nested_storages.emplace(table_name, std::move(storage_info));
             }
             catch (Exception & e)
             {
@@ -315,7 +328,7 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 }
 
 
-StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
+StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
                                                           StorageMaterializedPostgreSQL * materialized_storage)
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
@@ -329,8 +342,13 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     query_str = fmt::format("SELECT * FROM {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
+    auto table_structure = fetchTableStructure(*tx, table_name);
+    if (!table_structure->physical_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
+    auto table_attributes = table_structure->physical_columns->attributes;
+
     auto table_override = tryGetTableOverride(current_database_name, table_name);
-    materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name), table_override ? table_override->as<ASTTableOverride>() : nullptr);
+    materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -355,7 +373,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     auto nested_table_id = nested_storage->getStorageID();
     LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
-    return nested_storage;
+    return StorageInfo(nested_storage, std::move(table_attributes));
 }
 
 
@@ -682,7 +700,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 }
 
                 NameSet diff;
-                std::sort(expected_tables.begin(), expected_tables.end());
+                ::sort(expected_tables.begin(), expected_tables.end());
                 std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
                                               result_tables.begin(), result_tables.end(),
                                               std::inserter(diff, diff.begin()));
@@ -787,9 +805,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::ReplicationTransaction & tx, const std::string & table_name) const
 {
-    if (!is_materialized_postgresql_database)
-        return nullptr;
-
     PostgreSQLTableStructure structure;
     try
     {
@@ -815,7 +830,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
         postgres::Connection replication_connection(connection_info, /* replication */true);
         String snapshot_name, start_lsn;
-        StoragePtr nested_storage;
+        StorageInfo nested_storage_info{ nullptr, {} };
 
         {
             auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
@@ -831,8 +846,8 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
 
             postgres::Connection tmp_connection(connection_info);
-            nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
-            materialized_storage->set(nested_storage);
+            nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
+            materialized_storage->set(nested_storage_info.storage);
         }
 
         {
@@ -841,7 +856,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
-        consumer->addNested(postgres_table_name, nested_storage, start_lsn);
+        consumer->addNested(postgres_table_name, nested_storage_info, start_lsn);
         LOG_TRACE(log, "Table `{}` successfully added to replication", postgres_table_name);
     }
     catch (...)
@@ -914,8 +929,8 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                 auto temp_materialized_storage = materialized_storage->createTemporary();
 
                 /// This snapshot is valid up to the end of the transaction, which exported it.
-                StoragePtr temp_nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, table_name,
-                                                                temp_materialized_storage->as <StorageMaterializedPostgreSQL>());
+                auto [temp_nested_storage, table_attributes] = loadFromSnapshot(
+                    tmp_connection, snapshot_name, table_name, temp_materialized_storage->as <StorageMaterializedPostgreSQL>());
 
                 auto table_id = materialized_storage->getNestedStorageID();
                 auto temp_table_id = temp_nested_storage->getStorageID();
@@ -949,7 +964,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                             nested_storage->getStorageID().getNameForLogs(), nested_sample_block.dumpStructure());
 
                     /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
-                    consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
+                    consumer->updateNested(table_name, StorageInfo(nested_storage, std::move(table_attributes)), relation_id, start_lsn);
 
                     auto table_to_drop = DatabaseCatalog::instance().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
                     auto drop_table_id = table_to_drop->getStorageID();

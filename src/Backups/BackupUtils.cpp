@@ -15,6 +15,7 @@
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
+#include <base/sort.h>
 #include <boost/range/adaptor/reversed.hpp>
 #include <filesystem>
 
@@ -632,7 +633,7 @@ BackupEntries makeBackupEntries(const Elements & elements, const ContextPtr & co
         throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
 
     /// Check that all backup entries are unique.
-    std::sort(
+    ::sort(
         backup_entries.begin(),
         backup_entries.end(),
         [](const std::pair<String, std::unique_ptr<IBackupEntry>> & lhs, const std::pair<String, std::unique_ptr<IBackupEntry>> & rhs)

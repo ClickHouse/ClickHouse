@@ -156,13 +156,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         StorageMySQLConfiguration configuration;
         ASTs & arguments = engine->arguments->children;
+        MySQLSettings mysql_settings;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true))
+        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, mysql_settings))
         {
-            auto [common_configuration, storage_specific_args] = named_collection.value();
+            auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
 
             configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            mysql_settings.applyChanges(settings_changes);
 
             if (!storage_specific_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -200,7 +202,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                MySQLSettings mysql_settings;
                 auto mysql_pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
                 mysql_database_settings->loadFromQueryContext(context);
@@ -299,7 +300,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            auto [common_configuration, storage_specific_args] = named_collection.value();
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
             configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
@@ -358,7 +359,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            auto [common_configuration, storage_specific_args] = named_collection.value();
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
             configuration.set(common_configuration);
 
             if (!storage_specific_args.empty())

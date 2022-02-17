@@ -12,9 +12,15 @@
 namespace DB
 {
 template <typename T>
-struct TrivailLRUResourceCacheWeightFunction
+struct TrivialLRUResourceCacheWeightFunction
 {
-    size_t operator()(const T &) const { return 1; }
+    size_t operator()(const T &) const noexcept { return 1; }
+};
+
+template <typename T>
+struct TrivialLRUResourceCacheReleaseFunction
+{
+    void operator()(std::shared_ptr<T>) noexcept { }
 };
 
 /**
@@ -24,9 +30,11 @@ struct TrivailLRUResourceCacheWeightFunction
  *
  * Warning (!): This implementation is in development, not to be used.
  */
-template <typename TKey,
+template <
+    typename TKey,
     typename TMapped,
-    typename WeightFunction = TrivailLRUResourceCacheWeightFunction<TMapped>,
+    typename WeightFunction = TrivialLRUResourceCacheWeightFunction<TMapped>,
+    typename ReleaseFunction = TrivialLRUResourceCacheReleaseFunction<TMapped>,
     typename HashFunction = std::hash<TKey>>
 class LRUResourceCache
 {
@@ -38,8 +46,7 @@ public:
     class MappedHolder
     {
     public:
-        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_)
-            : cache(cache_), key(key_), val(value_) {}
+        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_) { }
 
         ~MappedHolder() { cache->release(key); }
 
@@ -54,7 +61,9 @@ public:
     using MappedHolderPtr = std::unique_ptr<MappedHolder>;
 
     explicit LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0)
-        : max_weight(max_weight_), max_element_size(max_element_size_) {}
+        : max_weight(max_weight_), max_element_size(max_element_size_)
+    {
+    }
 
     MappedHolderPtr get(const Key & key)
     {
@@ -86,6 +95,7 @@ public:
         {
             queue.erase(cell.queue_iterator);
             current_weight -= cell.weight;
+            release_function(cell.value);
             cells.erase(it);
         }
         else
@@ -198,6 +208,7 @@ private:
     friend struct InsertTokenHolder;
     InsertTokenById insert_tokens;
     WeightFunction weight_function;
+    ReleaseFunction release_function;
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
@@ -305,6 +316,7 @@ private:
         {
             queue.erase(cell.queue_iterator);
             current_weight -= cell.weight;
+            release_function(cell.value);
             cells.erase(it);
         }
     }
@@ -330,12 +342,11 @@ private:
     // key mustn't be in the cache
     Cell * set(const Key & insert_key, MappedPtr value)
     {
-        auto weight = value ? weight_function(*value) : 0;
-        auto queue_size = cells.size() + 1;
-        auto loss_weight = 0;
-
+        size_t weight = value ? weight_function(*value) : 0;
+        size_t queue_size = cells.size() + 1;
+        size_t loss_weight = 0;
         auto is_overflow = [&] {
-            return current_weight + weight - loss_weight > max_weight || (max_element_size != 0 && queue_size > max_element_size);
+            return current_weight + weight > max_weight + loss_weight || (max_element_size != 0 && queue_size > max_element_size);
         };
 
         auto key_it = queue.begin();
@@ -356,7 +367,7 @@ private:
             if (cell.reference_count == 0)
             {
                 loss_weight += cell.weight;
-                queue_size -= 1;
+                queue_size--;
                 to_release_keys.insert(key);
             }
 
@@ -376,6 +387,7 @@ private:
         {
             auto & cell = cells[key];
             queue.erase(cell.queue_iterator);
+            release_function(cell.value);
             cells.erase(key);
             ++evict_count;
         }

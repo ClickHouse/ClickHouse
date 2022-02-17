@@ -217,8 +217,8 @@ Result:
 ``` text
 (0,'2019-05-20')        0       \N      \N      (NULL,NULL)
 (1,'2019-05-20')        1       First   First   ('First','First')
-(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
-(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(2,'2019-05-20')        1       Second  \N      ('Second',NULL)
+(3,'2019-05-20')        1       Third   Third   ('Third','Third')
 (4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 

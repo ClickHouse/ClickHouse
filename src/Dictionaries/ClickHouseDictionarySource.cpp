@@ -28,6 +28,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db", "database", "table",
+    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "secure"};
+
 namespace
 {
     constexpr size_t MAX_CONNECTIONS = 16;
@@ -235,18 +239,21 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string db = config.getString(settings_config_prefix + ".db", default_database);
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
+        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
 
-        auto named_collection = created_from_ddl ?
-            getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
+        auto named_collection = created_from_ddl
+            ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
+            : std::nullopt;
 
         if (named_collection)
         {
-            host = named_collection->host;
-            user = named_collection->username;
-            password = named_collection->password;
-            db = named_collection->database;
-            table = named_collection->table;
-            port = named_collection->port;
+            const auto & configuration = named_collection->configuration;
+            host = configuration.host;
+            user = configuration.username;
+            password = configuration.password;
+            db = configuration.database;
+            table = configuration.table;
+            port = configuration.port;
         }
 
         ClickHouseDictionarySource::Configuration configuration{

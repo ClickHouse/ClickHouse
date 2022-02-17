@@ -1,76 +1,38 @@
-name: DocsReleaseChecks
+name: ReleaseWorkflow
+# - Gets artifacts from S3
+# - Sends it to JFROG Artifactory
+# - Adds them to the release assets
 
-env:
-  # Force the stdout and stderr streams to be unbuffered
-  PYTHONUNBUFFERED: 1
-
-concurrency:
-  group: master-release
-  cancel-in-progress: true
 on: # yamllint disable-line rule:truthy
-  push:
-    branches:
-      - master
-    paths:
-      - 'docs/**'
-      - 'website/**'
-      - 'benchmark/**'
-      - 'docker/**'
-      - '.github/**'
-  workflow_dispatch:
+  release:
+    types:
+    - published
+
 jobs:
-  DockerHubPush:
+  ReleasePublish:
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Images check
-        run: |
-          cd $GITHUB_WORKSPACE/tests/ci
-          python3 docker_images_check.py
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/docker_images_check/changed_images.json
-  DocsRelease:
-    needs: DockerHubPush
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/docs_release
-          REPO_COPY=${{runner.temp}}/docs_release/ClickHouse
-          CLOUDFLARE_TOKEN=${{secrets.CLOUDFLARE}}
-          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-          RCSK
-          EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Docs Release
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 docs_release.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+    - name: Set envs
+      run: |
+        cat >> "$GITHUB_ENV" << 'EOF'
+        JFROG_API_KEY=${{ secrets.JFROG_KEY_API_PACKAGES }}
+        TEMP_PATH=${{runner.temp}}/release_packages
+        REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
+        EOF
+    - name: Check out repository code
+      uses: actions/checkout@v2
+    - name: Download packages and push to Artifactory
+      run: |
+        rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
+        cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+        cd "$REPO_COPY"
+        python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
+          --commit '${{ github.sha }}' --all
+    - name: Upload packages to release assets
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ${{runner.temp}}/release_packages/*
+        overwrite: true
+        tag: ${{ github.ref }}
+        file_glob: true

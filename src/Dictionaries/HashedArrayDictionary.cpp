@@ -1,5 +1,6 @@
 #include "HashedArrayDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -157,12 +158,6 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::hasKeys(const Colum
 
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
-
-    if (attributes.empty())
-    {
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        return result;
-    }
 
     size_t keys_found = 0;
 
@@ -352,8 +347,7 @@ void HashedArrayDictionary<dictionary_key_type>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<std::vector<bool>>() : std::optional<std::vector<bool>>{};
-            std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
-            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerType<ValueType>(), std::move(is_index_null), std::move(string_arena)};
+            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerType<ValueType>(), std::move(is_index_null)};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -431,7 +425,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
         }
 
         if constexpr (std::is_same_v<KeyType, StringRef>)
-            key = copyKeyInArena(key);
+            key = copyStringInArena(string_arena, key);
 
         key_attribute.container.insert({key, element_count});
 
@@ -466,11 +460,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
                     String & value_to_insert = column_value_to_insert.get<String>();
-                    size_t value_to_insert_size = value_to_insert.size();
-
-                    const char * string_in_arena = attribute.string_arena->insert(value_to_insert.data(), value_to_insert_size);
-
-                    StringRef string_in_arena_reference = StringRef{string_in_arena, value_to_insert_size};
+                    StringRef string_in_arena_reference = copyStringInArena(string_arena, value_to_insert);
                     attribute_container.back() = string_in_arena_reference;
                 }
                 else
@@ -677,16 +667,6 @@ void HashedArrayDictionary<dictionary_key_type>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-StringRef HashedArrayDictionary<dictionary_key_type>::copyKeyInArena(StringRef key)
-{
-    size_t key_size = key.size;
-    char * place_for_key = complex_key_arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-    StringRef updated_key{place_for_key, key_size};
-    return updated_key;
-}
-
-template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
@@ -710,7 +690,7 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
-            full_name);
+            getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -742,21 +722,15 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
             }
 
             bucket_count = container.capacity();
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
-
-        if (attribute.string_arena)
-            bytes_allocated += attribute.string_arena->size();
 
         if (attribute.is_index_null.has_value())
             bytes_allocated += (*attribute.is_index_null).size();
     }
 
-    bytes_allocated += complex_key_arena.size();
+    bytes_allocated += string_arena.size();
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
@@ -774,22 +748,20 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     ColumnsWithTypeAndName key_columns;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
-    else
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
-
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
+        auto keys_column = getColumnFromPODArray(std::move(keys));
+        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    }
+    else
+    {
+        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
+
+    return result;
 }
 
 template class HashedArrayDictionary<DictionaryKeyType::Simple>;

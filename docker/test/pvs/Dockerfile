@@ -1,6 +1,8 @@
+# rebuild in #33610
 # docker build -t clickhouse/pvs-test .
 
-FROM clickhouse/binary-builder
+ARG FROM_TAG=latest
+FROM clickhouse/binary-builder:$FROM_TAG
 
 RUN apt-get update --yes \
     && apt-get install \

@@ -1,5 +1,7 @@
+# rebuild in #33610
 # docker build -t clickhouse/stress-test .
-FROM clickhouse/stateful-test
+ARG FROM_TAG=latest
+FROM clickhouse/stateful-test:$FROM_TAG
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \

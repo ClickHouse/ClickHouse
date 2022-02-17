@@ -48,7 +48,7 @@ struct ToStartOfTransform;
     template <> \
     struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
     { \
-        static ExtendedDayNum execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
+        static auto execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.toStartOf##INTERVAL_KIND##Interval(time_zone.toDayNum(t), delta); \
         } \
@@ -89,7 +89,7 @@ struct ToStartOfTransform;
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static inline ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
+        static inline auto execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \

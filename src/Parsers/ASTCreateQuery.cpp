@@ -210,8 +210,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
-    if (tables)
-        res->set(res->tables, tables->clone());
     if (table_overrides)
         res->set(res->table_overrides, table_overrides->clone());
 
@@ -444,12 +442,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                       << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
         settings.ostr << (comment ? ")" : "");
-    }
-
-    if (tables)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
-        tables->formatImpl(settings, state, frame);
     }
 
     if (comment)

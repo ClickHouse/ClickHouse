@@ -116,6 +116,15 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
     return {};
 }
 
+template <typename F>
+void StorageMerge::forEachTable(F && func) const
+{
+    getFirstTable([&func](const auto & table)
+    {
+        func(table);
+        return false;
+    });
+}
 
 bool StorageMerge::isRemote() const
 {
@@ -123,6 +132,16 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    /// NOTE: This check is used during query analysis as condition for applying
+    /// "move to PREWHERE" optimization. However, it contains a logical race:
+    /// If new table that matches regexp for current storage and doesn't support PREWHERE
+    /// will appear after this check and before calling "read" method, the optimized query may fail.
+    /// Since it's quite rare case, we just ignore this possibility.
+
+    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
+}
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
@@ -169,6 +188,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     size_t selected_table_size = 0;
 
+    /// TODO: Find a way to support projections for StorageMerge
+    query_info.ignore_projections = true;
     for (const auto & iterator : database_table_iterators)
     {
         while (iterator->isValid())
@@ -452,7 +473,9 @@ Pipe StorageMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
+        /// TODO: Find a way to support projections for StorageMerge
+        InterpreterSelectQuery interpreter{
+            modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
 
 
         pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline());
@@ -771,10 +794,15 @@ void StorageMerge::convertingSourceStream(
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
-    auto first_materialized_mysql = getFirstTable([](const StoragePtr & table) { return table && table->getName() == "MaterializedMySQL"; });
-    if (!first_materialized_mysql)
-        return {};
-    return first_materialized_mysql->getColumnSizes();
+    ColumnSizeByName column_sizes;
+
+    forEachTable([&](const auto & table)
+    {
+        for (const auto & [name, size] : table->getColumnSizes())
+            column_sizes[name].add(size);
+    });
+
+    return column_sizes;
 }
 
 

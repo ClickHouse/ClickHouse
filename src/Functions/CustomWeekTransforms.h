@@ -76,7 +76,7 @@ struct ToStartOfWeekImpl
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
 
     using FactorTransform = ZeroTransform;

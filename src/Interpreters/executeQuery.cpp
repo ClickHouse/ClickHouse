@@ -2,6 +2,7 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
@@ -29,6 +30,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -38,6 +40,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -56,6 +59,9 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+
+#include <base/EnumReflection.h>
+#include <base/demangle.h>
 
 #include <random>
 
@@ -191,7 +197,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
@@ -271,7 +277,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     // Try log query_kind if ast is valid
     if (ast)
     {
-        elem.query_kind = ast->getQueryKindString();
+        elem.query_kind = magic_enum::enum_name(ast->getQueryKind());
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
@@ -654,7 +660,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (context->query_trace_context.trace_id != UUID())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();

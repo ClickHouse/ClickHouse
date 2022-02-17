@@ -86,6 +86,9 @@ private:
     std::map<std::string, StoragePtr> materialized_tables;
     mutable std::mutex tables_mutex;
     mutable std::mutex handler_mutex;
+
+    BackgroundSchedulePool::TaskHolder startup_task;
+    bool shutdown_called = false;
 };
 
 }

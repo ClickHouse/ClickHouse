@@ -2,6 +2,7 @@
 import logging
 import subprocess
 import os
+import sys
 
 from github import Github
 
@@ -13,6 +14,7 @@ from ssh import SSHKey
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit
+from rerun_helper import RerunHelper
 
 NAME = "Docs Release (actions)"
 
@@ -22,9 +24,12 @@ if __name__ == "__main__":
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
 
-    pr_info = PRInfo(need_changed_files=True)
-
     gh = Github(get_best_robot_token())
+    pr_info = PRInfo(need_changed_files=True)
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

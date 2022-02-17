@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Disks/IDisk.h>
 #include <IO/HashingWriteBuffer.h>
@@ -74,6 +75,10 @@ public:
         std::unique_ptr<HashingWriteBuffer> marks;
         bool use_marks;
 
+        bool is_prefinalized = false;
+
+        void preFinalize();
+
         void finalize();
 
         void sync() const;
@@ -113,11 +118,14 @@ protected:
     void calculateStatistics(const Block & block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishSkipIndicesSerialization(bool sync);
     /// Finishes stats serialization: write all accumulated data to disk and compute checksums
-    void finishStatisticsSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
@@ -142,6 +150,11 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
+    struct StatisticsStream {
+        std::unique_ptr<WriteBufferFromFileBase> plain_buffer = nullptr;
+        std::unique_ptr<HashingWriteBuffer> hashing_buffer = nullptr;
+    };
+    std::unordered_map<String, std::unique_ptr<StatisticsStream>> statistic_to_stream;
     IMergeTreeDistributionStatisticCollectorPtrs stats_collectors;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;

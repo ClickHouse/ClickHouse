@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -131,8 +132,9 @@ bool MergeTreeBaseSelectProcessor::getTaskFromBuffer()
         if (Status::Accepted == res)
             return true;
 
+        /// To avoid any possibility of ignoring cancellation, exception will be thrown.
         if (Status::Cancelled == res)
-            break;
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query had been cancelled");
     }
     return false;
 }
@@ -165,8 +167,18 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 {
     while (!isCancelled())
     {
-        if ((!task || task->isFinished()) && !getNewTask())
-            return {};
+        try
+        {
+            if ((!task || task->isFinished()) && !getNewTask())
+                return {};
+        }
+        catch (const Exception & e)
+        {
+            /// See MergeTreeBaseSelectProcessor::getTaskFromBuffer()
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                return {};
+            throw;
+        }
 
         auto res = readFromPart();
 

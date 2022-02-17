@@ -50,12 +50,17 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
 {
 }
 
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
+    std::lock_guard lock(handler_mutex);
+    if (shutdown_called)
+        return;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             /* replication_identifier */database_name,
             remote_database_name,
@@ -104,24 +109,14 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
-    replication_handler->startup();
+    replication_handler->startup(/* delayed */false);
 }
 
 
 void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
     DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
-    try
-    {
-        startSynchronization();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot load nested database objects for PostgreSQL database engine.");
-
-        if (!force_attach)
-            throw;
-    }
+    startup_task->activateAndSchedule();
 }
 
 
@@ -376,6 +371,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, cons
 
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
+    startup_task->deactivate();
     stopReplication();
     DatabaseAtomic::shutdown();
 }
@@ -387,6 +383,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     if (replication_handler)
         replication_handler->shutdown();
 
+    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }

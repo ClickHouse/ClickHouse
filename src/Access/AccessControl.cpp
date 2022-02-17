@@ -75,6 +75,7 @@ public:
             cache.remove(params);
         }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        res->initialize();
         cache.add(params, res);
         return res;
     }

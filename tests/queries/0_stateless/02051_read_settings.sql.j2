@@ -4,7 +4,15 @@
 
 drop table if exists data_02051;
 
-create table data_02051 (key Int, value String) engine=MergeTree() order by key
+{# check each index_granularity_bytes #}
+{% for index_granularity_bytes in [0, 10 * 1024 * 1024] %}
+create table data_02051 (key Int, value String)
+engine=MergeTree()
+order by key
+settings
+    index_granularity_bytes={{ index_granularity_bytes }},
+    /* to suppress "Table can't create parts with adaptive granularity, but settings ..." warning */
+    min_bytes_for_wide_part=0
 as select number, repeat(toString(number), 5) from numbers(1e6);
 
 {# check each local_filesystem_read_method #}
@@ -28,4 +36,8 @@ select count(ignore(*)) from data_02051 settings
 {% endfor %}
 {% endfor %}
 {% endfor %}
+{% endfor %}
+
+drop table data_02051;
+{# index_granularity_bytes #}
 {% endfor %}

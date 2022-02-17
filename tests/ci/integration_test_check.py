@@ -23,6 +23,8 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
+# When update, update
+# integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
     "clickhouse/integration-tests-runner",
     "clickhouse/mysql-golang-client",
@@ -32,7 +34,9 @@ IMAGES = [
     "clickhouse/postgresql-java-client",
     "clickhouse/integration-test",
     "clickhouse/kerberos-kdc",
+    "clickhouse/kerberized-hadoop",
     "clickhouse/integration-helper",
+    "clickhouse/dotnet-client",
 ]
 
 def get_json_params_dict(check_name, pr_info, docker_images, run_by_hash_total, run_by_hash_num):

@@ -174,6 +174,20 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     {
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
+
+    /// Fill saturated LUT.
+    {
+        ssize_t day = DATE_LUT_SIZE - 1;
+        for (; day >= 0; --day)
+        {
+            if (lut[day].date >= 0)
+                lut_saturated[day] = lut[day];
+            else
+                break;
+        }
+        for (; day >= 0; --day)
+            lut_saturated[day] = lut_saturated[day + 1];
+    }
 }
 
 

@@ -130,11 +130,14 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
+    void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+
+    void setSerializationInfos(const SerializationInfoByName & new_infos);
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
+
     SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
@@ -176,7 +179,8 @@ public:
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
+    /// If token is not empty, block id is calculated based on it instead of block data
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     const MergeTreeData & storage;
 
@@ -298,9 +302,11 @@ public:
         {
         }
 
+        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+
         void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
-        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
-        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -342,6 +348,9 @@ public:
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
+
+    /// Cleanup shared locks made with old name after part renaming
+    virtual void cleanupOldName(const String & old_part_name) const;
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
@@ -404,13 +413,25 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    /// One of part files which is used to check how many references (I'd like
+    /// to say hardlinks, but it will confuse even more) we have for the part
+    /// for zero copy replication. Sadly it's very complex.
+    ///
+    /// NOTE: it's not a random "metadata" file for part like 'columns.txt'. If
+    /// two relative parts (for example all_1_1_0 and all_1_1_0_100) has equal
+    /// checksums.txt it means that one part was obtained by FREEZE operation or
+    /// it was mutation without any change for source part. In this case we
+    /// really don't need to remove data from remote FS and need only decrement
+    /// reference counter locally.
+    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file.
+    /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
     /// Loads stats

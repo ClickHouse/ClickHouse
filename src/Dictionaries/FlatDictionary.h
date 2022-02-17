@@ -127,14 +127,13 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -156,9 +155,6 @@ private:
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
-
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
@@ -176,6 +172,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
 };
 
 }

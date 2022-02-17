@@ -83,7 +83,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children == 1 && settings_limit_offset_needed)
+    if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
         ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
@@ -127,7 +127,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
-            settings_limit_offset_done = true;
+            options.settings_limit_offset_done = true;
         }
     }
 
@@ -138,6 +138,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         nested_interpreters.emplace_back(
             buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+        // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
+        // a view source that means that the parent uses it too and can be cached globally
+        uses_view_source |= nested_interpreters.back()->usesViewSource();
     }
 
     /// Determine structure of the result.
@@ -305,7 +308,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
-    if (settings_limit_offset_needed && !settings_limit_offset_done)
+    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         if (settings.limit > 0)
         {

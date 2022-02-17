@@ -30,6 +30,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
 
     if (stream)
@@ -71,6 +72,13 @@ Chunk ArrowBlockInputFormat::generate()
 
     arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
 
+    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+    /// Otherwise fill the missing columns with zero values of its type.
+    if (format_settings.defaults_for_omitted_fields)
+        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+            for (const auto & column_idx : missing_columns)
+                block_missing_values.setBit(column_idx, row_idx);
+
     return res;
 }
 
@@ -83,6 +91,12 @@ void ArrowBlockInputFormat::resetParser()
     else
         file_reader.reset();
     record_batch_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ArrowBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
@@ -110,16 +124,23 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
 
 void ArrowBlockInputFormat::prepareReader()
 {
+    std::shared_ptr<arrow::Schema> schema;
     if (stream)
+    {
         stream_reader = createStreamReader(*in);
+        schema = stream_reader->schema();
+    }
     else
     {
         file_reader = createFileReader(*in, format_settings, is_stopped);
         if (!file_reader)
             return;
+        schema = file_reader->schema();
     }
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Arrow", format_settings.arrow.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
+        getPort().getHeader(), "Arrow", format_settings.arrow.import_nested, format_settings.arrow.allow_missing_columns);
+    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     if (stream)
         record_batch_total = -1;

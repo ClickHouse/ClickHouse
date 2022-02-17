@@ -672,6 +672,15 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
 }
 
 template <typename T>
+static ColumnPtr getColumnFromPODArray(PaddedPODArray<T> && array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData() = std::move(array);
+
+    return column_vector;
+}
+
+template <typename T>
 static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t start, size_t length)
 {
     auto column_vector = ColumnVector<T>::create();

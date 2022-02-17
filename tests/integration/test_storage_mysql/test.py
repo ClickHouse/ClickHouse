@@ -418,6 +418,10 @@ def test_predefined_connection_configuration(started_cluster):
     ''')
     assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
 
+    assert 'Connection pool cannot have zero size' in node1.query_and_get_error("SELECT count() FROM mysql(mysql1, table='test_table', connection_pool_size=0)")
+    assert 'Connection pool cannot have zero size' in node1.query_and_get_error("SELECT count() FROM mysql(mysql4)")
+    assert int(node1.query("SELECT count() FROM mysql(mysql4, connection_pool_size=1)")) == 100
+
 
 # Regression for (k, v) IN ((k, v))
 def test_mysql_in(started_cluster):

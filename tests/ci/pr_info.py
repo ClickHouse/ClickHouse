@@ -1,28 +1,52 @@
 #!/usr/bin/env python3
 import json
 import os
-import urllib
 
-import requests
-from unidiff import PatchSet
+from unidiff import PatchSet  # type: ignore
 
-from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_EVENT_PATH
+from build_download_helper import get_with_retries
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_SERVER_URL,
+    GITHUB_RUN_ID,
+    GITHUB_EVENT_PATH,
+)
 
-DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png",
-                             ".jpg", ".py", ".sh", ".json"]
+DIFF_IN_DOCUMENTATION_EXT = [
+    ".html",
+    ".md",
+    ".yml",
+    ".txt",
+    ".css",
+    ".js",
+    ".xml",
+    ".ico",
+    ".conf",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".py",
+    ".sh",
+    ".json",
+]
+RETRY_SLEEP = 0
+
 
 def get_pr_for_commit(sha, ref):
-    try_get_pr_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
+    if not ref:
+        return None
+    try_get_pr_url = (
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
+    )
     try:
-        response = requests.get(try_get_pr_url)
-        response.raise_for_status()
+        response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
         for pr in data:
             # refs for pushes looks like refs/head/XX
             # refs for RPs looks like XX
-            if pr['head']['ref'] in ref:
+            if pr["head"]["ref"] in ref:
                 return pr
         print("Cannot find PR with required ref", ref, "returning first one")
         first_pr = data[0]
@@ -33,29 +57,58 @@ def get_pr_for_commit(sha, ref):
 
 
 class PRInfo:
-    def __init__(self, github_event=None, need_orgs=False, need_changed_files=False, labels_from_api=False):
+    default_event = {
+        "commits": 1,
+        "before": "HEAD~",
+        "after": "HEAD",
+        "ref": None,
+    }
+
+    def __init__(
+        self,
+        github_event=None,
+        need_orgs=False,
+        need_changed_files=False,
+        pr_event_from_api=False,
+    ):
         if not github_event:
             if GITHUB_EVENT_PATH:
-                with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
+                with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
                     github_event = json.load(event_file)
             else:
-                github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
+                github_event = PRInfo.default_event.copy()
         self.event = github_event
         self.changed_files = set([])
+        self.body = ""
+        ref = github_event.get("ref", "refs/head/master")
+        if ref and ref.startswith("refs/heads/"):
+            ref = ref[11:]
 
         # workflow completed event, used for PRs only
-        if 'action' in github_event and github_event['action'] == 'completed':
-            self.sha = github_event['workflow_run']['head_sha']
-            prs_for_sha = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}/pulls").json()
+        if "action" in github_event and github_event["action"] == "completed":
+            self.sha = github_event["workflow_run"]["head_sha"]
+            prs_for_sha = get_with_retries(
+                f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
+                "/pulls",
+                sleep=RETRY_SLEEP,
+            ).json()
             if len(prs_for_sha) != 0:
-                github_event['pull_request'] = prs_for_sha[0]
+                github_event["pull_request"] = prs_for_sha[0]
 
-        if 'pull_request' in github_event:  # pull request and other similar events
-            self.number = github_event['pull_request']['number']
-            if 'after' in github_event:
-                self.sha = github_event['after']
+        if "pull_request" in github_event:  # pull request and other similar events
+            self.number = github_event["pull_request"]["number"]
+            if pr_event_from_api:
+                response = get_with_retries(
+                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                    f"/pulls/{self.number}",
+                    sleep=RETRY_SLEEP,
+                )
+                github_event["pull_request"] = response.json()
+
+            if "after" in github_event:
+                self.sha = github_event["after"]
             else:
-                self.sha = github_event['pull_request']['head']['sha']
+                self.sha = github_event["pull_request"]["head"]["sha"]
 
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
@@ -64,60 +117,63 @@ class PRInfo:
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
-            self.base_ref = github_event['pull_request']['base']['ref']
-            self.base_name = github_event['pull_request']['base']['repo']['full_name']
-            self.head_ref = github_event['pull_request']['head']['ref']
-            self.head_name = github_event['pull_request']['head']['repo']['full_name']
+            self.base_ref = github_event["pull_request"]["base"]["ref"]
+            self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
+            self.head_ref = github_event["pull_request"]["head"]["ref"]
+            self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
+            self.body = github_event["pull_request"]["body"]
+            self.labels = {
+                label["name"] for label in github_event["pull_request"]["labels"]
+            }
 
-            if labels_from_api:
-                response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
-                self.labels = {l['name'] for l in response.json()}
-            else:
-                self.labels = {l['name'] for l in github_event['pull_request']['labels']}
-
-            self.user_login = github_event['pull_request']['user']['login']
+            self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
             if need_orgs:
-                user_orgs_response = requests.get(github_event['pull_request']['user']['organizations_url'])
+                user_orgs_response = get_with_retries(
+                    github_event["pull_request"]["user"]["organizations_url"],
+                    sleep=RETRY_SLEEP,
+                )
                 if user_orgs_response.ok:
                     response_json = user_orgs_response.json()
-                    self.user_orgs = set(org['id'] for org in response_json)
+                    self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_url = github_event['pull_request']['diff_url']
-        elif 'commits' in github_event:
-            self.sha = github_event['after']
-            pull_request = get_pr_for_commit(self.sha, github_event['ref'])
+            self.diff_url = github_event["pull_request"]["diff_url"]
+        elif "commits" in github_event:
+            self.sha = github_event["after"]
+            pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            if pull_request is None or pull_request['state'] == 'closed':  # it's merged PR to master
+            if pull_request is None or pull_request["state"] == "closed":
+                # it's merged PR to master
                 self.number = 0
                 self.labels = {}
-                self.pr_html_url = f"{repo_prefix}/commits/master"
-                self.base_ref = "master"
+                self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+                self.base_ref = ref
                 self.base_name = self.repo_full_name
-                self.head_ref = "master"
+                self.head_ref = ref
                 self.head_name = self.repo_full_name
-                self.diff_url = \
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{github_event['before']}...{self.sha}"
+                self.diff_url = (
+                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                    f"compare/{github_event['before']}...{self.sha}"
+                )
             else:
-                self.number = pull_request['number']
-                if labels_from_api:
-                    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
-                    self.labels = {l['name'] for l in response.json()}
-                else:
-                    self.labels = {l['name'] for l in pull_request['labels']}
+                self.number = pull_request["number"]
+                self.labels = {label["name"] for label in pull_request["labels"]}
 
-                self.base_ref = pull_request['base']['ref']
-                self.base_name = pull_request['base']['repo']['full_name']
-                self.head_ref = pull_request['head']['ref']
-                self.head_name = pull_request['head']['repo']['full_name']
-                self.pr_html_url = pull_request['html_url']
-                if 'pr-backport' in self.labels:
-                    self.diff_url = f"https://github.com/{GITHUB_REPOSITORY}/compare/master...{self.head_ref}.diff"
+                self.base_ref = pull_request["base"]["ref"]
+                self.base_name = pull_request["base"]["repo"]["full_name"]
+                self.head_ref = pull_request["head"]["ref"]
+                self.head_name = pull_request["head"]["repo"]["full_name"]
+                self.pr_html_url = pull_request["html_url"]
+                if "pr-backport" in self.labels:
+                    self.diff_url = (
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/master...{self.head_ref}.diff"
+                    )
                 else:
-                    self.diff_url = pull_request['diff_url']
+                    self.diff_url = pull_request["diff_url"]
         else:
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
@@ -127,10 +183,10 @@ class PRInfo:
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            self.pr_html_url = f"{repo_prefix}/commits/master"
-            self.base_ref = "master"
+            self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+            self.base_ref = ref
             self.base_name = self.repo_full_name
-            self.head_ref = "master"
+            self.head_ref = ref
             self.head_name = self.repo_full_name
 
         if need_changed_files:
@@ -140,25 +196,27 @@ class PRInfo:
         if not self.diff_url:
             raise Exception("Diff URL cannot be find for event")
 
-        if 'commits' in self.event and self.number == 0:
-            response = requests.get(self.diff_url)
-            response.raise_for_status()
+        response = get_with_retries(
+            self.diff_url,
+            sleep=RETRY_SLEEP,
+        )
+        response.raise_for_status()
+        if "commits" in self.event and self.number == 0:
             diff = response.json()
 
-            if 'files' in diff:
-                self.changed_files = [f['filename'] for f in diff['files']]
+            if "files" in diff:
+                self.changed_files = [f["filename"] for f in diff["files"]]
         else:
-            diff = urllib.request.urlopen(self.diff_url)
-            diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
+            diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
 
     def get_dict(self):
         return {
-            'sha': self.sha,
-            'number': self.number,
-            'labels': self.labels,
-            'user_login': self.user_login,
-            'user_orgs': self.user_orgs,
+            "sha": self.sha,
+            "number": self.number,
+            "labels": self.labels,
+            "user_login": self.user_login,
+            "user_orgs": self.user_orgs,
         }
 
     def has_changes_in_documentation(self):
@@ -169,49 +227,63 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = 'docs' in f
-            path_in_website = 'website' in f
-            if (ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)) or 'docker/docs' in f:
+            path_in_docs = "docs" in f
+            path_in_website = "website" in f
+            if (
+                ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
+            ) or "docker/docs" in f:
                 return True
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
-        if 'force tests' in self.labels:
+        # TODO: See a broken loop
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
         for f in self.changed_files:
-            if (not f.startswith('tests/queries')
-                or not f.startswith('tests/integration')
-                or not f.startswith('tests/performance')):
+            # TODO: this logic is broken, should be fixed before using
+            if (
+                not f.startswith("tests/queries")
+                or not f.startswith("tests/integration")
+                or not f.startswith("tests/performance")
+            ):
                 return False
 
         return True
 
     def can_skip_integration_tests(self):
-        if 'force tests' in self.labels:
+        # TODO: See a broken loop
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
         for f in self.changed_files:
-            if not f.startswith('tests/queries') or not f.startswith('tests/performance'):
+            # TODO: this logic is broken, should be fixed before using
+            if not f.startswith("tests/queries") or not f.startswith(
+                "tests/performance"
+            ):
                 return False
 
         return True
 
     def can_skip_functional_tests(self):
-        if 'force tests' in self.labels:
+        # TODO: See a broken loop
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
         for f in self.changed_files:
-            if not f.startswith('tests/integration') or not f.startswith('tests/performance'):
+            # TODO: this logic is broken, should be fixed before using
+            if not f.startswith("tests/integration") or not f.startswith(
+                "tests/performance"
+            ):
                 return False
 
         return True

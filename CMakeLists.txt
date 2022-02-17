@@ -67,7 +67,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURC
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
-include (cmake/find/ccache.cmake)
+include (cmake/ccache.cmake)
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
 # prlimit is compiler, and clang++ is its input file, and refuses to work  with
@@ -104,9 +104,8 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
-option(MAKE_STATIC_LIBRARIES "Disable to make shared libraries" ${USE_STATIC_LIBRARIES})
 
-if (NOT MAKE_STATIC_LIBRARIES)
+if (NOT USE_STATIC_LIBRARIES)
     # DEVELOPER ONLY.
     # Faster linking if turned on.
     option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files")
@@ -115,11 +114,11 @@ if (NOT MAKE_STATIC_LIBRARIES)
         "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled")
 endif ()
 
-if (MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without MAKE_STATIC_LIBRARIES=0 has no effect.")
+if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without USE_STATIC_LIBRARIES=0 has no effect.")
 endif()
 
-if (NOT MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
     set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
 endif ()
 
@@ -139,7 +138,6 @@ if (ENABLE_FUZZING)
     set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
-    set (USE_INTERNAL_SSL_LIBRARY 1)
     set (USE_UNWIND ON)
     set (ENABLE_EMBEDDED_COMPILER 0)
     set (ENABLE_EXAMPLES 0)
@@ -152,7 +150,6 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
-    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -185,7 +182,7 @@ if (COMPILER_CLANG)
 
     if (HAS_USE_CTOR_HOMING)
         # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
@@ -203,20 +200,12 @@ endif ()
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND USE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
-
-if (GLIBC_COMPATIBILITY)
-    # NOTE: we may also want to check glibc version and add -include only for 2.32+
-    # however this is extra complexity, especially for cross compiling.
-    # And anyway it should not break anything for <2.32.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-endif()
 
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
@@ -257,8 +246,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(USE_DEBUG_HELPERS ON)
-else ()
     set(USE_DEBUG_HELPERS ON)
 endif()
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
@@ -414,16 +401,6 @@ else ()
     option(WERROR "Enable -Werror compiler option" ON)
 endif ()
 
-if (WERROR)
-    add_warning(error)
-endif ()
-
-# Make this extra-checks for correct library dependencies.
-if (OS_LINUX AND NOT SANITIZE)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-endif ()
-
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
@@ -431,12 +408,25 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+endif ()
+link_libraries(global-group)
+
+if (WERROR)
+    # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
+    # Instead, adopt modern cmake usage requirement.
+    target_compile_options(global-group INTERFACE "-Werror")
+endif ()
+
+# Make this extra-checks for correct library dependencies.
+if (OS_LINUX AND NOT SANITIZE)
+    target_link_options(global-group INTERFACE "-Wl,--no-undefined")
 endif ()
 
 ######################################
@@ -445,7 +435,7 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (MAKE_STATIC_LIBRARIES)
+if (USE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
     if (OS_LINUX AND NOT ARCH_ARM)
         # Slightly more efficient code can be generated
@@ -481,85 +471,10 @@ endif ()
 message (STATUS
     "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
     SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
-include (cmake/contrib_finder.cmake)
-
-find_contrib_lib(double-conversion) # Must be before parquet
-include (cmake/find/ssl.cmake)
-include (cmake/find/ldap.cmake) # after ssl
-include (cmake/find/icu.cmake)
-include (cmake/find/xz.cmake)
-include (cmake/find/zlib.cmake)
-include (cmake/find/zstd.cmake)
-include (cmake/find/ltdl.cmake) # for odbc
-# openssl, zlib before poco
-include (cmake/find/sparsehash.cmake)
-include (cmake/find/re2.cmake)
-include (cmake/find/krb5.cmake)
-include (cmake/find/libgsasl.cmake)
-include (cmake/find/cyrus-sasl.cmake)
-include (cmake/find/rdkafka.cmake)
-include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
-include (cmake/find/amqpcpp.cmake)
-include (cmake/find/capnp.cmake)
-include (cmake/find/llvm.cmake)
-include (cmake/find/h3.cmake)
-include (cmake/find/libxml2.cmake)
-include (cmake/find/brotli.cmake)
-include (cmake/find/protobuf.cmake)
-include (cmake/find/grpc.cmake)
-include (cmake/find/pdqsort.cmake)
-include (cmake/find/miniselect.cmake)
-include (cmake/find/hdfs3.cmake) # uses protobuf
-include (cmake/find/poco.cmake)
-include (cmake/find/curl.cmake)
-include (cmake/find/s3.cmake)
-include (cmake/find/blob_storage.cmake)
-include (cmake/find/base64.cmake)
-include (cmake/find/parquet.cmake)
-include (cmake/find/simdjson.cmake)
-include (cmake/find/fast_float.cmake)
-include (cmake/find/rapidjson.cmake)
-include (cmake/find/fastops.cmake)
-include (cmake/find/odbc.cmake)
-include (cmake/find/nanodbc.cmake)
-include (cmake/find/sqlite.cmake)
-include (cmake/find/rocksdb.cmake)
-include (cmake/find/libpqxx.cmake)
-include (cmake/find/nuraft.cmake)
-include (cmake/find/yaml-cpp.cmake)
-include (cmake/find/s2geometry.cmake)
-include (cmake/find/nlp.cmake)
-include (cmake/find/bzip2.cmake)
-include (cmake/find/filelog.cmake)
-
-if(NOT USE_INTERNAL_PARQUET_LIBRARY)
-    set (ENABLE_ORC OFF CACHE INTERNAL "")
-endif()
-include (cmake/find/orc.cmake)
-
-include (cmake/find/avro.cmake)
-include (cmake/find/msgpack.cmake)
-include (cmake/find/cassandra.cmake)
-include (cmake/find/sentry.cmake)
-include (cmake/find/datasketches.cmake)
-include (cmake/find/libprotobuf-mutator.cmake)
-
-set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
-find_contrib_lib(cityhash)
-
-find_contrib_lib(farmhash)
-
-if (ENABLE_TESTS)
-    include (cmake/find/gtest.cmake)
-endif ()
-
-# Need to process before "contrib" dir:
-include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
@@ -603,7 +518,7 @@ macro (add_executable target)
         # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
         # - but jemalloc-cmake does not run private_namespace.sh
         #   so symbol name should be _zone_register
-        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
+        if (ENABLE_JEMALLOC AND USE_STATIC_LIBRARIES AND OS_DARWIN)
             set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
@@ -621,7 +536,5 @@ add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
-
-include (cmake/print_include_directories.cmake)
 
 include (cmake/sanitize_target_link_libraries.cmake)

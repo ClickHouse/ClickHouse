@@ -40,6 +40,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
 
     if (!file_reader)
         prepareReader();
@@ -59,6 +60,13 @@ Chunk ParquetBlockInputFormat::generate()
     ++row_group_current;
 
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+
+    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+    /// Otherwise fill the missing columns with zero values of its type.
+    if (format_settings.defaults_for_omitted_fields)
+        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+            for (const auto & column_idx : missing_columns)
+                block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
 
@@ -69,6 +77,12 @@ void ParquetBlockInputFormat::resetParser()
     file_reader.reset();
     column_indices.clear();
     row_group_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
@@ -118,7 +132,8 @@ void ParquetBlockInputFormat::prepareReader()
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
+    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
     if (format_settings.parquet.import_nested)

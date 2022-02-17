@@ -1,4 +1,16 @@
-if (${ENABLE_KRB5})
+if(NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE)
+    option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
+elseif(ENABLE_HDFS)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
+endif()
+
+if(NOT ENABLE_HDFS)
+    message(STATUS "Not using hdfs")
+    return()
+endif()
+
+if (TARGET ch_contrib::krb5)
+    message(STATUS "Enable kerberos for HDFS")
     SET(WITH_KERBEROS 1)
 else()
     SET(WITH_KERBEROS 0)
@@ -27,7 +39,7 @@ set(PROTO_FILES
     "${HDFS3_SOURCE_DIR}/proto/datatransfer.proto"
     )
 
-PROTOBUF_GENERATE_CPP(PROTO_SOURCES PROTO_HEADERS ${PROTO_FILES})
+PROTOBUF_GENERATE_CPP(PROTO_SOURCES PROTO_HEADERS ${PROTO_FILES} APPEND_PATH)
 
 configure_file("${HDFS3_SOURCE_DIR}/platform.h.in" "${CMAKE_CURRENT_BINARY_DIR}/platform.h")
 
@@ -94,30 +106,26 @@ set(SRCS
 set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES COMPILE_FLAGS "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1")
 
 # target
-add_library(hdfs3 ${SRCS})
+add_library(_hdfs3 ${SRCS})
 
-if(USE_INTERNAL_PROTOBUF_LIBRARY)
-    add_dependencies(hdfs3 protoc)
-endif()
+add_dependencies(_hdfs3 protoc)
 
-target_include_directories(hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
-target_include_directories(hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
-target_include_directories(hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(_hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
+target_include_directories(_hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
+target_include_directories(_hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-target_include_directories(hdfs3 PRIVATE ${LIBGSASL_INCLUDE_DIR})
-target_include_directories(hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
+target_include_directories(_hdfs3 SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
 
-target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
+target_link_libraries(_hdfs3 PRIVATE ch_contrib::gsasl)
 if (WITH_KERBEROS)
-    target_link_libraries(hdfs3 PRIVATE ${KRB5_LIBRARY})
+    target_link_libraries(_hdfs3 PRIVATE ch_contrib::krb5)
 endif()
-target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
+target_link_libraries(_hdfs3 PRIVATE ch_contrib::libxml2)
 
 # inherit from parent cmake
-target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
-target_link_libraries(hdfs3 PRIVATE ${Protobuf_LIBRARY} boost::headers_only)
-
-if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBRARIES)
-    target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
-    target_link_libraries(hdfs3 PRIVATE ${OPENSSL_LIBRARIES})
+target_link_libraries(_hdfs3 PRIVATE ch_contrib::protobuf boost::headers_only)
+if (TARGET OpenSSL::SSL)
+    target_link_libraries(_hdfs3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
+
+add_library(ch_contrib::hdfs ALIAS _hdfs3)

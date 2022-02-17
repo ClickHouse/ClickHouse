@@ -8,7 +8,7 @@ on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */6 * * *'
   workflow_run:
-    workflows: ["CIGithubActions"]
+    workflows: ["PullRequestCI"]
     types:
       - completed
   workflow_dispatch:
@@ -24,21 +24,21 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
       - name: Jepsen Test
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 keeper_jepsen_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"

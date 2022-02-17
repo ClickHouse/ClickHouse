@@ -1803,6 +1803,48 @@ If an INSERTed block is skipped due to deduplication in the source table, there 
 At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
+## insert_deduplication_token {#insert_deduplication_token}
+
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+For example, by providing a unique value for the setting in each INSERT statement,
+user can avoid the same inserted data being deduplicated.
+
+Possilbe values:
+
+-  Any string
+
+Default value: empty string (disabled)
+
+`insert_deduplication_token` is used for deduplication _only_ when not empty.
+
+Example:
+
+```sql
+CREATE TABLE test_table
+( A Int64 )
+ENGINE = MergeTree
+ORDER BY A
+SETTINGS non_replicated_deduplication_window = 100;
+
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
+
+-- the next insert won't be deduplicated because insert_deduplication_token is different
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
+
+-- the next insert will be deduplicated because insert_deduplication_token 
+-- is the same as one of the previous
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
+
+SELECT * FROM test_table
+
+┌─A─┐
+│ 1 │
+└───┘
+┌─A─┐
+│ 1 │
+└───┘
+```
+
 ## max_network_bytes {#settings-max-network-bytes}
 
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
@@ -2304,7 +2346,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
@@ -2315,7 +2357,7 @@ Possible values:
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -4155,3 +4197,20 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
+
+## shutdown_wait_unfinished_queries
+
+Enables or disables waiting unfinished queries when shutdown server.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
+
+Default value: 0.
+
+## shutdown_wait_unfinished
+
+The waiting time in seconds for currently handled connections when shutdown server.
+
+Default Value: 5.

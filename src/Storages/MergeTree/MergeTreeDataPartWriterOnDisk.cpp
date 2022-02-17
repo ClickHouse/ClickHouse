@@ -3,10 +3,11 @@
 #include "Common/Exception.h"
 #include "Disks/IDisk.h"
 #include "Storages/MergeTree/MergeTreeStatistic.h"
-
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <memory>
 #include <unordered_set>
 #include <utility>
+#include "IO/WriteBufferFromFileDecorator.h"
 
 namespace DB
 {
@@ -15,13 +16,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
     compressed.next();
     /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
     plain_hashing.next();
     if (use_marks)
         marks->next();
+
+    plain_file->preFinalize();
+    marks_file->preFinalize();
+
+    is_prefinalized = true;
+}
+
+void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+{
+    if (!is_prefinalized)
+        preFinalize();
 
     plain_file->finalize();
     if (use_marks)
@@ -214,7 +226,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          * And otherwise it will look like excessively growing memory consumption in context of query.
          *  (observed in long INSERT SELECTs)
          */
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)
@@ -289,8 +301,7 @@ void MergeTreeDataPartWriterOnDisk::calculateStatistics(const Block & stat_block
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -313,6 +324,14 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_file_stream->preFinalize();
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
+{
+    if (index_stream)
+    {
         index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();
@@ -320,8 +339,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -332,8 +350,16 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
 
     for (auto & stream : skip_indices_streams)
     {
-        stream->finalize();
+        stream->preFinalize();
         stream->addToChecksums(checksums);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
+{
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
         if (sync)
             stream->sync();
     }
@@ -343,12 +369,70 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
     skip_index_accumulated_marks.clear();
 }
 
-void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     if (stats_collectors.empty())
         return;
-
+    
     std::set<String> statistic_names;
+    auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
+    for (auto & stats_collector : stats_collectors)
+    {
+        if (!stats_collector->empty())
+        {
+            auto stat = stats_collector->getStatisticAndReset();
+            statistic_names.insert(stat->name());
+            column_distribution_stats->add(stats_collector->column(), std::move(stat));
+        }
+    }
+
+    MergeTreeStatistics stats;
+    stats.setDistributionStatistics(std::move(column_distribution_stats));
+
+    // Different stats can be stored in different files
+    // in order not to interfere with vertical merges.
+    // It is possible because one stat is calculated exactly for one column.
+    for (const String & statistic_name : statistic_names)
+    {
+        const auto filename = generateFileNameForStatistics(statistic_name);
+        LOG_DEBUG(&Poco::Logger::get("finishStatisticsSerialization"), "Stat: {} file: {}", statistic_name, filename);
+        if (statistic_to_stream.emplace(statistic_name, std::make_unique<StatisticsStream>()).second)
+        {
+            statistic_to_stream.at(statistic_name)->plain_buffer = data_part->volume->getDisk()->writeFile(
+                part_path + filename,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                WriteMode::Rewrite);
+            statistic_to_stream.at(statistic_name)->hashing_buffer = std::make_unique<HashingWriteBuffer>(
+                *statistic_to_stream.at(statistic_name)->plain_buffer);
+            auto & stats_stream = statistic_to_stream.at(statistic_name)->hashing_buffer;
+
+            stats.serializeBinary(statistic_name, *stats_stream);
+
+            stats_stream->next();
+            checksums.files[filename].file_size = stats_stream->count();
+            checksums.files[filename].file_hash = stats_stream->getHash();
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {} already exists.", statistic_name);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
+{
+    if (stats_collectors.empty() || statistic_to_stream.empty())
+        return;
+    
+    for (const auto & [_, stats_file_stream] : statistic_to_stream)
+    {
+        stats_file_stream->plain_buffer->finalize();
+        if (sync)
+            stats_file_stream->plain_buffer->sync();
+    }
+
+    statistic_to_stream.clear();
+    stats_collectors.clear();
+
+    /*std::set<String> statistic_names;
     auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
     for (auto & stats_collector : stats_collectors)
     {
@@ -383,7 +467,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
         
         if (sync)
             stats_file_stream->sync();
-    }
+    }*/
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
@@ -397,17 +481,6 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 Names MergeTreeDataPartWriterOnDisk::getStatsColumns() const
 {
-    /*std::unordered_set<String> written_column_names;
-    for (const auto& column_and_type : columns_list)
-        written_column_names.insert(column_and_type.name);
-
-    std::unordered_set<String> stats_column_names_set;
-    for (const auto & stat : metadata_snapshot->getStatistics())
-        std::copy_if(std::cbegin(stat.column_names), std::cend(stat.column_names),
-                  std::inserter(stats_column_names_set, std::end(stats_column_names_set)),
-                  [&written_column_names] (const String& column_name) {
-                      return written_column_names.find(column_name) != std::end(written_column_names);
-                  });*/
     std::unordered_set<String> stats_column_names_set;
     for (const auto & statistics_column_to_recalc : statistics_columns_to_recalc) {
         stats_column_names_set.insert(statistics_column_to_recalc.name);

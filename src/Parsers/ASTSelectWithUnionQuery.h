@@ -17,7 +17,7 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    const char * getQueryKindString() const override { return "Select"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     SelectUnionMode union_mode;
 

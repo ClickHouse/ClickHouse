@@ -12,7 +12,7 @@ CPU_ID = 4
 
 
 def run_command_in_container(cmd, *args):
-    # /clickhouse is mounted by interation tests runner
+    # /clickhouse is mounted by integration tests runner
     alternative_binary = os.getenv('CLICKHOUSE_BINARY', '/clickhouse')
     if alternative_binary:
         args+=(

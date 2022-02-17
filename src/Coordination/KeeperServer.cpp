@@ -107,7 +107,7 @@ KeeperServer::KeeperServer(
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 }
 
-void KeeperServer::startup()
+void KeeperServer::startup(bool enable_ipv6)
 {
     state_machine->init();
 
@@ -171,13 +171,14 @@ void KeeperServer::startup()
 #endif
     }
 
-    launchRaftServer(params, asio_opts);
+    launchRaftServer(enable_ipv6, params, asio_opts);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 }
 
 void KeeperServer::launchRaftServer(
+    bool enable_ipv6,
     const nuraft::raft_params & params,
     const nuraft::asio_service::options & asio_opts)
 {
@@ -192,7 +193,7 @@ void KeeperServer::launchRaftServer(
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
-    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger);
+    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
     if (!asio_listener)
         return;
@@ -285,10 +286,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
     for (const auto & [session_id, request] : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(session_id, request));
 
-    {
-        std::lock_guard lock(append_entries_mutex);
-        return raft_instance->append_entries(entries);
-    }
+    return raft_instance->append_entries(entries);
 }
 
 bool KeeperServer::isLeader() const

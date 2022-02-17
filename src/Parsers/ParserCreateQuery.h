@@ -124,6 +124,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_null{"NULL"};
     ParserKeyword s_not{"NOT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
+    ParserKeyword s_ephemeral{"EPHEMERAL"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
@@ -171,6 +172,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
+        && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
@@ -183,7 +185,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     Pos pos_before_specifier = pos;
-    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
+    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) ||
+        s_ephemeral.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
         default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
@@ -348,7 +351,7 @@ protected:
 
 
 /**
-  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  * [ENGINE = name] [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {
@@ -401,6 +404,10 @@ protected:
 
 class ParserTableOverrideDeclaration : public IParserBase
 {
+public:
+    const bool is_standalone;
+    explicit ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
+
 protected:
     const char * getName() const override { return "table override declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

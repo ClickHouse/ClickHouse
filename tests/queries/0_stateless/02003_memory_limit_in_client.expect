@@ -16,6 +16,10 @@ expect_after {
 }
 
 set basedir [file dirname $argv0]
+
+#
+# Check that the query will fail in clickhouse-client
+#
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
 expect ":) "
 
@@ -28,7 +32,24 @@ expect ":) "
 send -- "\4"
 expect eof
 
-set basedir [file dirname $argv0]
+#
+# Check that the query will fail in clickhouse-client
+#
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
+expect ":) "
+
+send  -- "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000)\r"
+expect "Code: 241"
+
+expect ":) "
+
+# Exit.
+send -- "\4"
+expect eof
+
+#
+# Check that the query will not fail (due to max_untracked_memory)
+#
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
 expect ":) "
 

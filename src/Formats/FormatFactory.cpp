@@ -13,6 +13,10 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <boost/algorithm/string/case_conv.hpp>
 
 namespace DB
 {
@@ -23,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -60,6 +65,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
+    format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
+    format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
+    format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
@@ -84,6 +92,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
+    format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -112,12 +121,15 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
+    format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
+    format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -191,7 +203,8 @@ InputFormatPtr FormatFactory::getInput(
 
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
+               context->getApplicationType() == Context::ApplicationType::SERVER};
         return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
@@ -373,6 +386,7 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
+    registerFileExtension(name, name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -383,12 +397,91 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
+void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker)
+{
+    auto & target = dict[name].append_support_checker;
+    if (target)
+        throw Exception("FormatFactory: Suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(append_support_checker);
+}
+
+void FormatFactory::markFormatHasNoAppendSupport(const String & name)
+{
+    registerAppendSupportChecker(name, [](const FormatSettings &){ return false; });
+}
+
+bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    auto & append_support_checker = dict[name].append_support_checker;
+    /// By default we consider that format supports append
+    return !append_support_checker || append_support_checker(format_settings);
+}
+
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
     auto & target = dict[name].output_creator;
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
+    registerFileExtension(name, name);
+}
+
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+{
+    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
+}
+
+String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
+{
+    if (file_name == "stdin")
+        return getFormatFromFileDescriptor(STDIN_FILENO);
+
+    CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
+    if (CompressionMethod::None != compression_method)
+    {
+        auto pos = file_name.find_last_of('.');
+        if (pos != String::npos)
+            file_name = file_name.substr(0, pos);
+    }
+
+    auto pos = file_name.find_last_of('.');
+    if (pos == String::npos)
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
+        return "";
+    }
+
+    String file_extension = file_name.substr(pos + 1, String::npos);
+    boost::algorithm::to_lower(file_extension);
+    auto it = file_extension_formats.find(file_extension);
+    if (it == file_extension_formats.end())
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
+        return "";
+    }
+    return it->second;
+}
+
+String FormatFactory::getFormatFromFileDescriptor(int fd)
+{
+#ifdef OS_LINUX
+    char buf[32] = {'\0'};
+    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    char file_path[PATH_MAX] = {'\0'};
+    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#elif defined(__APPLE__)
+    char file_path[PATH_MAX] = {'\0'};
+    if (fcntl(fd, F_GETPATH, file_path) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#else
+    return "";
+#endif
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)

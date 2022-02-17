@@ -1,4 +1,5 @@
-#  docker build -t clickhouse/binary-builder .
+# rebuild in #33610
+# docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror

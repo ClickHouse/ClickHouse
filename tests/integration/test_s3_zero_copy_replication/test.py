@@ -32,9 +32,28 @@ def get_large_objects_count(cluster, size=100, folder='data'):
     minio = cluster.minio_client
     counter = 0
     for obj in minio.list_objects(cluster.minio_bucket, '{}/'.format(folder)):
-        if obj.size >= size:
+        if obj.size is not None and obj.size >= size:
             counter = counter + 1
     return counter
+
+
+def check_objects_exisis(cluster, object_list, folder='data'):
+    minio = cluster.minio_client
+    for obj in object_list:
+        if obj:
+            minio.stat_object(cluster.minio_bucket, '{}/{}'.format(folder, obj))
+
+
+def check_objects_not_exisis(cluster, object_list, folder='data'):
+    minio = cluster.minio_client
+    for obj in object_list:
+        if obj:
+            try:
+                minio.stat_object(cluster.minio_bucket, '{}/{}'.format(folder, obj))
+            except Exception as error:
+                assert "NoSuchKey" in str(error)
+            else:
+                assert False, "Object {} should not be exists".format(obj)
 
 
 def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
@@ -264,6 +283,146 @@ def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
 
         node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
         node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+
+
+def wait_mutations(node, table, seconds):
+    time.sleep(1)
+    while seconds > 0:
+        seconds -= 1
+        mutations = node.query(f"SELECT count() FROM system.mutations WHERE table='{table}' AND is_done=0")
+        if mutations == '0\n':
+            return
+        time.sleep(1)
+    mutations = node.query(f"SELECT count() FROM system.mutations WHERE table='{table}' AND is_done=0")
+    assert mutations == '0\n'
+
+
+def test_s3_zero_copy_unfreeze(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+
+    node1.query(
+        """
+        CREATE TABLE unfreeze_test ON CLUSTER test_cluster (d UInt64)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/unfreeze_test', '{}')
+        ORDER BY d
+        SETTINGS storage_policy='s3'
+        """
+            .format('{replica}')
+    )
+
+    node1.query("INSERT INTO unfreeze_test VALUES (0)")
+
+    node1.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup1'")
+    node2.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup2'")
+    wait_mutations(node1, "unfreeze_test", 10)
+    wait_mutations(node2, "unfreeze_test", 10)
+
+    objects01 = node1.get_backuped_s3_objects("s31", "freeze_backup1")
+    objects02 = node2.get_backuped_s3_objects("s31", "freeze_backup2")
+
+    assert objects01 == objects02
+
+    check_objects_exisis(cluster, objects01)
+
+    node1.query("TRUNCATE TABLE unfreeze_test")
+    node2.query("SYSTEM SYNC REPLICA unfreeze_test")
+
+    objects11 = node1.get_backuped_s3_objects("s31", "freeze_backup1")
+    objects12 = node2.get_backuped_s3_objects("s31", "freeze_backup2")
+
+    assert objects01 == objects11
+    assert objects01 == objects12
+
+    check_objects_exisis(cluster, objects11)
+
+    node1.query("ALTER TABLE unfreeze_test UNFREEZE WITH NAME 'freeze_backup1'")
+    wait_mutations(node1, "unfreeze_test", 10)
+
+    check_objects_exisis(cluster, objects12)
+
+    node2.query("ALTER TABLE unfreeze_test UNFREEZE WITH NAME 'freeze_backup2'")
+    wait_mutations(node2, "unfreeze_test", 10)
+
+    check_objects_not_exisis(cluster, objects12)
+
+    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+
+
+def test_s3_zero_copy_drop_detached(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
+
+    node1.query(
+        """
+        CREATE TABLE drop_detached_test ON CLUSTER test_cluster (d UInt64)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/drop_detached_test', '{}')
+        ORDER BY d PARTITION BY d
+        SETTINGS storage_policy='s3'
+        """
+            .format('{replica}')
+    )
+
+    node1.query("INSERT INTO drop_detached_test VALUES (0)")
+    node1.query("ALTER TABLE drop_detached_test FREEZE WITH NAME 'detach_backup1'")
+    node1.query("INSERT INTO drop_detached_test VALUES (1)")
+    node1.query("ALTER TABLE drop_detached_test FREEZE WITH NAME 'detach_backup2'")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+
+    objects1 = node1.get_backuped_s3_objects("s31", "detach_backup1")
+    objects2 = node1.get_backuped_s3_objects("s31", "detach_backup2")
+
+    objects_diff = list(set(objects2) - set(objects1))
+
+    node1.query("ALTER TABLE drop_detached_test UNFREEZE WITH NAME 'detach_backup2'")
+    node1.query("ALTER TABLE drop_detached_test UNFREEZE WITH NAME 'detach_backup1'")
+
+    node1.query("ALTER TABLE drop_detached_test DETACH PARTITION '0'")
+    node1.query("ALTER TABLE drop_detached_test DETACH PARTITION '1'")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+
+    wait_mutations(node1, "drop_detached_test", 10)
+    wait_mutations(node2, "drop_detached_test", 10)
+
+    check_objects_exisis(cluster, objects1)
+    check_objects_exisis(cluster, objects2)
+
+    node2.query("ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'", settings={"allow_drop_detached": 1})
+    node1.query("SYSTEM SYNC REPLICA drop_detached_test")
+    wait_mutations(node1, "drop_detached_test", 10)
+    wait_mutations(node2, "drop_detached_test", 10)
+
+    check_objects_exisis(cluster, objects1)
+    check_objects_exisis(cluster, objects2)
+
+    node1.query("ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'", settings={"allow_drop_detached": 1})
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    wait_mutations(node1, "drop_detached_test", 10)
+    wait_mutations(node2, "drop_detached_test", 10)
+
+    check_objects_exisis(cluster, objects1)
+    check_objects_not_exisis(cluster, objects_diff)
+
+    node1.query("ALTER TABLE drop_detached_test DROP DETACHED PARTITION '0'", settings={"allow_drop_detached": 1})
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    wait_mutations(node1, "drop_detached_test", 10)
+    wait_mutations(node2, "drop_detached_test", 10)
+
+    check_objects_exisis(cluster, objects1)
+
+    node2.query("ALTER TABLE drop_detached_test DROP DETACHED PARTITION '0'", settings={"allow_drop_detached": 1})
+    node1.query("SYSTEM SYNC REPLICA drop_detached_test")
+    wait_mutations(node1, "drop_detached_test", 10)
+    wait_mutations(node2, "drop_detached_test", 10)
+
+    check_objects_not_exisis(cluster, objects1)
 
 
 def test_s3_zero_copy_concurrent_merge(cluster):
