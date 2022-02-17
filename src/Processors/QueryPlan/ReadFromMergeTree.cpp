@@ -545,7 +545,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        true,
+                        settings.compile_sort_description,
                         max_block_size);
 
                 pipe.addTransform(std::move(transform));
