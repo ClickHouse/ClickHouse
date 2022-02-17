@@ -87,7 +87,9 @@ struct SortCursorImpl
     {
         all_columns.clear();
         sort_columns.clear();
+#if USE_EMBEDDED_COMPILER
         raw_sort_columns_data.clear();
+#endif
 
         size_t num_columns = columns.size();
 
