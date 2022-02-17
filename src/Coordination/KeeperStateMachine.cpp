@@ -309,7 +309,7 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
         ::close(fd);
         return errno;
     }
-    data_out->alloc(file_size);
+    data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
     ::close(fd);
