@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB

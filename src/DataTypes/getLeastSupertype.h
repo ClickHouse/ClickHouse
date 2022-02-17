@@ -14,7 +14,6 @@ namespace DB
   * Examples: there is no least common supertype for Array(UInt8), Int8.
   */
 DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_string = false);
-DataTypePtr getLeastSupertype(const DataTypePtr & lhs, const DataTypePtr & rhs, bool allow_conversion_to_string = false);
 
 using TypeIndexSet = std::unordered_set<TypeIndex>;
 DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_to_string = false);

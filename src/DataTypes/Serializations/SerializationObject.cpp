@@ -61,19 +61,21 @@ private:
     size_t num_dimensions_to_keep;
 };
 
+using Node = typename ColumnObject::SubcolumnsTree::Node;
+
 bool tryInsertDefaultFromNested(
-    ColumnObject::SubcolumnsTree::LeafPtr entry, const ColumnObject::SubcolumnsTree & subcolumns)
+    std::shared_ptr<Node> entry, const ColumnObject::SubcolumnsTree & subcolumns)
 {
     if (!entry->path.hasNested())
         return false;
 
-    const ColumnObject::SubcolumnsTree::Node * node = subcolumns.findLeaf(entry->path);
-    const ColumnObject::SubcolumnsTree::Leaf * leaf = nullptr;
+    const Node * current_node = subcolumns.findLeaf(entry->path);
+    const Node * leaf = nullptr;
     size_t num_skipped_nested = 0;
 
-    while (node)
+    while (current_node)
     {
-        const auto * node_nested = subcolumns.findParent(node,
+        const auto * node_nested = subcolumns.findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
@@ -88,7 +90,7 @@ bool tryInsertDefaultFromNested(
         if (leaf)
             break;
 
-        node = node_nested->parent;
+        current_node = node_nested->parent;
         ++num_skipped_nested;
     }
 

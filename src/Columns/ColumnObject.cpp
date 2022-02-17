@@ -1,21 +1,16 @@
 #include <Core/Field.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
-
-#include <Common/FieldVisitorToString.h>
 
 namespace DB
 {
@@ -32,6 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
+/// Recreates scolumn with default scalar values and keeps sizes of arrays.
 ColumnPtr recreateColumnWithDefaultValues(
     const ColumnPtr & column, const DataTypePtr & scalar_type, size_t num_dimensions)
 {
@@ -47,43 +43,44 @@ ColumnPtr recreateColumnWithDefaultValues(
     return createArrayOfType(scalar_type, num_dimensions)->createColumn()->cloneResized(column->size());
 }
 
+/// Replaces NULL fields to given field or empty array.
 class FieldVisitorReplaceNull : public StaticVisitor<Field>
 {
 public:
-    [[maybe_unused]] explicit FieldVisitorReplaceNull(
+    explicit FieldVisitorReplaceNull(
         const Field & replacement_, size_t num_dimensions_)
         : replacement(replacement_)
         , num_dimensions(num_dimensions_)
     {
     }
 
-    template <typename T>
-    Field operator()(const T & x) const
+    Field operator()(const Null &) const
     {
-        if constexpr (std::is_same_v<T, Null>)
-        {
-            return num_dimensions
-                ? createEmptyArrayField(num_dimensions)
-                : replacement;
-        }
-        else if constexpr (std::is_same_v<T, Array>)
-        {
-            assert(num_dimensions > 0);
-            const size_t size = x.size();
-            Array res(size);
-            for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(FieldVisitorReplaceNull(replacement, num_dimensions - 1), x[i]);
-            return res;
-        }
-        else
-            return x;
+        return num_dimensions
+            ? createEmptyArrayField(num_dimensions)
+            : replacement;
     }
+
+    Field operator()(const Array & x) const
+    {
+        assert(num_dimensions > 0);
+        const size_t size = x.size();
+        Array res(size);
+        for (size_t i = 0; i < size; ++i)
+            res[i] = applyVisitor(FieldVisitorReplaceNull(replacement, num_dimensions - 1), x[i]);
+        return res;
+    }
+
+    template <typename T>
+    Field operator()(const T & x) const { return x; }
 
 private:
     const Field & replacement;
     size_t num_dimensions;
 };
 
+/// Calculates number of dimensions in array field.
+/// Returns 0 for scalar fields.
 class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
 {
 public:
@@ -114,6 +111,9 @@ public:
     size_t operator()(const T &) const { return 0; }
 };
 
+/// Visitor that allows to get type of scalar field
+/// or least common type of scalars in array.
+/// More optimized version of FieldToDataType.
 class FieldVisitorToScalarType : public StaticVisitor<>
 {
 public:
@@ -160,8 +160,7 @@ public:
     template <typename T>
     void operator()(const T &)
     {
-        auto field_type = Field::TypeToEnum<NearestFieldType<T>>::value;
-        field_types.insert(field_type);
+        field_types.insert(Field::TypeToEnum<NearestFieldType<T>>::value);
         type_indexes.insert(TypeToTypeIndex<NearestFieldType<T>>);
     }
 
@@ -280,18 +279,10 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (is_nullable)
         base_type = makeNullable(base_type);
 
-    DataTypePtr value_type;
     if (!is_nullable && info.have_nulls)
-    {
-        auto default_value = base_type->getDefault();
-        value_type = createArrayOfType(base_type, value_dim);
-        field = applyVisitor(FieldVisitorReplaceNull(default_value, value_dim), std::move(field));
-    }
-    else
-    {
-        value_type = createArrayOfType(base_type, value_dim);
-    }
+        field = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault(), value_dim), std::move(field));
 
+    auto value_type = createArrayOfType(base_type, value_dim);
     bool type_changed = false;
 
     if (data.empty())
@@ -311,12 +302,9 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     }
 
     if (type_changed || info.need_convert)
-    {
-        auto converted_field = convertFieldToTypeOrThrow(std::move(field), *value_type);
-        data.back()->insert(std::move(converted_field));
-    }
-    else
-        data.back()->insert(std::move(field));
+        field = convertFieldToTypeOrThrow(std::move(field), *value_type);
+
+    data.back()->insert(std::move(field));
 }
 
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
@@ -371,6 +359,10 @@ void ColumnObject::Subcolumn::finalize()
         {
             auto offsets = ColumnUInt64::create();
             auto & offsets_data = offsets->getData();
+
+            /// We need to convert only non-default values and then recreate column
+            /// with default value of new type, because default values (which represents misses in data)
+            /// may be inconsistent between types (e.g "0" in UInt64 and empty string in String).
 
             part->getIndicesOfNonDefaultRows(offsets_data, 0, part_size);
 
@@ -448,15 +440,15 @@ Field ColumnObject::Subcolumn::getLastField() const
 
 ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues(const FieldInfo & field_info) const
 {
+    auto scalar_type = field_info.scalar_type;
+    if (is_nullable)
+        scalar_type = makeNullable(scalar_type);
+
     Subcolumn new_subcolumn;
-    new_subcolumn.least_common_type = createArrayOfType(field_info.scalar_type, field_info.num_dimensions);
+    new_subcolumn.least_common_type = createArrayOfType(scalar_type, field_info.num_dimensions);
     new_subcolumn.is_nullable = is_nullable;
     new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
     new_subcolumn.data.reserve(data.size());
-
-    auto scalar_type = field_info.scalar_type;
-    if (new_subcolumn.is_nullable)
-        scalar_type = makeNullable(scalar_type);
 
     for (const auto & part : data)
         new_subcolumn.data.push_back(recreateColumnWithDefaultValues(
@@ -524,6 +516,7 @@ size_t ColumnObject::size() const
 
 MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 {
+    /// cloneResized with new_size == 0 is used for cloneEmpty().
     if (new_size != 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "ColumnObject doesn't support resize to non-zero length");
@@ -663,7 +656,7 @@ const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & ke
 ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key)
 {
     if (const auto * node = subcolumns.findLeaf(key))
-        return const_cast<SubcolumnsTree::Leaf *>(node)->data;
+        return const_cast<SubcolumnsTree::Node *>(node)->data;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
@@ -702,23 +695,29 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
             "Cannot add Nested subcolumn, because path doesn't contain Nested");
 
     bool inserted = false;
+    /// We find node that represents the same Nested type as @key.
     const auto * nested_node = subcolumns.findBestMatch(key);
 
     if (nested_node)
     {
+        /// Find any leaf of Nested subcolumn.
         const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
+        /// Recreate subcolumn with default values and the same sizes of arrays.
         auto new_subcolumn = leaf->data.recreateWithDefaultValues(field_info);
+
+        /// It's possible that we have already inserted value from current row
+        /// to this subcolumn. So, adjust size to expected.
         if (new_subcolumn.size() > new_size)
             new_subcolumn.popBack(new_subcolumn.size() - new_size);
-        else if (new_subcolumn.size() < new_size)
-            new_subcolumn.insertManyDefaults(new_size - new_subcolumn.size());
 
+        assert(new_subcolumn.size() == new_size);
         inserted = subcolumns.add(key, new_subcolumn);
     }
     else
     {
+        /// If node was not found just add subcolumn with empty arrays.
         inserted = subcolumns.add(key, Subcolumn(new_size, is_nullable));
     }
 
@@ -751,6 +750,8 @@ void ColumnObject::finalize()
     for (auto && entry : subcolumns)
     {
         const auto & least_common_type = entry->data.getLeastCommonType();
+
+        /// Do not add subcolumns, which consists only from NULLs.
         if (isNothing(getBaseTypeOfArray(least_common_type)))
             continue;
 
@@ -758,6 +759,8 @@ void ColumnObject::finalize()
         new_subcolumns.add(entry->path, std::move(entry->data));
     }
 
+    /// If all subcolumns were skipped add a dummy subcolumn,
+    /// because Tuple type must have at least one element.
     if (new_subcolumns.empty())
         new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size), is_nullable});
 

@@ -6,24 +6,17 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/FieldVisitors.h>
-#include <Common/assert_cast.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
-
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string.hpp>
-#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -52,8 +45,9 @@ size_t getNumberOfDimensions(const IColumn & column)
 
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
 {
+    /// Get raw pointers to avoid extra copying of type pointers.
     const DataTypeArray * last_array = nullptr;
-    const IDataType * current_type = type.get();
+    const auto * current_type = type.get();
     while (const auto * type_array = typeid_cast<const DataTypeArray *>(current_type))
     {
         current_type = type_array->getNestedType().get();
@@ -65,8 +59,9 @@ DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
 
 ColumnPtr getBaseColumnOfArray(const ColumnPtr & column)
 {
+    /// Get raw pointers to avoid extra copying of column pointers.
     const ColumnArray * last_array = nullptr;
-    const IColumn * current_column = column.get();
+    const auto * current_column = column.get();
     while (const auto * column_array = checkAndGetColumn<ColumnArray>(current_column))
     {
         current_column = &column_array->getData();
@@ -92,6 +87,9 @@ ColumnPtr createArrayOfColumn(ColumnPtr column, size_t num_dimensions)
 
 Array createEmptyArrayField(size_t num_dimensions)
 {
+    if (num_dimensions == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create array field with 0 dimensions");
+
     Array array;
     Array * current_array = &array;
     for (size_t i = 1; i < num_dimensions; ++i)
@@ -138,53 +136,53 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
 
     for (auto & name_type : columns_list)
     {
-        if (isObject(name_type.type))
+        if (!isObject(name_type.type))
+            continue;
+
+        auto & column = block.getByName(name_type.name);
+        if (!isObject(column.type))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
+                name_type.name, name_type.type->getName(), column.type->getName());
+
+        const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
+        const auto & subcolumns = column_object.getSubcolumns();
+
+        if (!column_object.isFinalized())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
+                name_type.name, name_type.type->getName());
+
+        PathsInData tuple_paths;
+        DataTypes tuple_types;
+        Columns tuple_columns;
+
+        for (const auto & entry : subcolumns)
         {
-            auto & column = block.getByName(name_type.name);
-
-            if (!isObject(column.type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
-                    name_type.name, name_type.type->getName(), column.type->getName());
-
-            const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
-            const auto & subcolumns_map = column_object.getSubcolumns();
-
-            if (!column_object.isFinalized())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
-                    name_type.name, name_type.type->getName());
-
-            PathsInData tuple_paths;
-            DataTypes tuple_types;
-            Columns tuple_columns;
-
-            for (const auto & entry : subcolumns_map)
-            {
-                tuple_paths.emplace_back(entry->path);
-                tuple_types.emplace_back(entry->data.getLeastCommonType());
-                tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
-            }
-
-            auto it = storage_columns_map.find(name_type.name);
-            if (it == storage_columns_map.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
-
-            std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
-            name_type.type = column.type;
-
-            getLeastCommonTypeForObject({column.type, it->second}, true);
+            tuple_paths.emplace_back(entry->path);
+            tuple_types.emplace_back(entry->data.getLeastCommonType());
+            tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
         }
+
+        auto it = storage_columns_map.find(name_type.name);
+        if (it == storage_columns_map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
+
+        std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
+        name_type.type = column.type;
+
+        /// Check that constructed Tuple type and type in storage are compatible.
+        getLeastCommonTypeForObject({column.type, it->second}, true);
     }
 }
 
-static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts & strings)
+static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts & parts)
 {
-    if (prefix.size() > strings.size())
+    if (prefix.size() > parts.size())
         return false;
 
     for (size_t i = 0; i < prefix.size(); ++i)
-        if (prefix[i].key != strings[i].key)
+        if (prefix[i].key != parts[i].key)
             return false;
     return true;
 }
@@ -192,19 +190,15 @@ static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts &
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
 {
     size_t size = paths.size();
-    std::vector<PathInData::Parts> names_parts(size);
-
-    for (size_t i = 0; i < size; ++i)
-        names_parts[i] = paths[i].getParts();
-
     for (size_t i = 0; i < size; ++i)
     {
         for (size_t j = 0; j < i; ++j)
         {
-            if (isPrefix(names_parts[i], names_parts[j]) || isPrefix(names_parts[j], names_parts[i]))
+            if (isPrefix(paths[i].getParts(), paths[j].getParts())
+                || isPrefix(paths[j].getParts(), paths[i].getParts()))
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
                     "Data in Object has ambiguous paths: '{}' and '{}'",
-                    paths[i].getPath(), paths[i].getPath());
+                    paths[i].getPath(), paths[j].getPath());
         }
     }
 }
@@ -227,8 +221,11 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
     if (all_equal)
         return types[0];
 
+    /// Types of subcolumns by path from all tuples.
     std::unordered_map<PathInData, DataTypes, PathInData::Hash> subcolumns_types;
 
+    /// First we flatten tuples, then get common type for paths
+    /// and finally unflatten paths and create new tuple type.
     for (const auto & type : types)
     {
         const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
@@ -246,6 +243,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
     PathsInData tuple_paths;
     DataTypes tuple_types;
 
+    /// Get the least common type for all paths.
     for (const auto & [key, subtypes] : subcolumns_types)
     {
         assert(!subtypes.empty());
@@ -312,7 +310,7 @@ void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndType
 {
     for (const auto & new_column : new_columns)
     {
-        auto object_column = object_columns.tryGetPhysical(new_column.name);
+        auto object_column = object_columns.tryGetColumn(GetColumnsOptions::All, new_column.name);
         if (object_column && !object_column->type->equals(*new_column.type))
         {
             object_columns.modify(new_column.name, [&](auto & column)
@@ -326,10 +324,14 @@ void updateObjectColumns(ColumnsDescription & object_columns, const NamesAndType
 namespace
 {
 
-void flattenTupleImpl(PathInDataBuilder & builder, DataTypePtr type, size_t array_level, PathsInData & new_paths, DataTypes & new_types)
+void flattenTupleImpl(
+    PathInDataBuilder & builder,
+    DataTypePtr type,
+    size_t array_level,
+    PathsInData & new_paths,
+    DataTypes & new_types)
 {
     bool is_nested = isNested(type);
-
     if (is_nested)
         type = assert_cast<const DataTypeArray &>(*type).getNestedType();
 
@@ -356,13 +358,14 @@ void flattenTupleImpl(PathInDataBuilder & builder, DataTypePtr type, size_t arra
     }
 }
 
+/// @offsets_columns are used as stack of array offsets and allows to recreate Array columns.
 void flattenTupleImpl(const ColumnPtr & column, Columns & new_columns, Columns & offsets_columns)
 {
     if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
     {
         const auto & subcolumns = column_tuple->getColumns();
         for (const auto & subcolumn : subcolumns)
-            flattenTupleImpl(subcolumn, new_columns,offsets_columns);
+            flattenTupleImpl(subcolumn, new_columns, offsets_columns);
     }
     else if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
     {
@@ -375,8 +378,8 @@ void flattenTupleImpl(const ColumnPtr & column, Columns & new_columns, Columns &
         if (!offsets_columns.empty())
         {
             auto new_column = ColumnArray::create(column, offsets_columns.back());
-            for (ssize_t i = static_cast<ssize_t>(offsets_columns.size()) - 2; i >= 0; --i)
-                new_column = ColumnArray::create(new_column, offsets_columns[i]);
+            for (auto it = offsets_columns.rbegin() + 1; it != offsets_columns.rend(); ++it)
+                new_column = ColumnArray::create(new_column, *it);
 
             new_columns.push_back(std::move(new_column));
         }
@@ -422,9 +425,8 @@ struct ColumnWithTypeAndDimensions
     size_t array_dimensions;
 };
 
-using SubcolumnsTreeWithTypes = SubcolumnsTree<ColumnWithTypeAndDimensions, ColumnWithTypeAndDimensions>;
+using SubcolumnsTreeWithTypes = SubcolumnsTree<ColumnWithTypeAndDimensions>;
 using Node = SubcolumnsTreeWithTypes::Node;
-using Leaf = SubcolumnsTreeWithTypes::Leaf;
 
 std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
 {
@@ -438,6 +440,7 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
             tuple_elements.emplace_back(name, std::move(column), std::move(type));
         }
 
+        /// Sort to always create the same type for the same set of subcolumns.
         std::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
@@ -450,8 +453,7 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
 
     if (node->kind == Node::SCALAR)
     {
-        const auto * leaf = typeid_cast<const Leaf *>(node);
-        return {leaf->data.column, leaf->data.type};
+        return {node->data.column, node->data.type};
     }
     else if (node->kind == Node::NESTED)
     {
@@ -474,9 +476,9 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
         auto result_column = ColumnArray::create(ColumnTuple::create(tuple_columns), offsets_columns.back());
         auto result_type = createNested(tuple_types, tuple_names);
 
-        for (ssize_t i = static_cast<ssize_t>(offsets_columns.size()) - 2; i >= 0; --i)
+        for (auto it = offsets_columns.rbegin() + 1; it != offsets_columns.rend(); ++it)
         {
-            result_column = ColumnArray::create(result_column, offsets_columns[i]);
+            result_column = ColumnArray::create(result_column, *it);
             result_type = std::make_shared<DataTypeArray>(result_type);
         }
 
@@ -533,6 +535,9 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     assert(paths.size() == tuple_types.size());
     assert(paths.size() == tuple_columns.size());
 
+    /// We add all paths to the subcolumn tree and then create a type from it.
+    /// The tree stores column, type and number of array dimensions
+    /// for each intermediate node.
     SubcolumnsTreeWithTypes tree;
 
     for (size_t i = 0; i < paths.size(); ++i)
@@ -562,10 +567,9 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
                 ColumnWithTypeAndDimensions current_column;
                 if (kind == Node::NESTED)
                 {
-                    size_t dimensions_to_reduce = array_level - nested_level;
                     assert(parts[pos].is_nested);
 
-                    ++dimensions_to_reduce;
+                    size_t dimensions_to_reduce = array_level - nested_level + 1;
                     --nested_level;
 
                     current_column = ColumnWithTypeAndDimensions{column, type, dimensions_to_reduce};
@@ -579,15 +583,16 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
                     array_level -= dimensions_to_reduce;
                 }
                 else
+                {
                     current_column = ColumnWithTypeAndDimensions{column, type, 0};
+                }
 
                 ++pos;
-
                 if (exists)
                     return nullptr;
 
                 return kind == Node::SCALAR
-                    ? std::make_shared<Leaf>(paths[i], current_column)
+                    ? std::make_shared<Node>(kind, current_column, paths[i])
                     : std::make_shared<Node>(kind, current_column);
             });
     }
