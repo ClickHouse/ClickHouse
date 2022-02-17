@@ -8,6 +8,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
 #include <stdlib.h>
 

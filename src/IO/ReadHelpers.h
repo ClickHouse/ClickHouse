@@ -1273,7 +1273,7 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         default:
             return;
     }
-    return;
+    __builtin_unreachable();
 }
 
 /// Read something from text format and trying to parse the suffix.
