@@ -1057,7 +1057,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     QualifiedTableName qualified_name{database_name, create.getTable()};
     TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
     if (!loading_dependencies.empty())
-        DatabaseCatalog::instance().addLoadingDependencies(std::move(qualified_name), std::move(loading_dependencies));
+        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }
