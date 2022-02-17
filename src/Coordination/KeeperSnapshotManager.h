@@ -135,10 +135,14 @@ public:
     {
         if (!existing_snapshots.empty())
         {
-            auto & path = existing_snapshots.at(getLatestSnapshotIndex());
+            const auto & path = existing_snapshots.at(getLatestSnapshotIndex());
             std::error_code ec;
             if (std::filesystem::exists(path, ec))
                 return path;
+            else
+            {
+                std::cerr << "Snapshot path " << path << " does not exist" << std::endl;
+            }
         }
         return "";
     }
