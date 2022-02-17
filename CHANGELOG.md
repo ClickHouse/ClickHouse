@@ -1,4 +1,4 @@
-### ClickHouse release v22.2, 2022-02-17
+### ClickHouse release v22.2, 2022-02-17 (draft)
 
 #### Upgrade Notes
 
