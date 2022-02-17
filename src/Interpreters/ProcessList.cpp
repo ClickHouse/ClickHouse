@@ -195,7 +195,10 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
         }
 
-        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        auto user_process_list_it = user_to_queries.find(client_info.current_user);
+        if (user_process_list_it == user_to_queries.end())
+            user_process_list_it = user_to_queries.emplace(client_info.current_user, this).first;
+        ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
         auto thread_group = CurrentThread::getGroup();
@@ -235,10 +238,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         process_it->setUserProcessList(&user_process_list);
 
-        {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
-        }
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
@@ -289,7 +289,6 @@ ProcessListEntry::~ProcessListEntry()
     {
         if (running_query->second == process_list_element_ptr)
         {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
             user_process_list.queries.erase(running_query->first);
             found = true;
         }
@@ -502,8 +501,8 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
-ProcessListForUser::ProcessListForUser()
-    : user_overcommit_tracker(this)
+ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
+    : user_overcommit_tracker(global_process_list, this)
 {
     user_memory_tracker.setOvercommitTracker(&user_overcommit_tracker);
 }
