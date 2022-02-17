@@ -118,7 +118,7 @@ void VersionMetadata::unlockMaxTID(const TransactionID & tid, const TransactionI
     tryWriteEventToSystemLog(log, TransactionsInfoLogElement::UNLOCK_PART, tid, context);
 }
 
-bool VersionMetadata::isMaxTIDLocked() const
+bool VersionMetadata::isRemovalTIDLocked() const
 {
     return removal_tid_lock.load() != 0;
 }
@@ -281,16 +281,37 @@ bool VersionMetadata::canBeRemovedImpl(Snapshot oldest_snapshot_version)
 #define REMOVAL_TID_STR  "removal_tid:  "
 #define REMOVAL_CSN_STR  "removal_csn:  "
 
+
+void VersionMetadata::writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool internal /* = false*/) const
+{
+    if (which_csn == CREATION)
+    {
+        if (CSN min = creation_csn.load())
+        {
+            writeCString("\n" CREATION_CSN_STR, buf);
+            writeText(min, buf);
+        }
+        else if (!internal)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "writeCSN called for creation_csn = 0, it's a bug");
+    }
+    else /// if (which_csn == REMOVAL)
+    {
+        if (CSN max = removal_csn.load())
+        {
+            writeCString("\n" REMOVAL_CSN_STR, buf);
+            writeText(max, buf);
+        }
+        else if (!internal)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "writeCSN called for removal_csn = 0, it's a bug");
+    }
+}
+
 void VersionMetadata::write(WriteBuffer & buf) const
 {
     writeCString("version: 1", buf);
     writeCString("\n" CREATION_TID_STR, buf);
     TransactionID::write(creation_tid, buf);
-    if (CSN min = creation_csn.load())
-    {
-        writeCString("\n" CREATION_CSN_STR, buf);
-        writeText(min, buf);
-    }
+    writeCSN(buf, CREATION, /* internal */ true);
 
     if (removal_tid_lock)
     {
@@ -298,11 +319,7 @@ void VersionMetadata::write(WriteBuffer & buf) const
         assert(removal_tid.getHash() == removal_tid_lock);
         writeCString("\n" REMOVAL_TID_STR, buf);
         TransactionID::write(removal_tid, buf);
-        if (CSN max = removal_csn.load())
-        {
-            writeCString("\n" REMOVAL_CSN_STR, buf);
-            writeText(max, buf);
-        }
+        writeCSN(buf, REMOVAL, /* internal */ true);
     }
 }
 
@@ -322,41 +339,41 @@ void VersionMetadata::read(ReadBuffer & buf)
     String name;
     name.resize(size);
 
-    assertChar('\n', buf);
-    buf.readStrict(name.data(), size);
-    if (name == CREATION_CSN_STR)
+    auto read_csn = [&]()
     {
-        UInt64 min;
-        readText(min, buf);
-        creation_csn = min;
-        if (buf.eof())
-            return;
+        UInt64 val;
+        readText(val, buf);
+        return val;
+    };
 
+    while (!buf.eof())
+    {
         assertChar('\n', buf);
         buf.readStrict(name.data(), size);
+
+        if (name == CREATION_CSN_STR)
+        {
+            assert(!creation_csn);
+            creation_csn = read_csn();
+        }
+        else if (name == REMOVAL_TID_STR)
+        {
+            assert(removal_tid.isEmpty() && removal_tid_lock == 0);
+            removal_tid = TransactionID::read(buf);
+            removal_tid_lock = removal_tid.getHash();
+        }
+        else if (name == REMOVAL_CSN_STR)
+        {
+            if (removal_tid.isEmpty())
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found removal_csn in metadata file, but removal_tid is {}", removal_tid);
+            assert(!removal_csn);
+            removal_csn = read_csn();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Got unexpected content: {}", name);
+        }
     }
-
-    if (name == REMOVAL_TID_STR)
-    {
-        removal_tid = TransactionID::read(buf);
-        removal_tid_lock = removal_tid.getHash();
-        if (buf.eof())
-            return;
-
-        assertChar('\n', buf);
-        buf.readStrict(name.data(), size);
-    }
-
-    if (name == REMOVAL_CSN_STR)
-    {
-        if (removal_tid.isEmpty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found removal_csn in metadata file, but removal_tid is {}", removal_tid);
-        UInt64 max;
-        readText(max, buf);
-        removal_csn = max;
-    }
-
-    assertEOF(buf);
 }
 
 String VersionMetadata::toString(bool one_line) const

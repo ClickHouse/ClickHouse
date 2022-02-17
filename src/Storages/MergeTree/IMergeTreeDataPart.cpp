@@ -13,7 +13,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -26,6 +25,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/TransactionLog.h>
 
 
 namespace CurrentMetrics
@@ -450,6 +450,7 @@ SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & co
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    assert(assertHasValidVersionMetadata());
     if (!is_temp && state != State::DeleteOnDestroy)
         return;
 
@@ -1118,8 +1119,7 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 
 void IMergeTreeDataPart::storeVersionMetadata() const
 {
-    assert(!version.creation_tid.isEmpty());
-    if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
+    if (!wasInvolvedInTransaction())
         return;
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
@@ -1140,9 +1140,6 @@ void IMergeTreeDataPart::storeVersionMetadata() const
         auto out = disk->writeFile(tmp_version_file_name, 256, WriteMode::Rewrite);
         version.write(*out);
         out->finalize();
-        /// TODO Small enough appends to file are usually atomic,
-        /// maybe we should append new metadata instead of rewriting file to reduce number of fsyncs.
-        /// (especially, it will allow to remove fsync after writing CSN after commit).
         out->sync();
     }
 
@@ -1150,6 +1147,27 @@ void IMergeTreeDataPart::storeVersionMetadata() const
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = disk->getDirectorySyncGuard(getFullRelativePath());
     disk->moveFile(tmp_version_file_name, version_file_name);
+}
+
+void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
+{
+    assert(!version.creation_tid.isEmpty());
+    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
+    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
+    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
+    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
+    assert(isStoredOnDisk());
+
+    /// Small enough appends to file are usually atomic,
+    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
+    /// We don't need to do fsync when writing CSN, because in case of hard restart
+    /// we will be able to restore CSN from transaction log in Keeper.
+
+    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    DiskPtr disk = volume->getDisk();
+    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    version.writeCSN(*out, which_csn);
+    out->finalize();
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
@@ -1209,6 +1227,56 @@ catch (Exception & e)
 {
     e.addMessage("While loading version metadata from table {} part {}", storage.getStorageID().getNameForLogs(), name);
     throw;
+}
+
+bool IMergeTreeDataPart::wasInvolvedInTransaction() const
+{
+    assert(!version.creation_tid.isEmpty());
+    bool created_by_transaction = !version.creation_tid.isPrehistoric();
+    bool removed_by_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash();
+    return created_by_transaction || removed_by_transaction;
+}
+
+bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
+{
+    /// We don't have many tests with server restarts and it's really inconvenient to write such tests.
+    /// So we use debug assertions to ensure that part version is written correctly.
+
+    if (!wasInvolvedInTransaction())
+        return true;
+
+    if (!isStoredOnDisk())
+        return false;
+
+    DiskPtr disk = volume->getDisk();
+    if (!disk->exists(getFullRelativePath()))
+        return true;
+
+    String content;
+    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    try
+    {
+        auto buf = openForReading(disk, version_file_name);
+        readStringUntilEOF(content, *buf);
+        ReadBufferFromString str_buf{content};
+        VersionMetadata file;
+        file.read(str_buf);
+        //FIXME
+        bool valid_creation_tid = version.creation_tid == file.creation_tid;
+        bool valid_removal_tid = version.removal_tid == file.removal_tid || (version.removal_tid.isEmpty() && TransactionLog::getCSN(file.removal_tid) == Tx::UnknownCSN) || version.removal_tid == Tx::PrehistoricTID;
+        bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
+        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::RolledBackCSN || version.removal_csn == Tx::PrehistoricCSN;
+        if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version metadata file");
+        return true;
+    }
+    catch (...)
+    {
+        WriteBufferFromOwnString expected;
+        version.write(expected);
+        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}", version_file_name, content, expected.str()));
+        return false;
+    }
 }
 
 
@@ -1305,6 +1373,7 @@ std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 
 void IMergeTreeDataPart::remove() const
 {
+    assert(assertHasValidVersionMetadata());
     std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
     if (!keep_shared_data.has_value())
         return;
