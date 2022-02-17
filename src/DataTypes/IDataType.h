@@ -408,7 +408,10 @@ inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data
 inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
 
 template <typename T>
-inline bool isObject(const T & data_type) {return WhichDataType(data_type).isObject(); }
+inline bool isObject(const T & data_type)
+{
+    return WhichDataType(data_type).isObject();
+}
 
 template <typename T>
 inline bool isUInt8(const T & data_type)

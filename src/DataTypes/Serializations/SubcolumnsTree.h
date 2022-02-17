@@ -8,9 +8,7 @@
 namespace DB
 {
 
-struct EmptyNodeData {};
-
-template <typename LeafData, typename NodeData = EmptyNodeData>
+template <typename NodeData>
 class SubcolumnsTree
 {
 public:
@@ -25,40 +23,31 @@ public:
 
         explicit Node(Kind kind_) : kind(kind_) {}
         Node(Kind kind_, const NodeData & data_) : kind(kind_), data(data_) {}
+        Node(Kind kind_, const NodeData & data_, const PathInData & path_)
+            : kind(kind_), data(data_), path(path_) {}
 
         Kind kind = TUPLE;
         const Node * parent = nullptr;
 
         std::map<String, std::shared_ptr<Node>, std::less<>> children;
+
         NodeData data;
+        PathInData path;
 
         bool isNested() const { return kind == NESTED; }
+        bool isScalar() const { return kind == SCALAR; }
 
         void addChild(const String & key, std::shared_ptr<Node> next_node)
         {
             next_node->parent = this;
             children[key] = std::move(next_node);
         }
-
-        virtual ~Node() = default;
-    };
-
-    struct Leaf : public Node
-    {
-        Leaf(const PathInData & path_, const LeafData & data_)
-            : Node(Node::SCALAR), path(path_), data(data_)
-        {
-        }
-
-        PathInData path;
-        LeafData data;
     };
 
     using NodeKind = typename Node::Kind;
     using NodePtr = std::shared_ptr<Node>;
-    using LeafPtr = std::shared_ptr<Leaf>;
 
-    bool add(const PathInData & path, const LeafData & leaf_data)
+    bool add(const PathInData & path, const NodeData & leaf_data)
     {
         return add(path, [&](NodeKind kind, bool exists) -> NodePtr
         {
@@ -66,7 +55,7 @@ public:
                 return nullptr;
 
             if (kind == Node::SCALAR)
-                return std::make_shared<Leaf>(path, leaf_data);
+                return std::make_shared<Node>(kind, leaf_data, path);
 
             return std::make_shared<Node>(kind);
         });
@@ -94,9 +83,8 @@ public:
             {
                 current_node = it->second.get();
                 node_creator(current_node->kind, true);
-                bool current_node_is_nested = current_node->kind == Node::NESTED;
 
-                if (current_node_is_nested != parts[i].is_nested)
+                if (current_node->isNested() != parts[i].is_nested)
                     return false;
             }
             else
@@ -114,10 +102,7 @@ public:
 
         auto next_node = node_creator(Node::SCALAR, false);
         current_node->addChild(String(parts.back().key), next_node);
-
-        auto leaf = std::dynamic_pointer_cast<Leaf>(next_node);
-        assert(leaf);
-        leaves.push_back(std::move(leaf));
+        leaves.push_back(std::move(next_node));
 
         return true;
     }
@@ -132,22 +117,28 @@ public:
         return findImpl(path, true);
     }
 
-    const Leaf * findLeaf(const PathInData & path) const
+    const Node * findLeaf(const PathInData & path) const
     {
-        return typeid_cast<const Leaf *>(findExact(path));
+        const auto * candidate = findExact(path);
+        if (!candidate || !candidate->isScalar())
+            return nullptr;
+        return candidate;
     }
 
-    using LeafPredicate = std::function<bool(const Leaf &)>;
+    using NodePredicate = std::function<bool(const Node &)>;
 
-    const Leaf * findLeaf(const LeafPredicate & predicate)
+    const Node * findLeaf(const NodePredicate & predicate)
     {
         return findLeaf(root.get(), predicate);
     }
 
-    static const Leaf * findLeaf(const Node * node, const LeafPredicate & predicate)
+    static const Node * findLeaf(const Node * node, const NodePredicate & predicate)
     {
-        if (const auto * leaf = typeid_cast<const Leaf *>(node))
-            return predicate(*leaf) ? leaf : nullptr;
+        if (!node)
+            return nullptr;
+
+        if (node->isScalar())
+            return predicate(*node) ? node : nullptr;
 
         for (const auto & [_, child] : node->children)
             if (const auto * leaf = findLeaf(child.get(), predicate))
@@ -155,8 +146,6 @@ public:
 
         return nullptr;
     }
-
-    using NodePredicate = std::function<bool(const Node &)>;
 
     static const Node * findParent(const Node * node, const NodePredicate & predicate)
     {
@@ -168,12 +157,13 @@ public:
     bool empty() const { return root == nullptr; }
     size_t size() const { return leaves.size(); }
 
-    using Leaves = std::vector<LeafPtr>;
-    const Leaves & getLeaves() const { return leaves; }
+    using Nodes = std::vector<NodePtr>;
+
+    const Nodes & getLeaves() const { return leaves; }
     const Node * getRoot() const { return root.get(); }
 
-    using iterator = typename Leaves::iterator;
-    using const_iterator = typename Leaves::const_iterator;
+    using iterator = typename Nodes::iterator;
+    using const_iterator = typename Nodes::const_iterator;
 
     iterator begin() { return leaves.begin(); }
     iterator end() { return leaves.end(); }
@@ -200,11 +190,10 @@ private:
         }
 
         return current_node;
-
     }
 
     NodePtr root;
-    Leaves leaves;
+    Nodes leaves;
 };
 
 }
