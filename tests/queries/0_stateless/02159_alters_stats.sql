@@ -19,6 +19,8 @@ CREATE TABLE alters_stats
 ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 500;
 
+SYSTEM STOP MERGES alters_stats;
+
 INSERT INTO alters_stats SELECT
     number AS a,
     number + 10 AS b,
@@ -29,6 +31,8 @@ INSERT INTO alters_stats SELECT
     format('text {} tafst{}afsd', toString(cityHash64(number)), toString(cityHash64(number))) AS heavy2
 FROM system.numbers
 LIMIT 1000000;
+
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 SHOW CREATE TABLE alters_stats;
 
@@ -50,5 +54,17 @@ SELECT sleep(1);
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
+ALTER TABLE alters_stats DROP STATISTIC st3;
+
+SELECT sleep(1);
+
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
+
+ALTER TABLE alters_stats DROP STATISTIC st1;
+SHOW CREATE TABLE alters_stats;
+
+SELECT sleep(1);
+
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
 
 DROP TABLE alters_stats SYNC;

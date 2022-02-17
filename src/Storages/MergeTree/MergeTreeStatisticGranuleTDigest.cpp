@@ -3,6 +3,7 @@
 #include <cmath>
 #include <Common/Exception.h>
 #include <limits>
+#include "DataTypes/DataTypesNumber.h"
 #include <memory>
 #include <Poco/Logger.h>
 #include <string>
@@ -30,8 +31,10 @@ MergeTreeGranuleDistributionStatisticTDigest::MergeTreeGranuleDistributionStatis
 MergeTreeGranuleDistributionStatisticTDigest::MergeTreeGranuleDistributionStatisticTDigest(
     QuantileTDigest<Float32>&& min_sketch_,
     QuantileTDigest<Float32>&& max_sketch_,
+    const String & name_,
     const String & column_name_)
-    : column_name(column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
     , min_sketch(std::move(min_sketch_))
     , max_sketch(std::move(max_sketch_))
     , is_empty(false)
@@ -78,12 +81,34 @@ const String& MergeTreeGranuleDistributionStatisticTDigest::getColumnsRequiredFo
 
 void MergeTreeGranuleDistributionStatisticTDigest::serializeBinary(WriteBuffer & ostr) const
 {
-    min_sketch.serialize(ostr);
-    max_sketch.serialize(ostr);
+    WriteBufferFromOwnString wb;
+    min_sketch.serialize(wb);
+    max_sketch.serialize(wb);
+    wb.finalize();
+
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST), ostr);
+    size_serialization->serializeBinary(wb.str().size(), ostr);
+    ostr.write(wb.str().data(), wb.str().size());    
+}
+
+bool MergeTreeGranuleDistributionStatisticTDigest::validateTypeBinary(ReadBuffer & istr) const
+{
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    Field ftype;
+    size_serialization->deserializeBinary(ftype, istr);
+    return ftype.get<size_t>() == static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST);
 }
 
 void MergeTreeGranuleDistributionStatisticTDigest::deserializeBinary(ReadBuffer & istr)
 {
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    Field unused;
+    size_serialization->deserializeBinary(unused, istr);
+
     min_sketch.deserialize(istr);
     max_sketch.deserialize(istr);
     is_empty = false;
@@ -203,6 +228,7 @@ IDistributionStatisticPtr MergeTreeGranuleDistributionStatisticCollectorTDigest:
     return std::make_shared<MergeTreeGranuleDistributionStatisticTDigest>(
         *std::move(min_res),
         *std::move(max_res),
+        stat_name,
         column_name);
 }
 

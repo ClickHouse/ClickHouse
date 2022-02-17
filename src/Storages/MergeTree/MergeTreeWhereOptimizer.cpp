@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
+#include "base/logger_useful.h"
 #include <Core/Field.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -466,6 +467,16 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             }
         }
 
+        LOG_DEBUG(
+            &Poco::Logger::get("COND"),
+            "{} -> v={} g={} r={} clmsz={} sz={}",
+            cond.node->dumpTree(),
+            cond.viable,
+            cond.good,
+            cond.rank,
+            cond.columns_size,
+            cond.identifiers.size());
+
         res.emplace_back(std::move(cond));
     }
 }
@@ -590,9 +601,6 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     Conditions prewhere_conditions;
     std::unordered_set<std::string> columns_in_prewhere;
 
-    //UInt64 total_size_of_moved_conditions = 0;
-    //UInt64 total_number_of_moved_columns = 0;
-
     // First we'll move simple expressions (one column) while estimated amount of data get's lower. (only for conditions with selectivity estimates)
     std::vector<ColumnWithRank> rank_to_column = getSimpleColumns(column_to_simple_conditions);
 
@@ -634,9 +642,6 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         prewhere_selectivity *= selectivity;
 
         columns_in_prewhere.insert(column);
-
-        //total_size_of_moved_conditions += column_size;
-        //total_number_of_moved_columns += 1;
     }
 
     // Let's collect conditions that can be calculated in prewhere using columns_in_prewhere.
@@ -668,7 +673,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE by new algorithm", select.prewhere());
 }
 
 void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
@@ -696,7 +701,6 @@ void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
         }
     };
 
-    /// TODO: use columns in expr
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {

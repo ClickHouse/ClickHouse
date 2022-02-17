@@ -18,6 +18,12 @@ constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 namespace DB
 {
 
+enum class MergeTreeDistributionStatisticType
+{
+    TDIGEST,
+    GRANULE_TDIGEST,
+};
+
 String generateFileNameForStatistics(const String & name);
 
 class IMergeTreeDistributionStatisticCollector {

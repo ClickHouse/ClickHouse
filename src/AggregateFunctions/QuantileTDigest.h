@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
+#include "base/types.h"
 #include <Core/AccurateComparison.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>

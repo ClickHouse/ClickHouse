@@ -20,6 +20,7 @@ public:
         const String & column_name_);
     MergeTreeColumnDistributionStatisticTDigest(
         QuantileTDigest<Float32>&& sketch_,
+        const String & name_,
         const String & column_name_);
 
     const String& name() const override;
@@ -30,6 +31,7 @@ public:
     const String& getColumnsRequiredForStatisticCalculation() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
+    bool validateTypeBinary(ReadBuffer & istr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
     double estimateQuantileLower(const Field& value) const override;

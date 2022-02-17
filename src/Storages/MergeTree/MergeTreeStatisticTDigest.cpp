@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <Common/Exception.h>
+#include "DataTypes/DataTypesNumber.h"
+#include "IO/WriteBufferFromString.h"
 #include <limits>
 #include <memory>
 #include <Poco/Logger.h>
@@ -24,8 +26,9 @@ MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisti
 }
 
 MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
-    QuantileTDigest<Float32>&& sketch_, const String & column_name_)
-    : column_name(column_name_)
+    QuantileTDigest<Float32>&& sketch_, const String & name_, const String & column_name_)
+    : stat_name(name_)
+    , column_name(column_name_)
     , sketch(std::move(sketch_))
     , is_empty(false)
 {
@@ -74,11 +77,31 @@ const String& MergeTreeColumnDistributionStatisticTDigest::getColumnsRequiredFor
 
 void MergeTreeColumnDistributionStatisticTDigest::serializeBinary(WriteBuffer & ostr) const
 {
-    sketch.serialize(ostr);
+    WriteBufferFromOwnString wb;
+    sketch.serialize(wb);
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::TDIGEST), ostr);
+    size_serialization->serializeBinary(wb.str().size(), ostr);
+    ostr.write(wb.str().data(), wb.str().size());
+}
+
+bool MergeTreeColumnDistributionStatisticTDigest::validateTypeBinary(ReadBuffer & istr) const
+{
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    Field ftype;
+    size_serialization->deserializeBinary(ftype, istr);
+    return ftype.get<size_t>() == static_cast<size_t>(MergeTreeDistributionStatisticType::TDIGEST);
 }
 
 void MergeTreeColumnDistributionStatisticTDigest::deserializeBinary(ReadBuffer & istr)
 {
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    Field unused;
+    size_serialization->deserializeBinary(unused, istr);
+
     sketch.deserialize(istr);
     Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
         "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
@@ -197,7 +220,7 @@ IDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::
     std::optional<QuantileTDigest<Float32>> res;
     sketch.swap(res);
     res->compress();
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(*std::move(res), column_name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(*std::move(res), stat_name, column_name);
 }
 
 void MergeTreeColumnDistributionStatisticCollectorTDigest::update(const Block & block, size_t * pos, size_t limit)

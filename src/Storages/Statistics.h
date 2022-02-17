@@ -44,6 +44,8 @@ public:
     virtual const String & getColumnsRequiredForStatisticCalculation() const = 0;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+    // Checks if statistic has right type
+    virtual bool validateTypeBinary(ReadBuffer & istr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 };
 

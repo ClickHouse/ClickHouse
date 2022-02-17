@@ -40,6 +40,8 @@ bool MergeTreeDistributionStatistics::empty() const
 
 void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionStatistics> & other)
 {
+    if (!other)
+        return;
     const auto merge_tree_stats = std::dynamic_pointer_cast<MergeTreeDistributionStatistics>(other);
     if (!merge_tree_stats)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
@@ -56,7 +58,10 @@ void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionS
         }
         else
         {
-            column_to_stats[column]->merge(stat);
+            // Skip unknown columns.
+            // This is valid because everything is merged into empty stats created from metadata.
+            // Differences can be caused by alters.
+            //column_to_stats[column]->merge(stat);
             Poco::Logger::get("MergeTreeDistributionStatistics").information(
             "created" + column + " ");
         }
@@ -107,14 +112,15 @@ bool MergeTreeStatistics::empty() const
 
 void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
 {
+    if (!other)
+        return;
     const auto merge_tree_stats = std::dynamic_pointer_cast<MergeTreeStatistics>(other);
     if (!merge_tree_stats)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
 
     Poco::Logger::get("MergeTreeStatistics").information(
             "MERGE start ");
-    if (!other)
-        return;
+
     Poco::Logger::get("MergeTreeStatistics").information(
             "MERGE start column_distributions");
     column_distributions->merge(merge_tree_stats->column_distributions);
@@ -213,7 +219,7 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
     Poco::Logger::get("MergeTreeDistributionStatistics").information(
-        "COLS {}" + std::to_string(column_to_stats.size()));
+        "COLS {} found" + std::to_string(column_to_stats.size()) + " " + std::to_string(stats_count));
 
     for (size_t index = 0; index < stats_count; ++index)
     {
@@ -228,9 +234,22 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
         {
             Poco::Logger::get("MergeTreeDistributionStatistics").information("UNKNOWN CLMN");
             size_serialization->deserializeBinary(field, istr);
+            const auto data_type = field.get<size_t>();
+            UNUSED(data_type);
+            size_serialization->deserializeBinary(field, istr);
             const auto data_count = field.get<size_t>();
             Poco::Logger::get("MergeTreeDistributionStatistics").information("SKIP " + std::to_string(data_count));
             istr.ignore(data_count);
+            Poco::Logger::get("MergeTreeDistributionStatistics").information("UNKNOWN CLMN FIN");
+        }
+        else if (!it->second->validateTypeBinary(istr))
+        {
+            Poco::Logger::get("MergeTreeDistributionStatistics").information("BAD VALIDATE CLMN");
+            size_serialization->deserializeBinary(field, istr);
+            const auto data_count = field.get<size_t>();
+            Poco::Logger::get("MergeTreeDistributionStatistics").information("SKIP " + std::to_string(data_count));
+            istr.ignore(data_count);
+            Poco::Logger::get("MergeTreeDistributionStatistics").information("UNKNOWN CLMN FIN");
         }
         else
         {
