@@ -27,7 +27,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 **Returned values**
 
-[Tuple](../../../sql-reference/data-types/tuple.md) with two two or four elements (if the optional `confidence_level` is specified)
+[Tuple](../../../sql-reference/data-types/tuple.md) with two or four elements (if the optional `confidence_level` is specified)
 
 -   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).

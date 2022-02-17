@@ -1106,6 +1106,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 throw Exception(storage_already_exists_error_code,
                     "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         }
+        else if (!create.attach)
+        {
+            /// Checking that table may exists in detached/detached permanently state
+            try
+            {
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
+            catch (const Exception &)
+            {
+                if (create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
 
 
         data_path = database->getTableDataPath(create);

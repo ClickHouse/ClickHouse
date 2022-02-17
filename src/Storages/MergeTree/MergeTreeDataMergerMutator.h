@@ -85,7 +85,6 @@ public:
       */
     SelectPartsDecision selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPartPtr future_part,
-        UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,

@@ -79,6 +79,10 @@ void WriteBufferFromS3::nextImpl()
     if (!offset())
         return;
 
+    /// Buffer in a bad state after exception
+    if (temporary_buffer->tellp() == -1)
+        allocateBuffer();
+
     temporary_buffer->write(working_buffer.begin(), offset());
 
     ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
@@ -91,6 +95,7 @@ void WriteBufferFromS3::nextImpl()
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
+
         writePart();
 
         allocateBuffer();
@@ -168,7 +173,10 @@ void WriteBufferFromS3::writePart()
     LOG_DEBUG(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
 
     if (size < 0)
-        throw Exception("Failed to write part. Buffer in invalid state.", ErrorCodes::S3_ERROR);
+    {
+        LOG_WARNING(log, "Skipping part upload. Buffer is in bad state, it means that we have tried to upload something, but got an exception.");
+        return;
+    }
 
     if (size == 0)
     {
@@ -292,7 +300,10 @@ void WriteBufferFromS3::makeSinglepartUpload()
     LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
     if (size < 0)
-        throw Exception("Failed to make single part upload. Buffer in invalid state", ErrorCodes::S3_ERROR);
+    {
+        LOG_WARNING(log, "Skipping single part upload. Buffer is in bad state, it mean that we have tried to upload something, but got an exception.");
+        return;
+    }
 
     if (size == 0)
     {

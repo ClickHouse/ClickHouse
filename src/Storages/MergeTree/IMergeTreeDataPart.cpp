@@ -1300,16 +1300,7 @@ std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
     if (force_keep_shared_data)
         return true;
 
-    /// TODO Unlocking in try-catch and ignoring exception look ugly
-    try
-    {
-        return !storage.unlockSharedData(*this);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "There is a problem with deleting part " + name + " from filesystem");
-    }
-    return {};
+    return !storage.unlockSharedData(*this);
 }
 
 void IMergeTreeDataPart::remove() const
@@ -1756,18 +1747,10 @@ String IMergeTreeDataPart::getUniqueId() const
     if (!disk->supportZeroCopyReplication())
         throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-    return id;
+    return disk->getUniqueId(fs::path(getFullRelativePath()) / FILE_FOR_REFERENCES_CHECK);
 }
 
-
-UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
-{
-    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
-}
-
-
-String IMergeTreeDataPart::getZeroLevelPartBlockID(const std::string_view token) const
+String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);

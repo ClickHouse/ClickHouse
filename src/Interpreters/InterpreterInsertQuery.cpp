@@ -109,22 +109,31 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot) const
 {
-    Block table_sample = metadata_snapshot->getSampleBlock();
-    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
+    Block table_sample_physical = metadata_snapshot->getSampleBlock();
+    Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
     {
-        /// The table does not have a column with that name
-        if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        if (!allow_materialized && !table_sample_non_materialized.has(current_name))
-            throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         if (res.has(current_name))
             throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
-        res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
+        /// Column is not ordinary or ephemeral
+        if (!table_sample_insertable.has(current_name))
+        {
+            /// Column is materialized
+            if (table_sample_physical.has(current_name))
+            {
+                if (!allow_materialized)
+                    throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.",
+                        ErrorCodes::ILLEGAL_COLUMN);
+                res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
+            }
+            else /// The table does not have a column with that name
+                throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        }
+        else
+            res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
     }
     return res;
 }
