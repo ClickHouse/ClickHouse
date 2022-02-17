@@ -1,7 +1,10 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -17,7 +20,7 @@ namespace ErrorCodes
 
 
 TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(getPort().getHeader().columns())
 {
     const auto & sample_block = getPort().getHeader();
     size_t num_columns = sample_block.columns();
@@ -211,6 +214,59 @@ void TSKVRowInputFormat::resetParser()
     name_buf.clear();
 }
 
+TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowWithNamesSchemaReader(
+        in_,
+        format_settings_.max_rows_to_read_for_schema_inference,
+        getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
+    , format_settings(format_settings_)
+{
+}
+
+std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndDataTypes()
+{
+    if (first_row)
+    {
+        skipBOMIfExists(in);
+        first_row = false;
+    }
+
+    if (in.eof())
+        return {};
+
+    if (*in.position() == '\n')
+    {
+        ++in.position();
+        return {};
+    }
+
+    std::unordered_map<String, DataTypePtr> names_and_types;
+    StringRef name_ref;
+    String name_tmp;
+    String value;
+    do
+    {
+        bool has_value = readName(in, name_ref, name_tmp);
+        if (has_value)
+        {
+            readEscapedString(value, in);
+            names_and_types[String(name_ref)] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
+        }
+        else
+        {
+            /// The only thing that can go without value is `tskv` fragment that is ignored.
+            if (!(name_ref.size == 4 && 0 == memcmp(name_ref.data, "tskv", 4)))
+                throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+        }
+
+    }
+    while (checkChar('\t', in));
+
+    assertChar('\n', in);
+
+    return names_and_types;
+}
+
 void registerInputFormatTSKV(FormatFactory & factory)
 {
     factory.registerInputFormat("TSKV", [](
@@ -220,6 +276,13 @@ void registerInputFormatTSKV(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
+    });
+}
+void registerTSKVSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_shared<TSKVSchemaReader>(buf, settings);
     });
 }
 

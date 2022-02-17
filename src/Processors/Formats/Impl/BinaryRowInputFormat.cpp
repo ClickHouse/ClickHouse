@@ -5,7 +5,6 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 
-
 namespace DB
 {
 
@@ -15,11 +14,23 @@ namespace ErrorCodes
 }
 
 BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(std::move(header), in_, std::move(params_), with_names_, with_types_, format_settings_)
+    : RowInputFormatWithNamesAndTypes(
+        std::move(header),
+        in_,
+        std::move(params_),
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::make_unique<BinaryFormatReader>(in_, format_settings_))
 {
 }
 
-std::vector<String> BinaryRowInputFormat::readHeaderRow()
+
+BinaryFormatReader::BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_) : FormatWithNamesAndTypesReader(in_, format_settings_)
+{
+}
+
+std::vector<String> BinaryFormatReader::readHeaderRow()
 {
     std::vector<String> fields;
     String field;
@@ -31,13 +42,13 @@ std::vector<String> BinaryRowInputFormat::readHeaderRow()
     return fields;
 }
 
-std::vector<String> BinaryRowInputFormat::readNames()
+std::vector<String> BinaryFormatReader::readNames()
 {
     readVarUInt(read_columns, *in);
     return readHeaderRow();
 }
 
-std::vector<String> BinaryRowInputFormat::readTypes()
+std::vector<String> BinaryFormatReader::readTypes()
 {
     auto types = readHeaderRow();
     for (const auto & type_name : types)
@@ -45,36 +56,47 @@ std::vector<String> BinaryRowInputFormat::readTypes()
     return types;
 }
 
-bool BinaryRowInputFormat::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+bool BinaryFormatReader::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
     serialization->deserializeBinary(column, *in);
     return true;
 }
 
-void BinaryRowInputFormat::skipHeaderRow()
+void BinaryFormatReader::skipHeaderRow()
 {
     String tmp;
     for (size_t i = 0; i < read_columns; ++i)
         readStringBinary(tmp, *in);
 }
 
-void BinaryRowInputFormat::skipNames()
+void BinaryFormatReader::skipNames()
 {
     readVarUInt(read_columns, *in);
     skipHeaderRow();
 }
 
-void BinaryRowInputFormat::skipTypes()
+void BinaryFormatReader::skipTypes()
 {
+    if (read_columns == 0)
+    {
+        /// It's possible only when with_names = false and with_types = true
+        readVarUInt(read_columns, *in);
+    }
+
     skipHeaderRow();
 }
 
-void BinaryRowInputFormat::skipField(size_t file_column)
+void BinaryFormatReader::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
         throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD, "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
     Field field;
     read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in);
+}
+
+BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : FormatWithNamesAndTypesSchemaReader(in_, 0, true, true, &reader), reader(in_, format_settings_)
+{
 }
 
 void registerInputFormatRowBinary(FormatFactory & factory)
@@ -92,6 +114,16 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
+    factory.registerFileExtension("bin", "RowBinary");
 }
+
+void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("RowBinaryWithNamesAndTypes", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
+    });
+}
+
 
 }

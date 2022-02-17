@@ -34,7 +34,8 @@ public:
         UInt64 max_block_size,
         unsigned num_streams,
         QueryProcessingStage::Enum processed_stage,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanPtr readFromParts(
@@ -47,7 +48,8 @@ public:
         UInt64 max_block_size,
         unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr) const;
+        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.

@@ -32,9 +32,9 @@ PoolWithFailover::PoolWithFailover(
     {
         for (const auto & replica_configuration : configurations)
         {
-            auto connection_string = formatConnectionString(replica_configuration.database,
-                replica_configuration.host, replica_configuration.port, replica_configuration.username, replica_configuration.password).first;
-            replicas_with_priority[priority].emplace_back(connection_string, pool_size, getConnectionForLog(replica_configuration.host, replica_configuration.port));
+            auto connection_info = formatConnectionString(replica_configuration.database,
+                replica_configuration.host, replica_configuration.port, replica_configuration.username, replica_configuration.password);
+            replicas_with_priority[priority].emplace_back(connection_info, pool_size);
         }
     }
 }
@@ -52,8 +52,8 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : configuration.addresses)
     {
         LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
-        auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password).first;
-        replicas_with_priority[0].emplace_back(connection_string, pool_size, getConnectionForLog(host, port));
+        auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password);
+        replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
 }
 
@@ -83,16 +83,18 @@ ConnectionHolderPtr PoolWithFailover::get()
                 try
                 {
                     /// Create a new connection or reopen an old connection if it became invalid.
-                    if (!connection || !connection->is_open())
+                    if (!connection)
                     {
-                        connection = std::make_unique<pqxx::connection>(replica.connection_string);
-                        LOG_DEBUG(log, "New connection to {}:{}", connection->hostname(), connection->port());
+                        connection = std::make_unique<Connection>(replica.connection_info);
+                        LOG_DEBUG(log, "New connection to {}", connection->getInfoForLog());
                     }
+
+                    connection->connect();
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
-                    error_message << "Try " << try_idx + 1 << ". Connection to `" << replica.name_for_log << "` failed: " << pqxx_error.what() << "\n";
+                    error_message << "Try " << try_idx + 1 << ". Connection to `" << replica.connection_info.host_port << "` failed: " << pqxx_error.what() << "\n";
 
                     replica.pool->returnObject(std::move(connection));
                     continue;

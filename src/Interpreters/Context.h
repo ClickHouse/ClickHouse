@@ -14,6 +14,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "config_core.h"
 
@@ -28,6 +29,7 @@
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
 
+struct OvercommitTracker;
 
 namespace DB
 {
@@ -148,6 +150,8 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -216,8 +220,12 @@ private:
     Scalars scalars;
     Scalars local_scalars;
 
-    /// Fields for distributed s3 function
+    /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
+    /// about next file to read from s3.
     std::optional<ReadTaskCallback> next_task_callback;
+    /// Used in parallel reading from replicas. A replica tells about its intentions to read
+    /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
+    std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -650,6 +658,8 @@ public:
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
 
+    OvercommitTracker * getGlobalOvercommitTracker() const;
+
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -743,7 +753,10 @@ public:
     std::shared_ptr<Clusters> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
-    void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
+    void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
+
+    void startClusterDiscovery();
+
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
@@ -864,6 +877,9 @@ public:
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
+    void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

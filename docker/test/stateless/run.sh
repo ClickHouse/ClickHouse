@@ -12,7 +12,11 @@ dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-dpkg -i package_folder/clickhouse-test_*.deb
+if [[ -n "$TEST_CASES_FROM_DEB" ]] && [[ "$TEST_CASES_FROM_DEB" -eq 1 ]]; then
+    dpkg -i package_folder/clickhouse-test_*.deb
+else
+    ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+fi
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -85,6 +89,10 @@ function run_tests()
         # everything in parallel except DatabaseReplicated. See below.
     fi
 
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+    fi
+
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         ADDITIONAL_OPTIONS+=('--jobs')
@@ -94,6 +102,13 @@ function run_tests()
         # configurations are OK.
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('8')
+    fi
+
+    if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
+        ADDITIONAL_OPTIONS+=('--run-by-hash-num')
+        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
+        ADDITIONAL_OPTIONS+=('--run-by-hash-total')
+        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
     fi
 
     set +e
@@ -108,7 +123,12 @@ export -f run_tests
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
-./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+echo "Files in current directory"
+ls -la ./
+echo "Files in root directory"
+ls -la /
+
+/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 clickhouse-client -q "system flush logs" ||:
 

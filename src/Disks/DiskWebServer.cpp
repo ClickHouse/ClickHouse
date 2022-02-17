@@ -154,7 +154,7 @@ bool DiskWebServer::exists(const String & path) const
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     LOG_TRACE(log, "Read from path: {}", path);
     auto iter = files.find(path);

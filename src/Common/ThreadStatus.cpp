@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 #include <base/getThreadId.h>
@@ -11,6 +12,7 @@
 
 #include <csignal>
 #include <mutex>
+#include <sys/mman.h>
 
 
 namespace DB
@@ -71,6 +73,24 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
+
+std::vector<ThreadGroupStatus::ProfileEventsCountersAndMemory> ThreadGroupStatus::getProfileEventsCountersAndMemoryForThreads()
+{
+    std::lock_guard guard(mutex);
+
+    /// It is OK to move it, since it is enough to report statistics for the thread at least once.
+    auto stats = std::move(finished_threads_counters_memory);
+    for (auto * thread : threads)
+    {
+        stats.emplace_back(ProfileEventsCountersAndMemory{
+            thread->performance_counters.getPartiallyAtomicSnapshot(),
+            thread->memory_tracker.get(),
+            thread->thread_id,
+        });
+    }
+
+    return stats;
+}
 
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
@@ -139,11 +159,17 @@ ThreadStatus::~ThreadStatus()
     {
         /// It's a minor tracked memory leak here (not the memory itself but it's counter).
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
+        tryLogCurrentException(log);
     }
 
     if (thread_group)
     {
         std::lock_guard guard(thread_group->mutex);
+        thread_group->finished_threads_counters_memory.emplace_back(ThreadGroupStatus::ProfileEventsCountersAndMemory{
+            performance_counters.getPartiallyAtomicSnapshot(),
+            memory_tracker.get(),
+            thread_id,
+        });
         thread_group->threads.erase(this);
     }
 

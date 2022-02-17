@@ -2,12 +2,13 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Poco/URI.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageURL.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Storages/StorageExternalDistributed.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -50,6 +51,8 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
 
         filename = configuration.url;
         format = configuration.format;
+        if (format == "auto")
+            format = FormatFactory::instance().getFormatFromFileName(filename, true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
     }
@@ -59,20 +62,10 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
     }
 }
 
-
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    for (const auto & [header, value] : configuration.headers)
-    {
-        auto value_literal = value.safeGet<String>();
-        if (header == "Range")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(std::make_pair(header, value_literal));
-    }
-
     return StorageURL::create(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -83,8 +76,29 @@ StoragePtr TableFunctionURL::getStorage(
         String{},
         global_context,
         compression_method_,
-        headers,
+        getHeaders(),
         configuration.http_method);
+}
+
+ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
+{
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+    for (const auto & [header, value] : configuration.headers)
+    {
+        auto value_literal = value.safeGet<String>();
+        if (header == "Range")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
+        headers.emplace_back(std::make_pair(header, value_literal));
+    }
+    return headers;
+}
+
+ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
+{
+    if (structure == "auto")
+        return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+
+    return parseColumnsListFromString(structure, context);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

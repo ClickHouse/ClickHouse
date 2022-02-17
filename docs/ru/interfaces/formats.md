@@ -20,6 +20,8 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CSV](#csv)                                                                             | ✔     | ✔      |
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
@@ -126,6 +128,9 @@ world
 [NULL](../sql-reference/syntax.md) форматируется как `\N`.
 
 Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
+
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
 
 Например:
 
@@ -360,6 +365,9 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Если установлена настройка [input_format_defaults_for_omitted_fields = 1](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) и тип столбца не `Nullable(T)`, то пустые значения без кавычек заменяются значениями по умолчанию для типа данных столбца.
 
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
+
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
 ## CSVWithNames {#csvwithnames}
@@ -368,8 +376,17 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 ## CustomSeparated {#format-customseparated}
 
-Аналогичен [Template](#format-template), но выводит (или считывает) все столбцы, используя для них правило экранирования из настройки `format_custom_escaping_rule` и разделители из настроек `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` и `format_custom_result_after_delimiter`, а не из форматных строк.
-Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный `TemplateIgnoreSpaces`.
+Аналогичен [Template](#format-template), но выводит (или считывает) все имена и типы столбцов, используя для них правило экранирования из настройки [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) и разделители из настроек [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) и [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter), а не из форматных строк.
+
+Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный формату [TemplateIgnoreSpaces](#templateignorespaces).
+
+## CustomSeparatedWithNames {#customseparatedwithnames}
+
+Выводит также заголовок с именами столбцов, аналогичен формату [TabSeparatedWithNames](#tabseparatedwithnames).
+
+## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
+
+Выводит также два заголовка с именами и типами столбцов, аналогичен формату [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ## JSON {#json}
 
@@ -682,7 +699,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
+    При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
 
 ### Выборка данных {#vyborka-dannykh}
 
@@ -1399,14 +1416,17 @@ SELECT * FROM line_as_string;
 
 При работе с форматом `Regexp` можно использовать следующие параметры:
 
-- `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
-- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило сериализации. Поддерживаются следующие правила:
-    - CSV (как в [CSV](#csv))
-    - JSON (как в [JSONEachRow](#jsoneachrow))
-    - Escaped (как в [TSV](#tabseparated))
-    - Quoted (как в [Values](#data-format-values))
-    - Raw (данные импортируются как есть, без сериализации)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
+-   `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
+
+-   `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило экранирования. Поддерживаются следующие правила:
+
+    -   CSV (как в формате [CSV](#csv))
+    -   JSON (как в формате [JSONEachRow](#jsoneachrow))
+    -   Escaped (как в формате [TSV](#tabseparated))
+    -   Quoted (как в формате [Values](#data-format-values))
+    -   Raw (данные импортируются как есть, без экранирования, как в формате [TSVRaw](#tabseparatedraw))
+
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
 
 **Использование**
 

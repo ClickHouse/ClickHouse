@@ -19,6 +19,11 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
 
+    /// Sometimes (especially in cloud envs) users can provide incorrect
+    /// configuration with duplicated raft ids or endpoints. We check them
+    /// on config parsing stage and never commit to quorum.
+    std::unordered_map<std::string, int> check_duplicated_hostnames;
+
     size_t total_servers = 0;
     for (const auto & server_key : keys)
     {
@@ -37,6 +42,24 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
+        if (check_duplicated_hostnames.count(endpoint))
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate endpoints: "
+                            "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
+                            endpoint, check_duplicated_hostnames[endpoint], new_server_id);
+        }
+        else
+        {
+            /// Fullscan to check duplicated ids
+            for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
+            {
+                if (new_server_id == id)
+                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate ids: id {} has been already added with endpoint {}, "
+                                    "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
+            }
+            check_duplicated_hostnames.emplace(endpoint, new_server_id);
+        }
+
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
         if (my_server_id == new_server_id)
         {

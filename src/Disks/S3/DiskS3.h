@@ -29,6 +29,8 @@ struct DiskS3Settings
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         size_t s3_max_single_read_retries_,
         size_t s3_min_upload_part_size_,
+        size_t s3_upload_part_size_multiply_factor_,
+        size_t s3_upload_part_size_multiply_parts_count_threshold_,
         size_t s3_max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
@@ -39,6 +41,8 @@ struct DiskS3Settings
     std::shared_ptr<Aws::S3::S3Client> client;
     size_t s3_max_single_read_retries;
     size_t s3_min_upload_part_size;
+    size_t s3_upload_part_size_multiply_factor;
+    size_t s3_upload_part_size_multiply_parts_count_threshold;
     size_t s3_max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
@@ -76,7 +80,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -168,7 +173,7 @@ private:
     inline static const String RESTORE_FILE_NAME = "restore";
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";

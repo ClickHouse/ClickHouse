@@ -147,9 +147,11 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr, const std::string & /* relative_path_prefix */) const
+    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
     {
-        return {1, ".idx"};
+        if (disk->exists(relative_path_prefix + ".idx"))
+            return {1, ".idx"};
+        return {0 /*unknown*/, ""};
     }
 
     /// Checks whether the column is in data skipping index.

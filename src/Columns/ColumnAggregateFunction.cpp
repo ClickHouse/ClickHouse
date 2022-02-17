@@ -28,13 +28,20 @@ namespace ErrorCodes
 }
 
 
-static std::string getTypeString(const AggregateFunctionPtr & func)
+static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << func->getName();
+
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    if (version && *version)
+        stream << *version << ", ";
+
+    stream << func->getName();
+
     const auto & parameters = func->getParameters();
     const auto & argument_types = func->getArgumentTypes();
-
     if (!parameters.empty())
     {
         stream << '(';
@@ -55,8 +62,8 @@ static std::string getTypeString(const AggregateFunctionPtr & func)
 }
 
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-    : func(func_), type_string(getTypeString(func))
+ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
+    : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }
 
@@ -66,10 +73,11 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
-    type_string = getTypeString(func);
+    version = version_;
+    type_string = getTypeString(func, version);
 }
 
 
@@ -343,7 +351,7 @@ INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
     WriteBufferFromOwnString wbuf;
-    func->serialize(data[n], wbuf);
+    func->serialize(data[n], wbuf, version);
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
@@ -360,7 +368,7 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
     for (size_t i = 0; i < s; ++i)
     {
         WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-        func->serialize(data[i], wbuf);
+        func->serialize(data[i], wbuf, version);
         wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
@@ -403,7 +411,7 @@ void ColumnAggregateFunction::protect()
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func);
+    return create(func, version);
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
@@ -412,7 +420,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
     field.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer);
+        func->serialize(data[n], buffer, version);
     }
     return field;
 }
@@ -423,7 +431,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer);
+        func->serialize(data[n], buffer, version);
     }
 }
 
@@ -504,7 +512,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
-    func->deserialize(data.back(), read_buffer, &arena);
+    func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
 void ColumnAggregateFunction::insertDefault()
@@ -517,7 +525,7 @@ void ColumnAggregateFunction::insertDefault()
 StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     WriteBufferFromArena out(arena, begin);
-    func->serialize(data[n], out);
+    func->serialize(data[n], out, version);
     return out.complete();
 }
 
@@ -539,7 +547,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       *  Probably this will not work under UBSan.
       */
     ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
-    func->deserialize(data.back(), read_buffer, &dst_arena);
+    func->deserialize(data.back(), read_buffer, version, &dst_arena);
 
     return read_buffer.position();
 }
@@ -639,7 +647,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     try
     {
         WriteBufferFromString buffer(serialized.data);
-        func->serialize(place, buffer);
+        func->serialize(place, buffer, version);
     }
     catch (...)
     {

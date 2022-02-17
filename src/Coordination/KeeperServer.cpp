@@ -75,6 +75,17 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     return user_and_digest;
 }
 
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, Poco::Logger * log)
+{
+    if (value > std::numeric_limits<int32_t>::max())
+    {
+        LOG_WARNING(log, "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.", value, name, std::numeric_limits<int32_t>::max());
+        return std::numeric_limits<int32_t>::max();
+    }
+
+    return static_cast<int32_t>(value);
+}
+
 }
 
 KeeperServer::KeeperServer(
@@ -96,7 +107,7 @@ KeeperServer::KeeperServer(
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 }
 
-void KeeperServer::startup()
+void KeeperServer::startup(bool enable_ipv6)
 {
     state_machine->init();
 
@@ -134,18 +145,18 @@ void KeeperServer::startup()
     }
 
     nuraft::raft_params params;
-    params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
-    params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
-    params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
-
-    params.reserved_log_items_ = coordination_settings->reserved_log_items;
-    params.snapshot_distance_ = coordination_settings->snapshot_distance;
-    params.stale_log_gap_ = coordination_settings->stale_log_gap;
-    params.fresh_log_gap_ = coordination_settings->fresh_log_gap;
-    params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
+    params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
+    params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
+    params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+    params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
+    params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
+    params.stale_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->stale_log_gap, "stale_log_gap", log);
+    params.fresh_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->fresh_log_gap, "fresh_log_gap", log);
+    params.client_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
-    params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
-    params.max_append_size_ = coordination_settings->max_requests_batch_size;
+    params.auto_forwarding_req_timeout_ = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
+    params.auto_forwarding_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
+    params.max_append_size_ = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -160,13 +171,14 @@ void KeeperServer::startup()
 #endif
     }
 
-    launchRaftServer(params, asio_opts);
+    launchRaftServer(enable_ipv6, params, asio_opts);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 }
 
 void KeeperServer::launchRaftServer(
+    bool enable_ipv6,
     const nuraft::raft_params & params,
     const nuraft::asio_service::options & asio_opts)
 {
@@ -181,7 +193,7 @@ void KeeperServer::launchRaftServer(
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
-    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger);
+    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
     if (!asio_listener)
         return;
@@ -274,10 +286,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
     for (const auto & [session_id, request] : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(session_id, request));
 
-    {
-        std::lock_guard lock(append_entries_mutex);
-        return raft_instance->append_entries(entries);
-    }
+    return raft_instance->append_entries(entries);
 }
 
 bool KeeperServer::isLeader() const

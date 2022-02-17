@@ -639,6 +639,24 @@
                 </replica>
             </shard>
         </test_shard_localhost_secure>
+        <test_shard_localhost_secure_empty_tag>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9440</port>
+                    <secure></secure>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure_empty_tag>
+        <test_shard_localhost_secure_empty_tag_2>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9440</port>
+                    <secure />
+                </replica>
+            </shard>
+        </test_shard_localhost_secure_empty_tag_2>
         <test_unavailable_shard>
             <shard>
                 <replica>

@@ -119,7 +119,7 @@ void PocoHTTPClient::makeRequestInternal(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-    LOG_DEBUG(log, "Make request to: {}", uri);
+    LOG_TEST(log, "Make request to: {}", uri);
 
     enum class S3MetricType
     {
@@ -251,7 +251,7 @@ void PocoHTTPClient::makeRequestInternal(
 
             if (request.GetContentBody())
             {
-                LOG_TRACE(log, "Writing request body.");
+                LOG_TEST(log, "Writing request body.");
 
                 if (attempt > 0) /// rewind content body buffer.
                 {
@@ -259,24 +259,24 @@ void PocoHTTPClient::makeRequestInternal(
                     request.GetContentBody()->seekg(0);
                 }
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                LOG_DEBUG(log, "Written {} bytes to request body", size);
+                LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
-            LOG_TRACE(log, "Receiving response...");
+            LOG_TEST(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
             ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
-            LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
                 remote_host_filter.checkURL(Poco::URI(location));
                 uri = location;
-                LOG_DEBUG(log, "Redirecting request to new location: {}", location);
+                LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 ProfileEvents::increment(select_metric(S3MetricType::Redirects));
 
@@ -292,7 +292,7 @@ void PocoHTTPClient::makeRequestInternal(
                 response->AddHeader(header_name, header_value);
                 headers_ss << header_name << ": " << header_value << "; ";
             }
-            LOG_DEBUG(log, "Received headers: {}", headers_ss.str());
+            LOG_TEST(log, "Received headers: {}", headers_ss.str());
 
             if (status_code == 429 || status_code == 503)
             { // API throttling

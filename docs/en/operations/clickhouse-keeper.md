@@ -3,20 +3,25 @@ toc_priority: 66
 toc_title: ClickHouse Keeper
 ---
 
-# [pre-production] ClickHouse Keeper
+# [pre-production] ClickHouse Keeper {#clickHouse-keeper}
 
 ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
 
 !!! warning "Warning"
     This feature is currently in the pre-production stage. We test it in our CI and on small internal installations.
 
-## Implementation details
+## Implementation details {#implementation-details}
 
 ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, has quite a simple and powerful data model. ZooKeeper's coordination algorithm called ZAB (ZooKeeper Atomic Broadcast) doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper ClickHouse Keeper is written in C++ and uses [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows to have linearizability for reads and writes, has several open-source implementations in different languages.
 
 By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with ClickHouse Keeper. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to ClickHouse Keeper snapshot. Interserver protocol in ClickHouse Keeper is also incompatible with ZooKeeper so mixed ZooKeeper / ClickHouse Keeper cluster is impossible.
 
-## Configuration
+ClickHouse Keeper supports Access Control List (ACL) the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth`, `digest`, `host` and `ip`. Digest authentication scheme uses pair `username:password`. Password is encoded in Base64. 
+
+!!! info "Note"
+    External integrations are not supported.
+
+## Configuration {#configuration}
 
 ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server, but in both cases configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
@@ -31,7 +36,8 @@ Other common parameters are inherited from the ClickHouse server config (`listen
 Internal coordination settings are located in `<keeper_server>.<coordination_settings>` section:
 
 -    `operation_timeout_ms` — Timeout for a single client operation (ms) (default: 10000).
--    `session_timeout_ms` — Timeout for client session (ms) (default: 30000).
+-    `min_session_timeout_ms` — Min timeout for client session (ms) (default: 10000).
+-    `session_timeout_ms` — Max timeout for client session (ms) (default: 100000).
 -    `dead_session_check_period_ms` — How often ClickHouse Keeper check dead sessions and remove them (ms) (default: 500).
 -    `heart_beat_interval_ms` — How often a ClickHouse Keeper leader will send heartbeats to followers (ms) (default: 500).
 -    `election_timeout_lower_bound_ms` — If the follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election (default: 1000).
@@ -97,34 +103,41 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 </keeper_server>
 ```
 
-## How to run
+## How to run {#how-to-run}
 
 ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
 
 ```bash
-clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
 ```
 
-## Four Latter Word Commands
+If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as argument:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
+```
+
+## Four Letter Word Commands {#four-letter-word-commands}
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
 The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
+
 ```
 echo mntr | nc localhost 9181
 ```
 
 Bellow is the detailed 4lw commands:
 
-- ruok : Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all. A response of "imok" does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
+- `ruok`: Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all. A response of "imok" does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
 
 ```
 imok
 ```
 
-- mntr : Outputs a list of variables that could be used for monitoring the health of the cluster.
+- `mntr`: Outputs a list of variables that could be used for monitoring the health of the cluster.
 
 ```
 zk_version      v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
@@ -146,12 +159,11 @@ zk_followers    0
 zk_synced_followers     0
 ```
 
-- srvr : Lists full details for the server.
+- `srvr`: Lists full details for the server.
 
 ```
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
 Latency min/avg/max: 0/0/0
-
 Received: 2
 Sent : 2
 Connections: 1
@@ -161,16 +173,14 @@ Mode: leader
 Node count: 4
 ```
 
-- stat : Lists brief details for the server and connected clients.
+- `stat`: Lists brief details for the server and connected clients.
 
 ```
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
 Clients:
  192.168.1.1:52852(recved=0,sent=0)
  192.168.1.1:52042(recved=24,sent=48)
-
 Latency min/avg/max: 0/0/0
-
 Received: 4
 Sent : 4
 Connections: 1
@@ -178,16 +188,15 @@ Outstanding: 0
 Zxid: 36
 Mode: leader
 Node count: 4
-
 ```
 
-- srst : Reset server statistics. The command will affect the result of `srvr`, `mntr` and `stat`.
+- `srst`: Reset server statistics. The command will affect the result of `srvr`, `mntr` and `stat`.
 
 ```
 Server stats reset.
 ```
 
-- conf : Print details about serving configuration.
+- `conf`: Print details about serving configuration.
 
 ```
 server_id=1
@@ -220,20 +229,20 @@ compress_snapshots_with_zstd_format=true
 configuration_change_tries_count=20
 ```
 
-- cons : List full connection/session details for all clients connected to this server. Includes information on numbers of packets received/sent, session id, operation latencies, last operation performed, etc...
+- `cons`: List full connection/session details for all clients connected to this server. Includes information on numbers of packets received/sent, session id, operation latencies, last operation performed, etc...
 
 ```
  192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
  192.168.1.1:52042(recved=9,sent=18,sid=0x0000000000000001,lop=List,est=1636454739887,to=30000,lcxid=0x0000000000000005,lzxid=0x0000000000000005,lresp=1636454739892,llat=0,minlat=0,avglat=0,maxlat=0)
 ```
 
-- crst : Reset connection/session statistics for all connections.
+- `crst`: Reset connection/session statistics for all connections.
 
 ```
 Connection stats reset.
 ```
 
-- envi : Print details about serving environment
+- `envi`: Print details about serving environment
 
 ```
 Environment:
@@ -250,41 +259,41 @@ user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
 ```
 
 
-- dirs : Shows the total size of snapshot and log files in bytes
+- `dirs`: Shows the total size of snapshot and log files in bytes
 
 ```
 snapshot_dir_size: 0
 log_dir_size: 3875
 ```
 
-- isro: Tests if server is running in read-only mode. The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
+- `isro`: Tests if server is running in read-only mode. The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
 
 ```
 rw
 ```
 
-- wchs : Lists brief information on watches for the server.
+- `wchs`: Lists brief information on watches for the server.
 
 ```
 1 connections watching 1 paths
 Total watches:1
 ```
 
-- wchc : Lists detailed information on watches for the server, by session. This outputs a list of sessions(connections) with associated watches (paths). Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
+- `wchc`: Lists detailed information on watches for the server, by session. This outputs a list of sessions (connections) with associated watches (paths). Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
 
 ```
 0x0000000000000001
     /clickhouse/task_queue/ddl
 ```
 
-- wchp : Lists detailed information on watches for the server, by path. This outputs a list of paths (znodes) with associated sessions. Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
+- `wchp`: Lists detailed information on watches for the server, by path. This outputs a list of paths (znodes) with associated sessions. Note, depending on the number of watches this operation may be expensive (i. e. impact server performance), use it carefully.
 
 ```
 /clickhouse/task_queue/ddl
     0x0000000000000001
 ```
 
-- dump : Lists the outstanding sessions and ephemeral nodes. This only works on the leader.
+- `dump`: Lists the outstanding sessions and ephemeral nodes. This only works on the leader.
 
 ```
 Sessions dump (2):
@@ -295,7 +304,7 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-## [experimental] Migration from ZooKeeper
+## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}
 
 Seamlessly migration from ZooKeeper to ClickHouse Keeper is impossible you have to stop your ZooKeeper cluster, convert data and start ClickHouse Keeper. `clickhouse-keeper-converter` tool allows converting ZooKeeper logs and snapshots to ClickHouse Keeper snapshot. It works only with ZooKeeper > 3.4. Steps for migration:
 

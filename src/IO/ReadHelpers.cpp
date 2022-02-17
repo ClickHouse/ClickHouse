@@ -4,7 +4,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
@@ -216,6 +215,15 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<' '>(s, buf);
 }
+
+template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
@@ -700,6 +708,25 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 {
     s.clear();
     readCSVStringInto(s, buf, settings);
+}
+
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
+{
+    s.clear();
+    bool add_quote = false;
+    char quote = '\'';
+
+    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
+    {
+        quote = *buf.position();
+        s.push_back(quote);
+        add_quote = true;
+    }
+
+    readCSVStringInto(s, buf, settings);
+
+    if (add_quote)
+        s.push_back(quote);
 }
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
@@ -1210,6 +1237,116 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
         if (checkString(row_between_delimiter, buf))
             break;
     }
+}
+
+// Use PeekableReadBuffer to copy field to string after parsing.
+template <typename ParseFunc>
+static void readParsedValueIntoString(String & s, ReadBuffer & buf, ParseFunc parse_func)
+{
+    PeekableReadBuffer peekable_buf(buf);
+    peekable_buf.setCheckpoint();
+    parse_func(peekable_buf);
+    peekable_buf.makeContinuousMemoryFromCheckpointToPos();
+    auto * end = peekable_buf.position();
+    peekable_buf.rollbackToCheckpoint();
+    s.append(peekable_buf.position(), end);
+    peekable_buf.position() = end;
+}
+
+template <char opening_bracket, char closing_bracket>
+static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
+{
+    assertChar(opening_bracket, buf);
+    s.push_back(opening_bracket);
+
+    size_t balance = 1;
+
+    while (!buf.eof() && balance)
+    {
+        char * next_pos = find_first_symbols<'\'', opening_bracket, closing_bracket>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        s.push_back(*buf.position());
+
+        if (*buf.position() == '\'')
+        {
+            readQuotedStringInto<false>(s, buf);
+            s.push_back('\'');
+        }
+        else if (*buf.position() == opening_bracket)
+        {
+            ++balance;
+            ++buf.position();
+        }
+        else if (*buf.position() == closing_bracket)
+        {
+            --balance;
+            ++buf.position();
+        }
+    }
+}
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+
+    if (buf.eof())
+        return;
+
+    /// Possible values in 'Quoted' field:
+    /// - Strings: '...'
+    /// - Arrays: [...]
+    /// - Tuples: (...)
+    /// - Maps: {...}
+    /// - NULL
+    /// - Number: integer, float, decimal.
+
+    if (*buf.position() == '\'')
+    {
+        s.push_back('\'');
+        readQuotedStringInto<false>(s, buf);
+        s.push_back('\'');
+    }
+    else if (*buf.position() == '[')
+        readQuotedFieldInBrackets<'[', ']'>(s, buf);
+    else if (*buf.position() == '(')
+        readQuotedFieldInBrackets<'(', ')'>(s, buf);
+    else if (*buf.position() == '{')
+        readQuotedFieldInBrackets<'{', '}'>(s, buf);
+    else if (checkCharCaseInsensitive('n', buf))
+    {
+        /// NULL or NaN
+        if (checkCharCaseInsensitive('u', buf))
+        {
+            assertStringCaseInsensitive("ll", buf);
+            s.append("NULL");
+        }
+        else
+        {
+            assertStringCaseInsensitive("an", buf);
+            s.append("NaN");
+        }
+    }
+    else
+    {
+        /// It's an integer, float or decimal. They all can be parsed as float.
+        auto parse_func = [](ReadBuffer & in)
+        {
+            Float64 tmp;
+            readFloatText(tmp, in);
+        };
+        readParsedValueIntoString(s, buf, parse_func);
+    }
+}
+
+void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+{
+    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
+    readParsedValueIntoString(s, buf, parse_func);
 }
 
 }

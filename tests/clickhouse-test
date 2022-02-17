@@ -17,6 +17,8 @@ import math
 import http.client
 import urllib.parse
 import json
+# for crc32
+import zlib
 
 from argparse import ArgumentParser
 from typing import Tuple, Union, Optional, Dict, Set, List
@@ -56,6 +58,13 @@ MESSAGES_TO_RETRY = [
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
+
+
+def stringhash(s):
+    # default hash() function consistent
+    # only during process invocation https://stackoverflow.com/a/42089311
+    return zlib.crc32(s.encode('utf-8'))
+
 
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
@@ -205,26 +214,31 @@ def get_stacktraces_from_gdb(server_pid):
 
 # collect server stacktraces from system.stack_trace table
 # it does not work in Sandbox
-def get_stacktraces_from_clickhouse(client, replicated_database=False):
+def get_stacktraces_from_clickhouse(args):
+    settings_str = ' '.join([
+        get_additional_client_options(args),
+        '--allow_introspection_functions=1',
+        '--skip_unavailable_shards=1',
+    ])
     replicated_msg = \
-        "{} --allow_introspection_functions=1 --skip_unavailable_shards=1 --query \
+        "{} {} --query \
         \"SELECT materialize((hostName(), tcpPort())) as host, thread_id, \
         arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), \
         arrayMap(x -> addressToLine(x), trace), \
         arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace \
         FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') \
-        ORDER BY host, thread_id FORMAT Vertical\"".format(client)
+        ORDER BY host, thread_id FORMAT Vertical\"".format(args.client, settings_str)
 
     msg = \
-        "{} --allow_introspection_functions=1 --query \
+        "{} {} --query \
         \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), \
         arrayMap(x -> addressToLine(x), trace), \
         arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace \
-        FROM system.stack_trace FORMAT Vertical\"".format(client)
+        FROM system.stack_trace FORMAT Vertical\"".format(args.client, settings_str)
 
     try:
         return subprocess.check_output(
-            replicated_msg if replicated_database else msg,
+            replicated_msg if args.replicated_database else msg,
             shell=True, stderr=subprocess.STDOUT).decode('utf-8')
     except Exception as e:
         print(f"Error occurred while receiving stack traces from client: {e}")
@@ -250,8 +264,7 @@ def print_stacktraces() -> None:
     if bt is None:
         print("\nCollecting stacktraces from system.stacktraces table:")
 
-        bt = get_stacktraces_from_clickhouse(
-            args.client, args.replicated_database)
+        bt = get_stacktraces_from_clickhouse(args)
 
     if bt is not None:
         print(bt)
@@ -305,6 +318,7 @@ class FailureReason(enum.Enum):
     EXCEPTION = "having having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -315,6 +329,7 @@ class FailureReason(enum.Enum):
     FAST_ONLY = "running fast tests only"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
+    S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
 
     # UNKNOWN reasons
@@ -342,6 +357,14 @@ class TestResult:
 
 
 class TestCase:
+    @staticmethod
+    def get_description_from_exception_info(exc_info):
+        exc_type, exc_value, tb = exc_info
+        exc_name = exc_type.__name__
+        traceback_str = "\n".join(traceback.format_tb(tb, 10))
+        description = f"\n{exc_name}\n{exc_value}\n{traceback_str}"
+        return description
+
     @staticmethod
     def get_reference_file(suite_dir, name):
         """
@@ -373,7 +396,8 @@ class TestCase:
             # And we will recreate and drop it for each test
             def random_str(length=6):
                 alphabet = string.ascii_lowercase + string.digits
-                return ''.join(random.choice(alphabet) for _ in range(length))
+                # NOTE: it is important not to use default random generator, since it shares state.
+                return ''.join(random.SystemRandom().choice(alphabet) for _ in range(length))
 
             database = 'test_{suffix}'.format(suffix=random_str())
 
@@ -440,9 +464,17 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif tags and ('no-s3-storage' in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+
+
         elif tags:
             for build_flag in args.build_flags:
                 if 'no-' + build_flag in tags:
+                    return FailureReason.BUILD
+            for tag in tags:
+                tag = tag.replace('-', '_')
+                if tag.startswith('use_') and tag not in args.build_flags:
                     return FailureReason.BUILD
 
         return None
@@ -559,7 +591,7 @@ class TestCase:
         database = args.testcase_database
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = self.case_file
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
         params = {
             'client': client + ' --database=' + database,
@@ -648,13 +680,21 @@ class TestCase:
             return result
         except KeyboardInterrupt as e:
             raise e
+        except HTTPError:
+            return TestResult(self.name, TestStatus.FAIL,
+                              FailureReason.INTERNAL_QUERY_FAIL,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
+        except (ConnectionRefusedError, ConnectionResetError):
+            return TestResult(self.name, TestStatus.FAIL,
+                              FailureReason.SERVER_DIED,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
         except:
-            exc_type, exc_value, tb = sys.exc_info()
-            exc_name = exc_type.__name__
-            traceback_str = "\n".join(traceback.format_tb(tb, 10))
-            description = f"{exc_name}\n{exc_value}\n{traceback_str}"
-            return TestResult(self.name, TestStatus.UNKNOWN, FailureReason.INTERNAL_ERROR, 0., description)
-
+            return TestResult(self.name, TestStatus.UNKNOWN,
+                              FailureReason.INTERNAL_ERROR,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
 
 class TestSuite:
     @staticmethod
@@ -751,7 +791,15 @@ class TestSuite:
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
 
-        self.all_tests: List[str] = self.get_tests_list(self.tests_in_suite_key_func)
+        filter_func = lambda x: True
+
+        if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
+            if args.run_by_hash_num > args.run_by_hash_total:
+                raise Exception(f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}")
+
+            filter_func = lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+
+        self.all_tests: List[str] = self.get_tests_list(self.tests_in_suite_key_func, filter_func)
         self.all_tags: Dict[str, Set[str]] = self.read_test_tags(self.suite_path, self.all_tests)
 
         self.sequential_tests = []
@@ -772,17 +820,17 @@ class TestSuite:
 
         return ('no-parallel' in self.all_tags[test_name]) or ('sequential' in self.all_tags[test_name])
 
-    def get_tests_list(self, sort_key):
+    def get_tests_list(self, sort_key, filter_func):
         """
         Return list of tests file names to run
         """
 
-        all_tests = list(self.get_selected_tests())
+        all_tests = list(self.get_selected_tests(filter_func))
         all_tests = all_tests * self.args.test_runs
         all_tests.sort(key=sort_key)
         return all_tests
 
-    def get_selected_tests(self):
+    def get_selected_tests(self, filter_func):
         """
         Find all files with tests, filter, render templates
         """
@@ -799,11 +847,13 @@ class TestSuite:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+            if not filter_func(test_name):
+                continue
             test_name = self.render_test_template(j2env, self.suite_path, test_name)
             yield test_name
 
     @staticmethod
-    def readTestSuite(args, suite_dir_name: str):
+    def read_test_suite(args, suite_dir_name: str):
         def is_data_present():
             return int(clickhouse_execute(args, 'EXISTS TABLE test.hits'))
 
@@ -1028,6 +1078,11 @@ def collect_build_flags(args):
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
 
+    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1');")
+    for use_flag in use_flags.strip().splitlines():
+        use_flag = use_flag.decode().lower()
+        result.append(use_flag)
+
     return result
 
 
@@ -1187,7 +1242,7 @@ def main(args):
         if server_died.is_set():
             break
 
-        test_suite = TestSuite.readTestSuite(args, suite)
+        test_suite = TestSuite.read_test_suite(args, suite)
         if test_suite is None:
             continue
 
@@ -1319,6 +1374,10 @@ if __name__ == '__main__':
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
+    parser.add_argument('--s3-storage', action='store_true', default=False, help='Run tests over s3 storage')
+
+    parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
+    parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')

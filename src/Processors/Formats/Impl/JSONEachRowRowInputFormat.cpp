@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -286,11 +287,7 @@ void JSONEachRowRowInputFormat::readPrefix()
     skipBOMIfExists(*in);
 
     skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == '[')
-    {
-        ++in->position();
-        data_in_square_brackets = true;
-    }
+    data_in_square_brackets = checkChar('[', *in);
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
@@ -309,6 +306,43 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings)
+    : IRowWithNamesSchemaReader(in_, format_settings.max_rows_to_read_for_schema_inference), json_strings(json_strings_)
+{
+}
+
+
+std::unordered_map<String, DataTypePtr> JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes()
+{
+    if (first_row)
+    {
+        skipBOMIfExists(in);
+        skipWhitespaceIfAny(in);
+        if (checkChar('[', in))
+            data_in_square_brackets = true;
+        first_row = false;
+    }
+    else
+    {
+        skipWhitespaceIfAny(in);
+        /// If data is in square brackets then ']' means the end of data.
+        if (data_in_square_brackets && checkChar(']', in))
+            return {};
+
+        /// ';' means end of data.
+        if (checkChar(';', in))
+            return {};
+
+        /// There may be optional ',' between rows.
+        checkChar(',', in);
+    }
+
+    skipWhitespaceIfAny(in);
+    if (in.eof())
+        return {};
+
+    return readRowAndGetNamesAndDataTypesForJSONEachRow(in, json_strings);
+}
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
@@ -320,6 +354,9 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
+
+    factory.registerFileExtension("ndjson", "JSONEachRow");
+    factory.registerFileExtension("jsonl", "JSONEachRow");
 
     factory.registerInputFormat("JSONStringsEachRow", [](
         ReadBuffer & buf,
@@ -341,6 +378,19 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+}
+
+void registerJSONEachRowSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
+    });
+
+    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
+    });
 }
 
 }

@@ -1,8 +1,6 @@
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
-    DateLUT.cpp
-    DateLUTImpl.cpp
     demangle.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
@@ -18,20 +16,20 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    getResource.cpp
     StringRef.cpp
 )
 
 if (ENABLE_REPLXX)
     list (APPEND SRCS ReplxxLineReader.cpp)
-elseif (ENABLE_READLINE)
-    list (APPEND SRCS ReadlineLineReader.cpp)
 endif ()
 
 if (USE_DEBUG_HELPERS)
-    get_target_property(MAGIC_ENUM_INCLUDE_DIR magic_enum INTERFACE_INCLUDE_DIRECTORIES)
-    set (INCLUDE_DEBUG_HELPERS "-I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/base/base/iostream_debug_helpers.h\"")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.
+    # Prefixing "SHELL:" will force it to use the original text.
+    set (INCLUDE_DEBUG_HELPERS "SHELL:-I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/base/base/iostream_debug_helpers.h\"")
+    # Use generator expression as we don't want to pollute CMAKE_CXX_FLAGS, which will interfere with CMake check system.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${INCLUDE_DEBUG_HELPERS}>)
 endif ()
 
 add_library (common ${SRCS})
@@ -42,51 +40,25 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
-if (USE_INTERNAL_CCTZ)
-    set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
-endif()
-
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
 
-if (OS_DARWIN AND NOT MAKE_STATIC_LIBRARIES)
+if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
     target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
 endif()
 
-# Allow explicit fallback to readline
-if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
-    message (STATUS "Attempt to fallback to readline explicitly")
-    set (READLINE_PATHS "/usr/local/opt/readline/lib")
-    # First try find custom lib for macos users (default lib without history support)
-    find_library (READLINE_LIB NAMES readline PATHS ${READLINE_PATHS} NO_DEFAULT_PATH)
-    if (NOT READLINE_LIB)
-        find_library (READLINE_LIB NAMES readline PATHS ${READLINE_PATHS})
-    endif ()
-
-    set(READLINE_INCLUDE_PATHS "/usr/local/opt/readline/include")
-    find_path (READLINE_INCLUDE_DIR NAMES readline/readline.h PATHS ${READLINE_INCLUDE_PATHS} NO_DEFAULT_PATH)
-    if (NOT READLINE_INCLUDE_DIR)
-        find_path (READLINE_INCLUDE_DIR NAMES readline/readline.h PATHS ${READLINE_INCLUDE_PATHS})
-    endif ()
-    if (READLINE_INCLUDE_DIR AND READLINE_LIB)
-        target_link_libraries(common PUBLIC ${READLINE_LIB})
-        target_compile_definitions(common PUBLIC USE_READLINE=1)
-        message (STATUS "Using readline: ${READLINE_INCLUDE_DIR} : ${READLINE_LIB}")
-    endif ()
-endif ()
-
 target_link_libraries (common
     PUBLIC
-        ${CITYHASH_LIBRARIES}
+        ch_contrib::cityhash
         boost::headers_only
         boost::system
         Poco::Net
         Poco::Net::SSL
         Poco::Util
         Poco::Foundation
-        replxx
-        cctz
-        fmt
-        magic_enum
+        ch_contrib::replxx
+        ch_contrib::cctz
+        ch_contrib::fmt
+        ch_contrib::magic_enum
 )
 
 if (ENABLE_TESTS)

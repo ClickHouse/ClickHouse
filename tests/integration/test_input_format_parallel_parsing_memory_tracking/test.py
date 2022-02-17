@@ -24,16 +24,13 @@ def start_cluster():
 
 
 # max_memory_usage_for_user cannot be used, since the memory for user accounted
-# correctly, only total is not
+# correctly, only total is not (it is set via conf.xml)
 def test_memory_tracking_total():
-    instance.query('''
-        CREATE TABLE null (row String) ENGINE=Null;
-    ''')
+    instance.query('CREATE TABLE null (row String) ENGINE=Null')
     instance.exec_in_container(['bash', '-c',
                                 'clickhouse local -q "SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), \' \') from numbers(10000)" > data.json'])
     for it in range(0, 20):
         # the problem can be triggered only via HTTP,
         # since clickhouse-client parses the data by itself.
         assert instance.exec_in_container(['curl', '--silent', '--show-error', '--data-binary', '@data.json',
-                                           'http://127.1:8123/?query=INSERT%20INTO%20null%20FORMAT%20TSV']) == '', 'Failed on {} iteration'.format(
-            it)
+                                           'http://127.1:8123/?query=INSERT%20INTO%20null%20FORMAT%20TSV']) == '', f'Failed on {it} iteration'

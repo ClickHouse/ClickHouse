@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #include <vector>
+#include <Core/MySQL/MySQLReplication.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -18,6 +19,7 @@
 #include <base/range.h>
 #include <base/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -126,7 +128,7 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
     {
         switch (type)
         {
@@ -143,9 +145,23 @@ namespace
                 read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
-                assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 8;
+            {
+                if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
+                {
+                    size_t n = value.size();
+                    UInt64 val = 0UL;
+                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
+                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
+                    read_bytes_size += n;
+                }
+                else
+                {
+                    assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
+                    read_bytes_size += 8;
+                }
                 break;
+            }
             case ValueType::vtInt8:
                 assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 read_bytes_size += 1;
@@ -159,9 +175,32 @@ namespace
                 read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
-                assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
-                read_bytes_size += 8;
+            {
+                if (mysql_type == enum_field_types::MYSQL_TYPE_TIME)
+                {
+                    String time_str(value.data(), value.size());
+                    bool negative = time_str.starts_with("-");
+                    if (negative) time_str = time_str.substr(1);
+                    std::vector<String> hhmmss;
+                    boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
+                    Int64 v = 0;
+                    if (hhmmss.size() == 3)
+                    {
+                        v = (std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000;
+                    }
+                    else
+                        throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
+                    if (negative) v = -v;
+                    assert_cast<ColumnInt64 &>(column).insertValue(v);
+                    read_bytes_size += value.size();
+                }
+                else
+                {
+                    assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
+                    read_bytes_size += 8;
+                }
                 break;
+            }
             case ValueType::vtFloat32:
                 assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 read_bytes_size += 4;
@@ -258,12 +297,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size);
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
                 }
             }
             else

@@ -54,11 +54,6 @@ ChangelogFileDescription getChangelogFileDescription(const std::string & path_st
     return result;
 }
 
-LogEntryPtr makeClone(const LogEntryPtr & entry)
-{
-    return cs_new<nuraft::log_entry>(entry->get_term(), nuraft::buffer::clone(entry->get_buf()), entry->get_val_type());
-}
-
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -252,7 +247,7 @@ public:
         catch (const Exception & ex)
         {
             if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
-                throw ex;
+                throw;
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
@@ -519,7 +514,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         rotate(index);
 
     current_writer->appendRecord(buildRecord(index, log_entry));
-    logs[index] = makeClone(log_entry);
+    logs[index] = log_entry;
     max_log_id = index;
 }
 

@@ -5,7 +5,7 @@ Generate github token:
 
 Dependencies:
 ```
- apt-get install git curl jq python3 python3-fuzzywuzzy 
+sudo apt-get install git curl jq python3 python3-fuzzywuzzy 
 ```
 
 Update information about tags:

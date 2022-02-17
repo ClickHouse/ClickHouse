@@ -204,7 +204,13 @@ protected:
 class ParserCastExpression : public IParserBase
 {
 private:
-    ParserExpressionElement elem_parser;
+    ParserPtr elem_parser;
+
+public:
+    ParserCastExpression(ParserPtr && elem_parser_)
+        : elem_parser(std::move(elem_parser_))
+    {
+    }
 
 protected:
     const char * getName() const override { return "CAST expression"; }
@@ -241,7 +247,7 @@ class ParserUnaryExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
+    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserCastExpression>(std::make_unique<ParserTupleElementExpression>())};
 
 protected:
     const char * getName() const override { return "unary expression"; }

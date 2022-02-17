@@ -182,19 +182,19 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).columns;
+        auto columns_info = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).physical_columns;
 
-        if (!columns)
+        if (!columns_info)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
+                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
 
-        return storage;
+        return std::move(storage);
     }
 
     if (table_checked || checkPostgresTable(table_name))
@@ -414,7 +414,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     assert(storage_engine_arguments->children.size() >= 2);
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    return create_table_query;
+    return std::move(create_table_query);
 }
 
 

@@ -32,6 +32,7 @@
         "dependent": []
     },
     "docker/test/pvs": {
+        "only_amd64": true,
         "name": "clickhouse/pvs-test",
         "dependent": []
     },
@@ -46,7 +47,6 @@
         "name": "clickhouse/stateless-test",
         "dependent": [
             "docker/test/stateful",
-            "docker/test/coverage",
             "docker/test/unit"
         ]
     },
@@ -55,10 +55,6 @@
         "dependent": [
             "docker/test/stress"
         ]
-    },
-    "docker/test/coverage": {
-        "name": "clickhouse/test-coverage",
-        "dependent": []
     },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
@@ -77,6 +73,7 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
@@ -108,6 +105,10 @@
         "name": "clickhouse/mysql-golang-client",
         "dependent": []
     },
+    "docker/test/integration/dotnet_client": {
+        "name": "clickhouse/dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "clickhouse/mysql-java-client",
         "dependent": []
@@ -125,6 +126,7 @@
         "dependent": []
     },
     "docker/test/integration/kerberos_kdc": {
+        "only_amd64": true,
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
@@ -138,6 +140,7 @@
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
         "name": "clickhouse/kerberized-hadoop",
         "dependent": []
     },

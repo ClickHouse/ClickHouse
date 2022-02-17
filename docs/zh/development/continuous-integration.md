@@ -86,6 +86,7 @@ git push
 - **Compiler**: `gcc-9` 或 `clang-10` (或其他架构的`clang-10-xx`, 比如`clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
+- **Bundled**: `bundled` 构建使用来自 `contrib` 库, 而 `unbundled` 构建使用系统库.
 - **Splitted**: `splitted` is a [split build](https://clickhouse.com/docs/en/development/build/#split-build)
 - **Status**: `成功` 或 `失败`
 - **Build log**: 链接到构建和文件复制日志, 当构建失败时很有用.

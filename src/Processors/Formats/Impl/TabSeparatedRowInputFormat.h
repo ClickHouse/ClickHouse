@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 
 namespace DB
@@ -10,7 +11,7 @@ namespace DB
 
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     /** with_names - the first line is the header with the names of the columns
@@ -24,6 +25,13 @@ public:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+};
+
+class TabSeparatedFormatReader final : public FormatWithNamesAndTypesReader
+{
+public:
+    TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
 
     bool readField(IColumn & column, const DataTypePtr & type,
                    const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
@@ -36,18 +44,34 @@ private:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
 
-    std::vector<String> readHeaderRow();
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readRow();
+    std::vector<String> readNames() override { return readRow(); }
+    std::vector<String> readTypes() override { return readRow(); }
     String readFieldIntoString();
 
     void checkNullValueForNonNullable(DataTypePtr type) override;
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+    FormatSettings::EscapingRule getEscapingRule()
+    {
+        return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
+    }
 
+private:
     bool is_raw;
+    bool first_row = true;
+};
+
+class TabSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
+{
+public:
+    TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    TabSeparatedFormatReader reader;
 };
 
 }

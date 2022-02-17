@@ -360,6 +360,21 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
+### decodeURLFormComponent(URL) {#decodeurlformcomponenturl}
+
+Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
+Example:
+
+``` sql
+SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') AS DecodedURL;
+```
+
+``` text
+┌─DecodedURL────────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1 2+3 │
+└───────────────────────────────────────────┘
+```
+
 ### netloc {#netloc}
 
 Extracts network locality (`username:password@host:port`) from a URL.

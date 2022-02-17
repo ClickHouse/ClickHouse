@@ -11,11 +11,13 @@
 #include <base/sort.h>
 #include <algorithm>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Derived>
@@ -141,6 +143,56 @@ bool IColumn::hasEqualValuesImpl() const
     return true;
 }
 
+template <typename Derived>
+double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
+{
+    if (sample_ratio <= 0.0 || sample_ratio > 1.0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
+
+    /// Randomize a little to avoid boundary effects.
+    std::uniform_int_distribution<size_t> dist(1, static_cast<size_t>(1.0 / sample_ratio));
+
+    size_t num_rows = size();
+    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
+    size_t num_checked_rows = dist(thread_local_rng);
+    num_sampled_rows = std::min(num_sampled_rows + dist(thread_local_rng), num_rows);
+    size_t res = 0;
+
+    if (num_sampled_rows == num_rows)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            res += static_cast<const Derived &>(*this).isDefaultAt(i);
+        num_checked_rows = num_rows;
+    }
+    else if (num_sampled_rows != 0)
+    {
+        for (size_t i = num_checked_rows; i < num_rows; ++i)
+        {
+            if (num_checked_rows * num_rows <= i * num_sampled_rows)
+            {
+                res += static_cast<const Derived &>(*this).isDefaultAt(i);
+                ++num_checked_rows;
+            }
+        }
+    }
+
+    return static_cast<double>(res) / num_checked_rows;
+}
+
+template <typename Derived>
+void IColumn::getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!static_cast<const Derived &>(*this).isDefaultAt(i))
+            indices.push_back(i);
+    }
+}
+
 template <typename Comparator>
 void IColumn::updatePermutationImpl(
     size_t limit,
@@ -152,7 +204,7 @@ void IColumn::updatePermutationImpl(
         limit, res, equal_ranges,
         [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; },
         [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) == 0; },
-        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
+        [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); },
         [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
 }
 

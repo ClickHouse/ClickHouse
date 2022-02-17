@@ -13,13 +13,4 @@ Changelog entry (a user-readable short description of the changes that goes to C
 ...
 
 
-Detailed description / Documentation draft:
-...
-
-
-> By adding documentation, you'll allow users to try your new feature immediately, not when someone else will have time to document it later. Documentation is necessary for all features that affect user experience in any way. You can add brief documentation draft above, or add documentation right into your patch as Markdown files in [docs](https://github.com/ClickHouse/ClickHouse/tree/master/docs) folder.
-
-> If you are doing this for the first time, it's recommended to read the lightweight [Contributing to ClickHouse Documentation](https://github.com/ClickHouse/ClickHouse/tree/master/docs/README.md) guide first.
-
-
 > Information about CI checks: https://clickhouse.tech/docs/en/development/continuous-integration/

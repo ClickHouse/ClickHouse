@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Formats/CapnProtoUtils.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ class ReadBuffer;
   * The schema in this case cannot be compiled in, so it uses a runtime schema parser.
   * See https://capnproto.org/cxx.html
   */
-class CapnProtoRowInputFormat : public IRowInputFormat
+class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
     CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
@@ -36,6 +37,17 @@ private:
     const FormatSettings format_settings;
     DataTypes column_types;
     Names column_names;
+};
+
+class CapnProtoSchemaReader : public IExternalSchemaReader
+{
+public:
+    explicit CapnProtoSchemaReader(const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    const FormatSettings format_settings;
 };
 
 }

@@ -7,6 +7,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Processors/Sources/ShellCommandSource.h>
 
 
 namespace DB
@@ -20,20 +21,19 @@ public:
     struct Configuration
     {
         std::string command;
-        std::string format;
+        std::vector<std::string> command_arguments;
         std::string update_field;
         UInt64 update_lag;
         /// Implicit key means that the source script will return only values,
         /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
         bool implicit_key;
-        /// Send number_of_rows\n before sending chunk to process
-        bool send_chunk_header;
     };
 
     ExecutableDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
         ContextPtr context_);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
@@ -69,6 +69,7 @@ private:
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     Block sample_block;
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
 };
 

@@ -152,6 +152,7 @@
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
+
     <!--
     <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
@@ -176,6 +177,7 @@
          See also: https://www.shodan.io/search?query=clickhouse
       -->
     <!-- <listen_host>::</listen_host> -->
+
 
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
@@ -215,13 +217,12 @@
         <!-- The following file is used only if ssl_require_client_auth=1 -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+        <!-- Default transport compression type (can be overridden by client, see the transport_compression_type field in QueryInfo).
              Supported algorithms: none, deflate, gzip, stream_gzip -->
-        <compression>deflate</compression>
+        <transport_compression_type>none</transport_compression_type>
 
-        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
-             Supported levels: none, low, medium, high -->
-        <compression_level>medium</compression_level>
+        <!-- Default transport compression level. Supported levels: 0..3 -->
+        <transport_compression_level>0</transport_compression_level>
 
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
@@ -242,7 +243,7 @@
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
+            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile> -->
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
@@ -292,6 +293,10 @@
     -->
 
     <max_thread_pool_size>10000</max_thread_pool_size>
+
+    <!-- Number of workers to recycle connections in background (see also drain_timeout).
+         If the pool is full, connection will be drained synchronously. -->
+    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -650,6 +655,38 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_one_shard_three_replicas_localhost>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <!--shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard-->
+        </test_cluster_one_shard_three_replicas_localhost>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>

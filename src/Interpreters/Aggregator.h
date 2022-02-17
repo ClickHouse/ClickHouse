@@ -1062,6 +1062,7 @@ private:
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
+        bool has_sparse_arguments = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1137,12 +1138,12 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
 
-    static void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataWithoutKey & res,
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1306,7 +1307,7 @@ private:
         NestedColumnsHolder & nested_columns_holder) const;
 
     void addSingleKeyToAggregateColumns(
-        const AggregatedDataVariants & data_variants,
+        AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
     void addArenasToAggregateColumns(
@@ -1317,6 +1318,8 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
+
+    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };
 
 

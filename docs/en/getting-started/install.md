@@ -69,14 +69,14 @@ You can also download and install packages manually from [here](https://repo.cli
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
 The required version can be downloaded with `curl` or `wget` from repository https://repo.clickhouse.com/tgz/.
-After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
+After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
 ``` bash
-export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/clickhouse-client-$LATEST_VERSION.tgz
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep stable | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
@@ -143,6 +143,12 @@ On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sourc
 To start the server as a daemon, run:
 
 ``` bash
+$ sudo clickhouse start
+```
+
+There are also another ways to run ClickHouse:
+
+``` bash
 $ sudo service clickhouse-server start
 ```
 
@@ -150,6 +156,12 @@ If you do not have `service` command, run as
 
 ``` bash
 $ sudo /etc/init.d/clickhouse-server start
+```
+
+If you have `systemctl` command, run as
+
+``` bash
+$ sudo systemctl start clickhouse-server.service
 ```
 
 See the logs in the `/var/log/clickhouse-server/` directory.

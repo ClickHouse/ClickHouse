@@ -24,9 +24,7 @@ Function:
 
 -   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
 
--   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
-
-        This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+-   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536. This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
 -   Provides the result deterministically (it does not depend on the query processing order).
 

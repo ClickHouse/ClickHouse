@@ -63,6 +63,8 @@ private:
     ContextPtr global_context;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
+    Poco::Timespan min_session_timeout;
+    Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id{-1};
     Stopwatch session_stopwatch;
@@ -93,7 +95,7 @@ private:
 
     Poco::Timestamp established;
 
-    using Operations = std::map<Coordination::XID, Poco::Timestamp>;
+    using Operations = std::unordered_map<Coordination::XID, Poco::Timestamp>;
     Operations operations;
 
     LastOpMultiVersion last_op;

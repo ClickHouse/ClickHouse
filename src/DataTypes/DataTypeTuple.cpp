@@ -6,8 +6,10 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -30,6 +32,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int ILLEGAL_INDEX;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -152,6 +155,31 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
+MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
+{
+    /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
+    /// several times to allow to reconstruct the substream path name.
+    /// Here we don't need substream path name, so we drop first several wrapper serializations.
+
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
+        current_serialization = serialization_named->getNested().get();
+
+    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
+    if (!serialization_tuple)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
+
+    const auto & element_serializations = serialization_tuple->getElementsSerializations();
+
+    size_t size = elems.size();
+    assert(element_serializations.size() == size);
+    MutableColumns tuple_columns(size);
+    for (size_t i = 0; i < size; ++i)
+        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
+
+    return ColumnTuple::create(std::move(tuple_columns));
+}
+
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(collections::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
@@ -248,20 +276,32 @@ SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
     return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
 }
 
-SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
+SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
+    const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
     bool use_explicit_names = have_explicit_names && serialize_names;
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = use_explicit_names ? names[i] : toString(i + 1);
-        auto subcolumn_name = Nested::concatenateName(column_name, elem_name);
-        auto serializaion = elems[i]->getSerialization(subcolumn_name, callback);
-        serializations[i] = std::make_shared<SerializationNamed>(serializaion, elem_name);
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
 }
+
+MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const
+{
+    MutableSerializationInfos infos;
+    infos.reserve(elems.size());
+    for (const auto & elem : elems)
+        infos.push_back(elem->createSerializationInfo(settings));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), settings);
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

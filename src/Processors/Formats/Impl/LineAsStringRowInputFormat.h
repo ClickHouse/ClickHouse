@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -12,7 +14,7 @@ class ReadBuffer;
 /// Each Line object is parsed as a whole to string.
 /// This format can only parse a table with single field of type String.
 
-class LineAsStringRowInputFormat : public IRowInputFormat
+class LineAsStringRowInputFormat final : public IRowInputFormat
 {
 public:
     LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
@@ -24,6 +26,15 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readLineObject(IColumn & column);
+};
+
+class LinaAsStringSchemaReader : public IExternalSchemaReader
+{
+public:
+    NamesAndTypesList readSchema() override
+    {
+        return {{"line", std::make_shared<DataTypeString>()}};
+    }
 };
 
 }

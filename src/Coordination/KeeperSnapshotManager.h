@@ -18,9 +18,10 @@ enum SnapshotVersion : uint8_t
     V1 = 1, /// with ACL map
     V2 = 2, /// with 64 bit buffer header
     V3 = 3, /// compress snapshots with ZSTD codec
+    V4 = 4, /// add Node size to snapshots
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V3;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V4;
 
 /// What is stored in binary shapsnot
 struct SnapshotDeserializationResult

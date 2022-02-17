@@ -44,6 +44,15 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
 
+    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
+    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
+    {
+        return std::async(std::launch::deferred, []
+        {
+            return IAsynchronousReader::Result{ .size = 0, .offset = 0 };
+        });
+    }
+
     return reader->submit(request);
 }
 
@@ -69,7 +78,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            size = prefetch_future.get();
+            auto result = prefetch_future.get();
+            size = result.size;
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -90,7 +100,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto size = readInto(memory.data(), memory.size()).get();
+        auto [size, _] = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)
@@ -171,8 +181,8 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         off_t offset_after_seek_pos = new_pos - seek_pos;
 
-        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
-        pos = working_buffer.end();
+        /// First reset the buffer so the next read will fetch new data to the buffer.
+        resetWorkingBuffer();
 
         /// Just update the info about the next position in file.
 
@@ -201,4 +211,3 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
 }
 
 }
-

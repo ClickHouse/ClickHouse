@@ -303,7 +303,6 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FutureMergedMutatedPartPtr future_part,
-    UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -355,6 +354,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
         ++it;
     }
 
+    auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     /// Enough disk space to cover the new merge with a margin.
     auto required_disk_space = sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT;
     if (available_disk_space <= required_disk_space)
@@ -382,7 +382,6 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part->assign(std::move(parts));
 
-    available_disk_space -= required_disk_space;
     return SelectPartsDecision::SELECTED;
 }
 
@@ -664,27 +663,55 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 }
 
 
-NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+std::pair<NamesAndTypesList, SerializationInfoByName>
+MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList storage_columns,
+    const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_removes)
 {
-    /// In compact parts we read all columns, because they all stored in a
-    /// single file
-    if (!isWidePart(source_part))
-        return updated_header.getNamesAndTypesList();
-
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
+    NameToNameMap renamed_columns_from_to;
+    ColumnsDescription part_columns(source_part->getColumns());
+
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        /// If we don't have this column in source part, than we don't need to materialize it
+        if (!part_columns.has(command.column_name))
+            continue;
+
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
+
         if (command.type == MutationCommand::RENAME_COLUMN)
+        {
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+            renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+        }
     }
+
+    bool is_wide_part = isWidePart(source_part);
+    SerializationInfoByName new_serialization_infos;
+    for (const auto & [name, info] : serialization_infos)
+    {
+        if (is_wide_part && removed_columns.count(name))
+            continue;
+
+        auto it = renamed_columns_from_to.find(name);
+        if (it != renamed_columns_from_to.end())
+            new_serialization_infos.emplace(it->second, info);
+        else
+            new_serialization_infos.emplace(name, info);
+    }
+
+    /// In compact parts we read all columns, because they all stored in a
+    /// single file
+    if (!is_wide_part)
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos};
+
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
@@ -711,18 +738,9 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             }
             else
             {
-                bool was_renamed = false;
-                bool was_removed = removed_columns.count(it->name);
-
                 /// Check that this column was renamed to some other name
-                for (const auto & [rename_to, rename_from] : renamed_columns_to_from)
-                {
-                    if (rename_from == it->name)
-                    {
-                        was_renamed = true;
-                        break;
-                    }
-                }
+                bool was_renamed = renamed_columns_from_to.count(it->name);
+                bool was_removed = removed_columns.count(it->name);
 
                 /// If we want to rename this column to some other name, than it
                 /// should it's previous version should be dropped or removed
@@ -730,7 +748,6 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
-
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
@@ -742,7 +759,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
     }
 
-    return storage_columns;
+    return {storage_columns, new_serialization_infos};
 }
 
 

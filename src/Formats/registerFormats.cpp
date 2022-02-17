@@ -77,9 +77,37 @@ void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 
+#if USE_HIVE
+void registerInputFormatHiveText(FormatFactory & factory);
+#endif
+
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
+
+void registerArrowSchemaReader(FormatFactory & factory);
+void registerParquetSchemaReader(FormatFactory & factory);
+void registerORCSchemaReader(FormatFactory & factory);
+void registerTSVSchemaReader(FormatFactory & factory);
+void registerCSVSchemaReader(FormatFactory & factory);
+void registerJSONCompactEachRowSchemaReader(FormatFactory & factory);
+void registerJSONEachRowSchemaReader(FormatFactory & factory);
+void registerNativeSchemaReader(FormatFactory & factory);
+void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory);
+void registerAvroSchemaReader(FormatFactory & factory);
+void registerProtobufSchemaReader(FormatFactory & factory);
+void registerLineAsStringSchemaReader(FormatFactory & factory);
+void registerJSONAsStringSchemaReader(FormatFactory & factory);
+void registerRawBLOBSchemaReader(FormatFactory & factory);
+void registerMsgPackSchemaReader(FormatFactory & factory);
+void registerCapnProtoSchemaReader(FormatFactory & factory);
+void registerCustomSeparatedSchemaReader(FormatFactory & factory);
+void registerRegexpSchemaReader(FormatFactory & factory);
+void registerTSKVSchemaReader(FormatFactory & factory);
+void registerValuesSchemaReader(FormatFactory & factory);
+void registerTemplateSchemaReader(FormatFactory & factory);
+
+void registerFileExtensions(FormatFactory & factory);
 
 void registerFormats()
 {
@@ -147,11 +175,36 @@ void registerFormats()
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
+#if USE_HIVE
+    registerInputFormatHiveText(factory);
+#endif
 
     registerInputFormatCapnProto(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
+
+    registerArrowSchemaReader(factory);
+    registerParquetSchemaReader(factory);
+    registerORCSchemaReader(factory);
+    registerTSVSchemaReader(factory);
+    registerCSVSchemaReader(factory);
+    registerJSONCompactEachRowSchemaReader(factory);
+    registerJSONEachRowSchemaReader(factory);
+    registerNativeSchemaReader(factory);
+    registerRowBinaryWithNamesAndTypesSchemaReader(factory);
+    registerAvroSchemaReader(factory);
+    registerProtobufSchemaReader(factory);
+    registerLineAsStringSchemaReader(factory);
+    registerJSONAsStringSchemaReader(factory);
+    registerRawBLOBSchemaReader(factory);
+    registerMsgPackSchemaReader(factory);
+    registerCapnProtoSchemaReader(factory);
+    registerCustomSeparatedSchemaReader(factory);
+    registerRegexpSchemaReader(factory);
+    registerTSKVSchemaReader(factory);
+    registerValuesSchemaReader(factory);
+    registerTemplateSchemaReader(factory);
 }
 
 }

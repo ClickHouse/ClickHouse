@@ -1,0 +1,6 @@
+Jinja2
+PyYAML
+requests
+sqlparse
+tenacity
+xmltodict

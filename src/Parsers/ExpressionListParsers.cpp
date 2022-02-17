@@ -402,7 +402,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// For the expression (subject [NOT] BETWEEN left AND right)
-    ///  create an AST the same as for (subject> = left AND subject <= right).
+    /// create an AST the same as for (subject >= left AND subject <= right).
 
     ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
@@ -689,7 +689,7 @@ bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr expr_ast;
-    if (!elem_parser.parse(pos, expr_ast, expected))
+    if (!elem_parser->parse(pos, expr_ast, expected))
         return false;
 
     ASTPtr type_ast;
@@ -711,7 +711,7 @@ bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserCastExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserExpressionElement>()),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -721,7 +721,7 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserArrayElementExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserArrayElementExpression>()),
         std::make_unique<ParserUnsignedInteger>()
     }.parse(pos, node, expected);
 }

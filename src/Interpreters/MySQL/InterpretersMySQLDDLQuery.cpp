@@ -20,10 +20,12 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/applyTableOverride.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -105,6 +107,9 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     && !endsWith(type_name_upper, "UNSIGNED"))
                     data_type_function->name = type_name_upper + " UNSIGNED";
             }
+
+            if (type_name_upper == "SET")
+                data_type_function->arguments.reset();
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -518,6 +523,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->if_not_exists = create_query.if_not_exists;
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
+
+    if (auto override_ast = tryGetTableOverride(mapped_to_database, create_query.table))
+    {
+        const auto & override = override_ast->as<const ASTTableOverride &>();
+        applyTableOverrideToCreateQuery(override, rewritten_query.get());
+    }
 
     return ASTs{rewritten_query};
 }

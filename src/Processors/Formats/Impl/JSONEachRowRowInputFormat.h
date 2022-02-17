@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -17,7 +18,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat : public IRowInputFormat
+class JSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(
@@ -82,6 +83,19 @@ private:
     bool allow_new_rows = true;
 
     bool yield_strings;
+};
+
+class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
+{
+public:
+    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
+
+private:
+    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
+
+    bool json_strings;
+    bool first_row = true;
+    bool data_in_square_brackets = false;
 };
 
 }

@@ -302,11 +302,44 @@ def insertLowCardinalityRowWithIncorrectDictType():
         print(readException(s))
         s.close()
 
+def insertLowCardinalityRowWithIncorrectAdditionalKeys():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendQuery(s, 'insert into {}.tab format TSV'.format(CLICKHOUSE_DATABASE))
+
+        # external tables
+        sendEmptyBlock(s)
+        readHeader(s)
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba) # Data
+        writeStringBinary('', ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba) # rows
+        writeVarUInt(1, ba) # columns
+        writeStringBinary('x', ba)
+        writeStringBinary('LowCardinality(String)', ba)
+        ba.extend([1] + [0] * 7) # SharedDictionariesWithAdditionalKeys
+        ba.extend([3, 0] + [0] * 6) # indexes type: UInt64 [3], with  NO additional keys [0]
+        ba.extend([1] + [0] * 7) # num_keys in dict
+        writeStringBinary('hello', ba) # key
+        ba.extend([1] + [0] * 7) # num_indexes
+        ba.extend([0] * 8) # UInt64 index (0 for 'hello')
+        s.sendall(ba)
+
+        assertPacket(readVarUInt(s), 2)
+        print(readException(s))
+        s.close()
 
 def main():
     insertValidLowCardinalityRow()
     insertLowCardinalityRowWithIndexOverflow()
     insertLowCardinalityRowWithIncorrectDictType()
+    insertLowCardinalityRowWithIncorrectAdditionalKeys()
 
 if __name__ == "__main__":
     main()

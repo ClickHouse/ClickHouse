@@ -25,7 +25,12 @@ struct PocoSocketWrapper : public Poco::Net::SocketImpl
 void IConnections::DrainCallback::operator()(int fd, Poco::Timespan, const std::string fd_description) const
 {
     if (!PocoSocketWrapper(fd).poll(drain_timeout, Poco::Net::Socket::SELECT_READ))
-        throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Read timeout while draining from {}", fd_description);
+    {
+        throw Exception(ErrorCodes::SOCKET_TIMEOUT,
+            "Read timeout ({} ms) while draining from {}",
+            drain_timeout.totalMilliseconds(),
+            fd_description);
+    }
 }
 
 }

@@ -95,7 +95,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2021 ClickHouse, Inc.',
+            copyright='©2016–2022 ClickHouse, Inc.',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',

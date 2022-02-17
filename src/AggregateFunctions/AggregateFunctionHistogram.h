@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/sort.h>
+
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
@@ -72,7 +74,7 @@ private:
 private:
     void sort()
     {
-        std::sort(points, points + size,
+        ::sort(points, points + size,
             [](const WeightedValue & first, const WeightedValue & second)
             {
                 return first.mean < second.mean;
@@ -271,7 +273,7 @@ public:
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(upper_bound, other.upper_bound);
-        for (size_t i = 0; i < other.size; i++)
+        for (size_t i = 0; i < other.size; ++i)
             add(other.points[i].mean, other.points[i].weight, max_bins);
     }
 
@@ -346,12 +348,12 @@ public:
         this->data(place).merge(this->data(rhs), max_bins);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf, max_bins);
     }

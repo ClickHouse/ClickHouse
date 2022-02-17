@@ -3,16 +3,19 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
@@ -21,6 +24,12 @@
 
 #include <atomic>
 #include <chrono>
+
+namespace ProfileEvents
+{
+    extern const Event SelectedBytes;
+    extern const Event SelectedRows;
+}
 
 namespace DB
 {
@@ -82,11 +91,26 @@ public:
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
 protected:
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
 
 private:
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
+
+    struct State
+    {
+        QueryPipeline pipeline;
+        PullingPipelineExecutor executor;
+
+        explicit State(QueryPipeline pipeline_)
+            : pipeline(std::move(pipeline_))
+            , executor(pipeline)
+        {
+        }
+    };
+
+    std::optional<State> state;
 };
 
 /// Insert into LiveView.
@@ -99,6 +123,20 @@ public:
 
 private:
     StorageLiveView & live_view;
+    StoragePtr storage_holder;
+    ContextPtr context;
+};
+
+/// Insert into WindowView.
+class PushingToWindowViewSink final : public SinkToStorage
+{
+public:
+    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
+    String getName() const override { return "PushingToWindowViewSink"; }
+    void consume(Chunk chunk) override;
+
+private:
+    StorageWindowView & window_view;
     StoragePtr storage_holder;
     ContextPtr context;
 };
@@ -271,6 +309,13 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
+        else if (auto * window_view = dynamic_cast<StorageWindowView *>(dependent_table.get()))
+        {
+            runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
+            query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
+            out = buildPushingToViewsChain(
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
+        }
         else
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
@@ -286,7 +331,7 @@ Chain buildPushingToViewsChain(
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
-            executing_inner_query->setRuntimeData(view_thread_status, elapsed_counter_ms);
+            executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
         }
@@ -336,12 +381,18 @@ Chain buildPushingToViewsChain(
         processors.emplace_front(std::move(copying_data));
         processors.emplace_back(std::move(finalizing_views));
         result_chain = Chain(std::move(processors));
-        result_chain.setNumThreads(max_parallel_streams);
+        result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        result_chain.addSource(std::move(sink));
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
+    {
+        auto sink = std::make_shared<PushingToWindowViewSink>(live_view_header, *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
@@ -361,7 +412,7 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static void process(Block & block, ViewRuntimeData & view, const ViewsData & views_data)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
 {
     const auto & context = views_data.context;
 
@@ -372,7 +423,7 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
     local_context->addViewSource(StorageValues::create(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
-        block,
+        std::move(block),
         views_data.source_storage->getVirtuals()));
 
     /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
@@ -408,23 +459,7 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    pipeline.setProgressCallback([context](const Progress & progress)
-    {
-        CurrentThread::updateProgressIn(progress);
-        if (auto callback = context->getProgressCallback())
-            callback(progress);
-    });
-
-    auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
-    PullingPipelineExecutor executor(query_pipeline);
-    if (!executor.pull(block))
-    {
-        block.clear();
-        return;
-    }
-
-    if (executor.pull(block))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);
+    return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)
@@ -522,13 +557,32 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 {
 }
 
-void ExecutingInnerQueryFromViewTransform::transform(Chunk & chunk)
+void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    process(block, view, *views_data);
-    chunk.setColumns(block.getColumns(), block.rows());
+    state.emplace(process(block, view, *views_data));
 }
 
+
+ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromViewTransform::onGenerate()
+{
+    GenerateResult res;
+    if (!state.has_value())
+        return res;
+
+    res.is_done = false;
+    while (!res.is_done)
+    {
+        res.is_done = !state->executor.pull(res.chunk);
+        if (res.chunk)
+            break;
+    }
+
+    if (res.is_done)
+        state.reset();
+
+    return res;
+}
 
 PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_)
     : SinkToStorage(header)
@@ -542,7 +596,34 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    CurrentThread::updateProgressIn(local_progress);
+    auto * process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
+}
+
+
+PushingToWindowViewSink::PushingToWindowViewSink(
+    const Block & header, StorageWindowView & window_view_,
+    StoragePtr storage_holder_, ContextPtr context_)
+    : SinkToStorage(header)
+    , window_view(window_view_)
+    , storage_holder(std::move(storage_holder_))
+    , context(std::move(context_))
+{
+}
+
+void PushingToWindowViewSink::consume(Chunk chunk)
+{
+    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
+    StorageWindowView::writeIntoWindowView(
+        window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+    auto * process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
 
 

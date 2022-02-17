@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
-const String HDFS_URL_REGEXP = "^hdfs://[^:/]*:[0-9]*/.*";
+const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
@@ -45,11 +45,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         {
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
-
-#if USE_INTERNAL_HDFS3_LIBRARY
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
-#endif
-
             continue;
         }
         else if (key == "hadoop_kerberos_kinit_command")
@@ -170,12 +166,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-#if USE_INTERNAL_HDFS3_LIBRARY
             builder.loadFromConfig(config, user_config_prefix, true);
-#else
-            throw Exception("Multi user HDFS configuration required internal libhdfs3",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-#endif
         }
     }
 
@@ -197,6 +188,21 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
             ErrorCodes::NETWORK_ERROR);
 
     return fs;
+}
+
+String getNameNodeUrl(const String & hdfs_url)
+{
+    const size_t pos = hdfs_url.find('/', hdfs_url.find("//") + 2);
+    String namenode_url = hdfs_url.substr(0, pos) + "/";
+    return namenode_url;
+}
+
+String getNameNodeCluster(const String &hdfs_url)
+{
+    auto pos1 = hdfs_url.find("//") + 2;
+    auto pos2 = hdfs_url.find('/', pos1);
+
+    return hdfs_url.substr(pos1, pos2 - pos1);
 }
 
 void checkHDFSURL(const String & url)

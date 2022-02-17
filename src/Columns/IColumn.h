@@ -26,9 +26,8 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
-class ISerialization;
-using SerializationPtr = std::shared_ptr<const ISerialization>;
-
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
@@ -64,8 +63,17 @@ public:
     virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
-    /// If column is ColumnLowCardinality, transforms is to full column.
+    /// If column is ColumnLowCardinality, transforms it to full column.
     virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
+
+    /// If column isn't ColumnSparse, return itself.
+    /// If column is ColumnSparse, transforms it to full column.
+    virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
+
+    Ptr convertToFullIfNeeded() const
+    {
+        return convertToFullColumnIfSparse()->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -133,7 +141,7 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool isDefaultAt(size_t n) const { return get64(n) == 0; }
+    virtual bool isDefaultAt(size_t n) const = 0;
     virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.
@@ -171,6 +179,13 @@ public:
     {
         for (size_t i = 0; i < length; ++i)
             insertFrom(src, position);
+    }
+
+    /// Appends one field multiple times. Can be optimized in inherited classes.
+    virtual void insertMany(const Field & field, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insert(field);
     }
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
@@ -375,6 +390,22 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Returns ration of values in column, that equal to default value of column.
+    /// Checks only @sample_ratio ratio of rows.
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
+
+    /// Returns indices of values in column, that not equal to default value of column.
+    virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
+
+    /// Returns column with @total_size elements.
+    /// In result column values from current column are at positions from @offsets.
+    /// Other values are filled by @default_value.
+    /// @shift means how much rows to skip from the beginning of current column.
+    /// Used to create full column from sparse.
+    virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
+
+    virtual SerializationInfoPtr getSerializationInfo() const;
+
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
     virtual Ptr compress() const
@@ -457,6 +488,8 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    virtual bool isSparse() const { return false; }
+
     virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
@@ -468,7 +501,6 @@ public:
     String dumpStructure() const;
 
 protected:
-
     /// Template is to devirtualize calls to insertFrom method.
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
@@ -489,7 +521,14 @@ protected:
     template <typename Derived>
     bool hasEqualValuesImpl() const;
 
-    /// Uses std::sort and partial_sort as default algorithms.
+    /// Template is to devirtualize calls to 'isDefaultAt' method.
+    template <typename Derived>
+    double getRatioOfDefaultRowsImpl(double sample_ratio) const;
+
+    template <typename Derived>
+    void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
+
+    /// Uses sort and partial_sort as default algorithms.
     /// Implements 'less' and 'equals' via comparator.
     /// If 'less' and 'equals' can be implemented more optimal
     /// (e.g. with less number of comparisons), you can use

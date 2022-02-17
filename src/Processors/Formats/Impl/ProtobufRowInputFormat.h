@@ -3,7 +3,9 @@
 #include "config_formats.h"
 
 #if USE_PROTOBUF
+#    include <Formats/FormatSchemaInfo.h>
 #    include <Processors/Formats/IRowInputFormat.h>
+#    include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {
@@ -24,7 +26,7 @@ class ProtobufSerializer;
   * INSERT INTO table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowInputFormat : public IRowInputFormat
+class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
     ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
@@ -40,6 +42,17 @@ private:
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
     std::unique_ptr<ProtobufSerializer> serializer;
+};
+
+class ProtobufSchemaReader : public IExternalSchemaReader
+{
+public:
+    explicit ProtobufSchemaReader(const FormatSettings & format_settings);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    FormatSchemaInfo schema_info;
 };
 
 }

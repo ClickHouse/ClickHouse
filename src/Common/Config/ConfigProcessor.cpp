@@ -18,8 +18,9 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 #include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -41,24 +42,6 @@ namespace ErrorCodes
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
-/// Extracts from a string the first encountered number consisting of at least two digits.
-static std::string numberFromHost(const std::string & s)
-{
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        std::string res;
-        size_t j = i;
-        while (j < s.size() && isNumericASCII(s[j]))
-            res += s[j++];
-        if (res.size() >= 2)
-        {
-            while (res[0] == '0')
-                res.erase(res.begin());
-            return res;
-        }
-    }
-    return "";
-}
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
@@ -123,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -245,19 +228,6 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     mergeRecursive(config, config_root, with_root);
 }
 
-static std::string layerFromHost()
-{
-    struct utsname buf;
-    if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
-
-    std::string layer = numberFromHost(buf.nodename);
-    if (layer.empty())
-        throw Poco::Exception(std::string("no layer in host name: ") + buf.nodename);
-
-    return layer;
-}
-
 void ConfigProcessor::doIncludesRecursive(
         XMLDocumentPtr config,
         XMLDocumentPtr include_from,
@@ -287,18 +257,6 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (node->nodeType() != Node::ELEMENT_NODE)
         return;
-
-    /// Substitute <layer> for the number extracted from the hostname only if there is an
-    /// empty <layer> tag without attributes in the original file.
-    if (node->nodeName() == "layer"
-        && !node->hasAttributes()
-        && !node->hasChildNodes()
-        && node->nodeValue().empty())
-    {
-        NodePtr new_node = config->createTextNode(layerFromHost());
-        node->appendChild(new_node);
-        return;
-    }
 
     std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
@@ -486,7 +444,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }

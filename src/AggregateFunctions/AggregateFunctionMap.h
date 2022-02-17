@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <base/sort.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
@@ -177,7 +178,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         writeVarUInt(merged_maps.size(), buf);
@@ -189,7 +190,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         UInt64 size;
@@ -204,7 +205,7 @@ public:
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
             nested_func->create(nested_place);
             merged_maps.emplace(key, nested_place);
-            nested_func->deserialize(nested_place, buf, arena);
+            nested_func->deserialize(nested_place, buf, std::nullopt, arena);
         }
     }
 
@@ -226,7 +227,7 @@ public:
         {
             keys.push_back(it.first);
         }
-        std::sort(keys.begin(), keys.end());
+        ::sort(keys.begin(), keys.end());
 
         // insert using sorted keys to result column
         for (auto & key : keys)
