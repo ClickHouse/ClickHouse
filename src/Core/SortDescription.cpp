@@ -96,14 +96,14 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
-    UInt128 aggregate_functions_description_hash_key;
-    sort_description_dump_hash.get128(aggregate_functions_description_hash_key);
+    UInt128 sort_description_hash_key;
+    sort_description_dump_hash.get128(sort_description_hash_key);
 
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
+        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(sort_description_hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
 

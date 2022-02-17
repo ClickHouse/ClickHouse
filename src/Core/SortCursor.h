@@ -87,6 +87,7 @@ struct SortCursorImpl
     {
         all_columns.clear();
         sort_columns.clear();
+        raw_sort_columns_data.clear();
 
         size_t num_columns = columns.size();
 
@@ -178,8 +179,10 @@ struct SortCursor : SortCursorHelper<SortCursor>
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
 #if USE_EMBEDDED_COMPILER
-        if (impl->desc.compiled_sort_description)
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
             int res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
 
@@ -226,6 +229,8 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
             res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
         }
