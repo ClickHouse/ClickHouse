@@ -47,7 +47,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf) const;
+    void writeText(WriteBuffer & buf, bool add_line_return = true) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -152,6 +152,9 @@ public:
 
     String toString() const;
     static ColumnsDescription parse(const String & str);
+
+    /// `column1` type1, `column2` type2, ...
+    String toExpressionList() const;
 
     size_t size() const
     {

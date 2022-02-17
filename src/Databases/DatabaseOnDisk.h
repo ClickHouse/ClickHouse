@@ -21,9 +21,13 @@ std::pair<String, StoragePtr> createTableFromAST(
 /** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
   * See the implementation.
+  * If create query doesn't contain columns list, get it from provided columns_description,
+  * it's used to prevent automatic schema inference while table creation on each server startup.
   */
-String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
+String getObjectDefinitionFromCreateQuery(const ASTPtr & query, const ColumnsDescription & columns_description = {});
 
+/// Update create query with columns description if query doesn't have it.
+void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const ColumnsDescription & columns_description);
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
