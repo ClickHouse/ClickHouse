@@ -139,10 +139,6 @@ public:
             std::error_code ec;
             if (std::filesystem::exists(path, ec))
                 return path;
-            else
-            {
-                std::cerr << "Snapshot path " << path << " does not exist" << std::endl;
-            }
         }
         return "";
     }
