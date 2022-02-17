@@ -6,8 +6,10 @@
 
 using namespace std::chrono_literals;
 
+constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
+
 OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
-    : max_wait_time(0us)
+    : max_wait_time(ZERO_MICROSEC)
     , picked_tracker(nullptr)
     , cancelation_state(QueryCancelationState::NONE)
     , global_mutex(global_mutex_)
@@ -23,6 +25,9 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 {
     std::unique_lock<std::mutex> global_lock(global_mutex);
     std::unique_lock<std::mutex> lk(overcommit_m);
+
+    if (max_wait_time == ZERO_MICROSEC)
+        return true;
 
     pickQueryToExclude();
     assert(cancelation_state == QueryCancelationState::RUNNING);
