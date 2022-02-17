@@ -52,10 +52,6 @@ public:
     /// and we may need to do a fetch (or postpone) instead of merge
     bool shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const;
 
-    /// return true if remote_fs_execute_merges_on_single_replica_time_threshold feature is active
-    /// and we may need to do a fetch (or postpone) instead of merge
-    bool shouldMergeOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const;
-
     /// returns the replica name
     /// and it's not current replica should do the merge
     std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);

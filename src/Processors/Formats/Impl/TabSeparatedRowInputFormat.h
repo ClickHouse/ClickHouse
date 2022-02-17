@@ -11,7 +11,7 @@ namespace DB
 
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     /** with_names - the first line is the header with the names of the columns
@@ -28,7 +28,7 @@ private:
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 
-class TabSeparatedFormatReader : public FormatWithNamesAndTypesReader
+class TabSeparatedFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
     TabSeparatedFormatReader(ReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);

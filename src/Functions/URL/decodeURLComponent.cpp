@@ -11,6 +11,31 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+static size_t encodeURL(const char * src, size_t src_size, char * dst, bool space_as_plus)
+{
+    char * dst_pos = dst;
+    for (size_t i = 0; i < src_size - 1; i++)
+    {
+        if ((src[i] >= '0' && src[i] <= '9') || (src[i] >= 'a' && src[i] <= 'z') || (src[i] >= 'A' && src[i] <= 'Z')
+            || src[i] == '-' || src[i] == '_' || src[i] == '.' || src[i] == '~')
+        {
+            *dst_pos++ = src[i];
+        }
+        else if (src[i] == ' ' && space_as_plus)
+        {
+            *dst_pos++ = '+';
+        }
+        else
+        {
+            *dst_pos++ = '%';
+            *dst_pos++ = hexDigitUppercase(src[i] >> 4);
+            *dst_pos++ = hexDigitUppercase(src[i] & 0xf);
+        }
+    }
+    *dst_pos++ = src[src_size - 1];
+    return dst_pos - dst;
+}
+
 /// We assume that size of the dst buf isn't less than src_size.
 static size_t decodeURL(const char * src, size_t src_size, char * dst, bool plus_as_space)
 {
@@ -81,15 +106,24 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst, bool plus
     return dst_pos - dst;
 }
 
+enum URLCodeStrategy
+{
+    encode,
+    decode
+};
 
 /// Percent decode of URL data.
-template <bool plus_as_space>
-struct DecodeURLComponentImpl
+template <URLCodeStrategy code_strategy, bool plus_space_swap>
+struct CodeURLComponentImpl
 {
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
-        res_data.resize(data.size());
+        if (code_strategy == encode)
+            //the destination(res_data) string is at most three times the length of the source string
+            res_data.resize(data.size() * 3);
+        else
+            res_data.resize(data.size());
         size_t size = offsets.size();
         res_offsets.resize(size);
 
@@ -100,8 +134,11 @@ struct DecodeURLComponentImpl
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
-            size_t dst_size = decodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), plus_as_space);
-
+            size_t dst_size;
+            if (code_strategy == encode)
+                dst_size = encodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), plus_space_swap);
+            else
+                dst_size = decodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), plus_space_swap);
             res_offset += dst_size;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
@@ -118,14 +155,20 @@ struct DecodeURLComponentImpl
 
 
 struct NameDecodeURLComponent { static constexpr auto name = "decodeURLComponent"; };
+struct NameEncodeURLComponent { static constexpr auto name = "encodeURLComponent"; };
 struct NameDecodeURLFormComponent { static constexpr auto name = "decodeURLFormComponent"; };
-using FunctionDecodeURLComponent = FunctionStringToString<DecodeURLComponentImpl<false>, NameDecodeURLComponent>;
-using FunctionDecodeURLFormComponent = FunctionStringToString<DecodeURLComponentImpl<true>, NameDecodeURLFormComponent>;
+struct NameEncodeURLFormComponent { static constexpr auto name = "encodeURLFormComponent"; };
+using FunctionDecodeURLComponent = FunctionStringToString<CodeURLComponentImpl<decode, false>, NameDecodeURLComponent>;
+using FunctionEncodeURLComponent = FunctionStringToString<CodeURLComponentImpl<encode, false>, NameEncodeURLComponent>;
+using FunctionDecodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<decode, true>, NameDecodeURLFormComponent>;
+using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<encode, true>, NameEncodeURLFormComponent>;
 
-void registerFunctionDecodeURLComponent(FunctionFactory & factory)
+void registerFunctionEncodeAndDecodeURLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecodeURLComponent>();
+    factory.registerFunction<FunctionEncodeURLComponent>();
     factory.registerFunction<FunctionDecodeURLFormComponent>();
+    factory.registerFunction<FunctionEncodeURLFormComponent>();
 }
 
 }

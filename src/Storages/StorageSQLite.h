@@ -48,7 +48,6 @@ public:
 private:
     String remote_table_name;
     String database_path;
-    ContextPtr global_context;
     SQLitePtr sqlite_db;
     Poco::Logger * log;
 };

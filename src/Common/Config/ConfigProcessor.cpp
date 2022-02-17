@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/getResource.h>
 #include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -105,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -443,7 +444,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }
