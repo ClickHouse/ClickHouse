@@ -302,7 +302,7 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     }
     auto file_size = ::lseek(fd, 0, SEEK_END);
     ::lseek(fd, 0, SEEK_SET);
-    auto* chunk = reinterpret_cast<nuraft::byte*>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
+    auto * chunk = reinterpret_cast<nuraft::byte *>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, std::strerror(errno), errno);
