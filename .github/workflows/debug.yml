@@ -2,7 +2,7 @@
 name: Debug
 
 'on':
-  [push, pull_request, release]
+  [push, pull_request, release, schedule]
 
 jobs:
   DebugInfo:
