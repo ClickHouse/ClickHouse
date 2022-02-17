@@ -1,24 +1,37 @@
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/FunctionMapAdvance.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/** MapFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
+/** Higher-order functions for map.
+  * These functions optionally apply a map by lambda function,
+  *  and return some result based on that transformation.
+  */
+
+
+/** mapFilter((k, v) -> predicate, map) - leave in the map only the kv elements for which the expression is true.
   */
 struct MapFilterImpl
 {
+    using data_type = DataTypeMap;
+    using column_type = ColumnMap;
+
     static bool needBoolean() { return true; }
+    static bool needExpression() { return true; }
+    static bool needOneArray() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypes & elems)
     {
@@ -73,7 +86,7 @@ struct MapFilterImpl
 };
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
-using FunctionMapFilter = FunctionMapAdvance<MapFilterImpl, NameMapFilter>;
+using FunctionMapFilter = FunctionArrayMapped<MapFilterImpl, NameMapFilter>;
 
 void registerFunctionMapFilter(FunctionFactory & factory)
 {
@@ -85,8 +98,13 @@ void registerFunctionMapFilter(FunctionFactory & factory)
   */
 struct MapApplyImpl
 {
+    using data_type = DataTypeMap;
+    using column_type = ColumnMap;
+
     /// true if the expression (for an overload of f(expression, maps)) or a map (for f(map)) should be boolean.
     static bool needBoolean() { return false; }
+    static bool needExpression() { return true; }
+    static bool needOneArray() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & /*elems*/)
     {
@@ -116,7 +134,7 @@ struct MapApplyImpl
 };
 
 struct NameMapApply { static constexpr auto name = "mapApply"; };
-using FunctionMapApply = FunctionMapAdvance<MapApplyImpl, NameMapApply>;
+using FunctionMapApply = FunctionArrayMapped<MapApplyImpl, NameMapApply>;
 
 void registerFunctionMapApply(FunctionFactory & factory)
 {
