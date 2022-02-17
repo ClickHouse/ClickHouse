@@ -221,7 +221,7 @@ namespace
                 if (likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
-                    return (t_milliseconds + 1 - milliseconds) / milliseconds * milliseconds;
+                    return ((t_milliseconds + 1) / milliseconds - 1) * milliseconds;
             }
             else if (scale_multiplier > 1000)
             {
@@ -235,7 +235,7 @@ namespace
                 if (likely(t >= 0))
                     return t / milliseconds * milliseconds;
                 else
-                    return (t + 1 - milliseconds) / milliseconds * milliseconds;
+                    return ((t + 1) / milliseconds - 1) * milliseconds;
         }
     };
 
@@ -256,7 +256,7 @@ namespace
                 if (likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
-                    return (t_microseconds + 1 - microseconds) / microseconds * microseconds;
+                    return ((t_microseconds + 1) / microseconds - 1) * microseconds;
             }
             else if (scale_multiplier > 1000000)
             {
@@ -270,7 +270,7 @@ namespace
                 if (likely(t >= 0))
                     return t / microseconds * microseconds;
                 else
-                    return (t + 1 - microseconds) / microseconds * microseconds;
+                    return ((t + 1) / microseconds - 1) * microseconds;
         }
     };
 
@@ -291,7 +291,7 @@ namespace
                 if (likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else
-                    return (t_nanoseconds + 1 - nanoseconds) / nanoseconds * nanoseconds;
+                    return ((t_nanoseconds + 1) / nanoseconds - 1) * nanoseconds;
             }
             else
                 if (likely(t >= 0))
