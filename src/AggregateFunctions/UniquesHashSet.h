@@ -167,16 +167,16 @@ class HashAddressingForSSE2
 private:
     inline static const __m128i zero16 = _mm_setzero_si128();
     /**For sse2 processing, we should process 4 continues number
-    * in one shot. And for current buffer resize aglo, it can 
+    * in one shot. And for current buffer resize aglo, it can
     * keep our buffer size always modular by 4. So if start index
     * can modular by 4, it will always satisfy sse2 processing in
-    * hash addressing. If start index can not modular 4, we should 
+    * hash addressing. If start index can not modular 4, we should
     * start with aligned start index to make processing more simple
-    * and more effiency. When start index can not modular 4, we still
+    * and more efficiency. When start index can not modular 4, we still
     * use aligned start index to calc address. But some test case
-    * (eg 01890_state_of_state) need our data distribute the same as 
-    * original algo, this made us ignore some part that ahead start index. 
-    * Or the data's distribution will different with original aglo. 
+    * (eg 01890_state_of_state) need our data distribute the same as
+    * original algo, this made us ignore some part that ahead start index.
+    * Or the data's distribution will different with original aglo.
     * This will cause some fast test case fail
     **/
     inline static size_t alignedStart(size_t start_index) { return (start_index & 0xFFFFFFFFFFFFFFFC); }
@@ -356,14 +356,14 @@ private:
     {
         if (buf)
         {
-            Allocator::free(buf, buf_size() * sizeof(buf[0]));
+            Allocator::free(buf, bufSize() * sizeof(buf[0]));
             buf = nullptr;
         }
     }
 
-    inline size_t buf_size() const { return 1ULL << size_degree; }
-    inline size_t max_fill() const { return 1ULL << (size_degree - 1); }
-    inline size_t mask() const { return buf_size() - 1; }
+    inline size_t bufSize() const { return 1ULL << size_degree; }
+    inline size_t maxFill() const { return 1ULL << (size_degree - 1); }
+    inline size_t mask() const { return bufSize() - 1; }
     inline size_t place(HashValue x) const { return AddrPolicy::place(x, mask()); }
 
     /// The value is divided by 2 ^ skip_degree
@@ -374,7 +374,7 @@ private:
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
-        for (size_t i = 0; i < buf_size(); ++i)
+        for (size_t i = 0; i < bufSize(); ++i)
         {
             if (buf[i])
             {
@@ -399,7 +399,7 @@ private:
         /** We must process first collision resolution chain once again.
           * Look at the comment in "resize" function.
           */
-        for (size_t i = 0; i < buf_size() && buf[i]; ++i)
+        for (size_t i = 0; i < bufSize() && buf[i]; ++i)
         {
             if (i != place(buf[i]))
             {
@@ -413,7 +413,7 @@ private:
     /// Increase the size of the buffer 2 times or up to new_size_degree, if it is non-zero.
     void resize(size_t new_size_degree = 0)
     {
-        size_t old_size = buf_size();
+        size_t old_size = bufSize();
 
         if (!new_size_degree)
             new_size_degree = size_degree + 1;
@@ -489,7 +489,7 @@ private:
       */
     void shrinkIfNeed()
     {
-        if (unlikely(m_size > max_fill()))
+        if (unlikely(m_size > maxFill()))
         {
             if (m_size > UNIQUES_HASH_MAX_SIZE)
             {
@@ -520,11 +520,13 @@ public:
     UniquesHashSetBase(const UniquesHashSetBase & rhs) : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
-        memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
+        memcpy(buf, rhs.buf, bufSize() * sizeof(buf[0]));
     }
 
     UniquesHashSetBase & operator=(const UniquesHashSetBase & rhs)
     {
+        if (this == &rhs)
+            return *this;
         if (size_degree != rhs.size_degree)
         {
             free();
@@ -535,7 +537,7 @@ public:
         skip_degree = rhs.skip_degree;
         has_zero = rhs.has_zero;
 
-        memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
+        memcpy(buf, rhs.buf, bufSize() * sizeof(buf[0]));
 
         return *this;
     }
@@ -590,7 +592,7 @@ public:
             shrinkIfNeed();
         }
 
-        for (size_t i = 0; i < rhs.buf_size(); ++i)
+        for (size_t i = 0; i < rhs.bufSize(); ++i)
         {
             if (rhs.buf[i] && good(rhs.buf[i]))
             {
@@ -614,7 +616,7 @@ public:
             DB::writeIntBinary(x, wb);
         }
 
-        for (size_t i = 0; i < buf_size(); ++i)
+        for (size_t i = 0; i < bufSize(); ++i)
             if (buf[i])
                 DB::writeIntBinary(buf[i], wb);
     }
@@ -703,7 +705,7 @@ public:
         if (has_zero)
             wb.write(",0", 2);
 
-        for (size_t i = 0; i < buf_size(); ++i)
+        for (size_t i = 0; i < bufSize(); ++i)
         {
             if (buf[i])
             {
