@@ -226,7 +226,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
 
-        int res = 0;
+        bool result = false;
 
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
@@ -234,15 +234,17 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
             assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
-            res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            int jit_result = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            result = jit_result > 0;
         }
         else
 #endif
         {
-            res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+            int non_jit_result = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+            result = (non_jit_result != 0 && ((non_jit_result > 0) == (direction > 0)));
         }
 
-        return res != 0 && ((res > 0) == (direction > 0));
+        return result;
     }
 };
 
