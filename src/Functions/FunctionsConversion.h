@@ -49,11 +49,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 
-#ifdef __aarch64__
-constexpr bool is_aarch64 = true;
-#else
-constexpr bool is_aarch64 = false;
-#endif
 
 namespace DB
 {
@@ -283,17 +278,6 @@ struct ConvertImpl
                         else
                         {
                             vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-
-                            if constexpr (is_aarch64 &&
-                                std::is_floating_point_v<FromFieldType> &&
-                                std::is_integral_v<ToFieldType>)
-                            {
-                                if (vec_from[i] <= static_cast<FromFieldType>(std::numeric_limits<ToFieldType>::min())
-                                    || vec_from[i] >= static_cast<FromFieldType>(std::numeric_limits<ToFieldType>::max()))
-                                {
-                                    vec_to[i] = static_cast<ToFieldType>(0);
-                                }
-                            }
                         }
                     }
                 }
