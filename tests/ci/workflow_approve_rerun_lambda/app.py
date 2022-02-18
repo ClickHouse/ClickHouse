@@ -115,7 +115,7 @@ TRUSTED_CONTRIBUTORS = {
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
         "taiyang-li",
-        "ucasfl",  # Amos Bird's friend
+        "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",
         "YiuRULE",
