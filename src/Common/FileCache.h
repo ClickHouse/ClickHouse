@@ -21,7 +21,7 @@ namespace DB
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
  */
-class FileCache : boost::noncopyable
+class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
 
@@ -29,21 +29,22 @@ public:
     using Key = UInt128;
     using Downloader = std::unique_ptr<SeekableReadBuffer>;
 
-    FileCache(
+    IFileCache(
         const String & cache_base_path_,
         size_t max_size_, size_t max_element_size_);
 
-    virtual ~FileCache() = default;
+    virtual ~IFileCache() = default;
 
     static bool shouldBypassCache();
 
+    /// Cache capacity in bytes.
     size_t capacity() const { return max_size; }
 
     static Key hash(const String & path);
 
-    String path(const Key & key, size_t offset);
+    String getPathInLocalCache(const Key & key, size_t offset);
 
-    String path(const Key & key);
+    String getPathInLocalCache(const Key & key);
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -82,13 +83,15 @@ protected:
         const Key & key, size_t offset,
         std::lock_guard<std::mutex> & cache_lock) = 0;
 
+    /// If file segment was partially downloaded and then space reservation fails (because of no
+    /// space left), then update corresponding cache cell metadata (file segment size).
     virtual void reduceSizeToDownloaded(
         const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) = 0;
 };
 
-using FileCachePtr = std::shared_ptr<FileCache>;
+using FileCachePtr = std::shared_ptr<IFileCache>;
 
-class LRUFileCache final : public FileCache
+class LRUFileCache final : public IFileCache
 {
 public:
     LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_ = 0);
@@ -102,7 +105,7 @@ private:
     using LRUQueue = std::list<FileKeyAndOffset>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
-    struct FileSegmentCell : boost::noncopyable
+    struct FileSegmentCell : private boost::noncopyable
     {
         FileSegmentPtr file_segment;
 
@@ -129,6 +132,8 @@ private:
     LRUQueue queue;
     size_t current_size = 0;
     Poco::Logger * log;
+
+    /// Needed in loadCacheInfoIntoMemory() method.
     bool startup_restore_finished = false;
 
     FileSegments getImpl(
@@ -156,14 +161,12 @@ private:
         const Key & key, size_t offset,
         std::lock_guard<std::mutex> & cache_lock) override;
 
-    void removeFileKey(const Key & key);
-
     void reduceSizeToDownloaded(
         const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) override;
 
     size_t availableSize() const { return max_size - current_size; }
 
-    void restore();
+    void loadCacheInfoIntoMemory();
 
 public:
     struct Stat

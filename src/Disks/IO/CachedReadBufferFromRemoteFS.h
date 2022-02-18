@@ -15,7 +15,7 @@ public:
     using RemoteFSFileReaderCreator = std::function<FileSegment::RemoteFileReaderPtr()>;
 
     CachedReadBufferFromRemoteFS(
-        const String & path,
+        const String & remote_fs_object_path_,
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
@@ -53,8 +53,8 @@ private:
     bool completeFileSegmentAndGetNext();
 
     Poco::Logger * log;
-    FileCache::Key key;
-    String path;
+    IFileCache::Key cache_key;
+    String remote_fs_object_path;
     FileCachePtr cache;
     ReadSettings settings;
 

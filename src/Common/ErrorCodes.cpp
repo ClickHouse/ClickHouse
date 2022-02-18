@@ -617,7 +617,7 @@
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    M(1003, FILE_CACHE_ERROR) \
+    M(1003, REMOTE_FS_OBJECT_CACHE_ERROR) \
 /// This ^ error code is here temporarily to avoid too often conflicts.
 /* See END */
 

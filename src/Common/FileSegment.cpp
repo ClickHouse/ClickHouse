@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FILE_CACHE_ERROR;
+    extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -19,18 +19,22 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        FileCache * cache_,
+        IFileCache * cache_,
         State download_state_)
     : segment_range(offset_, offset_ + size_ - 1)
     , download_state(download_state_)
     , file_key(key_)
     , cache(cache_)
+#ifndef NDEBUG
     , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", getHexUIntLowercase(key_), range().toString())))
+#else
+    , log(&Poco::Logger::get("FileSegment"))
+#endif
 {
     if (download_state == State::DOWNLOADED)
         reserved_size = downloaded_size = size_;
     else if (download_state != State::EMPTY)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Can create cell with either DOWNLOADED or EMPTY state");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Can create cell with either DOWNLOADED or EMPTY state");
 }
 
 FileSegment::State FileSegment::state() const
@@ -39,7 +43,7 @@ FileSegment::State FileSegment::state() const
     return download_state;
 }
 
-size_t FileSegment::downloadOffset() const
+size_t FileSegment::getDownloadOffset() const
 {
     std::lock_guard segment_lock(mutex);
     return range().left + downloaded_size;
@@ -48,7 +52,7 @@ size_t FileSegment::downloadOffset() const
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().size == 0)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Cannot use cache without query id");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot use cache without query id");
 
     return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
 }
@@ -61,7 +65,7 @@ String FileSegment::getOrSetDownloader()
     {
         if (download_state != State::EMPTY
             && download_state != State::PARTIALLY_DOWNLOADED)
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Can set downloader only for file segment with state EMPTY or PARTIALLY_DOWNLOADED, but got: {}",
                             download_state);
 
@@ -92,7 +96,7 @@ bool FileSegment::isDownloader() const
 FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
 {
     if (!isDownloader())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
 
     return remote_file_reader;
 }
@@ -100,7 +104,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
 void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 {
     if (!isDownloader())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
 
     if (remote_file_reader)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader already exists");
@@ -111,21 +115,21 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 void FileSegment::write(const char * from, size_t size)
 {
     if (!size)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Writing zero size is not allowed");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
 
     if (availableSize() < size)
         throw Exception(
-            ErrorCodes::FILE_CACHE_ERROR,
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
 
     if (!isDownloader())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
 
     if (!cache_writer)
     {
-        auto download_path = cache->path(key(), offset());
+        auto download_path = cache->getPathInLocalCache(key(), offset());
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
@@ -136,10 +140,17 @@ void FileSegment::write(const char * from, size_t size)
     }
     catch (...)
     {
+        std::lock_guard segment_lock(mutex);
+
         download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+
+        cache_writer->finalize();
+        cache_writer.reset();
+
         throw;
     }
 
+    std::lock_guard segment_lock(mutex);
     downloaded_size += size;
 }
 
@@ -148,7 +159,7 @@ FileSegment::State FileSegment::wait()
     std::unique_lock segment_lock(mutex);
 
     if (download_state == State::EMPTY)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Cannot wait on a file segment with empty state");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot wait on a file segment with empty state");
 
     if (download_state == State::DOWNLOADING)
     {
@@ -173,22 +184,20 @@ FileSegment::State FileSegment::wait()
 bool FileSegment::reserve(size_t size)
 {
     if (!size)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Zero space reservation is not allowed");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
     std::lock_guard segment_lock(mutex);
 
     if (downloaded_size + size > range().size())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                         "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
                         size, range().toString(), downloaded_size);
 
     auto caller_id = getCallerId();
     if (downloader_id != caller_id)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
 
     assert(reserved_size >= downloaded_size);
-
-    std::lock_guard cache_lock(cache->mutex);
 
     /**
      * It is possible to have downloaded_size < reserved_size when reserve is called
@@ -198,6 +207,7 @@ bool FileSegment::reserve(size_t size)
     size_t free_space = reserved_size - downloaded_size;
     size_t size_to_reserve = size - free_space;
 
+    std::lock_guard cache_lock(cache->mutex);
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
@@ -215,13 +225,13 @@ void FileSegment::completeBatchAndResetDownloader()
         if (!is_downloader)
         {
             cv.notify_all();
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR, "File segment can be completed only by downloader");
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File segment can be completed only by downloader");
         }
 
         if (downloaded_size == range().size())
         {
             download_state = State::DOWNLOADED;
-            cache_writer->sync();
+            cache_writer->finalize();
             cache_writer.reset();
         }
         else
@@ -243,7 +253,7 @@ void FileSegment::complete(State state, bool complete_because_of_error)
         if (!is_downloader)
         {
             cv.notify_all();
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
         }
 
@@ -252,7 +262,7 @@ void FileSegment::complete(State state, bool complete_because_of_error)
             && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
         {
             cv.notify_all();
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Cannot complete file segment with state: {}", stateToString(state));
         }
 
@@ -280,7 +290,7 @@ void FileSegment::complete()
         if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
         {
             download_state = State::DOWNLOADED;
-            cache_writer->sync();
+            cache_writer->finalize();
             cache_writer.reset();
         }
 
@@ -339,11 +349,11 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
 
     if (!download_can_continue && cache_writer)
     {
-        cache_writer->sync();
+        cache_writer->finalize();
         cache_writer.reset();
     }
 
-    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->path(key(), offset())) > 0);
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
 String FileSegment::getInfoForLog() const

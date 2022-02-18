@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl_)
-    : impl(std::move(impl_))
+    : impl(impl_)
 {
 }
 
