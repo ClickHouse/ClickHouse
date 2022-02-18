@@ -264,7 +264,6 @@ then
     stop
 
     # Uninstall current packages
-    dpkg --remove clickhouse-test
     dpkg --remove clickhouse-client
     dpkg --remove clickhouse-server
     dpkg --remove clickhouse-common-static-dbg
