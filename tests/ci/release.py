@@ -101,6 +101,10 @@ class Release:
                 with self.testing():
                     logging.info("Testing part of the releasing is done")
 
+            elif self.release_type in self.SMALL:
+                with self.stable():
+                    logging.info("Stable part of the releasing is done")
+
         self.log_rollback()
 
     def check_no_tags_after(self):
@@ -151,10 +155,42 @@ class Release:
             with self._checkout(self.release_branch, True):
                 self.update()
                 self.version.with_description(VersionType.PRESTABLE)
-                with self._create_gh_release():
+                with self._create_gh_release(True):
                     with self._bump_prestable_version():
                         # At this point everything will rollback automatically
                         yield
+
+    @contextmanager
+    def stable(self):
+        self.check_no_tags_after()
+        self.update()
+        version_type = VersionType.STABLE
+        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+            version_type = VersionType.LTS
+        self.version.with_description(version_type)
+        with self._create_gh_release(False):
+            self.version = self.version.update(self.release_type)
+            self.version.with_description(version_type)
+            update_cmake_version(self.version)
+            cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+            # Checkouting the commit of the branch and not the branch itself,
+            # then we are able to skip rollback
+            with self._checkout(f"{self.release_branch}@{{0}}", False):
+                current_commit = self.run("git rev-parse HEAD")
+                self.run(
+                    f"git commit -m "
+                    f"'Update version to {self.version.string}' '{cmake_path}'"
+                )
+                with self._push(
+                    "HEAD", with_rollback_on_fail=False, remote_ref=self.release_branch
+                ):
+                    # DO NOT PUT ANYTHING ELSE HERE
+                    # The push must be the last action and mean the successful release
+                    self._rollback_stack.append(
+                        f"git push {self.repo.url} "
+                        f"+{current_commit}:{self.release_branch}"
+                    )
+                    yield
 
     @contextmanager
     def testing(self):
@@ -164,8 +200,6 @@ class Release:
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
             with self._checkout(helper_branch, True):
-                self.update()
-                self.version = self.version.update(self.release_type)
                 with self._bump_testing_version(helper_branch):
                     yield
 
@@ -226,6 +260,8 @@ class Release:
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str):
+        self.update()
+        self.version = self.version.update(self.release_type)
         self.version.with_description("testing")
         update_cmake_version(self.version)
         cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
@@ -285,12 +321,15 @@ class Release:
             raise
 
     @contextmanager
-    def _create_gh_release(self):
+    def _create_gh_release(self, as_prerelease: bool):
         with self._create_tag():
             # Preserve tag if version is changed
             tag = self.version.describe
+            prerelease = ""
+            if as_prerelease:
+                prerelease = "--prerelease"
             self.run(
-                f"gh release create --prerelease --draft --repo {self.repo} "
+                f"gh release create {prerelease} --draft --repo {self.repo} "
                 f"--title 'Release {tag}' '{tag}'"
             )
             rollback_cmd = f"gh release delete --yes --repo {self.repo} '{tag}'"
@@ -317,10 +356,13 @@ class Release:
             raise
 
     @contextmanager
-    def _push(self, ref: str, with_rollback_on_fail: bool = True):
-        self.run(f"git push git@github.com:{self.repo}.git {ref}:{ref}")
+    def _push(self, ref: str, with_rollback_on_fail: bool = True, remote_ref: str = ""):
+        if remote_ref == "":
+            remote_ref = ref
+
+        self.run(f"git push {self.repo.url} {ref}:{remote_ref}")
         if with_rollback_on_fail:
-            rollback_cmd = f"git push -d git@github.com:{self.repo}.git {ref}"
+            rollback_cmd = f"git push -d {self.repo.url} {remote_ref}"
             self._rollback_stack.append(rollback_cmd)
 
         try:
