@@ -52,11 +52,11 @@ struct AddNanosecondsImpl
         return {t.whole * multiplier + division.quot, t.fractional * multiplier + delta};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
-        return static_cast<DateTime64>(t * multiplier + delta);
+        return t * multiplier + delta;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -96,11 +96,11 @@ struct AddMicrosecondsImpl
         }
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
-        return static_cast<DateTime64>(scale <= 6 ? t * multiplier + delta : t + delta * multiplier);
+        return scale <= 6 ? t * multiplier + delta : t + delta * multiplier;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -140,11 +140,11 @@ struct AddMillisecondsImpl
         }
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
-        return static_cast<DateTime64>(scale <= 3 ? t * multiplier + delta : t + delta * multiplier);
+        return scale <= 3 ? t * multiplier + delta : t + delta * multiplier;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -174,10 +174,10 @@ struct AddSecondsImpl
         return {t.whole + delta, t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return static_cast<DateTime64>(t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
+        return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -207,10 +207,10 @@ struct AddMinutesImpl
         return {t.whole + delta * 60, t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return static_cast<DateTime64>(t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
+        return t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -240,10 +240,10 @@ struct AddHoursImpl
         return {t.whole + delta * 3600, t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return static_cast<DateTime64>(t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
+        return t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -273,12 +273,12 @@ struct AddDaysImpl
         return {time_zone.addDays(t.whole, delta), t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return static_cast<DateTime64>(time_zone.addDays(d.quot, delta) * multiplier + d.rem);
+        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -307,12 +307,12 @@ struct AddWeeksImpl
         return {time_zone.addWeeks(t.whole, delta), t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return static_cast<DateTime64>(time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem);
+        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -335,31 +335,31 @@ struct AddMonthsImpl
 {
     static constexpr auto name = "addMonths";
 
-    static inline DecimalUtils::DecimalComponents<DateTime64>
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return {time_zone.addMonths(t.whole, delta), t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return static_cast<DateTime64>(time_zone.addMonths(d.quot, delta) * multiplier + d.rem);
+        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
     }
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addMonths(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addMonths(DayNum(d), delta);
     }
 
-    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addMonths(ExtendedDayNum(d), delta);
     }
@@ -375,12 +375,12 @@ struct AddQuartersImpl
         return {time_zone.addQuarters(t.whole, delta), t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return static_cast<DateTime64>(time_zone.addQuarters(d.quot, delta) * multiplier + d.rem);
+        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
     }
 
     static inline UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -403,31 +403,31 @@ struct AddYearsImpl
 {
     static constexpr auto name = "addYears";
 
-    static inline DecimalUtils::DecimalComponents<DateTime64>
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
     execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return {time_zone.addYears(t.whole, delta), t.fractional};
     }
 
-    static inline DateTime64
+    static inline NO_SANITIZE_UNDEFINED DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale = 0)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return static_cast<DateTime64>(time_zone.addYears(d.quot, delta) * multiplier + d.rem);
+        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
     }
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addYears(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addYears(DayNum(d), delta);
     }
 
-    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
+    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
     {
         return time_zone.addYears(ExtendedDayNum(d), delta);
     }
