@@ -737,7 +737,11 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
         }
     }
 
-    if (!storage_src || storage_src->getClusterName() != getClusterName())
+    const Cluster::AddressesWithFailover & src_addresses = storage_src ? storage_src->getCluster()->getShardsAddresses() : Cluster::AddressesWithFailover{};
+    const Cluster::AddressesWithFailover & dst_addresses = getCluster()->getShardsAddresses();
+    /// Compare addresses instead of cluster name, to handle remote()/cluster().
+    /// (since for remote()/cluster() the getClusterName() is empty string)
+    if (src_addresses != dst_addresses)
     {
         /// The warning should be produced only for root queries,
         /// since in case of parallel_distributed_insert_select=1,
@@ -745,9 +749,13 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
         /// since destination table is still Distributed there.
         if (local_context->getClientInfo().distributed_depth == 0)
         {
-            LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible (source cluster={}, destination cluster={})",
+            LOG_WARNING(log,
+                "Parallel distributed INSERT SELECT is not possible "
+                "(source cluster={} ({} addresses), destination cluster={} ({} addresses))",
                 storage_src ? storage_src->getClusterName() : "<not a Distributed table>",
-                getClusterName());
+                src_addresses.size(),
+                getClusterName(),
+                dst_addresses.size());
         }
         return nullptr;
     }
