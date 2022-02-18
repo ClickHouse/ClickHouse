@@ -15,7 +15,8 @@
 
 namespace fs = std::filesystem;
 
-String cache_base_path = fs::current_path() / "test_lru_file_cache" / "";
+fs::path caches_dir = fs::current_path() / "lru_cache_test";
+String cache_base_path = caches_dir / "cache1" / "";
 
 void assertRange(
     [[maybe_unused]] size_t assert_n, DB::FileSegmentPtr file_segment,
@@ -91,7 +92,7 @@ TEST(LRUFileCache, get)
 {
     if (fs::exists(cache_base_path))
         fs::remove_all(cache_base_path);
-    fs::create_directory(cache_base_path);
+    fs::create_directories(cache_base_path);
 
     DB::ThreadStatus thread_status;
 
@@ -480,5 +481,18 @@ TEST(LRUFileCache, get)
         assertRange(45, segments1[2], DB::FileSegment::Range(24, 26), DB::FileSegment::State::DOWNLOADED);
         assertRange(46, segments1[3], DB::FileSegment::Range(27, 27), DB::FileSegment::State::DOWNLOADED);
         assertRange(47, segments1[4], DB::FileSegment::Range(28, 29), DB::FileSegment::State::DOWNLOADED);
+    }
+
+    {
+        /// Test max file segment size
+
+        auto cache2 = DB::LRUFileCache(caches_dir / "cache2", 30, 5, /* max_file_segment_size */10);
+        auto holder1 = cache2.getOrSet(key, 0, 25); /// Get [0, 24]
+        auto segments1 = fromHolder(holder1);
+
+        ASSERT_EQ(segments1.size(), 3);
+        assertRange(48, segments1[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
+        assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
+        assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 }

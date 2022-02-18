@@ -10,6 +10,7 @@
 #include <boost/noncopyable.hpp>
 #include <map>
 
+#include "FileCache_fwd.h"
 #include <base/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
@@ -31,7 +32,9 @@ public:
 
     IFileCache(
         const String & cache_base_path_,
-        size_t max_size_, size_t max_element_size_);
+        size_t max_size_,
+        size_t max_element_size_,
+        size_t max_file_segment_size_);
 
     virtual ~IFileCache() = default;
 
@@ -66,8 +69,9 @@ public:
 
 protected:
     String cache_base_path;
-    size_t max_size = 0;
-    size_t max_element_size = 0;
+    size_t max_size;
+    size_t max_element_size;
+    size_t max_file_segment_size;
 
     mutable std::mutex mutex;
 
@@ -94,7 +98,11 @@ using FileCachePtr = std::shared_ptr<IFileCache>;
 class LRUFileCache final : public IFileCache
 {
 public:
-    LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_ = 0);
+    LRUFileCache(
+        const String & cache_base_path_,
+        size_t max_size_,
+        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
+        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
@@ -167,6 +175,9 @@ private:
     size_t availableSize() const { return max_size - current_size; }
 
     void loadCacheInfoIntoMemory();
+
+    FileSegments splitRangeIntoEmptyCells(
+        const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat

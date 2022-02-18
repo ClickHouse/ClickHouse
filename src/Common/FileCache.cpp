@@ -32,10 +32,12 @@ namespace
 IFileCache::IFileCache(
     const String & cache_base_path_,
     size_t max_size_,
-    size_t max_element_size_)
+    size_t max_element_size_,
+    size_t max_file_segment_size_)
     : cache_base_path(cache_base_path_)
     , max_size(max_size_)
     , max_element_size(max_element_size_)
+    , max_file_segment_size(max_file_segment_size_)
 {
 }
 
@@ -63,8 +65,9 @@ bool IFileCache::shouldBypassCache()
         || CurrentThread::getQueryId().size == 0;
 }
 
-LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_)
-    : IFileCache(cache_base_path_, max_size_, max_element_size_), log(&Poco::Logger::get("LRUFileCache"))
+LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_, size_t max_file_segment_size_)
+    : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
+    , log(&Poco::Logger::get("LRUFileCache"))
 {
     if (fs::exists(cache_base_path))
         loadCacheInfoIntoMemory();
@@ -191,6 +194,34 @@ FileSegments LRUFileCache::getImpl(
     return result;
 }
 
+FileSegments LRUFileCache::splitRangeIntoEmptyCells(
+    const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+{
+    assert(size > 0);
+
+    auto current_pos = offset;
+    auto end_pos_non_included = offset + size;
+
+    size_t current_cell_size;
+    size_t remaining_size = size;
+
+    FileSegments file_segments;
+    while (current_pos < end_pos_non_included)
+    {
+        current_cell_size = std::min(remaining_size, max_file_segment_size);
+        remaining_size -= current_cell_size;
+
+        auto * cell = addCell(key, current_pos, current_cell_size, FileSegment::State::EMPTY, cache_lock);
+        if (cell)
+            file_segments.push_back(cell->file_segment);
+
+        current_pos += current_cell_size;
+    }
+
+    assert(file_segments.empty() || offset + size - 1 == file_segments.back()->range().right);
+    return file_segments;
+}
+
 FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size)
 {
     FileSegment::Range range(offset, offset + size - 1);
@@ -202,8 +233,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        auto * cell = addCell(key, offset, size, FileSegment::State::EMPTY, cache_lock);
-        file_segments = {cell->file_segment};
+        file_segments = splitRangeIntoEmptyCells(key, offset, size, cache_lock);
     }
     else
     {
@@ -248,8 +278,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             assert(current_pos < segment_range.left);
 
             auto hole_size = segment_range.left - current_pos;
-            auto * cell = addCell(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
-            file_segments.insert(it, cell->file_segment);
+            file_segments.splice(it, splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
 
             current_pos = segment_range.right + 1;
             ++it;
@@ -263,8 +292,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             /// segmentN
 
             auto hole_size = range.right - current_pos + 1;
-            auto * cell = addCell(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
-            file_segments.push_back(cell->file_segment);
+            file_segments.splice(file_segments.end(), splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
         }
     }
 
