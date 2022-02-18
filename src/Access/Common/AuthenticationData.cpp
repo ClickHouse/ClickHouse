@@ -95,6 +95,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm);
 }
 
+
 void AuthenticationData::setPassword(const String & password_)
 {
     switch (type)
@@ -127,10 +128,6 @@ String AuthenticationData::getPassword() const
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
-void AuthenticationData::setPlaintextPasswordSetting(const bool allow_plaintext_password_ ) 
-{
-    allow_plaintext_password = allow_plaintext_password_;
-}
 
 void AuthenticationData::setPasswordHashHex(const String & hash)
 {

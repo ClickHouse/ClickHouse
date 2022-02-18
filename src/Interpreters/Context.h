@@ -383,6 +383,8 @@ public:
       * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
+    void setAllowPlaintextPasswordSetting(const bool allow_plaintext_password_);
+    bool getAllowPlaintextPasswordSetting() const;
     ConfigurationPtr getUsersConfig();
 
     /// Sets the current user assuming that he/she is already authenticated.

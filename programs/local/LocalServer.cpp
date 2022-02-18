@@ -389,6 +389,9 @@ void LocalServer::setupUsers()
 
     ConfigurationPtr users_config;
 
+    //set the allow_plaintext_password setting in global context.
+     global_context->setAllowPlaintextPasswordSetting(config().getBool("allow_plaintext_password",1));
+
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
@@ -397,9 +400,7 @@ void LocalServer::setupUsers()
         users_config = loaded_config.configuration;
     }
     else
-    {
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-    }
 
     if (users_config)
         global_context->setUsersConfig(users_config);
