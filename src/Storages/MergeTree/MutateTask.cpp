@@ -633,12 +633,7 @@ public:
                 projection_future_part,
                 projection.metadata,
                 ctx->mutate_entry,
-                std::make_unique<MergeListElement>(
-                    (*ctx->mutate_entry)->table_id,
-                    projection_future_part,
-                    settings.memory_profiler_step,
-                    settings.memory_profiler_sample_probability,
-                    settings.max_untracked_memory),
+                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, settings),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
