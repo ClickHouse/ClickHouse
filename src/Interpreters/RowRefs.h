@@ -15,6 +15,8 @@
 #include <Common/Arena.h>
 
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -28,7 +30,7 @@ struct __attribute__((__packed__)) RowRef
     const Block * block = nullptr;
     SizeT row_num = 0;
 
-    RowRef() {}
+    RowRef() = default;
     RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
 };
 
@@ -253,64 +255,51 @@ private:
     }
 };
 
-class AsofRowRefs
+struct AsofRowRefsBase
+{
+    AsofRowRefsBase() = default;
+    virtual ~AsofRowRefsBase() { }
+
+    static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
+    virtual void insert(const IColumn &, const Block *, size_t) = 0;
+    virtual const RowRef * findAsof(ASOF::Inequality, const IColumn &, size_t) = 0;
+};
+
+template <typename T>
+class AsofRowRefDerived : public AsofRowRefsBase
 {
 public:
-    template <typename T>
+    template <typename EntryType>
     struct Entry
     {
-        using LookupPtr = std::unique_ptr<SortedLookupVector<Entry<T>>>;
         T asof_value;
         RowRef row_ref;
 
-        Entry(T v) : asof_value(v) {}
+        Entry() = delete;
+        explicit Entry(T v) : asof_value(v) { }
         Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) { }
         Entry(T v, const Block * block, size_t row_num) : asof_value(v), row_ref(block, row_num) { }
 
         bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
 
-    using Lookups = std::variant<
-        Entry<UInt8>::LookupPtr,
-        Entry<UInt16>::LookupPtr,
-        Entry<UInt32>::LookupPtr,
-        Entry<UInt64>::LookupPtr,
-        Entry<Int8>::LookupPtr,
-        Entry<Int16>::LookupPtr,
-        Entry<Int32>::LookupPtr,
-        Entry<Int64>::LookupPtr,
-        Entry<Float32>::LookupPtr,
-        Entry<Float64>::LookupPtr,
-        Entry<Decimal32>::LookupPtr,
-        Entry<Decimal64>::LookupPtr,
-        Entry<Decimal128>::LookupPtr,
-        Entry<DateTime64>::LookupPtr>;
-
-    AsofRowRefs() {}
-    AsofRowRefs(TypeIndex t);
-
-    static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
+    AsofRowRefDerived() { }
 
     // This will be synchronized by the rwlock mutex in Join.h
-    void insert(const IColumn & asof_column, const Block * block, size_t row_num)
-    {
-        std::visit([&](auto && arg) { arg->insert(asof_column, block, row_num); }, lookups);
-    }
+    void insert(const IColumn & asof_column, const Block * block, size_t row_num) override { lookups.insert(asof_column, block, row_num); }
 
     // This will internally synchronize
-    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const
+    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) override
     {
-        const RowRef * out = nullptr;
-        std::visit([&](auto && arg) { out = arg->find(inequality, asof_column, row_num); }, lookups);
-        return out;
+        return lookups.find(inequality, asof_column, row_num);
     }
 
 private:
-    // Lookups can be stored in a HashTable because it is memmovable
-    // A std::variant contains a currently active type id (memmovable), together with a union of the types
-    // The types are all std::unique_ptr, which contains a single pointer, which is memmovable.
-    // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
-    Lookups lookups;
+    SortedLookupVector<Entry<T>> lookups;
 };
 
+// It only contains a std::unique_ptr, which contains a single pointer, which is memmovable.
+// Source: https://github.com/ClickHouse/ClickHouse/issues/4906
+using AsofRowRefs = std::unique_ptr<AsofRowRefsBase>;
+AsofRowRefs createAsofRowRef(TypeIndex type);
 }

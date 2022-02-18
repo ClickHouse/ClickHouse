@@ -310,7 +310,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
                 throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 
             size_t asof_size;
-            asof_type = AsofRowRefs::getTypeSize(*key_columns.back(), asof_size);
+            asof_type = AsofRowRefsBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
             /// this is going to set up the appropriate hash table for the direct lookup part of the join
@@ -615,12 +615,12 @@ namespace
                                              const IColumn & asof_column)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
-            typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
+            AsofRowRefs * time_series_map = &emplace_result.getMapped();
 
             TypeIndex asof_type = *join.getAsofType();
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type(asof_type);
-            time_series_map->insert(asof_column, stored_block, i);
+                time_series_map = new (time_series_map) typename Map::mapped_type(createAsofRowRef(asof_type));
+            (*time_series_map)->insert(asof_column, stored_block, i);
         }
     };
 
@@ -1238,7 +1238,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     ASOF::Inequality asof_inequality = added_columns.asofInequality();
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    if (const RowRef * found = mapped.findAsof(asof_inequality, left_asof_key, i))
+                    if (const RowRef * found = mapped->findAsof(asof_inequality, left_asof_key, i))
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)

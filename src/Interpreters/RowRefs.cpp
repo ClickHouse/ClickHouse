@@ -44,19 +44,20 @@ void callWithType(TypeIndex which, F && f)
 
 }
 
-AsofRowRefs::AsofRowRefs(TypeIndex type)
+AsofRowRefs createAsofRowRef(TypeIndex type)
 {
+    AsofRowRefs a;
     auto call = [&](const auto & t)
     {
-      using T = std::decay_t<decltype(t)>;
-      using LookupType = typename Entry<T>::LookupPtr::element_type;
-      lookups = std::make_unique<LookupType>();
+        using T = std::decay_t<decltype(t)>;
+        a = std::make_unique<AsofRowRefDerived<T>>();
     };
 
     callWithType(type, call);
+    return a;
 }
 
-std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, size_t & size)
+std::optional<TypeIndex> AsofRowRefsBase::getTypeSize(const IColumn & asof_column, size_t & size)
 {
     TypeIndex idx = asof_column.getDataType();
 
