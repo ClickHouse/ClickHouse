@@ -9,11 +9,15 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
-#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
+
+#if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Net/SSLException.h>
+#include <Poco/Net/X509Certificate.h>
+#endif
 
 namespace DB
 {
@@ -71,10 +75,30 @@ bool HTTPServerRequest::checkPeerConnected() const
     return true;
 }
 
-Poco::Net::SocketImpl * HTTPServerRequest::getSocket() const
+#if USE_SSL
+bool HTTPServerRequest::havePeerCertificate() const
 {
-    return socket;
+    if (!secure)
+        return false;
+
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    if (!secure_socket)
+        return false;
+
+    return secure_socket->havePeerCertificate();
 }
+
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
+{
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
+}
+#endif
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {

@@ -50,6 +50,10 @@
 #include <iomanip>
 #include <sstream>
 
+#if USE_SSL
+#include <Poco/Net/X509Certificate.h>
+#endif
+
 
 namespace DB
 {
@@ -106,6 +110,7 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -322,81 +327,90 @@ bool HTTPHandler::authenticateUser(
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
-    std::string x509_auth = request.get("X-ClickHouse-X509Authentication", "");
+
+    /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
+    /// extracted from the SSL certificate used for this connection instead of checking password.
+    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-X509Authentication", "") == "yes");
+    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
+
+    /// User name and password can be passed using HTTP Basic auth or query parameters
+    /// (both methods are insecure).
+    bool has_http_credentials = request.hasCredentials();
+    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
 
     std::string spnego_challenge;
     std::string certificate_common_name;
 
-    LOG_DEBUG(log, "X-ClickHouse-X509Authentication=\"{}\"", x509_auth);
-
-    bool has_basic_auth = request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key");
-    bool has_header_auth = !user.empty() && !password.empty() && !quota_key.empty();
-    bool has_x509_auth = !user.empty() && (x509_auth == "yes"); // header values are case sensitive
-
-    if (has_x509_auth)
-    {
-        if (has_header_auth || has_basic_auth)
-            throw Exception("Invalid authentication: it is not allowed to use SSL X.509 certificate authentication and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
-
-        certificate_common_name = getPeerCertificateCommonName(request.getSocket());
-        if (certificate_common_name.empty())
-            throw Exception("Invalid authentication: empty X.509 certificate Common Name", ErrorCodes::AUTHENTICATION_FAILED);
-
-        LOG_DEBUG(log, "certificate_common_name=\"{}\"", certificate_common_name);
-    }
-    else if (has_header_auth)
+    if (has_auth_headers)
     {
         /// It is prohibited to mix different authorization schemes.
-        if (has_basic_auth)
-            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
-    }
-    else
-    {
-        /// User name and password can be passed using query parameters
-        /// or using HTTP Basic auth (both methods are insecure).
-        if (request.hasCredentials())
+        if (has_http_credentials)
+            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and Authorization HTTP header simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+        if (has_credentials_in_query_params)
+            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via parameters simultaneously simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+
+        if (has_ssl_certificate_auth)
         {
-            /// It is prohibited to mix different authorization schemes.
-            if (params.has("user") || params.has("password"))
-                throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+#if USE_SSL
+            if (!password.empty())
+                throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via password simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
 
-            std::string scheme;
-            std::string auth_info;
-            request.getCredentials(scheme, auth_info);
+            if (request.havePeerCertificate())
+                certificate_common_name = request.peerCertificate().commonName();
 
-            if (Poco::icompare(scheme, "Basic") == 0)
-            {
-                HTTPBasicCredentials credentials(auth_info);
-                user = credentials.getUsername();
-                password = credentials.getPassword();
-            }
-            else if (Poco::icompare(scheme, "Negotiate") == 0)
-            {
-                spnego_challenge = auth_info;
+            if (certificate_common_name.empty())
+                throw Exception("Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name", ErrorCodes::AUTHENTICATION_FAILED);
+#else
+            throw Exception(
+                "SSL certificate authentication disabled because ClickHouse was built without SSL library",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+        }
+    }
+    else if (has_http_credentials)
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (has_credentials_in_query_params)
+            throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
 
-                if (spnego_challenge.empty())
-                    throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
-            }
-            else
-            {
-                throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
-            }
+        std::string scheme;
+        std::string auth_info;
+        request.getCredentials(scheme, auth_info);
+
+        if (Poco::icompare(scheme, "Basic") == 0)
+        {
+            HTTPBasicCredentials credentials(auth_info);
+            user = credentials.getUsername();
+            password = credentials.getPassword();
+        }
+        else if (Poco::icompare(scheme, "Negotiate") == 0)
+        {
+            spnego_challenge = auth_info;
+
+            if (spnego_challenge.empty())
+                throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
         }
         else
         {
-            user = params.get("user", "default");
-            password = params.get("password", "");
+            throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
         }
 
+        quota_key = params.get("quota_key", "");
+    }
+    else
+    {
+        /// If the user name is not set we assume it's the 'default' user.
+        user = params.get("user", "default");
+        password = params.get("password", "");
         quota_key = params.get("quota_key", "");
     }
 
     if (!certificate_common_name.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<CertificateCredentials>(user, certificate_common_name);
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
 
-        auto * certificate_credentials = dynamic_cast<CertificateCredentials *>(request_credentials.get());
+        auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
             throw Exception("Invalid authentication: expected SSL certificate authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
     }

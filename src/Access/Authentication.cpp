@@ -5,7 +5,6 @@
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
-#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/SHA1Engine.h>
 #include <Common/typeid_cast.h>
 
@@ -15,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int WRONG_PASSWORD;
 }
 
 namespace
@@ -69,23 +67,6 @@ namespace
     }
 }
 
-std::string getPeerCertificateCommonName(const Poco::Net::SocketImpl * socketImpl)
-{
-    std::string cn;
-
-    if (socketImpl->secure())
-    {
-        // expect socket is an instance of SecureStreamSocket
-        const Poco::Net::SecureStreamSocketImpl * secureSocketImpl = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socketImpl);
-        if (secureSocketImpl && secureSocketImpl->havePeerCertificate())
-        {
-            Poco::Crypto::X509Certificate cert = secureSocketImpl->peerCertificate();
-            cn = cert.commonName();
-        }
-    }
-
-    return cn;
-}
 
 bool Authentication::areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators)
 {
@@ -170,7 +151,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
         }
     }
 
-    if (const auto * certificate_credentials = typeid_cast<const CertificateCredentials *>(&credentials))
+    if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
         switch (auth_data.getType())
         {
@@ -185,11 +166,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
             case AuthenticationType::SSL_CERTIFICATE:
-                // N.B. the certificate should only be trusted when 'strict' SSL mode is enabled
-                if (!auth_data.getSSLCertificateCommonNames().contains(certificate_credentials->getX509CommonName()))
-                    throw Exception("X.509 certificate is not on allowed list", ErrorCodes::WRONG_PASSWORD);
-
-                return true;
+                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
             case AuthenticationType::MAX:
                 break;

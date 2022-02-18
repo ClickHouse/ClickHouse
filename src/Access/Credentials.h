@@ -38,16 +38,15 @@ public:
     void setUserName(const String & user_name_);
 };
 
-class CertificateCredentials
+class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit CertificateCredentials(const String & user_name_, const String & x509CommonName_);
-
-    const String & getX509CommonName() const;
+    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
+    const String & getCommonName() const;
 
 private:
-    String x509CommonName;
+    String common_name;
 };
 
 class BasicCredentials

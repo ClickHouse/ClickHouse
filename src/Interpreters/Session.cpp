@@ -1,7 +1,6 @@
 #include <Interpreters/Session.h>
 
 #include <Access/AccessControl.h>
-#include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
@@ -296,30 +295,6 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
 void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
 {
     authenticate(BasicCredentials{user_name, password}, address);
-}
-
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::StreamSocket & socket)
-{
-    switch (getAuthenticationType(user_name))
-    {
-        case AuthenticationType::NO_PASSWORD:
-        case AuthenticationType::PLAINTEXT_PASSWORD:
-        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-        case AuthenticationType::SHA256_PASSWORD:
-        case AuthenticationType::LDAP:
-            authenticate(BasicCredentials{user_name, password}, socket.peerAddress());
-            break;
-
-        case AuthenticationType::KERBEROS:
-            throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
-
-        case AuthenticationType::SSL_CERTIFICATE:
-            authenticate(CertificateCredentials{user_name, getPeerCertificateCommonName(socket.impl())}, socket.peerAddress());
-            break;
-
-        case AuthenticationType::MAX:
-            break;
-    }
 }
 
 void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_)

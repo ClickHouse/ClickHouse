@@ -2,7 +2,6 @@
 
 #include <Access/Common/AuthenticationData.h>
 #include <Common/Exception.h>
-#include <Poco/Net/SocketImpl.h>
 #include <base/types.h>
 
 
@@ -15,8 +14,6 @@ namespace ErrorCodes
 
 class Credentials;
 class ExternalAuthenticators;
-
-std::string getPeerCertificateCommonName(const Poco::Net::SocketImpl * socketImpl);
 
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
