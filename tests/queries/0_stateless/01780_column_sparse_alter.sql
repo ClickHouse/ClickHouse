@@ -1,3 +1,5 @@
+-- Tags: backward-incompatible
+
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_sparse_alter;
