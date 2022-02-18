@@ -16,7 +16,7 @@ struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
-    String username;
+    String username = "default";
     String password;
     String database;
     String table;
