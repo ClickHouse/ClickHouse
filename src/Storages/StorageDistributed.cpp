@@ -763,6 +763,8 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
     if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
     {
         new_query->table_id = StorageID(getRemoteDatabaseName(), getRemoteTableName());
+        /// Reset table function for INSERT INTO remote()/cluster()
+        new_query->table_function.reset();
     }
 
     const auto & cluster = getCluster();
