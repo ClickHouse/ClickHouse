@@ -5,7 +5,7 @@ toc_title: ORDER BY
 
 # 操作排序键表达式 {#manipulations-with-key-expressions}
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 ```
 该命令将表的[排序键](../../../engines/table-engines/mergetree-family/mergetree.md)更改为 `new_expression`(表达式或表达式元组)。主键保持不变。
