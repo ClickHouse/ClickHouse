@@ -187,59 +187,112 @@ public:
         array.emplace_back(k, block, row_num);
     }
 
+    inline size_t fast_upper_bound(TKey value)
+    {
+        size_t size = array.size();
+        size_t low = 0;
+
+        while (size >= 8)
+        {
+            size_t half = size / 2;
+            size_t other_half = size - half;
+            size_t probe = low + half;
+            size_t other_low = low + other_half;
+            TKey v = array[probe].asof_value;
+            size = half;
+            low = value >= v ? other_low : low;
+
+            half = size / 2;
+            other_half = size - half;
+            probe = low + half;
+            other_low = low + other_half;
+            v = array[probe].asof_value;
+            size = half;
+            low = value >= v ? other_low : low;
+
+            half = size / 2;
+            other_half = size - half;
+            probe = low + half;
+            other_low = low + other_half;
+            v = array[probe].asof_value;
+            size = half;
+            low = value >= v ? other_low : low;
+        }
+
+        while (size > 0)
+        {
+            size_t half = size / 2;
+            size_t other_half = size - half;
+            size_t probe = low + half;
+            size_t other_low = low + other_half;
+            TKey v = array[probe].asof_value;
+            size = half;
+            low = value >= v ? other_low : low;
+        }
+
+        return low;
+    }
+
     /// Find an element based on the inequality rules
-    /// Note that this function uses 2 arrays, one with only the keys (so it's smaller and more memory efficient)
-    /// and a second one with both the key and the Rowref to be returned
-    /// Both are sorted only once, in a concurrent safe manner
+    /// Note that the inequality rules and the sort order are reversed, so when looking for
+    /// ASOF::Inequality::LessOrEquals we are actually looking for the first element that's greater or equal than k
     const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) override
     {
+        if (array.empty())
+            return nullptr;
         sort();
 
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey k = column.getElement(row_num);
 
-        auto it = keys.cend();
+        const size_t array_size = array.size();
+        size_t pos = array_size;
+
+        size_t first_ge = fast_upper_bound(k);
         switch (inequality)
         {
             case ASOF::Inequality::LessOrEquals:
             {
-                it = std::lower_bound(keys.cbegin(), keys.cend(), k);
+                if (first_ge == array.size())
+                    first_ge--;
+                while (first_ge && array[first_ge - 1].asof_value >= k)
+                    first_ge--;
+                if (array[first_ge].asof_value >= k)
+                    pos = first_ge;
                 break;
             }
             case ASOF::Inequality::Less:
             {
-                it = std::upper_bound(keys.cbegin(), keys.cend(), k);
+                pos = first_ge;
                 break;
             }
             case ASOF::Inequality::GreaterOrEquals:
             {
-                auto first_ge = std::upper_bound(keys.cbegin(), keys.cend(), k);
-                if (first_ge == keys.cend() && keys.size())
+                if (first_ge == array.size())
                     first_ge--;
-                while (first_ge != keys.cbegin() && *first_ge > k)
+                while (first_ge && array[first_ge].asof_value > k)
                     first_ge--;
-                if (*first_ge <= k)
-                    it = first_ge;
+                if (array[first_ge].asof_value <= k)
+                    pos = first_ge;
                 break;
             }
             case ASOF::Inequality::Greater:
             {
-                auto first_ge = std::upper_bound(keys.cbegin(), keys.cend(), k);
-                if (first_ge == keys.cend() && keys.size())
+                if (first_ge == array.size())
                     first_ge--;
-                while (first_ge != keys.cbegin() && *first_ge >= k)
+                while (first_ge && array[first_ge].asof_value >= k)
                     first_ge--;
-                if (*first_ge < k)
-                    it = first_ge;
+                if (array[first_ge].asof_value < k)
+                    pos = first_ge;
                 break;
             }
             default:
                 throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);
         }
 
-        if (it != keys.cend())
-            return &((array.cbegin() + (it - keys.begin()))->row_ref);
+        if (pos != array.size())
+            return &(array[pos].row_ref);
 
         return nullptr;
     }
@@ -247,10 +300,7 @@ public:
 private:
     std::atomic<bool> sorted = false;
     mutable std::mutex lock;
-
     Base array;
-    /// We keep a separate copy of just the keys to make the searches more memory efficient
-    Keys keys;
 
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
@@ -264,14 +314,7 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-                if (!array.empty())
-                {
-                    ::sort(array.begin(), array.end());
-                    keys.reserve(array.size());
-                    for (auto & e : array)
-                        keys.push_back(e.asof_value);
-                }
-
+                ::sort(array.begin(), array.end());
                 sorted.store(true, std::memory_order_release);
             }
         }
@@ -279,7 +322,7 @@ private:
 };
 
 
-// It only contains a std::unique_ptr, which contains a single pointer, which is memmovable.
+// It only contains a std::unique_ptr which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
 AsofRowRefs createAsofRowRef(TypeIndex type);
