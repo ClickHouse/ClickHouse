@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
