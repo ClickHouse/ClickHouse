@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <utility>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -78,6 +79,8 @@ private:
     std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
+
+    Poco::Logger * log;
 };
 
 }

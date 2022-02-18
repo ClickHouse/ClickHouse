@@ -148,16 +148,12 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
     offset += working_buffer.size();
 
-    LOG_TEST(log, "\n\n\nReadBufferFromS3 just read: {}, current offset: {}, read until: {}\n\n\n", working_buffer.size(), offset, read_until_position);
-
     return true;
 }
 
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    LOG_TEST(&Poco::Logger::get("kssenii"), "kssenii read buffer from s3 seek to: {}", offset_);
-
     if (offset_ == offset && whence == SEEK_SET)
         return offset;
 

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class FileCache;
-using FileCachePtr = std::shared_ptr<FileCache>;
+class IFileCache;
+using FileCachePtr = std::shared_ptr<IFileCache>;
 
 }

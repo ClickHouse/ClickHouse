@@ -17,19 +17,19 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int FILE_CACHE_ERROR;
+    extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
-    String keyToStr(const FileCache::Key & key)
+    String keyToStr(const IFileCache::Key & key)
     {
         return getHexUIntLowercase(key);
     }
 }
 
-FileCache::FileCache(
+IFileCache::IFileCache(
     const String & cache_base_path_,
     size_t max_size_,
     size_t max_element_size_)
@@ -39,24 +39,24 @@ FileCache::FileCache(
 {
 }
 
-FileCache::Key FileCache::hash(const String & path)
+IFileCache::Key IFileCache::hash(const String & path)
 {
     return sipHash128(path.data(), path.size());
 }
 
-String FileCache::path(const Key & key, size_t offset)
+String IFileCache::getPathInLocalCache(const Key & key, size_t offset)
 {
     auto key_str = keyToStr(key);
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str / std::to_string(offset);
 }
 
-String FileCache::path(const Key & key)
+String IFileCache::getPathInLocalCache(const Key & key)
 {
     auto key_str = keyToStr(key);
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
 }
 
-bool FileCache::shouldBypassCache()
+bool IFileCache::shouldBypassCache()
 {
     return !CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
@@ -64,10 +64,10 @@ bool FileCache::shouldBypassCache()
 }
 
 LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_)
-    : FileCache(cache_base_path_, max_size_, max_element_size_), log(&Poco::Logger::get("LRUFileCache"))
+    : IFileCache(cache_base_path_, max_size_, max_element_size_), log(&Poco::Logger::get("LRUFileCache"))
 {
     if (fs::exists(cache_base_path))
-        restore();
+        loadCacheInfoIntoMemory();
     else
         fs::create_directories(cache_base_path);
 
@@ -79,7 +79,7 @@ void LRUFileCache::useCell(
 {
     auto file_segment = cell.file_segment;
     if (file_segment->download_state == FileSegment::State::DOWNLOADED
-        && fs::file_size(path(file_segment->key(), file_segment->offset())) == 0)
+        && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset())) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot have zero size downloaded file segments. Current file segment: {}",
                         file_segment->range().toString());
@@ -125,7 +125,13 @@ FileSegments LRUFileCache::getImpl(
     const auto & file_segments = it->second;
     if (file_segments.empty())
     {
-        removeFileKey(key);
+        auto key_path = getPathInLocalCache(key);
+
+        files.erase(key);
+
+        if (fs::exists(key_path))
+            fs::remove(key_path);
+
         return {};
     }
 
@@ -140,7 +146,7 @@ FileSegments LRUFileCache::getImpl(
         ///     ^                                        ^
         ///     range.left                               range.left
 
-        const auto & cell = (--file_segments.end())->second;
+        const auto & cell = file_segments.rbegin()->second;
         if (cell.file_segment->range().right < range.left)
             return {};
 
@@ -283,7 +289,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
         return nullptr; /// Empty files are not cached.
 
     if (files[key].contains(offset))
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Cache already exists for key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
@@ -293,14 +299,14 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     if (offsets.empty())
     {
-        auto key_path = path(key);
+        auto key_path = getPathInLocalCache(key);
         if (!fs::exists(key_path))
             fs::create_directories(key_path);
     }
 
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
     if (!inserted)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to insert into cache key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
 
     return &(it->second);
@@ -335,7 +341,7 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
 
         auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}", keyToStr(key), offset);
 
         size_t cell_size = cell->size();
@@ -378,7 +384,7 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
 
     current_size += size - removed_size;
     if (current_size > (1ull << 63))
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Cache became inconsistent. There must be a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     return true;
 }
@@ -390,7 +396,7 @@ void LRUFileCache::remove(
 
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
 
     if (cell->queue_iterator)
         queue.erase(*cell->queue_iterator);
@@ -398,7 +404,7 @@ void LRUFileCache::remove(
     auto & offsets = files[key];
     offsets.erase(offset);
 
-    auto cache_file_path = path(key, offset);
+    auto cache_file_path = getPathInLocalCache(key, offset);
     if (fs::exists(cache_file_path))
     {
         try
@@ -406,18 +412,25 @@ void LRUFileCache::remove(
             fs::remove(cache_file_path);
 
             if (startup_restore_finished && offsets.empty())
-                removeFileKey(key);
+            {
+                auto key_path = getPathInLocalCache(key);
+
+                files.erase(key);
+
+                if (fs::exists(key_path))
+                    fs::remove(key_path);
+            }
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
                             keyToStr(key), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
     }
 }
 
-void LRUFileCache::restore()
+void LRUFileCache::loadCacheInfoIntoMemory()
 {
     std::lock_guard cache_lock(mutex);
 
@@ -491,16 +504,6 @@ void LRUFileCache::remove(const Key & key)
         remove(key, offset, cache_lock);
 }
 
-void LRUFileCache::removeFileKey(const Key & key)
-{
-    auto key_path = path(key);
-
-    files.erase(key);
-
-    if (fs::exists(key_path))
-        fs::remove(key_path);
-}
-
 LRUFileCache::Stat LRUFileCache::getStat()
 {
     std::lock_guard cache_lock(mutex);
@@ -517,7 +520,7 @@ LRUFileCache::Stat LRUFileCache::getStat()
     {
         const auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}", keyToStr(key), offset);
 
         switch (cell->file_segment->download_state)
@@ -551,13 +554,13 @@ void LRUFileCache::reduceSizeToDownloaded(
     auto * cell = getCell(key, offset, cache_lock);
 
     if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
 
     const auto & file_segment = cell->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
     if (downloaded_size == file_segment->range().size())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                         "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
 
     cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
@@ -596,7 +599,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
             break;
         }
         default:
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
                             FileSegment::stateToString(file_segment->download_state));
     }

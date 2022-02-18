@@ -11,7 +11,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class FileCache;
+class IFileCache;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
@@ -64,7 +64,7 @@ public:
 
     FileSegment(
         size_t offset_, size_t size_, const Key & key_,
-        FileCache * cache_, State download_state_);
+        IFileCache * cache_, State download_state_);
 
     State state() const;
 
@@ -82,7 +82,7 @@ public:
 
         size_t size() const { return right - left + 1; }
 
-        String toString() const { return '[' + std::to_string(left) + ',' + std::to_string(right) + ']'; }
+        String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 
     const Range & range() const { return segment_range; }
@@ -109,7 +109,7 @@ public:
 
     static String getCallerId();
 
-    size_t downloadOffset() const;
+    size_t getDownloadOffset() const;
 
     void completeBatchAndResetDownloader();
 
@@ -138,14 +138,14 @@ private:
     std::condition_variable cv;
 
     Key file_key;
-    FileCache * cache;
+    IFileCache * cache;
 
     Poco::Logger * log;
 
     bool detached = false;
 };
 
-struct FileSegmentsHolder : boost::noncopyable
+struct FileSegmentsHolder : private boost::noncopyable
 {
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(file_segments_) {}
     FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
