@@ -173,9 +173,17 @@ class SortedLookupVector : public SortedLookupVectorBase
         bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
 
+    struct greaterEntryOperator
+    {
+        bool operator()(Entry const & a, Entry const & b) const { return a.asof_value > b.asof_value; }
+    };
+
+
 public:
     using Base = std::vector<Entry>;
     using Keys = std::vector<TKey>;
+    static constexpr bool isDescending = (inequality == ASOF::Inequality::Greater || inequality == ASOF::Inequality::GreaterOrEquals);
+    static constexpr bool isStrict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
 
     void insert(const IColumn & asof_column, const Block * block, size_t row_num) override
     {
@@ -188,20 +196,19 @@ public:
     }
 
     /// Unrolled version of upper_bound and lower_bound
-    /// Based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
+    /// Loosely based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described
     /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
-    enum bound_type
-    {
-        upperBound,
-        lowerBound
-    };
-    template <bound_type type>
-    size_t fastBound(TKey value)
+
+
+    size_t boundSearch(TKey value)
     {
         size_t size = array.size();
         size_t low = 0;
 
+        /// This is a single binary search iteration as a macro to unroll. Takes into account the inequality:
+        /// isStrict -> Equal values are not requested
+        /// isDescending -> The vector is sorted in reverse (for greater or greaterOrEquals)
 #define BOUND_ITERATION \
     { \
         size_t half = size / 2; \
@@ -210,13 +217,22 @@ public:
         size_t other_low = low + other_half; \
         TKey v = array[probe].asof_value; \
         size = half; \
-        if constexpr (type == bound_type::upperBound) \
-            low = value >= v ? other_low : low; \
+        if constexpr (isDescending) \
+        { \
+            if constexpr (isStrict) \
+                low = value <= v ? other_low : low; \
+            else \
+                low = value < v ? other_low : low; \
+        } \
         else \
-            low = value > v ? other_low : low; \
+        { \
+            if constexpr (isStrict) \
+                low = value >= v ? other_low : low; \
+            else \
+                low = value > v ? other_low : low; \
+        } \
     }
 
-        /// Unroll the loop
         while (size >= 8)
         {
             BOUND_ITERATION
@@ -233,51 +249,16 @@ public:
         return low;
     }
 
-    /// Find an element based on the inequality rules
-    /// Note that the inequality rules and the sort order are reversed, so when looking for
     const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
-        if (array.empty())
-            return nullptr;
         sort();
 
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey k = column.getElement(row_num);
 
-        const size_t array_size = array.size();
-        size_t pos = array_size;
-
-        if constexpr (inequality == ASOF::Inequality::LessOrEquals)
-        {
-            pos = fastBound<lowerBound>(k);
-        }
-        else if constexpr (inequality == ASOF::Inequality::Less)
-        {
-            pos = fastBound<upperBound>(k);
-        }
-        else if constexpr (inequality == ASOF::Inequality::GreaterOrEquals)
-        {
-            size_t first_ge = fastBound<lowerBound>(k);
-            if (first_ge == array_size)
-                first_ge--;
-            while (first_ge && array[first_ge].asof_value > k)
-                first_ge--;
-            if (array[first_ge].asof_value <= k)
-                pos = first_ge;
-        }
-        else if constexpr (inequality == ASOF::Inequality::Greater)
-        {
-            size_t first_ge = fastBound<lowerBound>(k);
-            if (first_ge == array_size)
-                first_ge--;
-            while (first_ge && array[first_ge].asof_value >= k)
-                first_ge--;
-            if (array[first_ge].asof_value < k)
-                pos = first_ge;
-        }
-
-        if (pos != array_size)
+        size_t pos = boundSearch(k);
+        if (pos != array.size())
             return &(array[pos].row_ref);
 
         return nullptr;
@@ -300,7 +281,10 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-                ::sort(array.begin(), array.end());
+                if constexpr (isDescending)
+                    ::sort(array.begin(), array.end(), greaterEntryOperator());
+                else
+                    ::sort(array.begin(), array.end());
                 sorted.store(true, std::memory_order_release);
             }
         }
