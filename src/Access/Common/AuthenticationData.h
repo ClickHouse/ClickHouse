@@ -60,13 +60,6 @@ public:
     /// Sets the password and encrypt it using the authentication type set in the constructor.
     void setPassword(const String & password_);
 
-    ///sets the config enable_plaintext_password value from global context
-    void setPlaintextPasswordSetting(const bool allow_plaintext_password_);
-    bool getPlaintextPasswordSetting() const { 
-        std::cout<<"Heena - Inside this function"<< allow_plaintext_password <<"\n"; 
-        return allow_plaintext_password; 
-    }
-
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
@@ -104,7 +97,6 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    bool allow_plaintext_password;
 };
 
 }

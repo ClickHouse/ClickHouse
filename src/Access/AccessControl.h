@@ -61,13 +61,13 @@ public:
     void addUsersConfigStorage(const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {},const bool allow_plaintext_password=0);
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
 
     void addUsersConfigStorage(const String & storage_name_,
                                const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {},const bool allow_plaintext_password=0);
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
 
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();
@@ -144,6 +144,9 @@ public:
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
+    void setAllowPlaintextPasswordSetting(const bool allow_plaintext_password);
+    bool getAllowPlaintextPasswordSetting() const { return allow_plaintext_password; }
+
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
@@ -167,6 +170,7 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
+    bool allow_plaintext_password;
 };
 
 }

@@ -669,8 +669,19 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     shared->access_control->setUsersConfig(*shared->users_config);
 }
 
-ConfigurationPtr Context::getUsersConfig()
+void Context::setAllowPlaintextPasswordSetting(const bool allow_plaintext_password)
 {
+    auto lock = getLock();
+    shared->access_control->setAllowPlaintextPasswordSetting(allow_plaintext_password);
+}
+
+bool Context::getAllowPlaintextPasswordSetting() const
+{
+    return shared->access_control->getAllowPlaintextPasswordSetting();
+}
+
+ConfigurationPtr Context::getUsersConfig()
+{   
     auto lock = getLock();
     return shared->users_config;
 }

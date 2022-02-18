@@ -172,7 +172,7 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
-    new_storage->setConfig(users_config_);
+    new_storage->setConfig(users_config_, allow_plaintext_password);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
         String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -182,10 +182,10 @@ void AccessControl::addUsersConfigStorage(
     const String & users_config_path_,
     const String & include_from_path_,
     const String & preprocessed_dir_,
-    const zkutil::GetZooKeeper & get_zookeeper_function_, const bool allow_plaintext_password)
+    const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     addUsersConfigStorage(
-        UsersConfigAccessStorage::STORAGE_TYPE, users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_,allow_plaintext_password);
+        UsersConfigAccessStorage::STORAGE_TYPE, users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
 }
 
 void AccessControl::addUsersConfigStorage(
@@ -193,7 +193,7 @@ void AccessControl::addUsersConfigStorage(
     const String & users_config_path_,
     const String & include_from_path_,
     const String & preprocessed_dir_,
-    const zkutil::GetZooKeeper & get_zookeeper_function_,const bool allow_plaintext_password)
+    const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -206,11 +206,14 @@ void AccessControl::addUsersConfigStorage(
     }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
-    new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_,allow_plaintext_password);
+    new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_, allow_plaintext_password);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
-
+void AccessControl::setAllowPlaintextPasswordSetting(const bool allow_plaintext_password_)
+{
+    allow_plaintext_password = allow_plaintext_password_;
+}
 void AccessControl::reloadUsersConfigs()
 {
     auto storages = getStoragesPtr();
@@ -332,7 +335,6 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             type = LDAPAccessStorage::STORAGE_TYPE;
 
         String name = config.getString(prefix + ".name", type);
-        const bool allow_plaintext_password = config.getBool("enable_plaintext_password" ,0);
 
         if (type == MemoryAccessStorage::STORAGE_TYPE)
         {
@@ -343,7 +345,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             String path = config.getString(prefix + ".path");
             if (std::filesystem::path{path}.is_relative() && std::filesystem::exists(config_dir + path))
                 path = config_dir + path;
-            addUsersConfigStorage(name, path, include_from_path, dbms_dir, get_zookeeper_function,allow_plaintext_password);
+            addUsersConfigStorage(name, path, include_from_path, dbms_dir, get_zookeeper_function);
         }
         else if (type == DiskAccessStorage::STORAGE_TYPE)
         {
