@@ -706,7 +706,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
-    if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+    if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
 
     std::shared_ptr<StorageDistributed> storage_src;

@@ -125,7 +125,7 @@ DistributedSink::DistributedSink(
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
     context->getClientInfo().distributed_depth += 1;
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
