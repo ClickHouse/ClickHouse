@@ -735,6 +735,9 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
 
     if (!storage_src || storage_src->getClusterName() != getClusterName())
     {
+        LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible (source cluster={}, destination cluster={})",
+            storage_src ? storage_src->getClusterName() : "<not a Distributed table>",
+            getClusterName());
         return nullptr;
     }
 
