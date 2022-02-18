@@ -5,6 +5,7 @@ import re
 import subprocess
 from typing import Optional
 
+RELEASE_BRANCH_REGEXP = r"^\d+[.]\d+$"
 TAG_REGEXP = r"^v\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)$"
 SHA_REGEXP = r"^([0-9]|[a-f]){40}$"
 
@@ -28,6 +29,13 @@ def commit(name: str):
         raise argparse.ArgumentTypeError(
             "commit hash should contain exactly 40 hex characters"
         )
+    return name
+
+
+def release_branch(name: str):
+    r = re.compile(RELEASE_BRANCH_REGEXP)
+    if not r.match(name):
+        raise argparse.ArgumentTypeError("release branch should be as 12.1")
     return name
 
 
