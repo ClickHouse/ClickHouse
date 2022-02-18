@@ -186,7 +186,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::SSL_CERTIFICATE:
                 // N.B. the certificate should only be trusted when 'strict' SSL mode is enabled
-                if (!auth_data.containsSSLCertificateCommonName(certificate_credentials->getX509CommonName()))
+                if (!auth_data.getSSLCertificateCommonNames().contains(certificate_credentials->getX509CommonName()))
                     throw Exception("X.509 certificate is not on allowed list", ErrorCodes::WRONG_PASSWORD);
 
                 return true;
