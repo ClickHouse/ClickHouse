@@ -6,9 +6,11 @@ endif ()
 
 list(REMOVE_ITEM clickhouse_table_functions_sources
     ITableFunction.cpp
+    TableFunctionView.cpp
     TableFunctionFactory.cpp)
 list(REMOVE_ITEM clickhouse_table_functions_headers
     ITableFunction.h
+    TableFunctionView.h
     TableFunctionFactory.h)
 
 add_library(clickhouse_table_functions ${clickhouse_table_functions_sources})

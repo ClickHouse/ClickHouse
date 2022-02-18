@@ -156,9 +156,11 @@ list (APPEND dbms_headers
 
 list (APPEND dbms_sources
     TableFunctions/ITableFunction.cpp
+    TableFunctions/TableFunctionView.cpp
     TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers
     TableFunctions/ITableFunction.h
+    TableFunctions/TableFunctionView.h
     TableFunctions/TableFunctionFactory.h)
 
 list (APPEND dbms_sources
