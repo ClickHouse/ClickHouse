@@ -339,23 +339,14 @@ class FailureReason(enum.Enum):
 
 class SettingsRandomizer:
     settings = {
-        "convert_query_to_cnf": lambda: random.randint(0, 1),
-        "max_block_size": lambda: random.randint(8000, 100000),
-        "max_threads": lambda: random.randint(1, 64),
-        "input_format_parallel_parsing": lambda: random.randint(0, 1),
-        "min_chunk_bytes_for_parallel_parsing": lambda: max(1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))),
-        "output_format_parallel_formatting": lambda: random.randint(0, 1),
-        "fsync_metadata": lambda: random.randint(0, 1),
-        "priority": lambda: int(abs(random.gauss(0, 2))),
-        "max_read_buffer_size": lambda: random.randint(1, 20) if random.random() < 0.1 else random.randint(500000, 1048576),
-        "use_uncompressed_cache": lambda: random.randint(0, 1),
-        "optimize_move_to_prewhere": lambda: random.randint(0, 1),
-        "prefer_localhost_replica": lambda: random.randint(0, 1),
+        "max_insert_threads": lambda: 0 if random.random() < 0.5 else random.randint(1, 16),
         "group_by_two_level_threshold": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 100000,
         "group_by_two_level_threshold_bytes": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 50000000,
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
-        "allow_experimental_parallel_reading_from_replicas": lambda: random.randint(0, 1),
-        "max_insert_threads": lambda: 0 if random.random() < 0.5 else random.randint(1, 16),
+        "fsync_metadata": lambda: random.randint(0, 1),
+        "priority": lambda: int(abs(random.gauss(0, 2))),
+        "output_format_parallel_formatting": lambda: random.randint(0, 1),
+        "input_format_parallel_parsing": lambda: random.randint(0, 1),
     }
 
     @staticmethod
