@@ -2,15 +2,15 @@
 <clickhouse>
     <users>
         <john>
-            <certificates>
+            <ssl_certificates>
                 <common_name>client1</common_name>
-            </certificates>
+            </ssl_certificates>
         </john>
         <lucy>
-            <certificates>
+            <ssl_certificates>
                 <common_name>client2</common_name>
                 <common_name>client3</common_name>
-            </certificates>
+            </ssl_certificates>
         </lucy>
         <peter>
             <no_password/>

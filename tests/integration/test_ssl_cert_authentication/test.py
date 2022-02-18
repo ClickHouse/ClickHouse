@@ -40,7 +40,7 @@ def execute_query_https(query, user, enable_ssl_auth=True, cert_name=None, passw
     request = urllib.request.Request(url)
     request.add_header('X-ClickHouse-User', user)
     if enable_ssl_auth:
-        request.add_header('X-ClickHouse-X509Authentication', 'yes')
+        request.add_header('X-ClickHouse-SSL-Certificate-Auth', 'on')
     if password:
         request.add_header('X-ClickHouse-Key', password)
     response = urllib.request.urlopen(request, context=get_ssl_context(cert_name)).read()

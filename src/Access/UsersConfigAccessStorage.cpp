@@ -62,7 +62,7 @@ namespace
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
 
-        const auto certificates_config = user_config + ".certificates";
+        const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
