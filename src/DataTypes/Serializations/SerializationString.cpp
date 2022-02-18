@@ -293,5 +293,10 @@ void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
+void SerializationString::deserializeTextHiveText(
+    IColumn & column, ReadBuffer & istr, [[maybe_unused]] const FormatSettings & settings) const
+{
+    read(column, [&](ColumnString::Chars & data) { readStringUntilCharsInto(data, istr, {}); });
+}
 
 }

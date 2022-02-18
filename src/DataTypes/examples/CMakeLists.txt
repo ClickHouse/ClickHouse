@@ -1,0 +1,2 @@
+add_executable (datatype_deserialize datatype_deserialize.cpp)
+target_link_libraries (datatype_deserialize PRIVATE dbms)

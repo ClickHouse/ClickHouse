@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -301,12 +302,16 @@ void SerializationTuple::deserializeTextHiveText(IColumn & column, ReadBuffer & 
                         assertChar(item_delim, istr);
 
                     String name;
-                    readStringUntilChar(name, istr, pair_delim);
+                    readStringUntilChars(name, istr, {pair_delim});
+
                     assertChar(pair_delim, istr);
 
+                    String value;
+                    readStringUntilChars(value, istr, {item_delim});
+                    ReadBufferFromString buf(value);
                     const size_t element_pos = getPositionByName(name);
                     auto & element_column = extractElementColumn(column, element_pos);
-                    elems[element_pos]->deserializeTextHiveText(element_column, istr, settings);
+                    elems[element_pos]->deserializeTextHiveText(element_column, buf, settings);
                 }
             });
     }
@@ -323,7 +328,10 @@ void SerializationTuple::deserializeTextHiveText(IColumn & column, ReadBuffer & 
                     if (i != 0)
                         assertChar(item_delim, istr);
 
-                    elems[i]->deserializeTextHiveText(extractElementColumn(column, i), istr, settings);
+                    String value;
+                    readStringUntilChars(value, istr, {item_delim});
+                    ReadBufferFromString buf(value);
+                    elems[i]->deserializeTextHiveText(extractElementColumn(column, i), buf, settings);
                 }
             });
     }

@@ -164,6 +164,10 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
 template <typename Reader>
 void SerializationMap::deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader, const FormatSettings & settings) const
 {
+    const auto pair_delim = settings.hive_text.map_keys_delimiter;
+    const auto item_delim = settings.hive_text.collection_items_delimiter;
+    const auto field_delim = settings.hive_text.fields_delimiter;
+
     auto & column_map = assert_cast<ColumnMap &>(column);
 
     auto & nested_array = column_map.getNestedColumn();
@@ -178,22 +182,24 @@ void SerializationMap::deserializeHiveTextImpl(IColumn & column, ReadBuffer & is
     while (!istr.eof())
     {
         if (!first)
-        {
-            if (*istr.position() == settings.hive_text.collection_items_delimiter)
-                ++istr.position();
-            else
-                throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
-        }
+            assertChar(item_delim, istr);
 
         first = false;
         if (istr.eof())
             break;
 
-        reader(istr, key, key_column);
-        assertChar(settings.hive_text.map_keys_delimiter, istr);
+        String str;
 
+        readStringUntilChars(str, istr, {pair_delim});
+        ReadBufferFromString key_buf(str);
+        reader(key_buf, key, key_column);
+
+        assertChar(pair_delim, istr);
+
+        readStringUntilChars(str, istr, {item_delim, field_delim});
+        ReadBufferFromString value_buf(str);
+        reader(value_buf, value, value_column);
         ++size;
-        reader(istr, value, value_column);
     }
     offsets.push_back(offsets.back() + size);
 }
@@ -288,10 +294,6 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readCSV(s, istr, settings.csv);
-    ReadBufferFromString rb(s);
-
     deserializeHiveTextImpl(
         column,
         istr,

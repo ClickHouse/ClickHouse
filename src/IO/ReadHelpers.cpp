@@ -205,6 +205,7 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -607,46 +608,25 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<true>(s, buf);
 }
 
-template <typename Vector>
-void readStringUntilChar(Vector & s, ReadBuffer & buf, char delimiter)
+void readStringUntilChars(String & s, ReadBuffer & buf, const std::vector<char> & delimiters)
 {
-    if (buf.eof())
-        throwReadAfterEOF();
+    s.clear();
+    readStringUntilCharsInto(s, buf, delimiters);
+}
 
-    /// Emptiness and not even in quotation marks.
-    if (*buf.position() == delimiter)
-        return;
-
-    /// Unquoted case. Look for delimiter or \r or \n.
+template <typename Vector>
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf, const std::vector<char> & delimiters)
+{
+    /// Unquoted case. Look for delimiters or \r or \n.
     while (!buf.eof())
     {
         char * next_pos = buf.position();
-
-        [&]()
-        {
-#ifdef __SSE2__
-            auto rc = _mm_set1_epi8('\r');
-            auto nc = _mm_set1_epi8('\n');
-            auto dc = _mm_set1_epi8(delimiter);
-            for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
-            {
-                __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
-                auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
-                uint16_t bit_mask = _mm_movemask_epi8(eq);
-                if (bit_mask)
-                {
-                    next_pos += __builtin_ctz(bit_mask);
-                    return;
-                }
-            }
-#endif
-            while (next_pos < buf.buffer().end() && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
-                ++next_pos;
-        }();
+        while (next_pos < buf.buffer().end() && std::find(delimiters.begin(), delimiters.end(), *next_pos) == delimiters.end()
+               && *next_pos != '\r' && *next_pos != '\n')
+            ++next_pos;
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
-
         if (!buf.hasPendingData())
             continue;
 
@@ -654,6 +634,8 @@ void readStringUntilChar(Vector & s, ReadBuffer & buf, char delimiter)
     }
 }
 
+template void
+readStringUntilCharsInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const std::vector<char> & delimiters);
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)

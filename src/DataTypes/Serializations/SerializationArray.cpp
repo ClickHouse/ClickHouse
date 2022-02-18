@@ -452,29 +452,22 @@ static void deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader 
     ColumnArray::Offsets & offsets = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();
     size_t size = 0;
+    const auto item_delim = settings.hive_text.collection_items_delimiter;
 
     bool first = true;
-    while (!istr.eof())
+    do
     {
         if (!first)
-        {
-            if (*istr.position() == settings.hive_text.collection_items_delimiter)
-                ++istr.position();
-            else
-                throw ParsingException(
-                    ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
-                    "Cannot read array from text, expected {} or end of array, found '{}'",
-                    settings.hive_text.collection_items_delimiter,
-                    *istr.position());
-        }
+            assertChar(item_delim, istr);
+        else
+            first = false;
 
-        first = false;
-        if (istr.eof())
-            break;
-
-        read_nested(nested_column);
+        String str;
+        readStringUntilChars(str, istr, {item_delim});
+        ReadBufferFromString buf(str);
+        read_nested(nested_column, buf);
         ++size;
-    }
+    } while (!istr.eof());
     offsets.push_back(offsets.back() + size);
 }
 
@@ -585,11 +578,8 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 
 void SerializationArray::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readCSV(s, istr, settings.csv);
-    ReadBufferFromString rb(s);
     deserializeHiveTextImpl(
-        column, rb, [&](IColumn & nested_column) { nested->deserializeTextCSV(nested_column, rb, settings); }, settings);
+        column, istr, [&](IColumn & nested_column, ReadBuffer & buf) { nested->deserializeTextHiveText(nested_column, buf, settings); }, settings);
 }
 
 }

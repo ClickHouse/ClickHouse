@@ -175,12 +175,30 @@ inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
     return true;
 }
 
+inline bool checkChars(const std::vector<char> & chars, ReadBuffer & buf)  // -V1071
+{
+    char a;
+    if (!buf.peek(a) || std::find(chars.begin(), chars.end(), a) == chars.end())
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
     if (!checkChar(symbol, buf))
     {
         char err[2] = {symbol, '\0'};
         throwAtAssertionFailed(err, buf);
+    }
+}
+
+inline void assertChars(const std::vector<char> & chars, ReadBuffer & buf)
+{
+    if (!checkChars(chars, buf))
+    {
+        String err(chars.begin(), chars.end());
+        throwAtAssertionFailed(err.c_str(), buf);
     }
 }
 
@@ -548,6 +566,7 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
 
+void readStringUntilChars(String & s, ReadBuffer & buf, const std::vector<char> & delimiters);
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -592,7 +611,7 @@ template <char... chars, typename Vector>
 void readStringUntilCharsInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-void readStringUntilChar(Vector & s, ReadBuffer & buf, char delimiter);
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf, const std::vector<char> & delimiters);
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);

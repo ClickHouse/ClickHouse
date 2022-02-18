@@ -5,6 +5,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
@@ -63,13 +64,13 @@ TEST_P(ParseDataTypeFromHiveTest, parseStringValue)
     for (const auto & value : p.values)
     {
         ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-        data_type->getDefaultSerialization()->deserializeTextHiveText(*col, buffer, FormatSettings{});
+        data_type->getDefaultSerialization()->deserializeTextHiveText(*col, buffer, HiveTextRowInputFormat::updateFormatSettings({}));
     }
 
     ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
     for (size_t i = 0; i < col->size(); ++i)
     {
-        std::cout << "real value:" << toString((*col)[i]);
+        // std::cout << "real value:" << toString((*col)[i]);
         ASSERT_EQ(p.expected_values[i], (*col)[i]);
     }
 }
@@ -97,11 +98,46 @@ INSTANTIATE_TEST_SUITE_P(ParseArrayFromHive,
         std::initializer_list<ParseDataTypeFromHiveTestCase>{
             {
                 "Array(String)",
-                {"", "a\002b", "a\002b\002c\002d"},
+                {"", "\002", "a\002b", "a\002b\002c\002d"},
                 std::initializer_list<Field>{
-                    Array{},
+                    Array{""},
+                    Array{"", ""},
                     Array{"a", "b"},
                     Array{"a", "b", "c", "d"}
+                }
+            }
+        }
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ParseNamedTupleFromHive,
+    ParseDataTypeFromHiveTest,
+    ::testing::ValuesIn(
+        std::initializer_list<ParseDataTypeFromHiveTestCase>{
+            {
+                "Tuple(a String, b Int64)",
+                {"a\003aa\002b\003100", "a\003aa\002b\003bbb", "a\003aa\002b\003100\002"},
+                std::initializer_list<Field>{
+                    Tuple{"aa", 100},
+                    Tuple{"aa", 0},
+                    Tuple{"aa", 100},
+                }
+            }
+        }
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ParseTupleFromHive,
+    ParseDataTypeFromHiveTest,
+    ::testing::ValuesIn(
+        std::initializer_list<ParseDataTypeFromHiveTestCase>{
+            {
+                "Tuple(String, Int64)",
+                {"a\002100", "a\002bbb", "a\002100\0021000"},
+                std::initializer_list<Field>{
+                    Tuple{"a", 100},
+                    Tuple{"a", 0},
+                    Tuple{"a", 100},
                 }
             }
         }

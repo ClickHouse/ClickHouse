@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 
-static FormatSettings updateFormatSettings(const FormatSettings & settings)
+FormatSettings HiveTextRowInputFormat::updateFormatSettings(const FormatSettings & settings)
 {
     FormatSettings updated = settings;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
