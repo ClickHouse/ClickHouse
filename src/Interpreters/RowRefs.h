@@ -145,16 +145,39 @@ private:
  * After calling any of the lookup methods, it is no longer allowed to insert more data as this would invalidate the
  * references that can be returned by the lookup methods
  */
-
-template <typename TEntry>
-class SortedLookupVector
+struct SortedLookupVectorBase
 {
+    SortedLookupVectorBase() = default;
+    virtual ~SortedLookupVectorBase() { }
+
+    static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
+
+    // This will be synchronized by the rwlock mutex in Join.h
+    virtual void insert(const IColumn &, const Block *, size_t) = 0;
+
+    // This needs to be synchronized internally
+    virtual const RowRef * findAsof(ASOF::Inequality, const IColumn &, size_t) = 0;
+};
+
+template <typename TKey>
+class SortedLookupVector : public SortedLookupVectorBase
+{
+    struct Entry
+    {
+        TKey asof_value;
+        RowRef row_ref;
+
+        Entry() = delete;
+        Entry(TKey v, const Block * block, size_t row_num) : asof_value(v), row_ref(block, row_num) { }
+
+        bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
+    };
+
 public:
-    using Base = std::vector<TEntry>;
-    using TKey = decltype(TEntry::asof_value);
+    using Base = std::vector<Entry>;
     using Keys = std::vector<TKey>;
 
-    void insert(const IColumn & asof_column, const Block * block, size_t row_num)
+    void insert(const IColumn & asof_column, const Block * block, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
@@ -168,7 +191,7 @@ public:
     /// Note that this function uses 2 arrays, one with only the keys (so it's smaller and more memory efficient)
     /// and a second one with both the key and the Rowref to be returned
     /// Both are sorted only once, in a concurrent safe manner
-    const RowRef * find(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num)
+    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -255,51 +278,9 @@ private:
     }
 };
 
-struct AsofRowRefsBase
-{
-    AsofRowRefsBase() = default;
-    virtual ~AsofRowRefsBase() { }
-
-    static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
-    virtual void insert(const IColumn &, const Block *, size_t) = 0;
-    virtual const RowRef * findAsof(ASOF::Inequality, const IColumn &, size_t) = 0;
-};
-
-template <typename T>
-class AsofRowRefDerived : public AsofRowRefsBase
-{
-public:
-    template <typename EntryType>
-    struct Entry
-    {
-        T asof_value;
-        RowRef row_ref;
-
-        Entry() = delete;
-        explicit Entry(T v) : asof_value(v) { }
-        Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) { }
-        Entry(T v, const Block * block, size_t row_num) : asof_value(v), row_ref(block, row_num) { }
-
-        bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
-    };
-
-    AsofRowRefDerived() { }
-
-    // This will be synchronized by the rwlock mutex in Join.h
-    void insert(const IColumn & asof_column, const Block * block, size_t row_num) override { lookups.insert(asof_column, block, row_num); }
-
-    // This will internally synchronize
-    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) override
-    {
-        return lookups.find(inequality, asof_column, row_num);
-    }
-
-private:
-    SortedLookupVector<Entry<T>> lookups;
-};
 
 // It only contains a std::unique_ptr, which contains a single pointer, which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
-using AsofRowRefs = std::unique_ptr<AsofRowRefsBase>;
+using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
 AsofRowRefs createAsofRowRef(TypeIndex type);
 }
