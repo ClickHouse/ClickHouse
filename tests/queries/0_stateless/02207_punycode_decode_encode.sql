@@ -12,6 +12,8 @@ select punycodeDecode('xn--eckwd4c7cu47r2wf');
 select punycodeDecode('xn--majikoi5-783gue6qz075azm5e');
 select punycodeDecode('xn--bcher-kva8445foa');
 select punycodeDecode('https://google.com/');
+select punycodeDecode('xn--//-llc6aj.xn--/-4tbm');
+select punycodeDecode('xn--b1agh1afp.xn--///-4ddtz');
 
 select punycodeEncode('https://ввв.яндекс.рф/');
 select punycodeEncode('https://привет.label.мир.com/');
@@ -27,3 +29,5 @@ select punycodeEncode('ドメイン名例');
 select punycodeEncode('MajiでKoiする5秒前');
 select punycodeEncode('「bücher」');
 select punycodeEncode('https://google.com/');
+select punycodeEncode('//дом.рф/');
+select punycodeEncode('привет.//мир/');

@@ -9,6 +9,7 @@
 #include <codecvt>
 #include <locale>
 #include <chrono>
+#include <thread>
 #include <cstring>
 
 namespace DB
@@ -243,7 +244,7 @@ namespace
         return punycode_success;
     }
 
-    constexpr uint16_t domainMaxLength { 256 };
+    // constexpr uint16_t domainMaxLength { 256 };
     constexpr uint16_t labelMaxLength { 64 };
     constexpr std::array<char, 4> acePrefix { 'x', 'n', '-', '-'};
     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter {};
@@ -381,15 +382,22 @@ namespace
         return encoded_length;
     }
 
+    /** If the string contains ' :// ' then this string contains the full DNS name
+     *  if the string do not contains ' :// ' then we consider the entire input
+     *  as data to be encoded regardless of the content of characters in it ' / '
+     */
+    constexpr std::pair<size_t, size_t> getFqdnBounds(std::string_view input) noexcept{
+        std::string::size_type start = input.find("://");
+        if (std::string::npos == start)
+            return {0, input.size() };
+        std::string::size_type last = input.find('/', start + 3);
+        return {start + 3, std::string::npos == last ? input.size() : last};
+    };
+
     size_t punycodeEncode(const std::string_view input,
                           UInt8 * encoded_string)
     {
-        /* Extract the FQDN by selecting a substring between the first             */
-        /* characters '://' and the first subsequent character' /,' if such exist  */
-        std::string::size_type start = input.find("://");
-        start = std::string::npos == start ? 0 : start + 3;
-        std::string::size_type last = input.find('/', start);
-        last = std::string::npos == last ? input.size() : last;
+        const auto [start, last] = getFqdnBounds(input);
         std::copy_n(input.data(), start, encoded_string);
 
         auto s32 = converter.from_bytes((input.data() + start), (input.data() + last));
@@ -406,12 +414,7 @@ namespace
     size_t punycodeDecode(const std::string_view input,
                           UInt8 * decoded_string)
     {
-        /* Extract the FQDN by selecting a substring between the first             */
-        /* characters '://' and the first subsequent character' /,' if such exist  */
-        std::string::size_type start = input.find("://");
-        start = std::string::npos == start ? 0 : start + 3;
-        std::string::size_type last = input.find('/', start);
-        last = std::string::npos == last ? input.size() : last;
+        const auto [start, last] = getFqdnBounds(input);
         std::copy_n(input.data(), start, decoded_string);
 
         punycode_uint utf32_buffer[labelMaxLength]{};
@@ -467,18 +470,30 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
+            if (data.empty())
+                return;
+            const size_t size = offsets.size();
             res_data.resize(data.size());
-            res_offsets.assign(offsets);
+            res_offsets.resize(size);
 
-            const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const size_t result_size = punycodeDecode(data_view, res_data.data());
-            res_offsets[0] = result_size + 1;
-            res_data.resize(result_size + 1);
+            size_t bytes_written { 0 };
+            for (size_t i = 0, from = 0; i < size; ++i)
+            {
+                const size_t length = offsets[i] - from - 1;
+                const std::string_view data_view(reinterpret_cast<const char *>(&data[from]), length);
+
+                bytes_written += punycodeDecode(data_view, res_data.data() + bytes_written);
+                res_data[bytes_written++] = 0;
+
+                res_offsets[i] = bytes_written;
+                from = offsets[i];
+            }
+            res_data.resize(bytes_written);
         }
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
         {
-            throw Exception("Error text", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Unsupported operation", ErrorCodes::BAD_ARGUMENTS);
         }
     };
 
@@ -490,18 +505,30 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
-            res_data.resize(domainMaxLength * 4);
-            res_offsets.assign(offsets);
+            if (data.empty())
+                return;
+            const size_t size = offsets.size();
+            res_data.resize(data.size() * 2);
+            res_offsets.resize(size);
 
-            const std::string_view data_view(reinterpret_cast<const char *>(&data[0]), data.size() - 1);
-            const size_t result_size = punycodeEncode(data_view, res_data.data());
-            res_offsets[0] = result_size + 1;
-            res_data.resize(result_size + 1);
+            size_t bytes_written { 0 };
+            for (size_t i = 0, from = 0; i < size; ++i)
+            {
+                const size_t length = offsets[i] - from - 1;
+                const std::string_view data_view(reinterpret_cast<const char *>(&data[from]), length);
+
+                bytes_written += punycodeEncode(data_view, res_data.data() + bytes_written);
+                res_data[bytes_written++] = 0;
+
+                res_offsets[i] = bytes_written;
+                from = offsets[i];
+            }
+            res_data.resize(bytes_written);
         }
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
         {
-            throw Exception("Error text", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Unsupported operation", ErrorCodes::BAD_ARGUMENTS);
         }
     };
 
