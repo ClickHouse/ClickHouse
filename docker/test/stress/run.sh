@@ -308,7 +308,17 @@ then
     stop
 
     # Error messages (we should ignore some errors)
-    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" -e "REPLICA_IS_ALREADY_ACTIVE" -e "DDLWorker: Cannot parse DDL task query" -e "RaftInstance: failed to accept a rpc connection due to error 125" -e "UNKNOWN_DATABASE" -e "NETWORK_ERROR" -e "UNKNOWN_TABLE" -e "ZooKeeperClient" -e "KEEPER_EXCEPTION" -e "DirectoryMonitor" -e "Code: 1000, e.code() = 111, Connection refused" \
+    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+               -e "REPLICA_IS_ALREADY_ACTIVE" \
+               -e "DDLWorker: Cannot parse DDL task query" \
+               -e "RaftInstance: failed to accept a rpc connection due to error 125" \
+               -e "UNKNOWN_DATABASE" \
+               -e "NETWORK_ERROR" \
+               -e "UNKNOWN_TABLE" \
+               -e "ZooKeeperClient" \
+               -e "KEEPER_EXCEPTION" \
+               -e "DirectoryMonitor" \
+               -e "Code: 1000, e.code() = 111, Connection refused" \
         /var/log/clickhouse-server/clickhouse-server.log | zgrep -Fa "<Error>" > /dev/null \
         && echo -e 'Error message in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
         || echo -e 'No Error messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
