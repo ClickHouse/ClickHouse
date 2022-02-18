@@ -74,16 +74,20 @@ class Release:
     def check_branch(self, release_type: str):
         if release_type in self.BIG:
             # Commit to spin up the release must belong to a main branch
-            output = self.run(f"git branch --contains={self.release_commit} master")
-            if "master" not in output:
+            branch = "master"
+            output = self.run(f"git branch --contains={self.release_commit} '{branch}'")
+            if branch not in output:
                 raise Exception(
                     f"commit {self.release_commit} must belong to 'master' for "
                     f"{release_type} release"
                 )
-        if release_type in self.SMALL:
+            return
+        elif release_type in self.SMALL:
             branch = f"{self.version.major}.{self.version.minor}"
-            if self._git.branch != branch:
+            output = self.run(f"git branch --contains={self.release_commit} '{branch}'")
+            if branch not in output:
                 raise Exception(f"branch must be '{branch}' for {release_type} release")
+            return
 
     def log_rollback(self):
         if self._rollback_stack:
@@ -287,7 +291,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--type",
         default="minor",
-        # choices=Release.BIG+Release.SMALL, # add support later
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
         help="a release type, new branch is created only for 'major' and 'minor'",
@@ -318,10 +321,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
-
-
-def prestable():
-    pass
 
 
 def main():
