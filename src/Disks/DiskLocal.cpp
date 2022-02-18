@@ -539,14 +539,14 @@ catch (...)
 
 struct DiskWriteCheckData
 {
-    constexpr static size_t PAGE_SIZE = 4096;
-    char data[PAGE_SIZE]{};
+    constexpr static size_t PAGE_SIZE_IN_BYTES = 4096;
+    char data[PAGE_SIZE_IN_BYTES]{};
     DiskWriteCheckData()
     {
         static const char * magic_string = "ClickHouse disk local write check";
         static size_t magic_string_len = strlen(magic_string);
         memcpy(data, magic_string, magic_string_len);
-        memcpy(data + PAGE_SIZE - magic_string_len, magic_string, magic_string_len);
+        memcpy(data + PAGE_SIZE_IN_BYTES - magic_string_len, magic_string, magic_string_len);
     }
 };
 
@@ -557,7 +557,7 @@ try
     String tmp_template = fs::path(disk_path) / "";
     {
         auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
-        buf->write(data.data, data.PAGE_SIZE);
+        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }
     return true;

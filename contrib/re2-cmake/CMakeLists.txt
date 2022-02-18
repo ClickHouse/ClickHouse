@@ -71,7 +71,6 @@ foreach (FILENAME mutex.h)
     add_dependencies (re2_st transform_${FILENAME})
 endforeach ()
 
-# NOTE: you should not change name of library here, since it is used for PVS
-# (see docker/test/pvs/Dockerfile), to generate required header (see above)
+# NOTE: you should not change name of library here, since it is used to generate required header (see above)
 add_library(ch_contrib::re2 ALIAS re2)
 add_library(ch_contrib::re2_st ALIAS re2_st)
