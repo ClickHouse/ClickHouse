@@ -1014,7 +1014,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        ("fake-drop", "Ignore all DROP queries")
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
     ;
 
     /// Commandline options related to external tables.

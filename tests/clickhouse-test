@@ -59,7 +59,7 @@ MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
 
-VERSION_PATTERN = r"^((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+)$"
+VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 
 def stringhash(s):
@@ -1414,7 +1414,7 @@ if __name__ == '__main__':
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    group.add_argument('--backward-compatibility-check', action='store_true', default=False, help='Ignore all drop queries in tests')
+    group.add_argument('--backward-compatibility-check', action='store_true', help='Run tests for further backwoard compatibility testing by ignoring all drop queries in tests for collecting data from new version of server')
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
