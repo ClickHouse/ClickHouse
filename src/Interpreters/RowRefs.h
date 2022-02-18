@@ -156,10 +156,10 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual const RowRef * findAsof(ASOF::Inequality, const IColumn &, size_t) = 0;
+    virtual const RowRef * findAsof(const IColumn &, size_t) = 0;
 };
 
-template <typename TKey>
+template <typename TKey, ASOF::Inequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
     struct Entry
@@ -187,56 +187,55 @@ public:
         array.emplace_back(k, block, row_num);
     }
 
-    inline size_t fast_upper_bound(TKey value)
+    /// Unrolled version of upper_bound and lower_bound
+    /// Based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
+    /// In the future it'd interesting to replace it with a B+Tree Layout as described
+    /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
+    enum bound_type
+    {
+        upperBound,
+        lowerBound
+    };
+    template <bound_type type>
+    size_t fastBound(TKey value)
     {
         size_t size = array.size();
         size_t low = 0;
 
+#define BOUND_ITERATION \
+    { \
+        size_t half = size / 2; \
+        size_t other_half = size - half; \
+        size_t probe = low + half; \
+        size_t other_low = low + other_half; \
+        TKey v = array[probe].asof_value; \
+        size = half; \
+        if constexpr (type == bound_type::upperBound) \
+            low = value >= v ? other_low : low; \
+        else \
+            low = value > v ? other_low : low; \
+    }
+
+        /// Unroll the loop
         while (size >= 8)
         {
-            size_t half = size / 2;
-            size_t other_half = size - half;
-            size_t probe = low + half;
-            size_t other_low = low + other_half;
-            TKey v = array[probe].asof_value;
-            size = half;
-            low = value >= v ? other_low : low;
-
-            half = size / 2;
-            other_half = size - half;
-            probe = low + half;
-            other_low = low + other_half;
-            v = array[probe].asof_value;
-            size = half;
-            low = value >= v ? other_low : low;
-
-            half = size / 2;
-            other_half = size - half;
-            probe = low + half;
-            other_low = low + other_half;
-            v = array[probe].asof_value;
-            size = half;
-            low = value >= v ? other_low : low;
+            BOUND_ITERATION
+            BOUND_ITERATION
+            BOUND_ITERATION
         }
 
         while (size > 0)
         {
-            size_t half = size / 2;
-            size_t other_half = size - half;
-            size_t probe = low + half;
-            size_t other_low = low + other_half;
-            TKey v = array[probe].asof_value;
-            size = half;
-            low = value >= v ? other_low : low;
+            BOUND_ITERATION
         }
 
+#undef BOUND_ITERATION
         return low;
     }
 
     /// Find an element based on the inequality rules
     /// Note that the inequality rules and the sort order are reversed, so when looking for
-    /// ASOF::Inequality::LessOrEquals we are actually looking for the first element that's greater or equal than k
-    const RowRef * findAsof(ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) override
+    const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         if (array.empty())
             return nullptr;
@@ -249,49 +248,36 @@ public:
         const size_t array_size = array.size();
         size_t pos = array_size;
 
-        size_t first_ge = fast_upper_bound(k);
-        switch (inequality)
+        if constexpr (inequality == ASOF::Inequality::LessOrEquals)
         {
-            case ASOF::Inequality::LessOrEquals:
-            {
-                if (first_ge == array.size())
-                    first_ge--;
-                while (first_ge && array[first_ge - 1].asof_value >= k)
-                    first_ge--;
-                if (array[first_ge].asof_value >= k)
-                    pos = first_ge;
-                break;
-            }
-            case ASOF::Inequality::Less:
-            {
+            pos = fastBound<lowerBound>(k);
+        }
+        else if constexpr (inequality == ASOF::Inequality::Less)
+        {
+            pos = fastBound<upperBound>(k);
+        }
+        else if constexpr (inequality == ASOF::Inequality::GreaterOrEquals)
+        {
+            size_t first_ge = fastBound<lowerBound>(k);
+            if (first_ge == array_size)
+                first_ge--;
+            while (first_ge && array[first_ge].asof_value > k)
+                first_ge--;
+            if (array[first_ge].asof_value <= k)
                 pos = first_ge;
-                break;
-            }
-            case ASOF::Inequality::GreaterOrEquals:
-            {
-                if (first_ge == array.size())
-                    first_ge--;
-                while (first_ge && array[first_ge].asof_value > k)
-                    first_ge--;
-                if (array[first_ge].asof_value <= k)
-                    pos = first_ge;
-                break;
-            }
-            case ASOF::Inequality::Greater:
-            {
-                if (first_ge == array.size())
-                    first_ge--;
-                while (first_ge && array[first_ge].asof_value >= k)
-                    first_ge--;
-                if (array[first_ge].asof_value < k)
-                    pos = first_ge;
-                break;
-            }
-            default:
-                throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);
+        }
+        else if constexpr (inequality == ASOF::Inequality::Greater)
+        {
+            size_t first_ge = fastBound<lowerBound>(k);
+            if (first_ge == array_size)
+                first_ge--;
+            while (first_ge && array[first_ge].asof_value >= k)
+                first_ge--;
+            if (array[first_ge].asof_value < k)
+                pos = first_ge;
         }
 
-        if (pos != array.size())
+        if (pos != array_size)
             return &(array[pos].row_ref);
 
         return nullptr;
@@ -325,5 +311,5 @@ private:
 // It only contains a std::unique_ptr which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
-AsofRowRefs createAsofRowRef(TypeIndex type);
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality);
 }

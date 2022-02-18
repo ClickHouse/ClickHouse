@@ -44,13 +44,29 @@ void callWithType(TypeIndex which, F && f)
 
 }
 
-AsofRowRefs createAsofRowRef(TypeIndex type)
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality)
 {
     AsofRowRefs a;
     auto call = [&](const auto & t)
     {
         using T = std::decay_t<decltype(t)>;
-        a = std::make_unique<SortedLookupVector<T>>();
+        switch (inequality)
+        {
+            case ASOF::Inequality::LessOrEquals:
+                a = std::make_unique<SortedLookupVector<T, ASOF::Inequality::LessOrEquals>>();
+                break;
+            case ASOF::Inequality::Less:
+                a = std::make_unique<SortedLookupVector<T, ASOF::Inequality::Less>>();
+                break;
+            case ASOF::Inequality::GreaterOrEquals:
+                a = std::make_unique<SortedLookupVector<T, ASOF::Inequality::GreaterOrEquals>>();
+                break;
+            case ASOF::Inequality::Greater:
+                a = std::make_unique<SortedLookupVector<T, ASOF::Inequality::Greater>>();
+                break;
+            default:
+                throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);
+        }
     };
 
     callWithType(type, call);
