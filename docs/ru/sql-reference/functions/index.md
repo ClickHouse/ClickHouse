@@ -73,9 +73,10 @@ ClickHouse может вызывать внешнюю программу или 
 
 -   `name` - имя функции.
 -   `command` - имя скрипта для выполнения или команды, если `execute_direct` равно false.
--   `argument` - описание аргумента, содержащее его тип во вложенной настройке `type`, и опционально его имя во вложенной настройке `name`. Каждый аргумент описывается отдельно. Указание имени для аргумента необходимо, если имена аргументов являются частью сериализации для пользовательского формата функции, например [Native](../../interfaces/formats.md#native) или [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `argument` - описание аргумента, содержащее его тип во вложенной настройке `type`, и опционально его имя во вложенной настройке `name`. Каждый аргумент описывается отдельно. Указание имени для аргумента необходимо, если имена аргументов являются частью сериализации для пользовательского формата функции, например [Native](../../interfaces/formats.md#native) или [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Значение имени аргумента по умолчанию `c` + номер аргумента.
 -   `format` - [формат](../../interfaces/formats.md) передачи аргументов.
 -   `return_type` - тип возвращаемого значения.
+-   `return_name` - имя возвращаемого значения. Указание имени возвращаемого значения необходимо, если имя возвращаемого значения является частью сериализации для пользовательского формата функции, например [Native](../../interfaces/formats.md#native) или [JSONEachRow](../../interfaces/formats .md#jsoneachrow). Необязательный. Значение по умолчанию — `result`.
 -   `type` - вариант запуска команды. Если задан вариант `executable`, то запускается одна команда. При указании `executable_pool` создается пул команд.
 -   `max_command_execution_time` - максимальное время в секундах, которое отводится на обработку блока данных. Эта настройка применима только для команд с вариантом запуска `executable_pool`. Необязательная настройка. Значение по умолчанию `10`.
 -   `command_termination_timeout` - максимальное время завершения команды в секундах после закрытия конвейера. Если команда не завершается, то процессу отправляется сигнал `SIGTERM`. Эта настройка применима только для команд с вариантом запуска `executable_pool`. Необязательная настройка. Значение по умолчанию `10`.
@@ -170,6 +171,59 @@ SELECT test_function_sum(2, 2);
 ┌─test_function_sum(2, 2)─┐
 │                       4 │
 └─────────────────────────┘
+```
+
+Создание `test_function_sum_json` с именноваными аргументами и форматом [JSONEachRow](../../interfaces/formats .md#jsoneachrow) с использованием конфигурации XML.
+Файл test_function.xml.
+```xml
+<function>
+    <type>executable</type>
+    <name>test_function_sum_json</name>
+    <return_type>UInt64</return_type>
+    <return_name>result_name</return_name>
+    <argument>
+        <type>UInt64</type>
+        <name>argument_1</name>
+    </argument>
+    <argument>
+        <type>UInt64</type>
+        <name>argument_2</name>
+    </argument>
+    <format>JSONEachRow</format>
+    <command>test_function_sum_json.py</command>
+</function>
+```
+
+Файл скрипта внутри папки `user_scripts` `test_function_sum_json.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+Запрос:
+
+``` sql
+SELECT test_function_sum_json(2, 2);
+```
+
+Результат:
+
+``` text
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
 ```
 
 ## Обработка ошибок {#obrabotka-oshibok}
