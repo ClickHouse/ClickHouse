@@ -71,8 +71,9 @@ FileCachePtr getCachePtrForDisk(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata path and cache base path must be different: {}", metadata_path);
 
     size_t max_cache_size = config.getUInt64(config_prefix + ".data_cache_max_size", 1024*1024*1024);
-    size_t max_cache_elements = config.getUInt64(config_prefix + ".data_cache_max_elements", 1024*1024);
+    size_t max_cache_elements = config.getUInt64(config_prefix + ".data_cache_max_elements", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS);
+    size_t max_file_segment_size = config.getUInt64(config_prefix + ".max_file_segment_size", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
-    return FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements);
+    return FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements, max_file_segment_size);
 }
 }
