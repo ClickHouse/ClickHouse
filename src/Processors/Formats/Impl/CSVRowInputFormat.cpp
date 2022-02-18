@@ -57,7 +57,7 @@ void CSVRowInputFormat::syncAfterError()
     skipToNextLineOrEOF(*in);
 }
 
-static void skipEndOfLine(ReadBuffer & in)
+void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
 
@@ -225,7 +225,7 @@ bool CSVFormatReader::readField(
     const DataTypePtr & type,
     const SerializationPtr & serialization,
     bool is_last_file_column,
-    const String & /*column_name*/)
+    [[maybe_unused]] const String & column_name)
 {
     skipWhitespacesAndTabs(*in);
 
@@ -254,8 +254,6 @@ bool CSVFormatReader::readField(
     {
         /// Read the column normally.
         serialization->deserializeTextCSV(column, *in, format_settings);
-
-        // TODO map struct union
         return true;
     }
 }

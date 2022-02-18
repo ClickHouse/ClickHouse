@@ -33,6 +33,15 @@ public:
 
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
+    bool readField(
+        IColumn & column,
+        const DataTypePtr & type,
+        const SerializationPtr & serialization,
+        bool is_last_file_column,
+        const String & column_name) override;
+
+    void skipFieldDelimiter() override;
+    void skipRowEndDelimiter() override;
 
 private:
     std::unique_ptr<PeekableReadBuffer> buf;

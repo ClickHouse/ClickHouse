@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #if USE_HIVE
 
@@ -48,6 +50,32 @@ std::vector<String> HiveTextFormatReader::readNames()
 std::vector<String> HiveTextFormatReader::readTypes()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
+}
+
+bool HiveTextFormatReader::readField(
+    IColumn & column,
+    [[maybe_unused]] const DataTypePtr & type,
+    [[maybe_unused]] const SerializationPtr & serialization,
+    [[maybe_unused]] bool is_last_file_column,
+    [[maybe_unused]] const String & column_name)
+{
+    String s;
+    readStringUntilChars(s, *in, {format_settings.hive_text.fields_delimiter});
+    ReadBufferFromString fbuf(s);
+    serialization->deserializeTextHiveText(column, fbuf, format_settings);
+    return true;
+}
+
+void HiveTextFormatReader::skipFieldDelimiter()
+{
+    assertChar(format_settings.hive_text.fields_delimiter, *in);
+}
+
+void HiveTextFormatReader::skipRowEndDelimiter()
+{
+    if (in->eof())
+        return;
+    skipEndOfLine(*in);
 }
 
 void registerInputFormatHiveText(FormatFactory & factory)

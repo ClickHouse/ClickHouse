@@ -83,4 +83,6 @@ private:
     ContextPtr context;
 };
 
+void skipEndOfLine(ReadBuffer & in);
+
 }
