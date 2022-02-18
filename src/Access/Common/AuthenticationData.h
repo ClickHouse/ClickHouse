@@ -85,7 +85,7 @@ public:
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
     const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
-    void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_) { ssl_certificate_common_names = std::move(common_names_); }
+    void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }

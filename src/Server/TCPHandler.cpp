@@ -1177,7 +1177,7 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    session->authenticate(user, password, socket());
+    session->authenticate(user, password, socket().peerAddress());
 }
 
 

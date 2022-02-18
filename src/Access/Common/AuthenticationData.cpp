@@ -210,4 +210,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+
+void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
+{
+    if (common_names_.empty())
+        throw Exception("The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.", ErrorCodes::BAD_ARGUMENTS);
+    ssl_certificate_common_names = std::move(common_names_);
+}
+
 }
