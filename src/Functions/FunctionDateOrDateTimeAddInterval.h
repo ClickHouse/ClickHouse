@@ -55,15 +55,8 @@ struct AddNanosecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        try
-        {
-            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
-            return t * multiplier + delta;
-        }
-        catch (...)
-        {
-            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
+        return static_cast<DateTime64>(t * multiplier + delta);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -106,22 +99,8 @@ struct AddMicrosecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        try
-        {
-            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
-            if (scale <= 6)
-            {
-                return t * multiplier + delta;
-            }
-            else
-            {
-                return t + delta * multiplier;
-            }
-        }
-        catch (...)
-        {
-            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
+        return static_cast<DateTime64>(scale <= 6 ? t * multiplier + delta : t + delta * multiplier);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -164,22 +143,8 @@ struct AddMillisecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        try
-        {
-            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
-            if (scale <= 3)
-            {
-                return t * multiplier + delta;
-            }
-            else
-            {
-                return t + delta * multiplier;
-            }
-        }
-        catch (...)
-        {
-            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        }
+        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
+        return static_cast<DateTime64>(scale <= 3 ? t * multiplier + delta : t + delta * multiplier);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -212,7 +177,7 @@ struct AddSecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        return static_cast<DateTime64>(t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -245,7 +210,7 @@ struct AddMinutesImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        return static_cast<DateTime64>(t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -278,7 +243,7 @@ struct AddHoursImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        return t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        return static_cast<DateTime64>(t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale));
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -313,7 +278,7 @@ struct AddDaysImpl
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
+        return static_cast<DateTime64>(time_zone.addDays(d.quot, delta) * multiplier + d.rem);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -347,7 +312,7 @@ struct AddWeeksImpl
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
+        return static_cast<DateTime64>(time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem);
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -381,7 +346,7 @@ struct AddMonthsImpl
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
+        return static_cast<DateTime64>(time_zone.addMonths(d.quot, delta) * multiplier + d.rem);
     }
 
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -415,7 +380,7 @@ struct AddQuartersImpl
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
+        return static_cast<DateTime64>(time_zone.addQuarters(d.quot, delta) * multiplier + d.rem);
     }
 
     static inline UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone, UInt16 = 0)
@@ -449,7 +414,7 @@ struct AddYearsImpl
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         auto d = std::div(t, multiplier);
-        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
+        return static_cast<DateTime64>(time_zone.addYears(d.quot, delta) * multiplier + d.rem);
     }
 
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, UInt16 = 0)
