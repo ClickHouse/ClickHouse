@@ -32,9 +32,7 @@ void MutatePlainMergeTreeTask::prepare()
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        settings.memory_profiler_step,
-        settings.memory_profiler_sample_probability,
-        settings.max_untracked_memory);
+        settings);
 
     stopwatch = std::make_unique<Stopwatch>();
 

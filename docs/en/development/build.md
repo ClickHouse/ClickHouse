@@ -23,7 +23,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install clang-13 (recommended) {#install-clang-13}
+### Install the latest clang (recommended)
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
@@ -33,12 +33,14 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use clang-13 for Builds
+#### Use the latest clang for Builds
 
 ``` bash
-$ export CC=clang-13
-$ export CXX=clang++-13
+$ export CC=clang-14
+$ export CXX=clang++-14
 ```
+
+In this example we use version 14 that is the latest as of Feb 2022.
 
 Gcc can also be used though it is discouraged.
 
