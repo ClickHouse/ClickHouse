@@ -97,7 +97,8 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(const std::strin
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
-        && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm);
+        && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
+        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names);
 }
 
 
@@ -209,18 +210,4 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void AuthenticationData::clearAllowedCertificates()
-{
-    allowed_certificates.clear();
-}
-
-void AuthenticationData::addSSLCertificateCommonName(const String & x509CommonName)
-{
-    allowed_certificates.insert(x509CommonName);
-}
-
-bool AuthenticationData::containsSSLCertificateCommonName(const String & x509CommonName) const
-{
-    return allowed_certificates.find(x509CommonName) != allowed_certificates.end();
-}
 }

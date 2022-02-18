@@ -115,16 +115,18 @@ namespace
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
             config.keys(certificates_config, keys);
-            user->auth_data.clearAllowedCertificates();
+            boost::container::flat_set<String> common_names;
             for (const String & key : keys)
             {
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->auth_data.addSSLCertificateCommonName(value);
+                    common_names.insert(std::move(value));
                 }
                 else
-                    throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);            }
+                    throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
+            }
+            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
 
         const auto profile_name_config = user_config + ".profile";

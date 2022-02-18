@@ -95,3 +95,23 @@ def test_https_non_ssl_auth():
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="jane", enable_ssl_auth=False, password='qwe123', cert_name='wrong')
     assert "unknown ca" in str(err.value)
+
+
+def test_create_user():
+    instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
+    assert execute_query_https("SELECT currentUser()", user="emma", cert_name='client3') == "emma\n"
+    assert instance.query("SHOW CREATE USER emma") == "CREATE USER emma IDENTIFIED WITH ssl_certificate CN \\'client3\\'\n"
+
+    instance.query("ALTER USER emma IDENTIFIED WITH ssl_certificate CN 'client2'")
+    assert execute_query_https("SELECT currentUser()", user="emma", cert_name='client2') == "emma\n"
+    assert instance.query("SHOW CREATE USER emma") == "CREATE USER emma IDENTIFIED WITH ssl_certificate CN \\'client2\\'\n"
+
+    with pytest.raises(Exception) as err:
+        execute_query_https("SELECT currentUser()", user="emma", cert_name='client3')
+    assert "HTTP Error 403" in str(err.value)
+
+    assert instance.query("SHOW CREATE USER lucy") == "CREATE USER lucy IDENTIFIED WITH ssl_certificate CN \\'client2\\', \\'client3\\'\n"
+
+    assert instance.query("SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name") ==\
+        "emma\tssl_certificate\t{\"common_names\":[\"client2\"]}\n"\
+        "lucy\tssl_certificate\t{\"common_names\":[\"client2\",\"client3\"]}\n"
