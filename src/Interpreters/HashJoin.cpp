@@ -619,7 +619,7 @@ namespace
 
             TypeIndex asof_type = *join.getAsofType();
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type(createAsofRowRef(asof_type));
+                time_series_map = new (time_series_map) typename Map::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
             (*time_series_map)->insert(asof_column, stored_block, i);
         }
     };
@@ -909,7 +909,6 @@ public:
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
-        , asof_inequality(join.getAsofInequality())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -991,7 +990,6 @@ public:
         }
     }
 
-    ASOF::Inequality asofInequality() const { return asof_inequality; }
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -1006,7 +1004,6 @@ private:
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
     /// for ASOF
-    ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
 
     bool is_join_get;
@@ -1235,10 +1232,9 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 auto & mapped = find_result.getMapped();
                 if constexpr (jf.is_asof_join)
                 {
-                    ASOF::Inequality asof_inequality = added_columns.asofInequality();
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    if (const RowRef * found = mapped->findAsof(asof_inequality, left_asof_key, i))
+                    if (const RowRef * found = mapped->findAsof(left_asof_key, i))
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)
