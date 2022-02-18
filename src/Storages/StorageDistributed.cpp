@@ -739,9 +739,16 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
 
     if (!storage_src || storage_src->getClusterName() != getClusterName())
     {
-        LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible (source cluster={}, destination cluster={})",
-            storage_src ? storage_src->getClusterName() : "<not a Distributed table>",
-            getClusterName());
+        /// The warning should be produced only for root queries,
+        /// since in case of parallel_distributed_insert_select=1,
+        /// it will produce warning for the rewritten insert,
+        /// since destination table is still Distributed there.
+        if (local_context->getClientInfo().distributed_depth == 0)
+        {
+            LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible (source cluster={}, destination cluster={})",
+                storage_src ? storage_src->getClusterName() : "<not a Distributed table>",
+                getClusterName());
+        }
         return nullptr;
     }
 
