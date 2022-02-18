@@ -56,6 +56,8 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
+#include <TableFunctions/TableFunctionView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -723,15 +725,27 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
                 storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
                 if (storage_src)
                 {
-                    const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-                    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+                    /// Unwrap view() function.
+                    if (storage_src->remote_table_function_ptr)
+                    {
+                        const TableFunctionPtr src_table_function =
+                            TableFunctionFactory::instance().get(storage_src->remote_table_function_ptr, local_context);
+                        const TableFunctionView * view_function =
+                            assert_cast<const TableFunctionView *>(src_table_function.get());
+                        new_query->select = view_function->getSelectQuery().clone();
+                    }
+                    else
+                    {
+                        const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+                        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
-                    auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select_query->clone());
-                    select_with_union_query->list_of_selects->children.push_back(new_select_query);
+                        auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select_query->clone());
+                        select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
-                    new_select_query->replaceDatabaseAndTable(storage_src->getRemoteDatabaseName(), storage_src->getRemoteTableName());
+                        new_select_query->replaceDatabaseAndTable(storage_src->getRemoteDatabaseName(), storage_src->getRemoteTableName());
 
-                    new_query->select = select_with_union_query;
+                        new_query->select = select_with_union_query;
+                    }
                 }
             }
         }
