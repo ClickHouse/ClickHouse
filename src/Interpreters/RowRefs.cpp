@@ -50,14 +50,14 @@ AsofRowRefs createAsofRowRef(TypeIndex type)
     auto call = [&](const auto & t)
     {
         using T = std::decay_t<decltype(t)>;
-        a = std::make_unique<AsofRowRefDerived<T>>();
+        a = std::make_unique<SortedLookupVector<T>>();
     };
 
     callWithType(type, call);
     return a;
 }
 
-std::optional<TypeIndex> AsofRowRefsBase::getTypeSize(const IColumn & asof_column, size_t & size)
+std::optional<TypeIndex> SortedLookupVectorBase::getTypeSize(const IColumn & asof_column, size_t & size)
 {
     TypeIndex idx = asof_column.getDataType();
 

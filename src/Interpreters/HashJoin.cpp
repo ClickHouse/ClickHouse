@@ -310,7 +310,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
                 throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 
             size_t asof_size;
-            asof_type = AsofRowRefsBase::getTypeSize(*key_columns.back(), asof_size);
+            asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
             /// this is going to set up the appropriate hash table for the direct lookup part of the join
