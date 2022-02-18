@@ -127,7 +127,7 @@ bool isNullable(const DataTypePtr & type)
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
-    if (type->isNullable())
+    if (isNullable(type))
         return type;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
