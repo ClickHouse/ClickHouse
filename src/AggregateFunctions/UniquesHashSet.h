@@ -70,11 +70,11 @@ struct UniquesHashSetDefaultHash
 
 #define ADDR_HAS_TYPE(NAME) \
     template <typename, typename = void> \
-    struct addr_has_type_##NAME : std::false_type \
+    struct addrHasType##NAME : std::false_type \
     { \
     }; \
     template <typename T> \
-    struct addr_has_type_##NAME<T, std::void_t<typename T::NAME>> : std::true_type \
+    struct addrHasType##NAME<T, std::void_t<typename T::NAME>> : std::true_type \
     { \
     };
 
@@ -82,7 +82,7 @@ ADDR_HAS_TYPE(Buf);
 ADDR_HAS_TYPE(Value);
 template <class T>
 concept UniqueHashAddressable
-    = addr_has_type_Buf<T>::value && addr_has_type_Value<T>::value && std::is_pointer<typename T::Buf>::value && requires(
+    = addrHasTypeBuf<T>::value && addrHasTypeValue<T>::value && std::is_pointer<typename T::Buf>::value && requires(
         typename T::Buf buf, size_t start_index, size_t max_index, typename T::Value x, size_t mask)
 {
     {
