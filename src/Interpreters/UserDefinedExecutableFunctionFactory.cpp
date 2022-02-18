@@ -91,8 +91,7 @@ public:
             column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
 
             const auto & argument = configuration.arguments[i];
-            if (argument.name)
-                column_with_type.name = *argument.name;
+            column_with_type.name = argument.name;
 
             const auto & argument_type = argument.type;
 
@@ -106,7 +105,7 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        ColumnWithTypeAndName result(result_type, "result");
+        ColumnWithTypeAndName result(result_type, configuration.result_name);
         Block result_block({result});
 
         Block arguments_block(arguments_copy);

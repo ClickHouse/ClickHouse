@@ -13,7 +13,7 @@ namespace DB
 struct UserDefinedExecutableFunctionArgument
 {
     DataTypePtr type;
-    std::optional<String> name;
+    String name;
 };
 
 struct UserDefinedExecutableFunctionConfiguration
@@ -23,6 +23,7 @@ struct UserDefinedExecutableFunctionConfiguration
     std::vector<std::string> command_arguments;
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
     DataTypePtr result_type;
+    String result_name;
 };
 
 class UserDefinedExecutableFunction final : public IExternalLoadable
