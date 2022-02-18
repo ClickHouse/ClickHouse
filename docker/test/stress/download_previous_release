@@ -10,14 +10,12 @@ CLICKHOUSE_COMMON_STATIC_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHous
 CLICKHOUSE_COMMON_STATIC_DBG_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-common-static-dbg_{version}_amd64.deb"
 CLICKHOUSE_SERVER_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-server_{version}_all.deb"
 CLICKHOUSE_CLIENT_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-client_{version}_amd64.deb"
-CLICKHOUSE_TEST_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-test_{version}_amd64.deb"
 
 
 CLICKHOUSE_COMMON_STATIC_PACKET_NAME = "clickhouse-common-static_{version}_amd64.deb"
 CLICKHOUSE_COMMON_STATIC_DBG_PACKET_NAME = "clickhouse-common-static-dbg_{version}_amd64.deb"
 CLICKHOUSE_SERVER_PACKET_NAME = "clickhouse-server_{version}_all.deb"
 CLICKHOUSE_CLIENT_PACKET_NAME = "clickhouse-client_{version}_all.deb"
-CLICKHOUSE_TEST_PACKET_NAME = "clickhouse-test_{version}_all.deb"
 
 PACKETS_DIR = "previous_release_package_folder/"
 VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
@@ -90,10 +88,6 @@ def download_packets(release):
 
     download_packet(CLICKHOUSE_CLIENT_DOWNLOAD_URL.format(version=release.version, type=release.type),
                     CLICKHOUSE_CLIENT_PACKET_NAME.format(version=release.version))
-
-    download_packet(CLICKHOUSE_TEST_DOWNLOAD_URL.format(version=release.version, type=release.type),
-                    CLICKHOUSE_TEST_PACKET_NAME.format(version=release.version))
-
 
 
 if __name__ == '__main__':
