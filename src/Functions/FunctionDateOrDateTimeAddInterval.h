@@ -55,8 +55,15 @@ struct AddNanosecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
-        return t * multiplier + delta;
+        try
+        {
+            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9 - scale);
+            return t * multiplier + delta;
+        }
+        catch (...)
+        {
+            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        }
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -99,16 +106,22 @@ struct AddMicrosecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
-        if (scale <= 6)
+        try
         {
-            return t * multiplier + delta;
+            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(6 - scale));
+            if (scale <= 6)
+            {
+                return t * multiplier + delta;
+            }
+            else
+            {
+                return t + delta * multiplier;
+            }
         }
-        else
+        catch (...)
         {
-            return t + delta * multiplier;
+            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
-
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -151,16 +164,22 @@ struct AddMillisecondsImpl
     static inline DateTime64
     execute(DateTime64 t, Int64 delta, const DateLUTImpl &, UInt16 scale = 0)
     {
-        Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
-        if (scale <= 3)
+        try
         {
-            return t * multiplier + delta;
+            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(std::abs(3 - scale));
+            if (scale <= 3)
+            {
+                return t * multiplier + delta;
+            }
+            else
+            {
+                return t + delta * multiplier;
+            }
         }
-        else
+        catch (...)
         {
-            return t + delta * multiplier;
+            throw Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
-
     }
 
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, UInt16 = 0)
