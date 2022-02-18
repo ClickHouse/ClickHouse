@@ -615,7 +615,7 @@ namespace
                                              const IColumn & asof_column)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
-            AsofRowRefs * time_series_map = &emplace_result.getMapped();
+            typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
 
             TypeIndex asof_type = *join.getAsofType();
             if (emplace_result.isInserted())

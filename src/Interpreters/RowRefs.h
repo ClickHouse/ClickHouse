@@ -15,8 +15,6 @@
 #include <Common/Arena.h>
 
 
-#include <base/logger_useful.h>
-
 namespace DB
 {
 
@@ -199,8 +197,6 @@ public:
     /// Loosely based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described
     /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
-
-
     size_t boundSearch(TKey value)
     {
         size_t size = array.size();
