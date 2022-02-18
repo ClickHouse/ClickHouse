@@ -6,7 +6,7 @@ from typing import List, Optional
 import argparse
 import logging
 
-from git_helper import commit
+from git_helper import commit, release_branch
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     ClickHouseVersion,
@@ -26,6 +26,7 @@ class Release:
         self._version = version
         self._git = version._git
         self._release_commit = ""
+        self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
 
     def run(self, cmd: str, cwd: Optional[str] = None) -> str:
@@ -34,6 +35,14 @@ class Release:
             cwd_text = f" (CWD='{cwd}')"
         logging.info("Running command%s:\n    %s", cwd_text, cmd)
         return self._git.run(cmd, cwd)
+
+    def set_release_branch(self, release_type):
+        # Get the actual version for the commit before check
+        with self._checkout(self.release_commit, True):
+            self.update()
+            self.release_branch = f"{self.version.major}.{self.version.minor}"
+
+        self.update()
 
     def update(self):
         self._git.update()
@@ -45,6 +54,8 @@ class Release:
         if not args.no_check_dirty:
             logging.info("Checking if repo is clean")
             self.run("git diff HEAD --exit-code")
+
+        self.set_release_branch(args.release_type)
 
         if not args.no_check_branch:
             self.check_branch(args.release_type)
@@ -75,18 +86,22 @@ class Release:
         if release_type in self.BIG:
             # Commit to spin up the release must belong to a main branch
             branch = "master"
-            output = self.run(f"git branch --contains={self.release_commit} '{branch}'")
+            output = self.run(f"git branch --contains={self.release_commit} {branch}")
             if branch not in output:
                 raise Exception(
-                    f"commit {self.release_commit} must belong to 'master' for "
+                    f"commit {self.release_commit} must belong to {branch} for "
                     f"{release_type} release"
                 )
             return
         elif release_type in self.SMALL:
-            branch = f"{self.version.major}.{self.version.minor}"
-            output = self.run(f"git branch --contains={self.release_commit} '{branch}'")
-            if branch not in output:
-                raise Exception(f"branch must be '{branch}' for {release_type} release")
+            output = self.run(
+                f"git branch --contains={self.release_commit} {self.release_branch}"
+            )
+            if self.release_branch not in output:
+                raise Exception(
+                    f"commit {self.release_commit} must be in "
+                    f"'{self.release_branch}' branch for {release_type} release"
+                )
             return
 
     def log_rollback(self):
@@ -103,13 +118,12 @@ class Release:
         self.check_no_tags_after()
         # Create release branch
         self.update()
-        release_branch = f"{self.version.major}.{self.version.minor}"
-        with self._create_branch(release_branch, self.release_commit):
-            with self._checkout(release_branch, True):
+        with self._create_branch(self.release_branch, self.release_commit):
+            with self._checkout(self.release_branch, True):
                 self.update()
                 self.version.with_description(VersionType.PRESTABLE)
                 with self._create_gh_release(args):
-                    with self._bump_prestable_version(release_branch, args):
+                    with self._bump_prestable_version(args):
                         # At this point everything will rollback automatically
                         yield
 
@@ -137,6 +151,14 @@ class Release:
         self._version = version
 
     @property
+    def release_branch(self) -> str:
+        return self._release_branch
+
+    @release_branch.setter
+    def release_branch(self, branch: str):
+        self._release_branch = release_branch(branch)
+
+    @property
     def release_commit(self) -> str:
         return self._release_commit
 
@@ -145,7 +167,7 @@ class Release:
         self._release_commit = commit(release_commit)
 
     @contextmanager
-    def _bump_prestable_version(self, release_branch: str, args: argparse.Namespace):
+    def _bump_prestable_version(self, args: argparse.Namespace):
         self._git.update()
         new_version = self.version.patch_update()
         new_version.with_description("prestable")
@@ -154,19 +176,20 @@ class Release:
         self.run(
             f"git commit -m 'Update version to {new_version.string}' '{cmake_path}'"
         )
-        with self._push(release_branch, args):
+        with self._push(self.release_branch, args):
             with self._create_gh_label(
-                f"v{release_branch}-must-backport", "10dbed", args
+                f"v{self.release_branch}-must-backport", "10dbed", args
             ):
                 with self._create_gh_label(
-                    f"v{release_branch}-affected", "c2bfff", args
+                    f"v{self.release_branch}-affected", "c2bfff", args
                 ):
                     self.run(
-                        f"gh pr create --repo {args.repo} --title 'Release pull "
-                        f"request for branch {release_branch}' --head {release_branch} "
+                        f"gh pr create --repo {args.repo} --title "
+                        f"'Release pull request for branch {self.release_branch}' "
+                        f"--head {self.release_branch}  --label release "
                         "--body 'This PullRequest is a part of ClickHouse release "
                         "cycle. It is used by CI system only. Do not perform any "
-                        "changes with it.' --label release"
+                        "changes with it.'"
                     )
                     # Here the prestable part is done
                     yield
