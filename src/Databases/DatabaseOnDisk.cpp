@@ -107,7 +107,7 @@ std::pair<String, StoragePtr> createTableFromAST(
 }
 
 
-String getObjectDefinitionFromCreateQuery(const ASTPtr & query, const ColumnsDescription & columns_description)
+String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 {
     ASTPtr query_clone = query->clone();
     auto * create = query_clone->as<ASTCreateQuery>();
@@ -118,8 +118,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query, const ColumnsDes
         formatAST(*query, query_buf, true);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
     }
-
-    addColumnsDescriptionToCreateQueryIfNecessary(*create, columns_description);
 
     if (!create->is_dictionary)
         create->attach = true;
@@ -151,30 +149,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query, const ColumnsDes
     return statement_buf.str();
 }
 
-void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const ColumnsDescription & columns_description)
-{
-    if (columns_description.empty() || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
-        return;
-
-    String columns_str = columns_description.toExpressionList();
-    Tokens tokens(columns_str.data(), columns_str.data() + columns_str.size());
-    IParser::Pos token_iterator(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-    ParserTablePropertiesDeclarationList table_properties_p;
-    Expected expected;
-    ASTPtr columns_list;
-
-    assert(table_properties_p.parse(token_iterator, columns_list, expected));
-
-    if (!create.columns_list)
-        create.set(create.columns_list, columns_list);
-    else
-    {
-        ASTPtr columns = std::make_shared<ASTExpressionList>();
-        columns->children = assert_cast<ASTColumns *>(columns_list.get())->columns->children;
-        create.columns_list->set(create.columns_list->columns, columns);
-    }
-}
 
 DatabaseOnDisk::DatabaseOnDisk(
     const String & name,
@@ -248,7 +222,7 @@ void DatabaseOnDisk::createTable(
     String statement;
 
     {
-        statement = getObjectDefinitionFromCreateQuery(query, table->getInMemoryMetadataPtr()->getColumns());
+        statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);

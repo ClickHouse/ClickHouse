@@ -1185,6 +1185,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.columns,
             properties.constraints,
             false);
+
+        /// If schema wes inferred while storage creation, add columns description to create query.
+        addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1481,6 +1484,32 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
         String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);
         elem.query_databases.insert(database);
         elem.query_tables.insert(database + "." + backQuoteIfNeed(as_table_saved));
+    }
+}
+
+void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
+{
+    if (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty())
+        return;
+
+    auto ast_engine = std::make_shared<ASTFunction>();
+    ast_engine->name = storage->getName();
+    auto ast_storage = std::make_shared<ASTStorage>();
+    ast_storage->set(ast_storage->engine, ast_engine);
+
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, true);
+    auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
+
+    if (!create.columns_list)
+    {
+        ASTPtr columns_list = std::make_shared<ASTColumns>(*create_query_from_storage.columns_list);
+        create.set(create.columns_list, columns_list);
+    }
+    else
+    {
+        ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
+        create.columns_list->set(create.columns_list->columns, columns);
     }
 }
 

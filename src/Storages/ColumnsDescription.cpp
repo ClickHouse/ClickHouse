@@ -61,7 +61,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf, bool add_line_return) const
+void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -97,8 +97,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, bool add_line_return) const
         writeEscapedString(queryToString(ttl), buf);
     }
 
-    if (add_line_return)
-        writeChar('\n', buf);
+    writeChar('\n', buf);
 }
 
 void ColumnDescription::readText(ReadBuffer & buf)
@@ -647,21 +646,6 @@ String ColumnsDescription::toString() const
 
     for (const ColumnDescription & column : columns)
         column.writeText(buf);
-
-    return buf.str();
-}
-
-String ColumnsDescription::toExpressionList() const
-{
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const ColumnDescription & column : columns)
-    {
-        if (!first)
-            writeCString(", ", buf);
-        first = false;
-        column.writeText(buf, false);
-    }
 
     return buf.str();
 }

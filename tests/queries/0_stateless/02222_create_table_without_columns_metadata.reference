@@ -1,5 +1,2 @@
-(
-    `y` Nullable(String),
-    `x` Nullable(Float64)
-)
-ENGINE = File('JSONEachRow', 'data.jsonl')
+CREATE TABLE test.test\n(\n    `y` Nullable(String),\n    `x` Nullable(Float64)\n)\nENGINE = File(\'JSONEachRow\', \'data.jsonl\')
+OK

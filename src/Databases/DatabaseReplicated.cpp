@@ -813,7 +813,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
-        String statement = getObjectDefinitionFromCreateQuery(query.clone(), table->getInMemoryMetadataPtr()->getColumns());
+        String statement = getObjectDefinitionFromCreateQuery(query.clone());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
