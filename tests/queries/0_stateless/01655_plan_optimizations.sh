@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 8 and y - 4
