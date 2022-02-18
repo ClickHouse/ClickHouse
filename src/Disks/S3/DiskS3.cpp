@@ -267,6 +267,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     {
         pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
         {
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+
             callback();
         });
     };
