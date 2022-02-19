@@ -227,7 +227,6 @@ off_t ReadBufferFromS3::getPosition()
 
 void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
-    /// TODO: Adjust code to make it possible to do > instead of !=.
     if (position != static_cast<size_t>(read_until_position))
     {
         read_until_position = position;

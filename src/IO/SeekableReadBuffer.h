@@ -39,9 +39,25 @@ public:
      */
     virtual off_t getPosition() = 0;
 
+    struct Range
+    {
+        size_t left;
+        std::optional<size_t> right;
+    };
+
+    /**
+     * Returns a struct, where `left` is current read position in file and `right` is the
+     * last included offset for reading according to setReadUntilPosition() or setReadUntilEnd().
+     * E.g. next nextImpl() call will read within range [left, right].
+     */
+    virtual Range getRemainingReadRange() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRemainingReadRange() not implemented");
+    }
+
     virtual String getInfoForLog() { return ""; }
 
-    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;

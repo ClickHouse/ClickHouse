@@ -16,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
@@ -213,22 +212,6 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
-
-    struct Range
-    {
-        size_t left;
-        std::optional<size_t> right;
-    };
-
-    /**
-     * Returns a struct, where `left` is current read position in file and `right` is the
-     * last included offset for reading according to setReadUntilPosition() or setReadUntilEnd().
-     * E.g. next nextImpl() call will read within range [left, right].
-     */
-    virtual Range getRemainingReadRange() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented");
-    }
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
