@@ -65,7 +65,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lo = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lo = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_lo)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -75,7 +79,7 @@ public:
                 getName());
         const auto & data_low = col_lo->getData();
 
-        const auto * col_hi = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
+        const auto * col_hi = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
         if (!col_hi)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -85,7 +89,7 @@ public:
                 getName());
         const auto & data_hi = col_hi->getData();
 
-        const auto * col_point = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
+        const auto * col_point = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
         if (!col_point)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
