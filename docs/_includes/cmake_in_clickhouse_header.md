@@ -6,8 +6,8 @@ Minimal ClickHouse build example:
 
 ```bash
 cmake .. \
-    -DCMAKE_C_COMPILER=$(which clang-13) \
-    -DCMAKE_CXX_COMPILER=$(which clang++-13) \
+    -DCMAKE_C_COMPILER=$(which clang-14) \
+    -DCMAKE_CXX_COMPILER=$(which clang++-14) \
     -DCMAKE_BUILD_TYPE=Debug \
     -DENABLE_CLICKHOUSE_ALL=OFF \
     -DENABLE_CLICKHOUSE_SERVER=ON \

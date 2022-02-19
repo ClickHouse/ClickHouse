@@ -76,7 +76,7 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
 -   Ninja
--   C++ compiler: clang-13 or newer
+-   C++ compiler: clang-14 or newer
 -   Linker: lld
 
 If all the components are installed, you may build in the same way as the steps above.

@@ -9,14 +9,14 @@ This is for the case when you have Linux machine and want to use it to build `cl
 
 The cross-build for Mac OS X is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-13
+## Install Clang-14
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
 
 ``` bash
-sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-13 main" >> /etc/apt/sources.list
-sudo apt-get install clang-13
+sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-14 main" >> /etc/apt/sources.list
+sudo apt-get install clang-14
 ```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}

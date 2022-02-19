@@ -8,7 +8,7 @@ FROM clickhouse/binary-builder:$FROM_TAG
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-13 libllvm13 libclang-13-dev libmlir-13-dev
+RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-14 libllvm14 libclang-14-dev libmlir-14-dev
 
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
