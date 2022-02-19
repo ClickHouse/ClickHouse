@@ -113,6 +113,23 @@ namespace JoinStuff
         }
     }
 
+    template <bool use_flags, bool multiple_disjuncts>
+    void JoinUsedFlags::setUsed(const Block * block, size_t row_num, size_t offset)
+    {
+        if constexpr (!use_flags)
+            return;
+
+        /// Could be set simultaneously from different threads.
+        if constexpr (multiple_disjuncts)
+        {
+            flags[block][row_num].store(true, std::memory_order_relaxed);
+        }
+        else
+        {
+            flags[nullptr][offset].store(true, std::memory_order_relaxed);
+        }
+    }
+
     template <bool use_flags, bool multiple_disjuncts, typename FindResult>
     bool JoinUsedFlags::getUsed(const FindResult & f)
     {
@@ -1234,15 +1251,16 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    if (const RowRef * found = mapped->findAsof(left_asof_key, i))
+                    auto [block, row_num] = mapped->findAsof(left_asof_key, i);
+                    if (block)
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)
-                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(FindResultImpl<const RowRef, false>(found, true, 0));
+                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(block, row_num, 0);
                         else
                             used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
 
-                        added_columns.appendFromBlock<jf.add_missing>(*found->block, found->row_num);
+                        added_columns.appendFromBlock<jf.add_missing>(*block, row_num);
                     }
                     else
                         addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);
