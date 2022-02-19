@@ -73,7 +73,7 @@ public:
 
     nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; }
 
-    void system_exit(const int /* exit_code */) override {}
+    void system_exit(const int exit_code) override;
 
     int getPort() const
     {
