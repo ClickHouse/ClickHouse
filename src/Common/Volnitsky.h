@@ -110,6 +110,7 @@ namespace VolnitskyTraits
 
         return true;
     }
+
     template <typename Callback>
     static inline bool putNGramUTF8CaseInsensitive(
         const UInt8 * pos, int offset, const UInt8 * begin, size_t size, Callback && putNGramBase)
