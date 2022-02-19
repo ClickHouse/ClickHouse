@@ -55,11 +55,15 @@ struct MergedBlockOutputStream::Finalizer::Impl
 {
     IMergeTreeDataPartWriter & writer;
     MergeTreeData::MutableDataPartPtr part;
+    NameSet files_to_remove_after_finish;
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     bool sync;
 
-    Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, bool sync_)
-        : writer(writer_), part(std::move(part_)), sync(sync_) {}
+    Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, const NameSet & files_to_remove_after_finish_, bool sync_)
+        : writer(writer_)
+        , part(std::move(part_))
+        , files_to_remove_after_finish(files_to_remove_after_finish_)
+        , sync(sync_) {}
 
     void finish();
 };
@@ -74,6 +78,10 @@ void MergedBlockOutputStream::Finalizer::finish()
 void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
+
+    auto disk = part->volume->getDisk();
+    for (const auto & file_name: files_to_remove_after_finish)
+        disk->removeFile(part->getFullRelativePath() + file_name);
 
     for (auto & file : written_files)
     {
@@ -133,19 +141,20 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
 
+    NameSet files_to_remove_after_sync;
     if (reset_columns)
     {
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
         serialization_infos.replaceData(new_serialization_infos);
-        removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+        files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
         new_part->setColumns(part_columns);
         new_part->setSerializationInfos(serialization_infos);
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, sync);
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
