@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 select geoToH3(toFloat64(0),toFloat64(1),arrayJoin([1,2]));
 select h3ToParent(641573946153969375, arrayJoin([1,2]));
 SELECT h3HexAreaM2(arrayJoin([1,2]));
