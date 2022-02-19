@@ -144,7 +144,6 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionState.cpp
     AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
-
 list (APPEND dbms_headers
     AggregateFunctions/IAggregateFunction.h
     AggregateFunctions/IAggregateFunctionCombinator.h
@@ -155,10 +154,23 @@ list (APPEND dbms_headers
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources TableFunctions/ITableFunction.cpp TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers TableFunctions/ITableFunction.h   TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources Dictionaries/DictionaryFactory.cpp Dictionaries/DictionarySourceFactory.cpp Dictionaries/DictionaryStructure.cpp  Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers Dictionaries/DictionaryFactory.h   Dictionaries/DictionarySourceFactory.h   Dictionaries/DictionaryStructure.h Dictionaries/getDictionaryConfigurationFromAST.h)
+list (APPEND dbms_sources
+    TableFunctions/ITableFunction.cpp
+    TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers
+    TableFunctions/ITableFunction.h
+    TableFunctions/TableFunctionFactory.h)
+
+list (APPEND dbms_sources
+    Dictionaries/DictionaryFactory.cpp
+    Dictionaries/DictionarySourceFactory.cpp
+    Dictionaries/DictionaryStructure.cpp
+    Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers
+    Dictionaries/DictionaryFactory.h
+    Dictionaries/DictionarySourceFactory.h
+    Dictionaries/DictionaryStructure.h
+    Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
