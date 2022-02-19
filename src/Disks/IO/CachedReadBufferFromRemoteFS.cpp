@@ -275,9 +275,6 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
     LOG_TEST(log, "Current file segment: {}, read type: {}, current file offset: {}",
              range.toString(), toString(read_type), file_offset_of_buffer_end);
 
-    /// TODO: For remote FS read need to set maximum possible right offset -- of
-    /// the last empty segment and in s3 buffer check > instead of !=.
-
     // auto last_non_downloaded_offset = getLastNonDownloadedOffset();
     // implementation_buffer->setReadUntilPosition(last_non_downloaded_offset ? *last_non_downloaded_offset : range.right + 1); /// [..., range.right]
     implementation_buffer->setReadUntilPosition(range.right + 1); /// [..., range.right]
@@ -477,7 +474,7 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
                 if (bytes_to_predownload)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Failed to predownload remaing {} bytes. Current file segment: {}, current download offset: {}, expected: {}, eof: {}",
+                        "Failed to predownload remaining {} bytes. Current file segment: {}, current download offset: {}, expected: {}, eof: {}",
                         file_segment->range().toString(), file_segment->getDownloadOffset(), file_offset_of_buffer_end, impl->eof());
 
                 result = impl->hasPendingData();
