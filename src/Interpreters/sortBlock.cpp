@@ -41,15 +41,14 @@ struct PartialSortingLessImpl
 
     explicit PartialSortingLessImpl(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
 
-    inline bool operator()(size_t a, size_t b) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
+        int res = 0;
+
         for (const auto & elem : columns)
         {
-            int res;
-
             if (elem.column_const)
             {
-                res = 0;
                 continue;
             }
 
@@ -57,25 +56,31 @@ struct PartialSortingLessImpl
             {
                 if (isCollationRequired(elem.description))
                 {
-                    res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description.nulls_direction, *elem.description.collator);
+                    res = elem.column->compareAtWithCollation(lhs, rhs, *elem.column, elem.description.nulls_direction, *elem.description.collator);
                 }
                 else
                 {
-                    res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
+                    res = elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
                 }
             }
             else
             {
-                res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
+                res = elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
             }
 
             res *= elem.description.direction;
-            if (res < 0)
-                return true;
-            else if (res > 0)
-                return false;
+
+            if (res != 0)
+                break;
         }
-        return false;
+
+        return res;
+    }
+
+    ALWAYS_INLINE bool operator()(size_t lhs, size_t rhs) const
+    {
+        int res = compare(lhs, rhs);
+        return res < 0;
     }
 };
 
@@ -221,19 +226,56 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     }
 }
 
+IColumn::Permutation sortGetPermutation(const Block & block, const SortDescription & description)
+{
+    IColumn::Permutation result;
+
+    size_t size = block.rows();
+    result.resize(size);
+
+    for (size_t i = 0; i < size; ++i)
+        result[i] = i;
+
+    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    auto comparator = PartialSortingLess(columns_with_sort_desc);
+
+    ::sort(result.begin(), result.end(), [&](size_t lhs, size_t rhs){
+        int compare_result = comparator.compare(lhs, rhs);
+
+        if (compare_result < 0)
+            return true;
+        if (compare_result > 0)
+            return false;
+        else
+            return lhs < rhs;
+    });
+
+    return result;
+}
+
+// IColumn::Permutation stableSortGetPermutation(const Block & block, const SortDescription & description)
+// {
+//     IColumn::Permutation result;
+
+//     size_t size = block.rows();
+//     result.resize(size);
+//     for (size_t i = 0; i < size; ++i)
+//         result[i] = i;
+
+//     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+
+//     std::stable_sort(result.begin(), result.end(), PartialSortingLess(columns_with_sort_desc));
+
+//     return result;
+// }
+
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
 {
     if (!block)
         return;
 
-    size_t size = block.rows();
-    out_permutation.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        out_permutation[i] = i;
-
-    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
-
-    std::stable_sort(out_permutation.begin(), out_permutation.end(), PartialSortingLess(columns_with_sort_desc));
+    IColumn::Permutation result = sortGetPermutation(block, description);
+    out_permutation = std::move(result);
 }
 
 bool isAlreadySorted(const Block & block, const SortDescription & description)
