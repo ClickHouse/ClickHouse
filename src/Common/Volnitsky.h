@@ -405,10 +405,11 @@ public:
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
             bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
-            /* `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
-             * are represented by different number of bytes or code points.
-             * So, use fallback if error occured
-             */
+
+            /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
+              * are represented by different number of bytes or code points.
+              * So, use fallback if error occurred.
+              */
             if (!ok)
             {
                 fallback_searcher.force_fallback = true;
