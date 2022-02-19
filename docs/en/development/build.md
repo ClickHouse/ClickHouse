@@ -122,7 +122,7 @@ Here is an example of how to build `clang` and all the llvm infrastructure from 
  clang --version
 ```
 
-You can install the older clang like clang-11 from packages and them use it to build the new clang from sources.
+You can install the older clang like clang-11 from packages and then use it to build the new clang from sources.
 
 Here is an example of how to install the new `cmake` from the official website:
 
