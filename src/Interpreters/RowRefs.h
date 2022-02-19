@@ -154,19 +154,23 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual const RowRef * findAsof(const IColumn &, size_t) = 0;
+    virtual std::tuple<decltype(RowRef::block), decltype(RowRef::row_num)> findAsof(const IColumn &, size_t) = 0;
 };
 
 template <typename TKey, ASOF::Inequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
+public:
     struct Entry
     {
+        /// We don't store a RowRef and instead keep it's members separately (and return a tuple) to reduce the memory usage.
+        /// For example, for sizeof(T) == 4 => sizeof(Entry) == 16 (while before it would be 20). Then when you put it into a vector, the effect is even greater
+        decltype(RowRef::block) block;
+        decltype(RowRef::row_num) row_num;
         TKey asof_value;
-        RowRef row_ref;
 
         Entry() = delete;
-        Entry(TKey v, const Block * block, size_t row_num) : asof_value(v), row_ref(block, row_num) { }
+        Entry(TKey v, const Block * b, size_t r) : block(b), row_num(r), asof_value(v) { }
 
         bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
@@ -245,7 +249,7 @@ public:
         return low;
     }
 
-    const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
+    std::tuple<decltype(RowRef::block), decltype(RowRef::row_num)> findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -255,9 +259,9 @@ public:
 
         size_t pos = boundSearch(k);
         if (pos != array.size())
-            return &(array[pos].row_ref);
+            return std::make_tuple(array[pos].block, array[pos].row_num);
 
-        return nullptr;
+        return {nullptr, 0};
     }
 
 private:
