@@ -30,6 +30,7 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch()
 {
+    initInput();
     file_in->prefetch();
 }
 

@@ -1439,7 +1439,7 @@ f9725a22f9191e064120d718e26862a9  -
 如果您通过[Client](../interfaces/cli.md) 在 [交互模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下输入或输出数据，格式架构中指定的文件名可以使用绝对路径或客户端当前目录的相对路径。
 如果在[批处理模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下使用客户端，则由于安全原因，架构的路径必须使用相对路径。
 
-如果您通过 HTTP接口](../interfaces/http.md)输入或输出数据，格式架构中指定的文件名应该位于服务器设置的[format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)指定的目录中。
+如果您通过 [HTTP接口](../interfaces/http.md)输入或输出数据，格式架构中指定的文件名应该位于服务器设置的[format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)指定的目录中。
 
 
 ## 跳过错误 {#skippingerrors}
