@@ -5,9 +5,9 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.
+该引擎允许导入和导出数据到SQLite，并支持查询SQLite表直接从ClickHouse。
 
-## Creating a Table {#creating-a-table}
+## 创建数据表 {#creating-a-table}
 
 ``` sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name 
@@ -17,14 +17,14 @@ The engine allows to import and export data to SQLite and supports queries to SQ
     ) ENGINE = SQLite('db_path', 'table')
 ```
 
-**Engine Parameters**
+**引擎参数**
 
--   `db_path` — Path to SQLite file with a database.
--   `table` — Name of a table in the SQLite database.
+-   `db_path` — SQLite数据库文件的具体路径地址。
+-   `table` — SQLite数据库中的表名。
 
-## Usage Example {#usage-example}
+## 使用示例 {#usage-example}
 
-Shows a query creating the SQLite table:
+显示创建表的查询语句：
 
 ```sql
 SHOW CREATE TABLE sqlite_db.table2;
@@ -39,7 +39,7 @@ CREATE TABLE SQLite.table2
 ENGINE = SQLite('sqlite.db','table2');
 ```
 
-Returns the data from the table:
+从数据表查询数据：
 
 ``` sql
 SELECT * FROM sqlite_db.table2 ORDER BY col1;
@@ -53,7 +53,7 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 └──────┴───────┘
 ```
 
-**See Also**
+**详见**
 
--   [SQLite](../../../engines/database-engines/sqlite.md) engine
--   [sqlite](../../../sql-reference/table-functions/sqlite.md) table function
+-   [SQLite](../../../engines/database-engines/sqlite.md) 引擎
+-   [sqlite](../../../sql-reference/table-functions/sqlite.md) 表方法函数
