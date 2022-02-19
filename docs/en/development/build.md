@@ -78,7 +78,6 @@ The build requires the following components:
 -   Ninja
 -   C++ compiler: clang-13 or newer
 -   Linker: lld
--   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
 
