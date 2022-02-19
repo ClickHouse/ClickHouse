@@ -1043,17 +1043,17 @@ def test_insert_select_schema_inference(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
-    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.native.zst') select toUInt64(1) as x")
-    result = instance.query(f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.native.zst')")
+    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') select toUInt64(1) as x settings s3_truncate_on_insert=1")
+    result = instance.query(f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(result.strip() == 'number\tUInt64')
 
-    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.native.zst') format CSV")
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(int(result) == 1)
 
-    instance.query(f"insert into function url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test2.native.zst') select toUInt64(1) as x")
-    result = instance.query(f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test2.native.zst')")
+    instance.query(f"insert into function url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') select toUInt64(1)")
+    result = instance.query(f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(result.strip() == 'number\tUInt64')
 
-    result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test2.native.zst') format CSV")
-    assert(int(result) == 1)
+    result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') order by x format TSV")
+    assert(result == '0\n1')
 
