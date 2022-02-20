@@ -286,55 +286,23 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 void SerializationTuple::deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     const char item_delim = settings.hive_text.collection_items_delimiter;
-    const char pair_delim = settings.hive_text.map_keys_delimiter;
-
-    if (have_explicit_names)
-    {
-        addElementSafe(
-            elems.size(),
-            column,
-            [&]
+    addElementSafe(
+        elems.size(),
+        column,
+        [&]
+        {
+            const size_t size = elems.size();
+            for (size_t i = 0; i < size; ++i)
             {
-                const size_t size = elems.size();
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if (i != 0)
-                        assertChar(item_delim, istr);
+                if (i != 0)
+                    assertChar(item_delim, istr);
 
-                    String name;
-                    readStringUntilChars(name, istr, {pair_delim});
-
-                    assertChar(pair_delim, istr);
-
-                    String value;
-                    readStringUntilChars(value, istr, {item_delim});
-                    ReadBufferFromString buf(value);
-                    const size_t element_pos = getPositionByName(name);
-                    auto & element_column = extractElementColumn(column, element_pos);
-                    elems[element_pos]->deserializeTextHiveText(element_column, buf, settings);
-                }
-            });
-    }
-    else
-    {
-        addElementSafe(
-            elems.size(),
-            column,
-            [&]
-            {
-                const size_t size = elems.size();
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if (i != 0)
-                        assertChar(item_delim, istr);
-
-                    String value;
-                    readStringUntilChars(value, istr, {item_delim});
-                    ReadBufferFromString buf(value);
-                    elems[i]->deserializeTextHiveText(extractElementColumn(column, i), buf, settings);
-                }
-            });
-    }
+                String value;
+                readStringUntilChars(value, istr, {item_delim});
+                ReadBufferFromString buf(value);
+                elems[i]->deserializeTextHiveText(extractElementColumn(column, i), buf, settings);
+            }
+        });
 }
 
 void SerializationTuple::enumerateStreams(

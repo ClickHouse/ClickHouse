@@ -19,7 +19,7 @@ public:
 
     String getName() const override { return "HiveTextRowInputFormat"; }
 
-    static FormatSettings updateFormatSettings(const FormatSettings & settings);
+    static FormatSettings updateFormatSettings(const FormatSettings & settings, const Block & header);
 
 private:
     HiveTextRowInputFormat(

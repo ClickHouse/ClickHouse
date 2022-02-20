@@ -116,7 +116,8 @@ INSTANTIATE_TEST_SUITE_P(ParseNamedTupleFromHive,
         std::initializer_list<ParseDataTypeFromHiveTestCase>{
             {
                 "Tuple(a String, b Int64)",
-                {"a\003aa\002b\003100", "a\003aa\002b\003bbb", "a\003aa\002b\003100\002"},
+                // {"a\003aa\002b\003100", "a\003aa\002b\003bbb", "a\003aa\002b\003100\002"},
+                {"a\002100", "a\002bbb", "a\002100\0021000"},
                 std::initializer_list<Field>{
                     Tuple{"aa", 100},
                     Tuple{"aa", 0},

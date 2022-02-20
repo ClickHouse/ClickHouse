@@ -9,21 +9,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
-FormatSettings HiveTextRowInputFormat::updateFormatSettings(const FormatSettings & settings)
+FormatSettings HiveTextRowInputFormat::updateFormatSettings(const FormatSettings & settings, const Block & header)
 {
     FormatSettings updated = settings;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
     updated.csv.allow_single_quotes = false;
     updated.csv.allow_double_quotes = false;
+
+    /// If input_field_names is empty, then complete it with columns names automatically.
+    if (updated.hive_text.input_field_names.empty())
+        updated.hive_text.input_field_names = header.getNames();
     return updated;
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
-    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_))
+    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, header_))
 {
 }
 
@@ -43,6 +48,9 @@ std::vector<String> HiveTextFormatReader::readNames()
 {
     PeekableReadBufferCheckpoint checkpoint{*buf, true};
     auto values = readHeaderRow();
+    if (input_field_names.size() < values.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid input_field_names with size %d < %d", input_field_names.size(), values.size());
+
     input_field_names.resize(values.size());
     return input_field_names;
 }
