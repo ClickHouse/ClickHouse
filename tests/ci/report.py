@@ -120,11 +120,23 @@ def _get_status_style(status):
     return style
 
 
-def _get_html_url(url):
+def _get_html_url_name(url):
     if isinstance(url, str):
-        return '<a href="{url}">{name}</a>'.format(url=url, name=os.path.basename(url).replace('%2B', '+').replace('%20', ' '))
+        return os.path.basename(url).replace('%2B', '+').replace('%20', ' ')
     if isinstance(url, tuple):
-        return '<a href="{url}">{name}</a>'.format(url=url[0], name=url[1].replace('%2B', '+').replace('%20', ' '))
+        return url[1].replace('%2B', '+').replace('%20', ' ')
+    return None
+
+
+def _get_html_url(url):
+    href = None
+    name = None
+    if isinstance(url, str):
+        href, name = url, _get_html_url_name(url)
+    if isinstance(url, tuple):
+        href, name = url[0]._get_html_url_name(url)
+    if href and name:
+        return '<a href="{href}">{name}</a>'.format(href=href, name=_get_html_url_name(url))
     return ''
 
 
@@ -193,9 +205,7 @@ def create_test_html_report(header, test_result, raw_log_url, task_url, branch_u
     else:
         test_part = ""
 
-    additional_html_urls = ""
-    for url in additional_urls:
-        additional_html_urls += ' ' + _get_html_url(url)
+    additional_html_urls = ' '.join([_get_html_url(url) for url in sorted(additional_urls, key=_get_html_url_name)])
 
     result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
@@ -307,7 +317,7 @@ def create_build_html_report(header, build_results, build_logs_urls, artifact_ur
         link_separator = "<br/>"
         if artifact_urls:
             for artifact_url in artifact_urls:
-                links += LINK_TEMPLATE.format(text=os.path.basename(artifact_url.replace('%2B', '+').replace('%20', ' ')), url=artifact_url)
+                links += LINK_TEMPLATE.format(text=_get_html_url_name(artifact_url), url=artifact_url)
                 links += link_separator
             if links:
                 links = links[:-len(link_separator)]
