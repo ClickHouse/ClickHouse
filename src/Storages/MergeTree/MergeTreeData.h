@@ -39,6 +39,9 @@
 namespace DB
 {
 
+/// Number of streams is not number parts, but number or parts*files, hence 1000.
+const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
+
 class AlterCommands;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
