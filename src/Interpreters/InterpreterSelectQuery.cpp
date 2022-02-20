@@ -52,6 +52,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromCacheStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -590,6 +591,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
+    if (cached_data.contains(query_ptr->getTreeHash())) {
+        QueryPlanStepPtr read_from_cache_step = std::make_unique<ReadFromCacheStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+        read_from_cache_step->setStepDescription("Read query result from cache");
+        query_plan.addStep(std::move(read_from_cache_step));
+        return;
+    }
     executeImpl(query_plan, std::move(input_pipe));
 
     QueryPlanStepPtr caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
