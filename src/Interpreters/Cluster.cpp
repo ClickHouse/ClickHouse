@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int SHARD_HAS_NO_CONNECTIONS;
+    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SYNTAX_ERROR;
 }
 
@@ -97,7 +98,6 @@ Cluster::Address::Address(
     , replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
-    port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
@@ -106,7 +106,14 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
+
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
+    auto default_port = config.getInt(port_type, 0);
+
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
+    if (!port)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}", config_prefix + ".port");
+
     is_local = isLocal(config.getInt(port_type, 0));
 
     /// By default compression is disabled if address looks like localhost.
