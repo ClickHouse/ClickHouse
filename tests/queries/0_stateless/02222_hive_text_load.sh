@@ -7,8 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-
-# Generate from Hive.
+# This file was generate from Hive. Steps:
 # 1. Create Hive table with input format text.
 #    CREATE TABLE default.test_hive_types( f_tinyint tinyint, f_smallint smallint, f_int int, f_integer int, f_bigint bigint, f_float float, f_double double, f_decimal decimal(10,0), f_timestamp timestamp, f_date date, f_string string, f_varchar varchar(100), f_char char(100), f_bool boolean, f_array_int array<int>, f_array_string array<string>, f_array_float array<float>, f_map_int map<string, int>, f_map_string map<string, string>, f_map_float map<string, float>, f_struct struct<a:string, b:int, c:float>) PARTITIONED BY( day string) ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe' STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat' OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat' LOCATION 'hdfs://testcluster/data/hive/default.db/test_hive_types' 
 # 2. Insert two rows into Hive table.
