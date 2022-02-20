@@ -1,12 +1,13 @@
 #include <Poco/Net/NetException.h>
 
+#include <base/scope_guard.h>
+
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <common/scope_guard.h>
 
 
 namespace ProfileEvents
