@@ -126,6 +126,8 @@ public:
         const String & format_name_,
         UInt64 max_single_read_retries_,
         UInt64 min_upload_part_size_,
+        UInt64 upload_part_size_multiply_factor_,
+        UInt64 upload_part_size_multiply_parts_count_threshold_,
         UInt64 max_single_part_upload_size_,
         UInt64 max_connections_,
         const ColumnsDescription & columns_,
@@ -193,6 +195,8 @@ private:
     String format_name;
     UInt64 max_single_read_retries;
     size_t min_upload_part_size;
+    size_t upload_part_size_multiply_factor;
+    size_t upload_part_size_multiply_parts_count_threshold;
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
