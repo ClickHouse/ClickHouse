@@ -55,7 +55,7 @@ bool RowPolicy::equal(const IAccessEntity & other) const
         return false;
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
     return (full_name == other_policy.full_name) && boost::range::equal(filters, other_policy.filters)
-        && restrictive == other_policy.restrictive && (to_roles == other_policy.to_roles);
+        && (kind == other_policy.kind) && (to_roles == other_policy.to_roles);
 }
 
 }

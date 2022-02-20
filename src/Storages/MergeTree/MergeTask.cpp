@@ -241,9 +241,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
                 global_ctx->merging_column_names,
                 global_ctx->gathering_column_names);
 
-            if (global_ctx->data->getSettings()->fsync_part_directory)
-                global_ctx->sync_guard = ctx->disk->getDirectorySyncGuard(local_new_part_tmp_path);
-
             break;
         }
         default :
