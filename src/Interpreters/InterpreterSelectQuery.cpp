@@ -37,6 +37,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CachingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -590,6 +591,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
+
+    QueryPlanStepPtr caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+    caching_step->setStepDescription("Cache query result");
+    query_plan.addStep(std::move(caching_step));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///

@@ -12,7 +12,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
-
+#include <Processors/Chunk.h>
 #include <Columns/FilterDescription.h>
 
 namespace Poco
@@ -29,6 +29,7 @@ class QueryPlan;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+using Data = std::vector<Chunk *>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -205,6 +206,8 @@ private:
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;
+
+    static std::unordered_map<IAST::Hash, Data> cached_data;
 };
 
 }

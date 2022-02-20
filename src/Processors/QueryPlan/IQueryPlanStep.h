@@ -12,6 +12,7 @@ class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
