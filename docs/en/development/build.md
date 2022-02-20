@@ -78,7 +78,6 @@ The build requires the following components:
 -   Ninja
 -   C++ compiler: clang-13 or newer
 -   Linker: lld
--   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
 
@@ -111,6 +110,29 @@ cmake ../ClickHouse
 make -j $(nproc)
 ```
 
+Here is an example of how to build `clang` and all the llvm infrastructure from sources:
+
+```
+ git clone git@github.com:llvm/llvm-project.git
+ mkdir llvm-build && cd llvm-build
+ cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all ../llvm-project/llvm/
+ make -j16
+ sudo make install
+ hash clang
+ clang --version
+```
+
+You can install the older clang like clang-11 from packages and then use it to build the new clang from sources.
+
+Here is an example of how to install the new `cmake` from the official website:
+
+```
+wget https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.sh
+chmod +x cmake-3.22.2-linux-x86_64.sh
+./cmake-3.22.2-linux-x86_64.sh 
+export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
+hash cmake
+```
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
