@@ -189,7 +189,9 @@ namespace
         query->names = std::make_shared<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
-        query->kind = policy.getKind();
+
+        if (policy.isRestrictive())
+            query->is_restrictive = policy.isRestrictive();
 
         for (auto type : collections::range(RowPolicyFilterType::MAX))
         {
