@@ -50,8 +50,13 @@ endif ()
 if (NOT HAVE_LIBCXX AND NOT MISSING_INTERNAL_LIBCXX_LIBRARY)
     set (LIBCXX_LIBRARY cxx)
     set (LIBCXXABI_LIBRARY cxxabi)
-    add_subdirectory(contrib/libcxxabi-cmake)
-    add_subdirectory(contrib/libcxx-cmake)
+    if (MAKE_STATIC_LIBRARIES)
+        add_subdirectory(contrib/libcxxabi-cmake)
+        add_subdirectory(contrib/libcxx-cmake)
+    else()
+        add_subdirectory(${ClickHouse_SOURCE_DIR}/utils/local-engine/cmake/libcxxabi)
+        add_subdirectory(${ClickHouse_SOURCE_DIR}/utils/local-engine/cmake/libcxx)
+    endif()
 
     # Exception handling library is embedded into libcxxabi.
 
