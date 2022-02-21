@@ -41,7 +41,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     {
         return std::make_unique<ReadBufferFromS3>(
             client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
-            settings, use_external_buffer, read_until_position, true);
+            settings, /* use_external_buffer */true, read_until_position, true);
     };
 
     auto cache = settings.remote_fs_cache;
@@ -61,7 +61,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 {
     current_path = path;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, use_external_buffer, read_until_position);
+        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
 }
 #endif
 
@@ -69,7 +69,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     current_path = path;
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, use_external_buffer, read_until_position);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, /* use_external_buffer */true, read_until_position);
 }
 
 
@@ -85,7 +85,6 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
     : ReadBuffer(nullptr, 0)
     , metadata(metadata_)
     , settings(settings_)
-    , use_external_buffer(settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     , canonical_path(path_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
@@ -213,6 +212,13 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 
     swap(*current_buf);
 
+    /// Required for non-async reads.
+    if (result)
+    {
+        assert(available());
+        nextimpl_working_buffer_offset = offset();
+    }
+
     return result;
 }
 
@@ -225,8 +231,11 @@ size_t ReadBufferFromRemoteFSGather::getFileOffsetOfBufferEnd() const
 
 void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
-    read_until_position = position;
-    reset();
+    if (position != read_until_position)
+    {
+        read_until_position = position;
+        reset();
+    }
 }
 
 

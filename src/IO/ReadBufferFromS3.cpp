@@ -264,7 +264,9 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), read_settings.remote_fs_buffer_size);
+
+        size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

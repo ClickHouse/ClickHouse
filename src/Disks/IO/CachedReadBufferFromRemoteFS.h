@@ -73,9 +73,6 @@ private:
     SeekableReadBufferPtr impl;
     bool initialized = false;
 
-    /// Flag to identify usage of threadpool reads
-    bool use_external_buffer;
-
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
     static String toString(ReadType type)

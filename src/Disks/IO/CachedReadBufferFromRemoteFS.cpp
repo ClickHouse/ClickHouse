@@ -39,7 +39,6 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
-    , use_external_buffer(settings_.remote_fs_method == RemoteFSReadMethod::threadpool)
 {
 }
 
@@ -370,12 +369,6 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
 
     if (impl)
     {
-        if (!use_external_buffer)
-        {
-            impl->position() = position();
-            assert(!impl->hasPendingData());
-        }
-
         auto file_segment = *current_file_segment_it;
         auto current_read_range = file_segment->range();
         auto current_state = file_segment->state();
@@ -437,11 +430,8 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
         impl = getReadBufferForFileSegment(*current_file_segment_it);
     }
 
-    if (use_external_buffer)
-    {
-        assert(!internal_buffer.empty());
-        swap(*impl);
-    }
+    assert(!internal_buffer.empty());
+    swap(*impl);
 
     auto & file_segment = *current_file_segment_it;
     auto current_read_range = file_segment->range();
@@ -606,10 +596,7 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
         assert(read_type == ReadType::CACHED || file_offset_of_buffer_end == impl->getFileOffsetOfBufferEnd());
     }
 
-    if (use_external_buffer)
-        swap(*impl);
-    else if (result)
-        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    swap(*impl);
 
     if (download_current_segment)
         file_segment->completeBatchAndResetDownloader();
