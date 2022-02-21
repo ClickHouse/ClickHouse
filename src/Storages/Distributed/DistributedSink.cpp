@@ -332,8 +332,13 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         const Settings & settings = context->getSettingsRef();
 
         /// Do not initiate INSERT for empty block.
-        if (shard_block.rows() == 0)
+        size_t rows = shard_block.rows();
+        if (rows == 0)
             return;
+
+        OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+        span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
+        span.add_attribute("clickhouse.written_rows", rows);
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -407,7 +412,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         job.blocks_written += 1;
-        job.rows_written += shard_block.rows();
+        job.rows_written += rows;
     };
 }
 
@@ -605,9 +610,14 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
+    OpenTelemetrySpanHolder span("DistributedBlockOutputStream::writeAsyncImpl()");
+
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
     Block block_to_send = removeSuperfluousColumns(block);
+
+    span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
+    span.add_attribute("clickhouse.written_rows", block.rows());
 
     if (shard_info.hasInternalReplication())
     {
@@ -621,7 +631,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(shard_info, block_to_send, {path});
+            writeToShard(block_to_send, {path});
         }
     }
     else
@@ -635,7 +645,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
-            writeToShard(shard_info, block_to_send, dir_names);
+            writeToShard(block_to_send, dir_names);
     }
 }
 
@@ -656,10 +666,9 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 }
 
 
-void DistributedSink::writeToShard(const Cluster::ShardInfo& shard_info, const Block & block, const std::vector<std::string> & dir_names)
+void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-    span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
