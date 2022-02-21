@@ -14,7 +14,8 @@ namespace ErrorCodes
 
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl_)
-    : impl(impl_)
+    : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+    , impl(impl_)
 {
 }
 
@@ -28,6 +29,18 @@ off_t ReadIndirectBufferFromRemoteFS::getPosition()
 String ReadIndirectBufferFromRemoteFS::getFileName() const
 {
     return impl->getFileName();
+}
+
+
+void ReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
+{
+    impl->setReadUntilPosition(position);
+}
+
+
+void ReadIndirectBufferFromRemoteFS::setReadUntilEnd()
+{
+    impl->setReadUntilPosition(impl->getFileSize());
 }
 
 
@@ -67,6 +80,7 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
     impl->reset();
     resetWorkingBuffer();
 
+    file_offset_of_buffer_end = impl->file_offset_of_buffer_end;
     return impl->file_offset_of_buffer_end;
 }
 
@@ -75,10 +89,20 @@ bool ReadIndirectBufferFromRemoteFS::nextImpl()
 {
     /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*impl);
+
+    assert(!impl->hasPendingData());
     /// Position and working_buffer will be updated in next() call
     auto result = impl->next();
     /// and assigned to current buffer.
     swap(*impl);
+
+    if (result)
+    {
+        file_offset_of_buffer_end += available();
+        BufferBase::set(working_buffer.begin() + offset(), available(), 0);
+    }
+
+    assert(file_offset_of_buffer_end == impl->file_offset_of_buffer_end);
 
     return result;
 }
