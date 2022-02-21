@@ -763,8 +763,12 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
+
+    /// Drop alias is metadata alter, in other case mutation is required.
+    if (type == DROP_COLUMN)
+        return metadata.columns.hasPhysical(column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
