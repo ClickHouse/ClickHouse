@@ -13,6 +13,7 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <arrow/ipc/writer.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Storages/CustomStorageMergeTree.h>
 #include "CHColumnToSparkRow.h"
 
 namespace DB
@@ -79,10 +80,16 @@ public:
     DB::QueryPlanPtr parse(std::unique_ptr<substrait::Plan> plan);
 
     DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
+    DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel& rel);
     DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
     DB::DataTypePtr parseType(const substrait::Type& type);
 
     static ContextMutablePtr global_context;
+
+    struct QueryContext {
+        std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
+        std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
+    };
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
@@ -119,6 +126,7 @@ private:
     int name_no = 0;
     std::unordered_map<std::string, std::string> function_mapping;
     ContextPtr context;
+    QueryContext query_context;
 
 //    DB::QueryPlanPtr query_plan;
 

@@ -51,9 +51,6 @@ protected:
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
-private:
-//    MergeTreeDataSelectExecutor reader;
-
 };
 
 }

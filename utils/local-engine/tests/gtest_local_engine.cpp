@@ -254,43 +254,6 @@ TEST(TestSelect, MergeTreeWriteTest)
                               return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
                           });
     query_pipeline.execute()->execute(1);
-
-
-
-//    ColumnsWithTypeAndName columns;
-//    auto col1 = int_type->createColumn();
-//    col1->reserve(30000);
-//    for (int i = 0; i < 10000; ++i)
-//    {
-//        col1->insert(1);
-//        col1->insert(2);
-//        col1->insert(3);
-//    }
-//    columns.push_back(ColumnWithTypeAndName(std::move(col1), int_type, "col1"));
-//    DB::BlockWithPartition block_with_partition(Block(columns), DB::Row{});
-//    SimpleIncrement increment;
-//    increment.set(100);
-//    auto part = custom_merge_tree.writer.writeTempPart(block_with_partition, metadata, global_context);
-//    custom_merge_tree.renameTempPartAndAdd(part, &increment, nullptr, nullptr);
-//    SelectQueryInfo query_info;
-//    query_info.query = std::make_shared<ASTSelectQuery>();
-//    auto syntax_analyzer_result = std::make_shared<TreeRewriterResult>(block_with_partition.block.getNamesAndTypesList());
-//    syntax_analyzer_result->analyzed_join = std::make_shared<TableJoin>();
-//    query_info.syntax_analyzer_result = syntax_analyzer_result;
-//    auto query = custom_merge_tree.reader.read({"col1"},
-//                                  metadata,
-//                                  query_info,
-//                                  global_context,
-//                                  10000,
-//                                  1,
-//                                  QueryProcessingStage::FetchColumns);
-//    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-//    QueryPipeline query_pipeline;
-//    query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
-//    auto buffer = WriteBufferFromFile("/home/kyligence/Documents/clickhouse_conf/data/output.csv");
-//    auto output = std::make_shared<CSVRowOutputFormat>(buffer, query_pipeline.getHeader(), true, RowOutputFormatParams(), FormatSettings());
-//    query_pipeline.setOutputFormat(output);
-//    query_pipeline.execute()->execute(1);
 }
 
 int main(int argc, char **argv)

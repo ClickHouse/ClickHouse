@@ -132,6 +132,20 @@ SerializedPlanBuilder & SerializedPlanBuilder::read(std::string path, SchemaPtr 
     this->prev_rel = rel;
     return *this;
 }
+
+SerializedPlanBuilder& SerializedPlanBuilder::readMergeTree(std::string database, std::string table, std::string relative_path, SchemaPtr schema)
+{
+    substrait::Rel * rel = new substrait::Rel();
+    auto * read = rel->mutable_read();
+    read->mutable_extension_table()->mutable_detail()->set_value(local_engine::MergeTreeTable{.database=database,.table=table,.relative_path=relative_path}.toString());
+    read->set_allocated_base_schema(schema);
+    setInputToPrev(rel);
+    this->prev_rel = rel;
+    return *this;
+}
+
+
+
 std::unique_ptr<substrait::Plan> SerializedPlanBuilder::build()
 {
     return std::move(this->plan);

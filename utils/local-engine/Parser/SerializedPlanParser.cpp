@@ -23,7 +23,10 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <sys/stat.h>
 #include <Poco/URI.h>
-#include <Storages/ParquetRowInputFormat.h>
+#include <Storages/MergeTreeTool.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/CustomStorageMergeTree.h>
+
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
@@ -37,6 +40,49 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
     }
     return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
 }
+
+DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel& rel)
+{
+    assert(rel.has_extension_table());
+    assert(rel.has_base_schema());
+    std::string table = rel.extension_table().detail().value();
+    auto merge_tree_table = local_engine::parseMergeTreeTable(table);
+    auto header = parseNameStruct(rel.base_schema());
+    auto names_and_types_list = header.getNamesAndTypesList();
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = local_engine::buildMergeTreeSettings();
+    if (!query_context.custom_storage_merge_tree)
+    {
+        query_context.metadata = local_engine::buildMetaData(names_and_types_list, this->context);
+        query_context.custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
+            DB::StorageID(merge_tree_table.database, merge_tree_table.table),
+            merge_tree_table.relative_path,
+            *query_context.metadata,
+            false,
+            global_context,
+            "",
+            param,
+            std::move(settings));
+        query_context.custom_storage_merge_tree->loadDataParts(false);
+    }
+    auto query_info = local_engine::buildQueryInfo(names_and_types_list);
+    auto data_parts = query_context.custom_storage_merge_tree->getDataPartsVector();
+    int min_block = 0;
+    int max_block = 1000;
+    MergeTreeData::DataPartsVector selected_parts;
+    std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+                 [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+    auto query = query_context.custom_storage_merge_tree->reader.readFromParts(selected_parts,
+                                                        names_and_types_list.getNames(),
+                                                        query_context.metadata,
+                                                        query_context.metadata,
+                                                        *query_info,
+                                                        this->context,
+                                                        4096 * 2,
+                                                        1);
+    return query;
+}
+
 
 DB::Block dbms::SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struct_)
 {
@@ -169,17 +215,19 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
         }
         case substrait::Rel::RelTypeCase::kRead: {
             const auto & read = rel.read();
-            assert(read.has_local_files() && "Only support local files read rel");
-            DB::QueryPlanPtr query_plan = std::make_unique<DB::QueryPlan>();
-            std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(parseReadRealWithLocalFile(read));
-            auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
-            query_plan->addStep(std::move(source_step));
-            //            if (read.has_filter())
-            //            {
-            //                const auto &filter_expr = read.filter();
-            //                auto filter_step = std::make_unique<FilterStep>(query_plan->getCurrentDataStream(), parseExpr(filter_expr), "filter", true);
-            //                query_plan->addStep(std::move(filter_step));
-            //            }
+            assert(read.has_local_files() || read.has_extension_table() && "Only support local parquet files or merge tree read rel");
+            DB::QueryPlanPtr query_plan;
+            if (read.has_local_files())
+            {
+                query_plan = std::make_unique<DB::QueryPlan>();
+                std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(parseReadRealWithLocalFile(read));
+                auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
+                query_plan->addStep(std::move(source_step));
+            }
+            else
+            {
+                query_plan = parseMergeTreeTable(read);
+            }
             return query_plan;
         }
         default:
@@ -434,7 +482,12 @@ DB::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB:
 void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-    this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
+    this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings{
+                                                                                     .actions_settings = ExpressionActionsSettings{
+                                                                                         .can_compile_expressions = true,
+                                                                                         .min_count_to_compile_expression = 3,
+                                                                                     .compile_expressions = CompileExpressions::yes
+                                                                                    }});
     this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();

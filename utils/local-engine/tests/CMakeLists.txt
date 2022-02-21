@@ -5,7 +5,6 @@ include(CTest)
 include (${PROJECT_SOURCE_DIR}/cmake/find/gtest.cmake)
 #include (${PROJECT_SOURCE_DIR}/cmake/warnings.cmake)
 include_directories(${GTEST_INCLUDE_DIRS})
-include_directories("${ClickHouse_SOURCE_DIR}/programs")
 macro (grep_gtest_sources BASE_DIR DST_VAR)
     # Cold match files that are not in tests/ directories
     file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
@@ -29,8 +28,8 @@ include_directories(
 # attach all dbms gtest sources
 
 grep_gtest_sources("${ClickHouse_SOURCE_DIR}/utils/local_engine/tests" local_engine_gtest_sources)
-add_executable(unit_tests_local_engine ${local_engine_gtest_sources})
-add_executable(benchmark_local_engine benchmark_local_engine.cpp)
+add_executable(unit_tests_local_engine ${local_engine_gtest_sources} ${ClickHouse_SOURCE_DIR}/programs/local/LocalServer.cpp)
+add_executable(benchmark_local_engine benchmark_local_engine.cpp ${ClickHouse_SOURCE_DIR}/programs/local/LocalServer.cpp)
 target_compile_options(unit_tests_local_engine PRIVATE
         -Wno-error
         )
@@ -49,8 +48,8 @@ target_include_directories(unit_tests_local_engine
         )
 include_directories(benchmark_local_engine SYSTEM PUBLIC ${FETCH_CONTENT_SOURCE_DIR_GOOGLEBENCHMARK}/include)
 
-target_link_libraries(unit_tests_local_engine ${CLICKHOUSE_SERVER_LINK} clickhouse-local-lib ${LOCALENGINE_SHARED_LIB} ${GTEST_BOTH_LIBRARIES})
-target_link_libraries(benchmark_local_engine ${CLICKHOUSE_SERVER_LINK} clickhouse-local-lib ${LOCALENGINE_SHARED_LIB} benchmark::benchmark)
+target_link_libraries(unit_tests_local_engine ${CLICKHOUSE_SERVER_LINK} loggers ${LOCALENGINE_SHARED_LIB} ${GTEST_BOTH_LIBRARIES})
+target_link_libraries(benchmark_local_engine ${CLICKHOUSE_SERVER_LINK} loggers ${LOCALENGINE_SHARED_LIB} benchmark::benchmark)
 
 add_check(unit_tests_local_engine)
 add_check(benchmark_local_engine)

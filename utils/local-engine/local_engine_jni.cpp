@@ -28,12 +28,9 @@
 #include <fstream>
 #include <jni.h>
 #include <Processors/Pipe.h>
-#include <rapidjson/document.h>
-#include <rapidjson/istreamwrapper.h>
 #include "jni_common.h"
 
 using namespace DB;
-using namespace rapidjson;
 
 void registerAllFunctions()
 {

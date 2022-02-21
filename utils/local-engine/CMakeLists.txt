@@ -1,13 +1,15 @@
 set(ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 set(CLICKHOUSE_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src")
 set(USE_INTERNAL_PARQUET_LIBRARY 1)
-set(RAPIDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rapidjson/include")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 cmake_minimum_required(VERSION 3.11)
 if(CMAKE_VERSION VERSION_LESS 3.11)
     message(FATAL_ERROR "Building local engine JNI bindings requires CMake version >= 3.11")
 endif()
 include (${ClickHouse_SOURCE_DIR}/cmake/warnings.cmake)
+include_directories("${ClickHouse_SOURCE_DIR}/programs")
+
 # Find java/jni
 include(FindJava)
 include(UseJava)
@@ -46,10 +48,12 @@ else ()
     )
     message("generating headers to ${JNI_HEADERS_DIR}")
 endif()
-
 set (CLICKHOUSE_SERVER_LINK
         PUBLIC
+
+#        "-Wl,-whole-archive"
         dbms
+        boost::program_options
         clickhouse_aggregate_functions
         clickhouse_common_config
         clickhouse_common_io
@@ -60,6 +64,7 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_table_functions
         string_utils
         substrait
+#        "-Wl,--no-whole-archive"
         )
 
 function(add_cxx_compile_options option)
@@ -76,7 +81,6 @@ include_directories(${ClickHouse_SOURCE_DIR}/utils/local-engine)
 
 
 include_directories(
-        ${RAPIDJSON_INCLUDE_DIR}
         ${ARROW_INCLUDE_DIR}
         )
 
@@ -90,9 +94,9 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${parser_sources}
         ${storages_sources}
         )
-set_property(TARGET ${LOCALENGINE_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(${LOCALENGINE_SHARED_LIB} PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_SOURCE_DIR}/base)
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
-target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} )
+target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK})
 
 install(TARGETS ${LOCALENGINE_SHARED_LIB}
         LIBRARY DESTINATION lib

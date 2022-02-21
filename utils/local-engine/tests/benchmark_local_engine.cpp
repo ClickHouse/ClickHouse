@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <cstdlib>
 #include <Common/PODArray_fwd.h>
+#include <Storages/MergeTreeTool.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -75,25 +76,16 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto int64_type = std::make_shared<DB::DataTypeInt64>();
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
-    columns_description.add(ColumnDescription("l_orderkey", int64_type));
-    columns_description.add(ColumnDescription("l_partkey", int64_type));
-    columns_description.add(ColumnDescription("l_suppkey", int64_type));
-    columns_description.add(ColumnDescription("l_linenumber", int32_type));
-    columns_description.add(ColumnDescription("l_quantity", double_type));
-    columns_description.add(ColumnDescription("l_extendedprice", double_type));
-    columns_description.add(ColumnDescription("l_discount", double_type));
-    columns_description.add(ColumnDescription("l_tax", double_type));
-    columns_description.add(ColumnDescription("l_shipdate_new", double_type));
-    columns_description.add(ColumnDescription("l_commitdate_new", double_type));
-    columns_description.add(ColumnDescription("l_receiptdate_new", double_type));
-    metadata->setColumns(columns_description);
-    metadata->partition_key.expression_list_ast = std::make_shared<ASTExpressionList>();
-    metadata->sorting_key = KeyDescription::getSortingKeyFromAST(makeASTFunction("tuple"), columns_description, global_context, {});
-    metadata->primary_key.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>());
+    const auto * type_string = "columns format version: 1\n"
+                         "4 columns:\n"
+                         "`l_quantity` Float64\n"
+                         "`l_extendedprice` Float64\n"
+                         "`l_discount` Float64\n"
+                         "`l_shipdate_new` Float64\n";
+    auto names_and_types_list = NamesAndTypesList::parse(type_string);
+    metadata = local_engine::buildMetaData(names_and_types_list, global_context);
     auto param = DB::MergeTreeData::MergingParams();
-    auto settings = std::make_unique<DB::MergeTreeSettings>();
-    settings->set("min_bytes_for_wide_part", Field(0));
-    settings->set("min_rows_for_wide_part", Field(0));
+    auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
                                                            "test-intel/",
@@ -102,25 +94,26 @@ static void BM_MergeTreeRead(benchmark::State& state) {
                                                            global_context,
                                                            "",
                                                            param,
-                                                           std::move(settings)
-    );
+                                                           std::move(settings));
     custom_merge_tree.loadDataParts(false);
-    auto sink = std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
     for (auto _: state)
     {
         state.PauseTiming();
-        SelectQueryInfo query_info;
-        query_info.query = std::make_shared<ASTSelectQuery>();
-        auto syntax_analyzer_result = std::make_shared<TreeRewriterResult>(sink->getPort().getHeader().getNamesAndTypesList());
-        syntax_analyzer_result->analyzed_join = std::make_shared<TableJoin>();
-        query_info.syntax_analyzer_result = syntax_analyzer_result;
-        auto query = custom_merge_tree.reader.read(sink->getPort().getHeader().getNames(),
-                                      metadata,
-                                      query_info,
-                                      global_context,
-                                      10000,
-                                      1,
-                                      QueryProcessingStage::FetchColumns);
+        auto query_info = local_engine::buildQueryInfo(names_and_types_list);
+        auto data_parts = custom_merge_tree.getDataPartsVector();
+        int min_block = 0;
+        int max_block = state.range(0);
+        MergeTreeData::DataPartsVector selected_parts;
+        std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+                       [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+        auto query = custom_merge_tree.reader.readFromParts(selected_parts,
+                                                            names_and_types_list.getNames(),
+                                                            metadata,
+                                                            metadata,
+                                                            *query_info,
+                                                            global_context,
+                                                            10000,
+                                                            1);
         QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
         QueryPipeline query_pipeline;
         query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
@@ -130,7 +123,6 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         while(executor.pull(chunk))
         {
             auto rows = chunk.getNumRows();
-            continue;
         }
     }
 }
@@ -180,22 +172,10 @@ static void BM_TPCH_Q6(benchmark::State& state) {
         state.PauseTiming();
         dbms::SerializedSchemaBuilder schema_builder;
         auto schema = schema_builder
-//                          .column("l_orderkey", "I64")
-//                          .column("l_partkey", "I64")
-//                          .column("l_suppkey", "I64")
-//                          .column("l_linenumber", "I32")
                           .column("l_discount", "FP64")
                           .column("l_extendedprice", "FP64")
                           .column("l_quantity", "FP64")
-//                          .column("l_tax", "FP64")
-                          //                      .column("l_returnflag", "String")
-                          //                      .column("l_linestatus", "String")
                           .column("l_shipdate_new", "Date")
-//                          .column("l_commitdate_new", "FP64")
-//                          .column("l_receiptdate_new", "FP64")
-                          //                      .column("l_shipinstruct", "String")
-                          //                      .column("l_shipmode", "String")
-                          //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
         auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
@@ -232,6 +212,64 @@ static void BM_TPCH_Q6(benchmark::State& state) {
         auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
         state.ResumeTiming();
+        local_executor.execute(std::move(query_plan));
+        while (local_executor.hasNext())
+        {
+            local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        }
+    }
+}
+
+
+static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
+    SerializedPlanParser::global_context = global_context;
+    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+    for (auto _: state)
+    {
+//        state.PauseTiming();
+        global_context->setPath("/home/kyligence/Documents/clickhouse_conf/data/");
+        dbms::SerializedSchemaBuilder schema_builder;
+        auto schema = schema_builder
+                          .column("l_discount", "FP64")
+                          .column("l_extendedprice", "FP64")
+                          .column("l_quantity", "FP64")
+                          .column("l_shipdate_new", "FP64")
+                          .build();
+        dbms::SerializedPlanBuilder plan_builder;
+        auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
+        auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
+        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+        auto plan = plan_builder.registerSupportedFunctions()
+                        .aggregate({}, {measure1, measure2, measure3})
+                        .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
+                        .filter(dbms::scalarFunction(dbms::AND, {
+                                                                    dbms::scalarFunction(AND, {
+                                                                                                  dbms::scalarFunction(AND, {
+                                                                                                                                dbms::scalarFunction(AND, {
+                                                                                                                                                              dbms::scalarFunction(AND, {
+                                                                                                                                                                                            dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                          dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(3)}),
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(0)})
+                                                                                                                                                                                                                                                    }),
+                                                                                                                                                                                                                          scalarFunction(IS_NOT_NULL, {selection(2)})
+                                                                                                                                                                                                                      }),
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(8766.0)})
+                                                                                                                                                                                        }),
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literal(9131.0)})
+                                                                                                                                                          }),
+                                                                                                                                scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
+                                                                                                                            }),
+                                                                                                  scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
+                                                                                              }),
+                                                                    scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
+                                                                }))
+                        .readMergeTree("default", "test", "test-intel/", std::move(schema)).build();
+
+        auto query_plan = parser.parse(std::move(plan));
+        dbms::LocalExecutor local_executor;
+//        state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
         while (local_executor.hasNext())
         {
@@ -446,11 +484,12 @@ static void BM_NormalFilter(benchmark::State& state)
 }
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-//BENCHMARK(BM_MergeTreeRead)->Unit(benchmark::kMillisecond)->Iterations(40);
-//BENCHMARK(BM_SimpleAggregate)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
-//BENCHMARK(BM_TPCH_Q6)->Arg(1)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
