@@ -24,4 +24,9 @@ select h3PointDistKm(lat1, lon1,lat2, lon2) AS k from table1 order by k;
 select '-- select h3PointDistRads(lat1, lon1,lat2, lon2) AS k from table1 order by k;';
 select h3PointDistRads(lat1, lon1,lat2, lon2) AS k from table1 order by k;
 
-DROP TABLE table1
+DROP TABLE table1;
+
+-- tests for const columns
+select '-- test for non const cols';
+select h3PointDistRads(-10.0 ,0.0, 10.0, arrayJoin([0.0])) as h3PointDistRads;
+select h3PointDistRads(-10.0 ,0.0, 10.0, toFloat64(0)) as h3PointDistRads;
