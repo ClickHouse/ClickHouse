@@ -250,8 +250,8 @@ void ProgressIndication::writeProgress()
                     std::string whitespaces;
                     {
                         /// Whitespaces after the progress bar
-                        size_t dbar = render_profiling_msg_at_left ? profiling_msg.size() : 0;
-                        int64_t ws_correction = static_cast<int64_t>((bar.size() - dbar) / UNICODE_BAR_CHAR_SIZE) + profiling_msg.size();
+                        size_t dbar = render_profiling_msg_at_left ? 0 : profiling_msg.size();
+                        int64_t ws_correction = static_cast<int64_t>(bar.size() / UNICODE_BAR_CHAR_SIZE) + dbar;
                         if (width_of_progress_bar > ws_correction)
                             whitespaces.assign(width_of_progress_bar - ws_correction, ' ');
                     }
