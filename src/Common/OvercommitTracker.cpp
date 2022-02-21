@@ -23,6 +23,12 @@ void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
 
 bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 {
+    // NOTE: DO NOT CHANGE THE ORDER OF LOCKS
+    //
+    // global_mutex must be acquired before overcommit_m, because
+    // method OvercommitTracker::unsubscribe(MemoryTracker *) is
+    // always called with already acquired global_mutex in
+    // ProcessListEntry::~ProcessListEntry().
     std::unique_lock<std::mutex> global_lock(global_mutex);
     std::unique_lock<std::mutex> lk(overcommit_m);
 
@@ -76,7 +82,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
     MemoryTracker * query_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
     // At this moment query list must be read only.
-    // BlockQueryIfMemoryLimit is used in ProcessList to guarantee this.
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
     auto & queries = user_process_list->queries;
     LOG_DEBUG(logger, "Trying to choose query to stop from {} queries", queries.size());
     for (auto const & query : queries)
@@ -111,9 +117,9 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     MemoryTracker * query_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
     // At this moment query list must be read only.
-    // BlockQueryIfMemoryLimit is used in ProcessList to guarantee this.
-    LOG_DEBUG(logger, "Trying to choose query to stop");
-    process_list->processEachQueryStatus([&](DB::QueryStatus const & query)
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
+    LOG_DEBUG(logger, "Trying to choose query to stop from {} queries", process_list->size());
+    for (auto const & query : process_list->processes)
     {
         if (query.isKilled())
             return;
@@ -134,7 +140,7 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
             query_tracker = memory_tracker;
             current_ratio   = ratio;
         }
-    });
+    }
     LOG_DEBUG(logger, "Selected to stop query with overcommit ratio {}/{}",
         current_ratio.committed, current_ratio.soft_limit);
     picked_tracker = query_tracker;
