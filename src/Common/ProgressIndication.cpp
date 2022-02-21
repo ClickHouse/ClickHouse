@@ -251,7 +251,7 @@ void ProgressIndication::writeProgress()
                     {
                         /// Whitespaces after the progress bar
                         size_t dbar = render_profiling_msg_at_left ? profiling_msg.size() : 0;
-                        int64_t ws_correction = static_cast<int64_t>((bar.size() - dbar) / UNICODE_BAR_CHAR_SIZE) + dbar;
+                        int64_t ws_correction = static_cast<int64_t>((bar.size() - dbar) / UNICODE_BAR_CHAR_SIZE) + profiling_msg.size();
                         if (width_of_progress_bar > ws_correction)
                             whitespaces.assign(width_of_progress_bar - ws_correction, ' ');
                     }
@@ -267,7 +267,7 @@ void ProgressIndication::writeProgress()
                             /// Render profiling_msg at left on top of the progress bar.
 
                             message << "\033[30;42m" << profiling_msg << "\033[0m"
-                                << "\033[0;32m" << bar.substr(profiling_msg.size()) << "\033[0m"
+                                << "\033[0;32m" << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
                                 << whitespaces;
                         }
                         else
@@ -275,7 +275,7 @@ void ProgressIndication::writeProgress()
                             /// Render profiling_msg at right after the progress bar.
 
                             message << "\033[0;32m" << bar << "\033[0m"
-                                << whitespaces.substr(profiling_msg.size()) << "\033[2m" << profiling_msg << "\033[0m";
+                                << whitespaces << "\033[2m" << profiling_msg << "\033[0m";
                         }
                     }
                 }
