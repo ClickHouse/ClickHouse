@@ -44,14 +44,20 @@ def parse_args() -> argparse.Namespace:
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
+    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
-        action="store_true",
+        action="store_false",
+        dest="reports",
+        default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
-        action="store_true",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
         help="don't push images to docker hub",
     )
 
@@ -167,8 +173,7 @@ def main():
     stopwatch = Stopwatch()
 
     args = parse_args()
-    push = not args.no_push_images
-    if push:
+    if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
             input=get_parameter_from_ssm("dockerhub_robot_password"),
@@ -189,7 +194,7 @@ def main():
     test_results = []  # type: List[Tuple[str, str]]
     for image, versions in merged.items():
         for tags in versions:
-            manifest, test_result = create_manifest(image, tags, push)
+            manifest, test_result = create_manifest(image, tags, args.push)
             test_results.append((manifest, test_result))
             if test_result != "OK":
                 status = "failure"
@@ -205,7 +210,7 @@ def main():
     print("::notice ::Report url: {}".format(url))
     print('::set-output name=url_output::"{}"'.format(url))
 
-    if args.no_reports:
+    if not args.reports:
         return
 
     if changed_images:
