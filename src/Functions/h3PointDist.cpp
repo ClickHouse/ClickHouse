@@ -25,13 +25,14 @@ extern const int ILLEGAL_COLUMN;
 
 namespace
 {
-
-class FunctionH3PointDistM final : public IFunction
+template <class Impl>
+class FunctionH3PointDist final : public IFunction
 {
 public:
-    static constexpr auto name = "h3PointDistM";
+    static constexpr auto name = Impl::name;
+    static constexpr auto function = Impl::function;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PointDistM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PointDist>(); }
 
     std::string getName() const override { return name; }
 
@@ -109,7 +110,8 @@ public:
             LatLng point1 = {degsToRads(lat1), degsToRads(lon1)};
             LatLng point2 = {degsToRads(lat2), degsToRads(lon2)};
 
-            Float64 res = distanceM(&point1, &point2);
+            // function will be equivalent to distanceM or distanceKm or distanceRads
+            Float64 res = function(&point1, &point2);
             dst_data[row] = res;
         }
 
@@ -119,10 +121,25 @@ public:
 
 }
 
-void registerFunctionH3PointDistM(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionH3PointDistM>();
-}
+struct H3PointDistM {
+    static constexpr auto name = "h3PointDistM";
+    static constexpr auto function = distanceM;
+};
+
+struct H3PointDistKm {
+    static constexpr auto name = "h3PointDistKm";
+    static constexpr auto function = distanceKm;
+};
+
+struct H3PointDistRads {
+    static constexpr auto name = "h3PointDistRads";
+    static constexpr auto function = distanceRads;
+};
+
+
+void registerFunctionH3PointDistM(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(); }
+void registerFunctionH3PointDistKm(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(); }
+void registerFunctionH3PointDistRads(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(); }
 
 }
 
