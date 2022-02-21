@@ -13,6 +13,7 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPool;
 }
 
 std::random_device device;
@@ -69,7 +70,8 @@ TEST(Executor, RemoveTasks)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPool
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -110,7 +112,8 @@ TEST(Executor, RemoveTasksStress)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPool
     );
 
     std::barrier barrier(schedulers_count + removers_count);
