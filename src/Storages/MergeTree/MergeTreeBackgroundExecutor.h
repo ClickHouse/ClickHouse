@@ -190,6 +190,7 @@ public:
         if (thread_pool_size == threads_count)
             return;
 
+        std::lock_guard threads_lock(threads_mutex);
         bool is_add_thread = thread_pool_size > threads_count;
         if (!is_add_thread)
         {
@@ -221,6 +222,7 @@ public:
 
 private:
     String name;
+    std::mutex threads_mutex;
     size_t threads_count{0};
     size_t max_tasks_count{0};
     CurrentMetrics::Metric task_metric;
