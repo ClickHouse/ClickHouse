@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -130,6 +131,30 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
 }
 
 
+AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
+    AsynchronousReaderPtr reader_,
+    Int32 priority_,
+    int fd_,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
+    , reader(std::move(reader_))
+    , priority(priority_)
+    , required_alignment(alignment)
+    , fd(fd_)
+{
+    if (required_alignment > buf_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Too large alignment. Cannot have required_alignment greater than buf_size: {} > {}. It is a bug",
+            required_alignment,
+            buf_size);
+
+    prefetch_buffer.alignment = alignment;
+}
+
 AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescriptor()
 {
     finalize();
@@ -196,6 +221,8 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
     file_offset_of_buffer_end = seek_pos;
     bytes_to_ignore = new_pos - seek_pos;
+
+    assert(bytes_to_ignore < internal_buffer.size());
 
     return seek_pos;
 }

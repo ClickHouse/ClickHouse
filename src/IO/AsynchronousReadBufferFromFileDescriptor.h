@@ -42,15 +42,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
-        , reader(std::move(reader_))
-        , priority(priority_)
-        , required_alignment(alignment)
-        , fd(fd_)
-    {
-        prefetch_buffer.alignment = alignment;
-    }
+        std::optional<size_t> file_size_ = std::nullopt);
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
