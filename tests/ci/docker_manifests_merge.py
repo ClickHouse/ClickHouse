@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_images(path: str, suffix: str) -> Images:
-    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "r") as images:
+    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
         return json.load(images)
 
 
@@ -131,39 +131,37 @@ def merge_images(to_merge: Dict[str, Images]) -> Dict[str, List[List[str]]]:
 def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     tag = tags[0]
     manifest = f"{image}:{tag}"
-    cmd = "docker manifest create --amend {}".format(
-        " ".join((f"{image}:{t}" for t in tags))
-    )
+    cmd = "docker manifest create --amend " + " ".join((f"{image}:{t}" for t in tags))
     logging.info("running: %s", cmd)
-    popen = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         shell=True,
         stderr=subprocess.STDOUT,
         stdout=subprocess.PIPE,
         universal_newlines=True,
-    )
-    retcode = popen.wait()
-    if retcode != 0:
-        output = popen.stdout.read()  # type: ignore
-        logging.error("failed to create manifest for %s:\n %s\n", manifest, output)
-        return manifest, "FAIL"
-    if not push:
-        return manifest, "OK"
+    ) as popen:
+        retcode = popen.wait()
+        if retcode != 0:
+            output = popen.stdout.read()  # type: ignore
+            logging.error("failed to create manifest for %s:\n %s\n", manifest, output)
+            return manifest, "FAIL"
+        if not push:
+            return manifest, "OK"
 
     cmd = f"docker manifest push {manifest}"
     logging.info("running: %s", cmd)
-    popen = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         shell=True,
         stderr=subprocess.STDOUT,
         stdout=subprocess.PIPE,
         universal_newlines=True,
-    )
-    retcode = popen.wait()
-    if retcode != 0:
-        output = popen.stdout.read()  # type: ignore
-        logging.error("failed to push %s:\n %s\n", manifest, output)
-        return manifest, "FAIL"
+    ) as popen:
+        retcode = popen.wait()
+        if retcode != 0:
+            output = popen.stdout.read()  # type: ignore
+            logging.error("failed to push %s:\n %s\n", manifest, output)
+            return manifest, "FAIL"
 
     return manifest, "OK"
 
@@ -199,7 +197,9 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
-    with open(os.path.join(args.path, "changed_images.json"), "w") as ci:
+    with open(
+        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
+    ) as ci:
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
@@ -207,8 +207,8 @@ def main():
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
-    print("::notice ::Report url: {}".format(url))
-    print('::set-output name=url_output::"{}"'.format(url))
+    print(f"::notice ::Report url: {url}")
+    print(f'::set-output name=url_output::"{url}"')
 
     if not args.reports:
         return
