@@ -90,6 +90,7 @@ create_admin_user() {
 }
 
 create_keytabs() {
+  rm /tmp/keytab/*.keytab
 
 
   # kadmin.local -q "addprinc -randkey hdfs/kerberizedhdfs1.${DOMAIN_REALM}@${REALM}"
