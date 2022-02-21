@@ -31,12 +31,14 @@ dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-dpkg -i package_folder/clickhouse-test_*.deb
 
 function configure()
 {
     # install test configs
     /usr/share/clickhouse-test/config/install.sh
+
+    # we mount tests folder from repo to /usr/share
+    ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
@@ -148,14 +150,12 @@ info signals
 continue
 gcore
 backtrace full
-info locals
+thread apply all backtrace full
 info registers
 disassemble /s
 up
-info locals
 disassemble /s
 up
-info locals
 disassemble /s
 p \"done\"
 detach
@@ -269,5 +269,5 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 # Default filename is 'core.PROCESS_ID'
 for core in core.*; do
     pigz $core
-    mv $core.gz /output/
+    mv $core.gz /test_output/
 done

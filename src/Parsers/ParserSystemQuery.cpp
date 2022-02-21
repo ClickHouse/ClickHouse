@@ -64,6 +64,78 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
     return true;
 }
 
+enum class SystemQueryTargetType
+{
+    Model,
+    Function,
+    Disk
+};
+
+static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+{
+    /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
+    /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
+    /// Need to support both
+
+    String cluster;
+    bool parsed_on_cluster = false;
+
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+        parsed_on_cluster = true;
+    }
+
+    String target;
+    ASTPtr temporary_string_literal;
+
+    if (ParserStringLiteral{}.parse(pos, temporary_string_literal, expected))
+    {
+        target = temporary_string_literal->as<ASTLiteral &>().value.safeGet<String>();
+    }
+    else
+    {
+        ParserIdentifier identifier_parser;
+        ASTPtr identifier;
+
+        if (!identifier_parser.parse(pos, identifier, expected))
+            return false;
+
+        if (!tryGetIdentifierNameInto(identifier, target))
+            return false;
+    }
+
+    if (!parsed_on_cluster && ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
+    res->cluster = cluster;
+
+    switch (target_type)
+    {
+        case SystemQueryTargetType::Model:
+        {
+            res->target_model = std::move(target);
+            break;
+        }
+        case SystemQueryTargetType::Function:
+        {
+            res->target_function = std::move(target);
+            break;
+        }
+        case SystemQueryTargetType::Disk:
+        {
+            res->disk = std::move(target);
+            break;
+        }
+    }
+
+    return true;
+}
+
 static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
@@ -112,50 +184,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RELOAD_MODEL:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
-            ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
-            {
-                res->target_model = ast->as<ASTLiteral &>().value.safeGet<String>();
-            }
-            else
-            {
-                ParserIdentifier model_parser;
-                ASTPtr model;
-                String target_model;
-
-                if (!model_parser.parse(pos, model, expected))
-                    return false;
-
-                if (!tryGetIdentifierNameInto(model, res->target_model))
-                    return false;
-            }
-
+            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Model))
+                return false;
             break;
         }
         case Type::RELOAD_FUNCTION:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
-            ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
-            {
-                res->target_function = ast->as<ASTLiteral &>().value.safeGet<String>();
-            }
-            else
-            {
-                ParserIdentifier function_parser;
-                ASTPtr function;
-                String target_function;
-
-                if (!function_parser.parse(pos, function, expected))
-                    return false;
-
-                if (!tryGetIdentifierNameInto(function, res->target_function))
-                    return false;
-            }
-
+            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Function))
+                return false;
             break;
         }
         case Type::DROP_REPLICA:
@@ -211,14 +247,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_DISK:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->disk = ast->as<ASTIdentifier &>().name();
-            else
+            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
-
             break;
         }
 

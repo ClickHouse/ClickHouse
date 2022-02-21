@@ -387,47 +387,52 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE FindResult findFromRow(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
     {
         size_t row = getIndexAt(row_);
 
         if (is_nullable && row == 0)
         {
             if constexpr (has_mapped)
-                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData());
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
             else
-                return FindResult(data.hasNullKeyData());
+                return FindResult(data.hasNullKeyData(), 0);
         }
 
         if (visit_cache[row] != VisitValue::Empty)
         {
             if constexpr (has_mapped)
-                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found);
+                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found, 0);
             else
-                return FindResult(visit_cache[row] == VisitValue::Found);
+                return FindResult(visit_cache[row] == VisitValue::Found, 0);
         }
 
         auto key_holder = getKeyHolder(row_, pool);
 
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         if (saved_hash)
-            it = data.find(*key_holder, saved_hash[row]);
+            it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
         else
-            it = data.find(*key_holder);
+            it = data.find(keyHolderGetKey(key_holder));
 
-        bool found = it != data.end();
+        bool found = it;
         visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
 
         if constexpr (has_mapped)
         {
             if (found)
-                mapped_cache[row] = it->second;
+                mapped_cache[row] = it->getMapped();
         }
 
+        size_t offset = 0;
+
+        if constexpr (FindResult::has_offset)
+            offset = found ? data.offsetInternal(it) : 0;
+
         if constexpr (has_mapped)
-            return FindResult(&mapped_cache[row], found);
+            return FindResult(&mapped_cache[row], found, offset);
         else
-            return FindResult(found);
+            return FindResult(found, offset);
     }
 
     template <typename Data>
