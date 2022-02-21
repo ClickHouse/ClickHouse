@@ -17,18 +17,12 @@ include(FindJNI)
 message("JNI_INCLUDE_DIRS ${JNI_INCLUDE_DIRS}")
 include_directories(${JNI_INCLUDE_DIRS})
 
-get_filename_component(JAVA_MAIN_CLASS_PATH
-        ${PROJECT_SOURCE_DIR}/utils/local-engine/java/src/main/java
-        ABSOLUTE)
 set(JNI_NATIVE_SOURCES
         local_engine_jni.cpp)
 
-set(JAVA_MAIN_CLASSES
-        ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/LocalEngine.java
-        ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/SparkRowInfo.java
-        )
-# Create the jni header file (from the java class).
+# Set the jni header file (from the java class).
 set(JNI_HEADERS_DIR ${PROJECT_SOURCE_DIR}/utils/local-engine/include)
+
 file(MAKE_DIRECTORY ${JNI_HEADERS_DIR})
 if(${Java_VERSION_MAJOR} VERSION_GREATER_EQUAL "10" AND ${CMAKE_VERSION} VERSION_LESS "3.11.4")
     # Java 10 and newer don't have javah, but the alternative GENERATE_NATIVE_HEADERS requires CMake 3.11.4 or newer
@@ -64,7 +58,6 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_table_functions
         string_utils
         substrait
-#        "-Wl,--no-whole-archive"
         )
 
 function(add_cxx_compile_options option)

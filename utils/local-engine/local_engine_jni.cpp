@@ -5,7 +5,8 @@
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/Sinks/NullSink.h>
-#include "include/io_kyligence_jni_engine_LocalEngine.h"
+#include "include/com_intel_oap_row_RowIterator.h"
+#include "include/com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -43,10 +44,6 @@ bool inside_main = false;
 extern "C" {
 #endif
 
-static jfieldID local_engine_plan_field_id;
-static jclass local_engine_class;
-static jfieldID local_engine_executor_field_id;
-
 static jclass spark_row_info_class;
 static jmethodID spark_row_info_constructor;
 
@@ -63,11 +60,7 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     illegal_access_exception_class = CreateGlobalClassReference(env, "Ljava/lang/IllegalAccessException;");
     illegal_argument_exception_class = CreateGlobalClassReference(env, "Ljava/lang/IllegalArgumentException;");
 
-    local_engine_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/LocalEngine;");
-    local_engine_plan_field_id = env->GetFieldID(local_engine_class, "plan", "[B");
-    local_engine_executor_field_id = env->GetFieldID(local_engine_class, "nativeExecutor", "J");
-
-    spark_row_info_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/SparkRowInfo;");
+    spark_row_info_class = CreateGlobalClassReference(env, "Lcom/intel/oap/row/SparkRowInfo;");
     spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJ)V");
     return JNI_VERSION_1_8;
 }
@@ -83,42 +76,33 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(unsupportedoperation_exception_class);
     env->DeleteGlobalRef(illegal_access_exception_class);
     env->DeleteGlobalRef(illegal_argument_exception_class);
-    env->DeleteGlobalRef(local_engine_class);
 }
-
-JNIEXPORT jlong JNICALL Java_io_kyligence_jni_engine_LocalEngine_test(JNIEnv * env, jclass, jint a, jint b)
-{
-    inside_main = true;
-    std::cout << std::string("hello world");
-    return a + b;
-}
-void Java_io_kyligence_jni_engine_LocalEngine_initEngineEnv(JNIEnv *, jclass)
+void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
     registerAllFunctions();
 }
-void Java_io_kyligence_jni_engine_LocalEngine_execute(JNIEnv * env, jobject obj)
+
+jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
 {
-    jobject plan_data = env->GetObjectField(obj, local_engine_plan_field_id);
-    jbyteArray * plan = reinterpret_cast<jbyteArray *>(&plan_data);
-    jsize plan_size = env->GetArrayLength(*plan);
-    jbyte * plan_address = env->GetByteArrayElements(*plan, nullptr);
+    jsize plan_size = env->GetArrayLength(plan);
+    jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
     dbms::SerializedPlanParser parser(dbms::SerializedPlanParser::global_context);
     auto query_plan = parser.parse(plan_string);
     dbms::LocalExecutor * executor = new dbms::LocalExecutor();
     executor->execute(std::move(query_plan));
-    env->SetLongField(obj, local_engine_executor_field_id, reinterpret_cast<jlong>(executor));
+    return reinterpret_cast<jlong>(executor);
 }
-jboolean Java_io_kyligence_jni_engine_LocalEngine_hasNext(JNIEnv * env, jobject obj)
+
+jboolean Java_com_intel_oap_row_RowIterator_nativeHasNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    jlong executor_address = env->GetLongField(obj, local_engine_executor_field_id);
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
-jobject Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv * env, jobject obj)
+
+jobject Java_com_intel_oap_row_RowIterator_nativeNext(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    jlong executor_address = env->GetLongField(obj, local_engine_executor_field_id);
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     local_engine::SparkRowInfoPtr spark_row_info = executor->next();
 
@@ -137,12 +121,25 @@ jobject Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv * env, jobject obj)
 
     return spark_row_info_object;
 }
-void Java_io_kyligence_jni_engine_LocalEngine_close(JNIEnv * env, jobject obj)
+
+void Java_com_intel_oap_row_RowIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
 {
-    jlong executor_address = env->GetLongField(obj, local_engine_executor_field_id);
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     delete executor;
 }
+
+void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetJavaTmpDir(JNIEnv * env, jobject obj, jstring dir)
+{
+}
+
+void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetBatchSize(JNIEnv * env, jobject obj, jint batch_size)
+{
+}
+
+void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetMetricsTime(JNIEnv * env, jobject obj, jboolean setMetricsTime)
+{
+}
+
 #ifdef __cplusplus
 }
 #endif
