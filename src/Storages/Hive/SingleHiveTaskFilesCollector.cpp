@@ -1,18 +1,18 @@
 #include <Storages/Hive/SingleHiveTaskFilesCollector.h>
 #if USE_HIVE
-#    include <mutex>
-#    include <Core/Field.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <Interpreters/ExpressionAnalyzer.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/Formats/IInputFormat.h>
-#    include <QueryPipeline/Pipe.h>
-#    include <base/logger_useful.h>
-#    include <Common/ErrorCodes.h>
-#    include <Common/ThreadPool.h>
+#include <mutex>
+#include <Core/Field.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Parsers/ASTFunction.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/Pipe.h>
+#include <base/logger_useful.h>
+#include <Common/ErrorCodes.h>
+#include <Common/ThreadPool.h>
 namespace DB
 {
 
@@ -170,9 +170,10 @@ HiveFiles SingleHiveTaskFilesCollector::collectHiveFilesFromPartition(
     const KeyCondition partition_key_condition(query_info_, args.context, partition_name_and_types.getNames(), partition_minmax_idx_expr);
     if (!partition_key_condition.checkInHyperrectangle(ranges, partition_name_and_types.getTypes()).can_be_true)
     {
-        LOG_DEBUG(logger, "Partition condition check failed. partition:{}", write_buf.str());
+        LOG_DEBUG(logger, "Partition condition check failed. partition:{}.", write_buf.str());
         return {};
     }
+
     auto file_infos = hive_table_metadata_->getFilesByLocation(fs_, partition_.sd.location);
     std::vector<HiveFilePtr> hive_files;
     hive_files.reserve(file_infos.size());

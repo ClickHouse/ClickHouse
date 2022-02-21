@@ -38,7 +38,7 @@ public:
         ContextPtr /* query_context */,
         const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return false;
+        return true;
     }
 
 
