@@ -400,8 +400,10 @@ TEST(LRUFileCache, get)
         /// state is changed not manually via segment->complete(state) but from destructor of holder
         /// and notify_all() is also called from destructor of holder.
 
-        auto holder = cache.getOrSet(key, 3, 23); /// Get [3, 25]
-        auto segments = fromHolder(holder);
+        std::optional<DB::FileSegmentsHolder> holder;
+        holder.emplace(cache.getOrSet(key, 3, 23)); /// Get [3, 25]
+
+        auto segments = fromHolder(*holder);
         ASSERT_EQ(segments.size(), 3);
 
         assertRange(38, segments[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::DOWNLOADED);
@@ -426,7 +428,7 @@ TEST(LRUFileCache, get)
             thread_status_1.attachQueryContext(query_context_1);
 
             auto holder_2 = cache.getOrSet(key, 3, 23); /// Get [3, 25] once again
-            auto segments_2 = fromHolder(holder);
+            auto segments_2 = fromHolder(*holder);
             ASSERT_EQ(segments_2.size(), 3);
 
             assertRange(41, segments_2[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::DOWNLOADED);
@@ -456,7 +458,7 @@ TEST(LRUFileCache, get)
             cv.wait(lock, [&]{ return lets_start_download; });
         }
 
-        holder.~FileSegmentsHolder();
+        holder.reset();
         other_1.join();
         printRanges(segments);
         ASSERT_TRUE(segments[1]->state() == DB::FileSegment::State::DOWNLOADED);
