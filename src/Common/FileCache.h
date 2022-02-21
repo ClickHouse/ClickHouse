@@ -120,6 +120,9 @@ private:
         /// Iterator is put here on first reservation attempt, if successful.
         std::optional<LRUQueueIterator> queue_iterator;
 
+        /// Pointer to file segment is always hold by the cache itself.
+        /// Apart from pointer in cache, it can be hold by cache users, when they call
+        /// getorSet(), but cache users always hold it via FileSegmentsHolder.
         bool releasable() const { return file_segment.unique(); }
 
         size_t size() const { return file_segment->reserved_size; }

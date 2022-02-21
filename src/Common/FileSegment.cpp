@@ -175,7 +175,7 @@ FileSegment::State FileSegment::wait()
         }
 #endif
 
-        cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: make configurable by setting
+        cv.wait_for(segment_lock, std::chrono::seconds(60));
     }
 
     return download_state;
