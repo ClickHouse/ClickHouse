@@ -14,7 +14,7 @@ toc_title: OpenTelemetry Support
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
-If no parent trace context is supplied, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](../operations/settings/settings.md#opentelemetry-start-trace-probability) setting.
+If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](../operations/settings/settings.md#opentelemetry-start-trace-probability) setting.
 
 ## Propagating the Trace Context
 
@@ -46,8 +46,8 @@ ENGINE = URL('http://127.0.0.1:9411/api/v2/spans', 'JSONEachRow')
 SETTINGS output_format_json_named_tuples_as_objects = 1,
     output_format_json_array_of_rows = 1 AS
 SELECT
-    lower(hex(reinterpretAsFixedString(trace_id))) AS traceId,
-    lower(hex(parent_span_id)) AS parentId,
+    lower(hex(trace_id)) AS traceId,
+    case when parent_span_id = 0 then '' else lower(hex(parent_span_id)) end AS parentId,
     lower(hex(span_id)) AS id,
     operation_name AS name,
     start_time_us AS timestamp,

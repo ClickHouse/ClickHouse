@@ -254,7 +254,7 @@ Yandex安全团队的人员从安全的角度对ClickHouse的功能做了一些�
 
 ## 静态分析仪 {#static-analyzers}
 
-我们在每次提交的基础上运行 `clang-tidy` 和 `PVS-Studio`. `clang-static-analyzer` 检查也被启用. `clang-tidy` 也用于一些样式检查.
+我们在每次提交的基础上运行 `clang-tidy`. `clang-static-analyzer` 检查也被启用. `clang-tidy` 也用于一些样式检查.
 
 我们已经评估了 `clang-tidy`、`Coverity`、`cppcheck`、`PVS-Studio`、`tscancode`、`CodeQL`. 您将在 `tests/instructions/` 目录中找到使用说明. 你也可以阅读[俄文文章](https://habr.com/company/yandex/blog/342018/).
 
