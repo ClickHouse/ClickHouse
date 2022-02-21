@@ -17,6 +17,11 @@ INSERT INTO table1 VALUES(-90, 181, -89, 182);
 INSERT INTO table1 VALUES(-84, 181, -83, 182);
 INSERT INTO table1 VALUES(-87, 0, -85, 3);
 
+select '-- select h3PointDistM(lat1, lon1,lat2, lon2) AS k from table1 order by k;';
+select h3PointDistM(lat1, lon1,lat2, lon2) AS k from table1 order by k;
+select '-- select h3PointDistKm(lat1, lon1,lat2, lon2) AS k from table1 order by k;';
 select h3PointDistKm(lat1, lon1,lat2, lon2) AS k from table1 order by k;
+select '-- select h3PointDistRads(lat1, lon1,lat2, lon2) AS k from table1 order by k;';
+select h3PointDistRads(lat1, lon1,lat2, lon2) AS k from table1 order by k;
 
 DROP TABLE table1
