@@ -134,7 +134,7 @@ def _get_html_url(url):
     if isinstance(url, str):
         href, name = url, _get_html_url_name(url)
     if isinstance(url, tuple):
-        href, name = url[0]._get_html_url_name(url)
+        href, name = url[0], _get_html_url_name(url)
     if href and name:
         return '<a href="{href}">{name}</a>'.format(href=href, name=_get_html_url_name(url))
     return ''
