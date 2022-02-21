@@ -1,11 +1,11 @@
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
-    library-bridge.cpp
-    LibraryInterface.cpp
-    LibraryBridge.cpp
-    Handlers.cpp
-    HandlerFactory.cpp
-    SharedLibraryHandler.cpp
-    SharedLibraryHandlerFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/library-bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/LibraryInterface.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/LibraryBridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Handlers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/HandlerFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SharedLibraryHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SharedLibraryHandlerFactory.cpp
 )
 
 if (OS_LINUX)

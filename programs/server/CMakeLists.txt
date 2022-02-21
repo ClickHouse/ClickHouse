@@ -1,8 +1,8 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 
 set(CLICKHOUSE_SERVER_SOURCES
-    MetricsTransmitter.cpp
-    Server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MetricsTransmitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
 )
 
 set (LINK_RESOURCE_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_server_configs> -Wl,${NO_WHOLE_ARCHIVE}")
@@ -35,4 +35,6 @@ clickhouse_embed_binaries(
     TARGET clickhouse_server_configs
     RESOURCES config.xml users.xml embedded.xml play.html
 )
-add_dependencies(clickhouse-server-lib clickhouse_server_configs)
+if(NOT CLICKHOUSE_ONE_SHARED)
+    add_dependencies(clickhouse-server-lib clickhouse_server_configs)
+endif()

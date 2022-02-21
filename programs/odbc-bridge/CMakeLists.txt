@@ -1,16 +1,16 @@
 set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
-    ColumnInfoHandler.cpp
-    getIdentifierQuote.cpp
-    HandlerFactory.cpp
-    IdentifierQuoteHandler.cpp
-    MainHandler.cpp
-    ODBCBlockInputStream.cpp
-    ODBCBlockOutputStream.cpp
-    ODBCBridge.cpp
-    PingHandler.cpp
-    SchemaAllowedHandler.cpp
-    validateODBCConnectionString.cpp
-    odbc-bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ColumnInfoHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/getIdentifierQuote.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/HandlerFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/IdentifierQuoteHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MainHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockInputStream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockOutputStream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/PingHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SchemaAllowedHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/odbc-bridge.cpp
 )
 
 if (OS_LINUX)
