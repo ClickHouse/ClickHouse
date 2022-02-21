@@ -5,9 +5,13 @@ import re
 import subprocess
 from typing import Optional
 
-RELEASE_BRANCH_REGEXP = r"^\d+[.]\d+$"
-TAG_REGEXP = r"^v\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)$"
-SHA_REGEXP = r"^([0-9]|[a-f]){40}$"
+# ^ and $ match subline in `multiple\nlines`
+# \A and \Z match only start and end of the whole string
+RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
+TAG_REGEXP = (
+    r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)\Z"
+)
+SHA_REGEXP = r"\A([0-9]|[a-f]){40}\Z"
 
 
 # Py 3.8 removeprefix and removesuffix
