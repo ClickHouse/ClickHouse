@@ -59,8 +59,8 @@ for FILE in $(ls "${MINIO_DATA_PATH}"); do
 done
 
 mkdir -p ~/.aws
- cat <<EOT >> ~/.aws/credentials
- [default]
- aws_access_key_id=clickhouse
- aws_secret_access_key=clickhouse
- EOT
+cat <<EOT >> ~/.aws/credentials
+[default]
+aws_access_key_id=clickhouse
+aws_secret_access_key=clickhouse
+EOT
