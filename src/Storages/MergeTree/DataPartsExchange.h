@@ -122,6 +122,7 @@ private:
 
     MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
             const String & part_name,
+            const String & part_id,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,

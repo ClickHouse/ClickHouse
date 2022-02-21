@@ -433,7 +433,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {
             capability.push_back(toString(disk->getType()));
         }
+
+        if (capability.empty())
+            LOG_TEST(log, "Zero copy replication enabled, but no disks with zero-copy replication support found, will make ordinary fetch");
     }
+
     if (!capability.empty())
     {
         ::sort(capability.begin(), capability.end());
@@ -526,18 +530,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         if (part_type == "InMemory")
             throw Exception("Got 'remote_fs_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
 
-        try
+        String part_id;
+        readStringBinary(part_id, in);
+
+        if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
         {
-            return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix_, disk, in, throttler);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
-                throw;
-            LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
-            /// Try again but without zero-copy
+            /// Download part without zero copy because chosen disk is not zero copy
+            LOG_DEBUG(log, "Part {} unique id {} doesn't exist on {}, fallback to non zero-copy download.", part_name, part_id, disk->getName());
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
-                user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false, disk);
+                user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, /* try_zero_copy = */ false, disk);
+        }
+        else
+        {
+            return downloadPartToDiskRemoteMeta(part_name, part_id, replica_path, to_detached, tmp_prefix_, disk, in, throttler);
         }
     }
 
@@ -762,6 +767,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     const String & part_name,
+    const String & part_id,
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
@@ -769,15 +775,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     PooledReadWriteBufferFromHTTP & in,
     ThrottlerPtr throttler)
 {
-    String part_id;
-    readStringBinary(part_id, in);
-
     if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
     {
         throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {}.", part_name, part_id, disk->getName());
     }
 
-    LOG_DEBUG(log, "Downloading Part {} unique id {} metadata onto disk {}.",
+    LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.",
         part_name, part_id, disk->getName());
 
     data.lockSharedDataTemporary(part_name, part_id, disk);
