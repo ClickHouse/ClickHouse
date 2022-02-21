@@ -337,8 +337,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
             return;
 
         OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-        span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
-        span.add_attribute("clickhouse.written_rows", rows);
+        span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+        span.addAttribute("clickhouse.written_rows", rows);
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -464,9 +464,9 @@ void DistributedSink::writeSync(const Block & block)
 
     size_t num_shards = end - start;
 
-    span.add_attribute("clickhouse.start_shard", start);
-    span.add_attribute("clickhouse.end_shard", end);
-    span.add_attribute("db.statement", this->query_string);
+    span.addAttribute("clickhouse.start_shard", start);
+    span.addAttribute("clickhouse.end_shard", end);
+    span.addAttribute("db.statement", this->query_string);
 
     if (num_shards > 1)
     {
@@ -501,7 +501,7 @@ void DistributedSink::writeSync(const Block & block)
     catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription());
-        span.add_attribute(exception);
+        span.addAttribute(exception);
         throw;
     }
 
@@ -616,8 +616,8 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
     const auto & settings = context->getSettingsRef();
     Block block_to_send = removeSuperfluousColumns(block);
 
-    span.add_attribute("clickhouse.shard_num", shard_info.shard_num);
-    span.add_attribute("clickhouse.written_rows", block.rows());
+    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+    span.addAttribute("clickhouse.written_rows", block.rows());
 
     if (shard_info.hasInternalReplication())
     {
@@ -653,7 +653,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-    span.add_attribute("db.statement", this->query_string);
+    span.addAttribute("db.statement", this->query_string);
 
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 

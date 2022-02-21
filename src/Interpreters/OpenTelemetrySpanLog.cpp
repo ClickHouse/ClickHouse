@@ -150,7 +150,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
     }
 }
 
-void OpenTelemetrySpanHolder::add_attribute(const std::string& name, UInt32 value)
+void OpenTelemetrySpanHolder::addAttribute(const std::string& name, UInt64 value)
 {
     if (trace_id == UUID())
         return;
@@ -159,7 +159,7 @@ void OpenTelemetrySpanHolder::add_attribute(const std::string& name, UInt32 valu
     this->attribute_values.push_back(std::to_string(value));
 }
 
-void OpenTelemetrySpanHolder::add_attribute(const std::string& name, const std::string& value)
+void OpenTelemetrySpanHolder::addAttribute(const std::string& name, const std::string& value)
 {
     if (trace_id == UUID())
         return;
@@ -168,7 +168,7 @@ void OpenTelemetrySpanHolder::add_attribute(const std::string& name, const std::
     this->attribute_values.push_back(value);
 }
 
-void OpenTelemetrySpanHolder::add_attribute(const Exception & e)
+void OpenTelemetrySpanHolder::addAttribute(const Exception & e)
 {
     if (trace_id == UUID())
         return;
@@ -177,7 +177,7 @@ void OpenTelemetrySpanHolder::add_attribute(const Exception & e)
     this->attribute_values.push_back(getExceptionMessage(e, false));
 }
 
-void OpenTelemetrySpanHolder::add_attribute(std::exception_ptr e)
+void OpenTelemetrySpanHolder::addAttribute(std::exception_ptr e)
 {
     if (trace_id == UUID() || e == nullptr)
         return;
