@@ -408,7 +408,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-add_library(global-group INTERFACE src/Processors/QueryPlan/CachingStep.h src/Processors/QueryPlan/CachingStep.cpp)
+add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)

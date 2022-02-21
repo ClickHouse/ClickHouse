@@ -74,7 +74,7 @@ add_subdirectory (Coordination)
 
 
 set(dbms_headers)
-set(dbms_sources Processors/Transforms/CachingTransform.h Processors/Transforms/CachingTransform.cpp Processors/QueryPlan/ReadFromCacheStep.h Processors/QueryPlan/ReadFromCacheStep.cpp Processors/Transforms/ReadFromCacheTransform.h Processors/Transforms/ReadFromCacheTransform.cpp)
+set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
