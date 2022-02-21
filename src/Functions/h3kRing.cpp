@@ -64,7 +64,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_hindex)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -76,7 +80,7 @@ public:
         const auto & data_hindex = col_hindex->getData();
 
         /// ColumnUInt16 is sufficient as the max value of 2nd arg is checked (arg > 0 < 10000) in implementation below
-        const auto * col_k = checkAndGetColumn<ColumnUInt16>(arguments[1].column.get());
+        const auto * col_k = checkAndGetColumn<ColumnUInt16>(non_const_arguments[1].column.get());
         if (!col_k)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
