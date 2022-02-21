@@ -52,6 +52,23 @@ error="$(${CLICKHOUSE_CLIENT} --host "${ipv6_host_with_brackets}" --port "${not_
 echo "${error}" | grep -Fc "Code: 210"
 echo "${error}" | grep -Fc "${ipv6_host_with_brackets}:${not_alive_port}"
 
+echo '=== Values form config'
+
+CUSTOM_CONFIG="$CURDIR/02100_config.xml"
+rm -f ${CUSTOM_CONFIG}
+
+cat << EOF > ${CUSTOM_CONFIG}
+<config>
+  <host>${not_alive_host}</host>
+  <port>${not_alive_port}</port>
+</config>
+EOF
+
+error="$(${CLICKHOUSE_CLIENT} --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:${not_alive_port}"
+rm -f ${CUSTOM_CONFIG}
+
 echo '==='
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 1";
