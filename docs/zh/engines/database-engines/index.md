@@ -14,7 +14,7 @@ toc_title: Introduction
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
+-   [MaterializeMySQL](../../engines/database-engines/materialized-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 

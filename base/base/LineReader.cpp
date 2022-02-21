@@ -109,10 +109,10 @@ void LineReader::Suggest::addWords(Words && new_words)
         std::lock_guard lock(mutex);
         addNewWords(words, new_words, std::less<std::string>{});
         addNewWords(words_no_case, new_words_no_case, NoCaseCompare{});
-    }
 
-    assert(std::is_sorted(words.begin(), words.end()));
-    assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+        assert(std::is_sorted(words.begin(), words.end()));
+        assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+    }
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)

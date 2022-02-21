@@ -187,7 +187,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             }
         }
 
-        pos = working_buffer.end();
+        resetWorkingBuffer();
         if (impl)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);

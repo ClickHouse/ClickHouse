@@ -316,7 +316,7 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
     return std::move(res.pipeline);
 }
 
-static inline String reWriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, const String & database_name, const String & table_name, const Settings & global_settings)
+static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, const String & database_name, const String & table_name, const Settings & global_settings)
 {
     Block tables_columns_sample_block
             {
@@ -376,7 +376,7 @@ static inline void dumpDataForTables(
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
-            String mysql_select_all_query = "SELECT " + reWriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettings()) + " FROM "
+            String mysql_select_all_query = "SELECT " + rewriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettingsRef()) + " FROM "
                     + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
             LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
             auto input = std::make_unique<MySQLSource>(connection, mysql_select_all_query, pipeline.getHeader(), mysql_input_stream_settings);
