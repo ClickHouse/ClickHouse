@@ -301,7 +301,7 @@ NamesAndTypesList ExpressionAnalyzer::analyzeJoin(ActionsDAGPtr & actions, const
     }
 
     NamesAndTypesList result_columns = src_columns;
-    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns,false);
+    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, false);
     return result_columns;
 }
 
@@ -944,7 +944,10 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         * - JOIN tables will need aliases to correctly resolve USING clause.
         */
     auto interpreter = interpretSubquery(
-        join_element.table_expression, context, original_right_columns, query_options.copy().setWithAllColumns().ignoreAlias(false));
+        join_element.table_expression,
+        context,
+        original_right_columns,
+        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
@@ -988,7 +991,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
+        auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
