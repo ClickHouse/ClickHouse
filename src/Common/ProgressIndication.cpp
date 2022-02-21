@@ -1,15 +1,16 @@
 #include "ProgressIndication.h"
+
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <numeric>
-#include <cmath>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
-#include "Common/formatReadable.h"
+#include <Databases/DatabaseMemory.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
-#include "IO/WriteBufferFromString.h"
-#include <Databases/DatabaseMemory.h>
+#include <Common/formatReadable.h>
 
 
 namespace
@@ -239,15 +240,21 @@ void ProgressIndication::writeProgress()
                 if (width_of_progress_bar <= 1 + 2 * static_cast<int64_t>(profiling_msg.size()))
                     profiling_msg.clear();
 
+                bool render_profiling_msg_at_left = !profiling_msg.empty() && (current_count * 2 >= max_count);
+
                 if (width_of_progress_bar > 0)
                 {
                     double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
                     std::string bar = UnicodeBar::render(bar_width);
 
-                    /// Whitespaces after the progress bar.
                     std::string whitespaces;
-                    if (width_of_progress_bar > static_cast<int64_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        whitespaces.assign(width_of_progress_bar - bar.size() - profiling_msg.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                    {
+                        /// Whitespaces after the progress bar
+                        size_t dbar = render_profiling_msg_at_left ? profiling_msg.size() : 0;
+                        int64_t ws_correction = static_cast<int64_t>((bar.size() - dbar) / UNICODE_BAR_CHAR_SIZE) + dbar;
+                        if (width_of_progress_bar > ws_correction)
+                            whitespaces.assign(width_of_progress_bar - ws_correction, ' ');
+                    }
 
                     if (profiling_msg.empty())
                     {
@@ -255,8 +262,6 @@ void ProgressIndication::writeProgress()
                     }
                     else
                     {
-                        bool render_profiling_msg_at_left = current_count * 2 >= max_count;
-
                         if (render_profiling_msg_at_left)
                         {
                             /// Render profiling_msg at left on top of the progress bar.
@@ -270,7 +275,7 @@ void ProgressIndication::writeProgress()
                             /// Render profiling_msg at right after the progress bar.
 
                             message << "\033[0;32m" << bar << "\033[0m"
-                                << whitespaces << "\033[2m" << profiling_msg << "\033[0m";
+                                << whitespaces.substr(profiling_msg.size()) << "\033[2m" << profiling_msg << "\033[0m";
                         }
                     }
                 }
