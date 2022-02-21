@@ -124,7 +124,8 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
 
     SeekableReadBufferPtr implementation_buffer;
 
-    size_t wait_download_max_tries = 5; /// TODO: Make configurable by setting.
+    /// Each wait() call has a timeout of 1 second.
+    size_t wait_download_max_tries = settings.remote_fs_cache_max_wait_sec;
     size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();

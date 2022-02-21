@@ -351,6 +351,7 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
     auto * cell_for_reserve = getCell(key_, offset_, cache_lock);
 
     /// A cell acquires a LRUQueue iterator on first successful space reservation attempt.
+    /// cell_for_reserve can be nullptr here when we call tryReserve() from loadCacheInfoIntoMemory().
     if (!cell_for_reserve || !cell_for_reserve->queue_iterator)
         queue_size += 1;
 
