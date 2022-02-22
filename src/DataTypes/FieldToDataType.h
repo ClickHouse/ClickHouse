@@ -38,6 +38,7 @@ public:
     DataTypePtr operator() (const DecimalField<Decimal128> & x) const;
     DataTypePtr operator() (const DecimalField<Decimal256> & x) const;
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
+    DataTypePtr operator() (const bool & x) const;
 };
 
 }

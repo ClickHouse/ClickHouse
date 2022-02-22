@@ -94,9 +94,9 @@ def test_quota_from_users_xml():
     system_quota_usage(
         [["myQuota", "default", 31556952, 1, 1000, 1, 500, 0, 500, 0, "\\N", 50, "\\N", 200, "\\N", 50, 1000, 200, "\\N", "\\N"]])
 
-    instance.query("SELECT COUNT() from test_table")
+    instance.query("SELECT SUM(x) from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, 1000, 2, 500, 0, 500, 0, "\\N", 51, "\\N", 208, "\\N", 50, 1000, 200, "\\N", "\\N"]])
+        [["myQuota", "default", 31556952, 2, 1000, 2, 500, 0, 500, 0, "\\N", 51, "\\N", 208, "\\N", 100, 1000, 400, "\\N", "\\N"]])
 
 
 def test_simpliest_quota():
@@ -125,9 +125,9 @@ def test_tracking_quota():
     system_quota_usage(
         [["myQuota", "default", 31556952, 1, "\\N", 1, "\\N", 0, "\\N", 0, "\\N", 50, "\\N", 200, "\\N", 50, "\\N", 200, "\\N", "\\N"]])
 
-    instance.query("SELECT COUNT() from test_table")
+    instance.query("SELECT SUM(x) from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, "\\N", 2, "\\N", 0, "\\N", 0, "\\N", 51, "\\N", 208, "\\N", 50, "\\N", 200, "\\N", "\\N"]])
+        [["myQuota", "default", 31556952, 2, "\\N", 2, "\\N", 0, "\\N", 0, "\\N", 51, "\\N", 208, "\\N", 100, "\\N", 400, "\\N", "\\N"]])
 
 
 def test_exceed_quota():

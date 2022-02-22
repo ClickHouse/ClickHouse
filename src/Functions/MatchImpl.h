@@ -8,13 +8,7 @@
 
 #include "config_functions.h"
 #include <Common/config.h>
-
-#if USE_RE2_ST
-#    include <re2_st/re2.h>
-#else
-#    include <re2/re2.h>
-#    define re2_st re2
-#endif
+#include <re2_st/re2.h>
 
 
 namespace DB

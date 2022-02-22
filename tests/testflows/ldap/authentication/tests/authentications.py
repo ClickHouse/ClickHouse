@@ -2,7 +2,7 @@
 import random
 import time
 
-from helpers.common import Pool, join
+from helpers.common import Pool
 from testflows.core import *
 from testflows.asserts import error
 from ldap.authentication.tests.common import *
@@ -107,13 +107,14 @@ def parallel_login(self, server, user_count=10, timeout=300, rbac=False):
                 with Pool(4) as pool:
                     try:
                         for i in range(5):
-                            tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                            tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                            tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                            tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                            tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                            tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
                     finally:
                         with Then("it should work"):
-                            join(tasks, timeout=timeout)
-        
+                            for task in tasks:
+                                task.result(timeout=timeout)
+
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Authentication_Invalid("1.0"),

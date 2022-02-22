@@ -22,9 +22,11 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <IO/Operators.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <base/logger_useful.h>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
 namespace ProfileEvents
@@ -365,7 +367,6 @@ static ActionsDAGPtr createProjection(const Block & header)
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const Names & column_names,
-    const ActionsDAGPtr & sorting_key_prefix_expr,
     ActionsDAGPtr & out_projection,
     const InputOrderInfoPtr & input_order_info)
 {
@@ -507,10 +508,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge)
     {
+        size_t fixed_prefix_size = input_order_info->order_key_fixed_prefix_descr.size();
+        size_t prefix_size = fixed_prefix_size + input_order_info->order_key_prefix_descr.size();
+
+        auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
+        order_key_prefix_ast->children.resize(prefix_size);
+
+        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
+        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+        const auto & sorting_columns = metadata_snapshot->getSortingKey().column_names;
+
         SortDescription sort_description;
-        for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
-            sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
-                                          input_order_info->direction, 1);
+        for (size_t j = 0; j < prefix_size; ++j)
+            sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
 
@@ -910,6 +920,11 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         parts_before_pk = parts.size();
 
         auto reader_settings = getMergeTreeReaderSettings(context);
+
+        bool use_skip_indexes = settings.use_skip_indexes;
+        if (select.final() && !settings.use_skip_indexes_if_final)
+            use_skip_indexes = false;
+
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,
@@ -920,7 +935,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             log,
             num_streams,
             result.index_stats,
-            context->getSettings().use_skip_indexes);
+            use_skip_indexes);
     }
     catch (...)
     {
@@ -1014,7 +1029,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         /// Skip this if final was used, because such columns were already added from PK.
         std::vector<String> add_columns = result.sampling.filter_expression->getRequiredColumns().getNames();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-        std::sort(column_names_to_read.begin(), column_names_to_read.end());
+        ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()),
                                    column_names_to_read.end());
     }
@@ -1038,7 +1053,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         if (!data.merging_params.version_column.empty())
             column_names_to_read.push_back(data.merging_params.version_column);
 
-        std::sort(column_names_to_read.begin(), column_names_to_read.end());
+        ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         pipe = spreadMarkRangesAmongStreamsFinal(
@@ -1048,17 +1063,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
     {
-        size_t prefix_size = input_order_info->order_key_prefix_descr.size();
-        auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
-
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
             column_names_to_read,
-            sorting_key_prefix_expr,
             result_projection,
             input_order_info);
     }

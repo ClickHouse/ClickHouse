@@ -2,6 +2,8 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 
 namespace ProfileEvents

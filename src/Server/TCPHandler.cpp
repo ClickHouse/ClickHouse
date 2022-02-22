@@ -359,6 +359,7 @@ void TCPHandler::runImpl()
                             return true;
 
                         sendProgress();
+                        sendProfileEvents();
                         sendLogs();
 
                         return false;
@@ -466,7 +467,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessage(e, true));
+                LOG_ERROR(log, fmt::runtime(getExceptionMessage(e, true)));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -1392,6 +1393,12 @@ void TCPHandler::receiveQuery()
     if (is_interserver_mode)
     {
         ClientInfo original_session_client_info = session->getClientInfo();
+
+        /// Cleanup fields that should not be reused from previous query.
+        original_session_client_info.current_user.clear();
+        original_session_client_info.current_query_id.clear();
+        original_session_client_info.current_address = {};
+
         session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
         session->getClientInfo() = original_session_client_info;
     }
