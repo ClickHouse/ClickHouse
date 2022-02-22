@@ -1219,6 +1219,9 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coo
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
     request->write(buf);
+    using namespace std::chrono;
+    auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    DB::writeIntBinary(time, buf);
     return buf.getBuffer();
 }
 
