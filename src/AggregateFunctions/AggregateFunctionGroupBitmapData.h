@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include <base/sort.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/SmallTable.h>
@@ -557,7 +558,7 @@ public:
             }
             if (limit < answer.size())
             {
-                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
                 answer.resize(limit);
             }
 

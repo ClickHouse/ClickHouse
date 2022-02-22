@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -43,6 +44,8 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
+    request.ignore = bytes_to_ignore;
+    bytes_to_ignore = 0;
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
@@ -75,11 +78,14 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         /// Read request already in flight. Wait for its completion.
 
         size_t size = 0;
+        size_t offset = 0;
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
             auto result = prefetch_future.get();
             size = result.size;
+            offset = result.offset;
+            assert(offset < size || size == 0);
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -89,8 +95,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         if (size)
         {
             prefetch_buffer.swap(memory);
-            set(memory.data(), memory.size());
-            working_buffer.resize(size);
+            /// Adjust the working buffer so that it ignores `offset` bytes.
+            setWithBytesToIgnore(memory.data(), size, offset);
             return true;
         }
 
@@ -100,13 +106,13 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto [size, _] = readInto(memory.data(), memory.size()).get();
+        auto [size, offset] = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)
         {
-            set(memory.data(), memory.size());
-            working_buffer.resize(size);
+            /// Adjust the working buffer so that it ignores `offset` bytes.
+            setWithBytesToIgnore(memory.data(), size, offset);
             return true;
         }
 
@@ -124,6 +130,30 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
     }
 }
 
+
+AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
+    AsynchronousReaderPtr reader_,
+    Int32 priority_,
+    int fd_,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
+    , reader(std::move(reader_))
+    , priority(priority_)
+    , required_alignment(alignment)
+    , fd(fd_)
+{
+    if (required_alignment > buf_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Too large alignment. Cannot have required_alignment greater than buf_size: {} > {}. It is a bug",
+            required_alignment,
+            buf_size);
+
+    prefetch_buffer.alignment = alignment;
+}
 
 AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescriptor()
 {
@@ -153,46 +183,48 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos <= file_offset_of_buffer_end)
+    while (true)
     {
-        /// Position is still inside the buffer.
-        /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
-
-        pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
-
-        return new_pos;
-    }
-    else
-    {
-        if (prefetch_future.valid())
+        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
         {
-            //std::cerr << "Ignoring prefetched data" << "\n";
-            prefetch_future.wait();
-            prefetch_future = {};
+            /// Position is still inside the buffer.
+            /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
+
+            pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
+
+            return new_pos;
+        }
+        else if (prefetch_future.valid())
+        {
+            /// Read from prefetch buffer and recheck if the new position is valid inside.
+
+            if (nextImpl())
+                continue;
         }
 
-        /// Position is out of the buffer, we need to do real seek.
-        off_t seek_pos = required_alignment > 1
-            ? new_pos / required_alignment * required_alignment
-            : new_pos;
-
-        off_t offset_after_seek_pos = new_pos - seek_pos;
-
-        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
-        pos = working_buffer.end();
-
-        /// Just update the info about the next position in file.
-
-        file_offset_of_buffer_end = seek_pos;
-
-        if (offset_after_seek_pos > 0)
-            ignore(offset_after_seek_pos);
-
-        return seek_pos;
+        break;
     }
+
+    assert(!prefetch_future.valid());
+
+    /// Position is out of the buffer, we need to do real seek.
+    off_t seek_pos = required_alignment > 1
+        ? new_pos / required_alignment * required_alignment
+        : new_pos;
+
+    /// First reset the buffer so the next read will fetch new data to the buffer.
+    resetWorkingBuffer();
+
+    /// Just update the info about the next position in file.
+
+    file_offset_of_buffer_end = seek_pos;
+    bytes_to_ignore = new_pos - seek_pos;
+
+    assert(bytes_to_ignore < internal_buffer.size());
+
+    return seek_pos;
 }
 
 

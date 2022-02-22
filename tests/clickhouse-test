@@ -329,6 +329,7 @@ class FailureReason(enum.Enum):
     FAST_ONLY = "running fast tests only"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
+    S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
 
     # UNKNOWN reasons
@@ -463,9 +464,17 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif tags and ('no-s3-storage' in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+
+
         elif tags:
             for build_flag in args.build_flags:
                 if 'no-' + build_flag in tags:
+                    return FailureReason.BUILD
+            for tag in tags:
+                tag = tag.replace('-', '_')
+                if tag.startswith('use_') and tag not in args.build_flags:
                     return FailureReason.BUILD
 
         return None
@@ -1069,6 +1078,11 @@ def collect_build_flags(args):
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
 
+    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1');")
+    for use_flag in use_flags.strip().splitlines():
+        use_flag = use_flag.decode().lower()
+        result.append(use_flag)
+
     return result
 
 
@@ -1360,6 +1374,7 @@ if __name__ == '__main__':
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
+    parser.add_argument('--s3-storage', action='store_true', default=False, help='Run tests over s3 storage')
 
     parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
     parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')

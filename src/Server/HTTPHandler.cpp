@@ -10,10 +10,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -27,7 +24,6 @@
 #include <base/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -41,14 +37,16 @@
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
-#include <Poco/Net/NetException.h>
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 
 #include <chrono>
-#include <iomanip>
 #include <sstream>
+
+#if USE_SSL
+#include <Poco/Net/X509Certificate.h>
+#endif
 
 
 namespace DB
@@ -56,7 +54,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -103,9 +100,9 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
 
-    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -323,68 +320,93 @@ bool HTTPHandler::authenticateUser(
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
 
+    /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
+    /// extracted from the SSL certificate used for this connection instead of checking password.
+    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
+    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
+
+    /// User name and password can be passed using HTTP Basic auth or query parameters
+    /// (both methods are insecure).
+    bool has_http_credentials = request.hasCredentials();
+    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
+
     std::string spnego_challenge;
+    std::string certificate_common_name;
 
-    if (user.empty() && password.empty() && quota_key.empty())
+    if (has_auth_headers)
     {
-        /// User name and password can be passed using query parameters
-        /// or using HTTP Basic auth (both methods are insecure).
-        if (request.hasCredentials())
+        /// It is prohibited to mix different authorization schemes.
+        if (has_http_credentials)
+            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and Authorization HTTP header simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+        if (has_credentials_in_query_params)
+            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via parameters simultaneously simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+
+        if (has_ssl_certificate_auth)
         {
-            /// It is prohibited to mix different authorization schemes.
-            if (params.has("user") || params.has("password"))
-                throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+#if USE_SSL
+            if (!password.empty())
+                throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via password simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
 
-            std::string scheme;
-            std::string auth_info;
-            request.getCredentials(scheme, auth_info);
+            if (request.havePeerCertificate())
+                certificate_common_name = request.peerCertificate().commonName();
 
-            if (Poco::icompare(scheme, "Basic") == 0)
-            {
-                HTTPBasicCredentials credentials(auth_info);
-                user = credentials.getUsername();
-                password = credentials.getPassword();
-            }
-            else if (Poco::icompare(scheme, "Negotiate") == 0)
-            {
-                spnego_challenge = auth_info;
+            if (certificate_common_name.empty())
+                throw Exception("Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name", ErrorCodes::AUTHENTICATION_FAILED);
+#else
+            throw Exception(
+                "SSL certificate authentication disabled because ClickHouse was built without SSL library",
+                ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+        }
+    }
+    else if (has_http_credentials)
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (has_credentials_in_query_params)
+            throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
 
-                if (spnego_challenge.empty())
-                    throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
-            }
-            else
-            {
-                throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
-            }
+        std::string scheme;
+        std::string auth_info;
+        request.getCredentials(scheme, auth_info);
+
+        if (Poco::icompare(scheme, "Basic") == 0)
+        {
+            HTTPBasicCredentials credentials(auth_info);
+            user = credentials.getUsername();
+            password = credentials.getPassword();
+        }
+        else if (Poco::icompare(scheme, "Negotiate") == 0)
+        {
+            spnego_challenge = auth_info;
+
+            if (spnego_challenge.empty())
+                throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
         }
         else
         {
-            user = params.get("user", "default");
-            password = params.get("password", "");
+            throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
         }
 
         quota_key = params.get("quota_key", "");
     }
     else
     {
-        /// It is prohibited to mix different authorization schemes.
-        if (request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key"))
-            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+        /// If the user name is not set we assume it's the 'default' user.
+        user = params.get("user", "default");
+        password = params.get("password", "");
+        quota_key = params.get("quota_key", "");
     }
 
-    if (spnego_challenge.empty()) // I.e., now using user name and password strings ("Basic").
+    if (!certificate_common_name.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<BasicCredentials>();
+            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
 
-        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
-        if (!basic_credentials)
-            throw Exception("Invalid authentication: unexpected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
-
-        basic_credentials->setUserName(user);
-        basic_credentials->setPassword(password);
+        auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
+        if (!certificate_credentials)
+            throw Exception("Invalid authentication: expected SSL certificate authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
     }
-    else
+    else if (!spnego_challenge.empty())
     {
         if (!request_credentials)
             request_credentials = server.context()->makeGSSAcceptorContext();
@@ -410,6 +432,18 @@ bool HTTPHandler::authenticateUser(
             response.send();
             return false;
         }
+    }
+    else // I.e., now using user name and password strings ("Basic").
+    {
+        if (!request_credentials)
+            request_credentials = std::make_unique<BasicCredentials>();
+
+        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
+        if (!basic_credentials)
+            throw Exception("Invalid authentication: expected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+
+        basic_credentials->setUserName(user);
+        basic_credentials->setPassword(password);
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
@@ -498,12 +532,9 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(
-            opentelemetry_traceparent, error))
+        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
         {
-            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                opentelemetry_traceparent, error);
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
@@ -926,7 +957,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         processQuery(request, params, response, used_output, query_scope);
-        LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
+        if (request_credentials)
+            LOG_DEBUG(log, "Authentication in progress...");
+        else
+            LOG_DEBUG(log, "Done processing query");
     }
     catch (...)
     {

@@ -28,7 +28,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>

@@ -6,11 +6,10 @@ from rbac.helper.common import *
 @Name("views")
 def feature(self):
 
-    tasks = []
     with Pool(3) as pool:
         try:
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.views.view", "feature")), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.views.live_view", "feature")), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.views.materialized_view", "feature")), {})
+            Feature(test=load("rbac.tests.views.view", "feature"), parallel=True, executor=pool)
+            Feature(test=load("rbac.tests.views.live_view", "feature"), parallel=True, executor=pool)
+            Feature(test=load("rbac.tests.views.materialized_view", "feature"), parallel=True, executor=pool)
         finally:
-            join(tasks)
+            join()

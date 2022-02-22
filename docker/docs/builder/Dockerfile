@@ -1,5 +1,5 @@
 # rebuild in #33610
-# docker build -t clickhouse/docs-build .
+# docker build -t clickhouse/docs-builder .
 FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -10,8 +10,6 @@ ENV LANG=C.UTF-8
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-            python3-setuptools \
-            virtualenv \
             wget \
             bash \
             python \

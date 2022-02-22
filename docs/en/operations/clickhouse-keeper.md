@@ -36,7 +36,8 @@ Other common parameters are inherited from the ClickHouse server config (`listen
 Internal coordination settings are located in `<keeper_server>.<coordination_settings>` section:
 
 -    `operation_timeout_ms` — Timeout for a single client operation (ms) (default: 10000).
--    `session_timeout_ms` — Timeout for client session (ms) (default: 30000).
+-    `min_session_timeout_ms` — Min timeout for client session (ms) (default: 10000).
+-    `session_timeout_ms` — Max timeout for client session (ms) (default: 100000).
 -    `dead_session_check_period_ms` — How often ClickHouse Keeper check dead sessions and remove them (ms) (default: 500).
 -    `heart_beat_interval_ms` — How often a ClickHouse Keeper leader will send heartbeats to followers (ms) (default: 500).
 -    `election_timeout_lower_bound_ms` — If the follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election (default: 1000).
@@ -107,7 +108,13 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
 
 ```bash
-clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as argument:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
 ## Four Letter Word Commands {#four-letter-word-commands}

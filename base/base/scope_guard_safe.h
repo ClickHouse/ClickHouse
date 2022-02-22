@@ -2,7 +2,7 @@
 
 #include <base/scope_guard.h>
 #include <base/logger_useful.h>
-#include <Common/MemoryTracker.h>
+#include <Common/LockMemoryExceptionInThread.h>
 
 /// Same as SCOPE_EXIT() but block the MEMORY_LIMIT_EXCEEDED errors.
 ///
@@ -12,8 +12,7 @@
 ///
 /// NOTE: it should be used with caution.
 #define SCOPE_EXIT_MEMORY(...) SCOPE_EXIT(                    \
-    MemoryTracker::LockExceptionInThread                      \
-                lock_memory_tracker(VariableContext::Global); \
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global); \
     __VA_ARGS__;                                              \
 )
 
@@ -57,8 +56,7 @@
 #define SCOPE_EXIT_MEMORY_SAFE(...) SCOPE_EXIT(                   \
     try                                                           \
     {                                                             \
-        MemoryTracker::LockExceptionInThread                      \
-                    lock_memory_tracker(VariableContext::Global); \
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global); \
         __VA_ARGS__;                                              \
     }                                                             \
     catch (...)                                                   \

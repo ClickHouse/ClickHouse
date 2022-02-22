@@ -5,9 +5,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
+#include "OwnSplitChannel.h"
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+#include <Interpreters/TextLog.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -245,11 +247,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (log_level > max_log_level)
         max_log_level = log_level;
 
-    const auto log_path = config.getString("logger.log", "");
-    if (!log_path.empty())
+    if (log_file)
         split->setLevel("log", log_level);
-    else
-        split->setLevel("log", 0);
 
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
@@ -261,15 +260,13 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->setLevel("console", 0);
 
     // Set level to errorlog
-    int errorlog_level = 0;
-    const auto errorlog_path = config.getString("logger.errorlog", "");
-    if (!errorlog_path.empty())
+    if (error_log_file)
     {
-        errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
+        int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
         if (errorlog_level > max_log_level)
             max_log_level = errorlog_level;
+        split->setLevel("errorlog", errorlog_level);
     }
-    split->setLevel("errorlog", errorlog_level);
 
     // Set level to syslog
     int syslog_level = 0;

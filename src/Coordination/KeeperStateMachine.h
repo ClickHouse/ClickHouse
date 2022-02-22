@@ -97,12 +97,15 @@ public:
     uint64_t getSessionWithEphemeralNodesCount() const;
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
+    uint64_t getKeyArenaSize() const;
+    uint64_t getLatestSnapshotBufSize() const;
 
 private:
 
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
+    std::string latest_snapshot_path;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
@@ -120,7 +123,7 @@ private:
     SnapshotsQueue & snapshots_queue;
 
     /// Mutex for snapshots
-    std::mutex snapshots_lock;
+    mutable std::mutex snapshots_lock;
 
     /// Lock for storage and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise

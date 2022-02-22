@@ -1,0 +1,12 @@
+SHOW TABLES;
+CREATE DATABASE test1;
+CREATE TABLE test1.table1 (a Int32) ENGINE=Memory;
+USE test1;
+SHOW TABLES;
+table1
+CREATE DATABASE test2;
+USE test2;
+SHOW TABLES;
+USE test1;
+SHOW TABLES;
+table1

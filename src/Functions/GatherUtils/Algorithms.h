@@ -496,6 +496,31 @@ bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & se
     return search_type == ArraySearchType::All;
 }
 
+template <
+    ArraySearchType search_type,
+    typename FirstSliceType,
+    typename SecondSliceType,
+          bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
+bool sliceHasImplStartsEndsWith(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+{
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    if (first.size < second.size)
+        return false;
+
+    size_t first_index = (search_type == ArraySearchType::StartsWith) ? 0 : first.size - second.size;
+    for (size_t second_index = 0; second_index < second.size; ++second_index, ++first_index)
+    {
+        const bool is_first_null = has_first_null_map && first_null_map[first_index];
+        const bool is_second_null = has_second_null_map && second_null_map[second_index];
+        if (is_first_null != is_second_null)
+            return false;
+        if (!is_first_null && !is_second_null && !isEqual(first, second, first_index, second_index))
+            return false;
+    }
+    return true;
+}
 
 /// For details of Knuth-Morris-Pratt string matching algorithm see
 /// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
@@ -589,6 +614,8 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, 
 {
     if constexpr (search_type == ArraySearchType::Substr)
         return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
+    else if constexpr (search_type == ArraySearchType::StartsWith || search_type == ArraySearchType::EndsWith)
+        return sliceHasImplStartsEndsWith<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
     else
         return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
 }

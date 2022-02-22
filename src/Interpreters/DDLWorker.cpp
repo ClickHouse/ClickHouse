@@ -21,12 +21,14 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/logger_useful.h>
+#include <base/sort.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <base/scope_guard_safe.h>
@@ -52,113 +54,6 @@ namespace ErrorCodes
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
-
-
-/** Caveats: usage of locks in ZooKeeper is incorrect in 99% of cases,
-  *  and highlights your poor understanding of distributed systems.
-  *
-  * It's only correct if all the operations that are performed under lock
-  *  are atomically checking that the lock still holds
-  *  or if we ensure that these operations will be undone if lock is lost
-  *  (due to ZooKeeper session loss) that's very difficult to achieve.
-  *
-  * It's Ok if every operation that we perform under lock is actually operation in ZooKeeper.
-  *
-  * In 1% of cases when you can correctly use Lock, the logic is complex enough, so you don't need this class.
-  *
-  * TLDR: Don't use this code.
-  * We only have a few cases of it's usage and it will be removed.
-  */
-class ZooKeeperLock
-{
-public:
-    /// lock_prefix - path where the ephemeral lock node will be created
-    /// lock_name - the name of the ephemeral lock node
-    ZooKeeperLock(
-        const zkutil::ZooKeeperPtr & zookeeper_,
-        const std::string & lock_prefix_,
-        const std::string & lock_name_,
-        const std::string & lock_message_ = "")
-    :
-        zookeeper(zookeeper_),
-        lock_path(fs::path(lock_prefix_) / lock_name_),
-        lock_message(lock_message_),
-        log(&Poco::Logger::get("zkutil::Lock"))
-    {
-        zookeeper->createIfNotExists(lock_prefix_, "");
-    }
-
-    ~ZooKeeperLock()
-    {
-        try
-        {
-            unlock();
-        }
-        catch (...)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void unlock()
-    {
-        if (!locked)
-            return;
-
-        locked = false;
-
-        if (zookeeper->expired())
-        {
-            LOG_WARNING(log, "Lock is lost, because session was expired. Path: {}, message: {}", lock_path, lock_message);
-            return;
-        }
-
-        Coordination::Stat stat;
-        std::string dummy;
-        /// NOTE It will throw if session expired after we checked it above
-        bool result = zookeeper->tryGet(lock_path, dummy, &stat);
-
-        if (result && stat.ephemeralOwner == zookeeper->getClientID())
-            zookeeper->remove(lock_path, -1);
-        else if (result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Lock is lost, it has another owner. Path: {}, message: {}, owner: {}, our id: {}",
-                            lock_path, lock_message, stat.ephemeralOwner, zookeeper->getClientID());
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Lock is lost, node does not exist. Path: {}, message: {}", lock_path, lock_message);
-    }
-
-    bool tryLock()
-    {
-        std::string dummy;
-        Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
-
-        if (code == Coordination::Error::ZOK)
-        {
-            locked = true;
-        }
-        else if (code != Coordination::Error::ZNODEEXISTS)
-        {
-            throw Coordination::Exception(code);
-        }
-
-        return locked;
-    }
-
-private:
-    zkutil::ZooKeeperPtr zookeeper;
-
-    std::string lock_path;
-    std::string lock_message;
-    Poco::Logger * log;
-    bool locked = false;
-
-};
-
-std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
-    const zkutil::ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
-{
-    return std::make_unique<ZooKeeperLock>(zookeeper, lock_prefix, lock_name, lock_message);
-}
 
 
 DDLWorker::DDLWorker(
@@ -327,7 +222,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
     all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
-    std::sort(all_nodes.begin(), all_nodes.end());
+    ::sort(all_nodes.begin(), all_nodes.end());
 }
 
 void DDLWorker::scheduleTasks(bool reinitialized)
@@ -656,7 +551,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 
     /// We must hold the lock until task execution status is committed to ZooKeeper,
     /// otherwise another replica may try to execute query again.
-    std::unique_ptr<ZooKeeperLock> execute_on_leader_lock;
+    std::unique_ptr<zkutil::ZooKeeperLock> execute_on_leader_lock;
 
     /// Step 2: Execute query from the task.
     if (!task.was_executed)
@@ -776,7 +671,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     const String & rewritten_query,
     const String & /*node_path*/,
     const ZooKeeperPtr & zookeeper,
-    std::unique_ptr<ZooKeeperLock> & execute_on_leader_lock)
+    std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock)
 {
     StorageReplicatedMergeTree * replicated_storage = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
 

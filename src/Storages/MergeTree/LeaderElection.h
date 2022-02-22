@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/logger_useful.h>
+#include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -48,7 +49,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         }
         else
         {
-            std::sort(potential_leaders.begin(), potential_leaders.end());
+            ::sort(potential_leaders.begin(), potential_leaders.end());
             if (potential_leaders.front() == persistent_multiple_leaders)
                 return;
 
