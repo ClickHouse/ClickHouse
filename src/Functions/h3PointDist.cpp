@@ -125,17 +125,20 @@ public:
 
 }
 
-struct H3PointDistM {
+struct H3PointDistM
+{
     static constexpr auto name = "h3PointDistM";
     static constexpr auto function = distanceM;
 };
 
-struct H3PointDistKm {
+struct H3PointDistKm
+{
     static constexpr auto name = "h3PointDistKm";
     static constexpr auto function = distanceKm;
 };
 
-struct H3PointDistRads {
+struct H3PointDistRads
+{
     static constexpr auto name = "h3PointDistRads";
     static constexpr auto function = distanceRads;
 };
