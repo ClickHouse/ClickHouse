@@ -176,9 +176,20 @@ void BackupImpl::writeBackupMetadata()
     config->setString("uuid", toString(uuid));
 
     if (base_backup_info)
-        config->setString("base_backup", base_backup_info->toString());
-    if (base_backup_uuid)
-        config->setString("base_backup_uuid", toString(*base_backup_uuid));
+    {
+        bool base_backup_in_use = false;
+        for (const auto & [name, info] : file_infos)
+        {
+            if (info.base_size)
+                base_backup_in_use = true;
+        }
+
+        if (base_backup_in_use)
+        {
+            config->setString("base_backup", base_backup_info->toString());
+            config->setString("base_backup_uuid", toString(*base_backup_uuid));
+        }
+    }
 
     size_t index = 0;
     for (const auto & [name, info] : file_infos)
@@ -192,7 +203,7 @@ void BackupImpl::writeBackupMetadata()
             if (info.base_size)
             {
                 config->setUInt(prefix + "base_size", info.base_size);
-                if (info.base_size != info.size)
+                if (info.base_checksum != info.checksum)
                     config->setString(prefix + "base_checksum", getHexUIntLowercase(info.base_checksum));
             }
         }
@@ -202,7 +213,7 @@ void BackupImpl::writeBackupMetadata()
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     config->save(stream);
     String str = stream.str();
-    auto out = addFileImpl(".backup");
+    auto out = writeFileImpl(".backup");
     out->write(str.data(), str.size());
 }
 
@@ -225,7 +236,7 @@ void BackupImpl::readBackupMetadata()
     if (config->has("base_backup") && !base_backup_info)
         base_backup_info = BackupInfo::fromString(config->getString("base_backup"));
 
-    if (config->has("base_backup_uuid") && !base_backup_uuid)
+    if (config->has("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(config->getString("base_backup_uuid"));
 
     file_infos.clear();
@@ -237,20 +248,22 @@ void BackupImpl::readBackupMetadata()
         {
             String prefix = "contents." + key + ".";
             String name = config->getString(prefix + "name");
-            FileInfo & info = file_infos.emplace(name, FileInfo{}).first->second;
+            FileInfo info;
             info.size = config->getUInt(prefix + "size");
             if (info.size)
             {
                 info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
-                if (config->has(prefix + "base_size"))
+                info.base_size = config->getUInt(prefix + "base_size", 0);
+                if (info.base_size)
                 {
-                    info.base_size = config->getUInt(prefix + "base_size");
-                    if (info.base_size == info.size)
-                        info.base_checksum = info.checksum;
-                    else
+                    if (config->has(prefix + "base_checksum"))
                         info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
+                    else
+                        info.base_checksum = info.checksum;
                 }
             }
+            file_infos.emplace(name, info);
+            file_checksums.emplace(info.checksum, name);
         }
     }
 }
@@ -304,6 +317,15 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
     return it->second.checksum;
 }
 
+std::optional<String> BackupImpl::findFileByChecksum(const UInt128 & checksum) const
+{
+    std::lock_guard lock{mutex};
+    auto it = file_checksums.find(checksum);
+    if (it == file_checksums.end())
+        return std::nullopt;
+    return it->second;
+}
+
 
 BackupEntryPtr BackupImpl::readFile(const String & file_name) const
 {
@@ -351,7 +373,8 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
             getName(), quoteString(file_name));
     }
 
-    if (!base_backup->fileExists(file_name))
+    auto base_file_name = base_backup->findFileByChecksum(info.base_checksum);
+    if (!base_file_name)
     {
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
@@ -359,7 +382,7 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
             getName(), quoteString(file_name));
     }
 
-    auto base_entry = base_backup->readFile(file_name);
+    auto base_entry = base_backup->readFile(*base_file_name);
     auto base_size = base_entry->getSize();
     if (base_size != info.base_size)
     {
@@ -367,15 +390,6 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} has unexpected size in the base backup {}: {} (expected size: {})",
             getName(), quoteString(file_name), base_backup->getName(), base_size, info.base_size);
-    }
-
-    auto base_checksum = base_entry->getChecksum();
-    if (base_checksum && (*base_checksum != info.base_checksum))
-    {
-        throw Exception(
-            ErrorCodes::WRONG_BASE_BACKUP,
-            "Backup {}: Entry {} has unexpected checksum in the base backup {}",
-            getName(), quoteString(file_name), base_backup->getName());
     }
 
     if (info.size == info.base_size)
@@ -391,7 +405,7 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
 }
 
 
-void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
+void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
@@ -422,44 +436,61 @@ void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
     }
 
     std::unique_ptr<ReadBuffer> read_buffer; /// We'll set that later.
-    UInt64 read_pos = 0; /// Current position in read_buffer.
+    std::optional<HashingReadBuffer> hashing_read_buffer;
+    UInt64 hashing_pos = 0; /// Current position in `hashing_read_buffer`.
 
     /// Determine whether it's possible to receive this entry's data from the base backup completely or partly.
     bool use_base = false;
-    if (base_exists && base_size)
+    if (base_exists && base_size && (size >= base_size))
     {
-        if (size == base_size)
+        if (checksum && (size == base_size))
         {
             /// The size is the same, we need to compare checksums to find out
-            /// if the entry's data has not been changed since the base backup.
-            if (!checksum)
-            {
-                read_buffer = entry->getReadBuffer();
-                HashingReadBuffer hashing_read_buffer{*read_buffer};
-                hashing_read_buffer.ignore(size);
-                read_pos = size;
-                checksum = hashing_read_buffer.getHash();
-            }
-            if (checksum == base_checksum)
-                use_base = true; /// The data have not been changed.
+            /// if the entry's data has not changed since the base backup.
+            use_base = (*checksum == base_checksum);
         }
-        else if (size > base_size)
+        else
         {
-            /// The size has been increased, we need to calculate a partial checksum to find out
-            /// if the entry's data has been only appended since the base backup.
+            /// The size has increased, we need to calculate a partial checksum to find out
+            /// if the entry's data has only appended since the base backup.
             read_buffer = entry->getReadBuffer();
-            HashingReadBuffer hashing_read_buffer{*read_buffer};
-            hashing_read_buffer.ignore(base_size);
-            UInt128 partial_checksum = hashing_read_buffer.getHash();
-            read_pos = base_size;
-            if (!checksum)
-            {
-                hashing_read_buffer.ignore(size - base_size);
-                checksum = hashing_read_buffer.getHash();
-                read_pos = size;
-            }
+            hashing_read_buffer.emplace(*read_buffer);
+            hashing_read_buffer->ignore(base_size);
+            hashing_pos = base_size;
+            UInt128 partial_checksum = hashing_read_buffer->getHash();
+            if (size == base_size)
+                checksum = partial_checksum;
             if (partial_checksum == base_checksum)
-                use_base = true; /// The data has been appended.
+                use_base = true;
+        }
+    }
+
+    /// Finish calculating the checksum.
+    if (!checksum)
+    {
+        if (!read_buffer)
+            read_buffer = entry->getReadBuffer();
+        if (!hashing_read_buffer)
+            hashing_read_buffer.emplace(*read_buffer);
+        hashing_read_buffer->ignore(size - hashing_pos);
+        checksum = hashing_read_buffer->getHash();
+    }
+    hashing_read_buffer.reset();
+
+    /// Check if a entry with the same checksum exists in the base backup.
+    if (base_backup && !use_base)
+    {
+        if (auto base_file_name = base_backup->findFileByChecksum(*checksum))
+        {
+            if (size == base_backup->getFileSize(*base_file_name))
+            {
+                /// The entry's data has not changed since the base backup,
+                /// but the entry itself has been moved or renamed.
+                base_size = size;
+                base_checksum = *checksum;
+                base_exists = true;
+                use_base = true;
+            }
         }
     }
 
@@ -467,69 +498,51 @@ void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
     {
         /// The entry's data has not been changed since the base backup.
         FileInfo info;
-        info.size = base_size;
-        info.checksum = base_checksum;
+        info.size = size;
+        info.checksum = *checksum;
         info.base_size = base_size;
         info.base_checksum = base_checksum;
         file_infos.emplace(file_name, info);
+        file_checksums.emplace(*checksum, file_name);
         return;
     }
 
+    /// Either the entry wasn't exist in the base backup
+    /// or the entry has data appended to the end of the data from the base backup.
+    /// In both those cases we have to copy data to this backup.
+
+    /// Find out where the start position to copy data is.
+    auto copy_pos = use_base ? base_size : 0;
+
+    /// Move the current read position to the start position to copy data.
+    /// If `read_buffer` is seekable it's easier, otherwise we can use ignore().
+    if (auto * seekable_buffer = dynamic_cast<SeekableReadBuffer *>(read_buffer.get()))
     {
-        /// Either the entry wasn't exist in the base backup
-        /// or the entry has data appended to the end of the data from the base backup.
-        /// In both those cases we have to copy data to this backup.
-
-        /// Find out where the start position to copy data is.
-        auto copy_pos = use_base ? base_size : 0;
-
-        /// Move the current read position to the start position to copy data.
-        /// If `read_buffer` is seekable it's easier, otherwise we can use ignore().
-        if (auto * seekable_buffer = dynamic_cast<SeekableReadBuffer *>(read_buffer.get()))
-        {
-            if (read_pos != copy_pos)
-                seekable_buffer->seek(copy_pos, SEEK_SET);
-        }
-        else
-        {
-            if (read_pos > copy_pos)
-            {
-                read_buffer.reset();
-                read_pos = 0;
-            }
-
-            if (!read_buffer)
-                read_buffer = entry->getReadBuffer();
-
-            if (read_pos < copy_pos)
-                read_buffer->ignore(copy_pos - read_pos);
-        }
-
-        /// If we haven't received or calculated a checksum yet, calculate it now.
-        ReadBuffer * maybe_hashing_read_buffer = read_buffer.get();
-        std::optional<HashingReadBuffer> hashing_read_buffer;
-        if (!checksum)
-            maybe_hashing_read_buffer = &hashing_read_buffer.emplace(*read_buffer);
-
-        /// Copy the entry's data after `copy_pos`.
-        auto out = addFileImpl(file_name);
-        copyData(*maybe_hashing_read_buffer, *out);
-
-        if (hashing_read_buffer)
-            checksum = hashing_read_buffer->getHash();
-
-        /// Done!
-        FileInfo info;
-        info.size = size;
-        info.checksum = *checksum;
-        if (use_base)
-        {
-            info.base_size = base_size;
-            info.base_checksum = base_checksum;
-        }
-        file_infos.emplace(file_name, info);
+        seekable_buffer->seek(copy_pos, SEEK_SET);
     }
+    else
+    {
+        read_buffer = entry->getReadBuffer();
+        read_buffer->ignore(copy_pos);
+    }
+
+    /// Copy the entry's data after `copy_pos`.
+    auto out = writeFileImpl(file_name);
+    copyData(*read_buffer, *out);
+
+    /// Done!
+    FileInfo info;
+    info.size = size;
+    info.checksum = *checksum;
+    if (use_base)
+    {
+        info.base_size = base_size;
+        info.base_checksum = base_checksum;
+    }
+    file_infos.emplace(file_name, info);
+    file_checksums.emplace(*checksum, file_name);
 }
+
 
 void BackupImpl::finalizeWriting()
 {

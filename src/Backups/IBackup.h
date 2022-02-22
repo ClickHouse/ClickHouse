@@ -61,11 +61,14 @@ public:
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
+    /// Finds a file by its checksum, returns nullopt if not found.
+    virtual std::optional<String> findFileByChecksum(const UInt128 & checksum) const = 0;
+
     /// Reads an entry from the backup.
     virtual BackupEntryPtr readFile(const String & file_name) const = 0;
 
     /// Puts a new entry to the backup.
-    virtual void addFile(const String & file_name, BackupEntryPtr entry) = 0;
+    virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;
 
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;

@@ -335,7 +335,7 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
         {
             try
             {
-                backup->addFile(name, std::move(entry));
+                backup->writeFile(name, std::move(entry));
             }
             catch (...)
             {

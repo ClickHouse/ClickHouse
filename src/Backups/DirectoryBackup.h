@@ -27,7 +27,7 @@ private:
     void openImpl(OpenMode open_mode_) override;
     void closeImpl(bool writing_finalized_) override;
     std::unique_ptr<ReadBuffer> readFileImpl(const String & file_name) const override;
-    std::unique_ptr<WriteBuffer> addFileImpl(const String & file_name) override;
+    std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) override;
 
     DiskPtr disk;
     String path;
