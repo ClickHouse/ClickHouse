@@ -214,13 +214,13 @@ public:
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
     /// Returns true if the backup is hollow, which means it doesn't contain any data.
-    virtual bool hasHollowBackup() const { return false; }
+    virtual bool hasDataToBackup() const { return false; }
 
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(ContextPtr context, const ASTs & partitions);
+    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreFromBackup(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings);
+    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.

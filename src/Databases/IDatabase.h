@@ -326,7 +326,7 @@ public:
 
     /// Returns true if the backup of the database is hollow, which means it doesn't contain
     /// any tables which can be stored to a backup.
-    virtual bool hasHollowBackup() const { return false; }
+    virtual bool hasTablesToBackup() const { return false; }
 
     virtual ~IDatabase() = default;
 

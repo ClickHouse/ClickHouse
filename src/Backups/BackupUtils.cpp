@@ -97,7 +97,7 @@ namespace
                 res.push_back(makeBackupEntryForMetadata(*info.create_query));
                 if (info.has_data)
                 {
-                    auto data_backup = info.storage->backup(context, info.partitions);
+                    auto data_backup = info.storage->backupData(context, info.partitions);
                     if (!data_backup.empty())
                     {
                         String data_path = getDataPathInBackup(*info.create_query);
@@ -129,7 +129,7 @@ namespace
             const auto & database = table_.first;
             const auto & storage = table_.second;
 
-            if (database->hasHollowBackup())
+            if (!database->hasTablesToBackup())
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Cannot backup the {} because it's contained in a hollow database (engine: {})",
@@ -144,7 +144,7 @@ namespace
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(database->getCreateTableQuery(table_name_.second, context));
 
-            bool has_data = !storage->hasHollowBackup() && !backup_settings.structure_only;
+            bool has_data = storage->hasDataToBackup() && !backup_settings.structure_only;
             if (has_data)
             {
                 /// We check for SELECT privilege only if we're going to read data from the table.
@@ -220,7 +220,7 @@ namespace
             }
 
             /// Backup tables in this database.
-            if (!database_->hasHollowBackup())
+            if (database_->hasTablesToBackup())
             {
                 for (auto it = database_->getTablesIterator(context); it->isValid(); it->next())
                 {
