@@ -25,6 +25,9 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
+#include <Backups/IBackupEntry.h>
+#include <Backups/IRestoreTask.h>
+
 namespace DB
 {
 
@@ -426,6 +429,20 @@ Strings StorageMaterializedView::getDataPaths() const
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
     return {};
+}
+
+BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_)
+{
+    if (!hasInnerTable())
+        return {};
+    return getTargetTable()->backupData(context_, partitions_);
+}
+
+RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_)
+{
+    if (!hasInnerTable())
+        return {};
+    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_);
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

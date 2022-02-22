@@ -22,9 +22,12 @@ namespace
             return clone;
         };
 
-        /// Remove UUID.
+        /// Remove UUIDs.
         if (res->uuid != UUIDHelpers::Nil)
             get_clone()->uuid = UUIDHelpers::Nil;
+
+        if (res->to_inner_uuid != UUIDHelpers::Nil)
+            get_clone()->to_inner_uuid = UUIDHelpers::Nil;
 
         /// Clear IF NOT EXISTS flag.
         if (res->if_not_exists)
@@ -45,7 +48,8 @@ bool areTableDefinitionsSame(const IAST & table1, const IAST & table2)
     if (!ast2 || !ast2->table)
         return false;
 
-    if ((ast1->uuid != ast2->uuid) || (ast1->if_not_exists != ast2->if_not_exists))
+    if ((ast1->uuid != ast2->uuid) || (ast1->to_inner_uuid != ast2->to_inner_uuid) ||
+        (ast1->if_not_exists != ast2->if_not_exists))
     {
         ast1 = prepareDDLToCompare(*ast1);
         ast2 = prepareDDLToCompare(*ast2);

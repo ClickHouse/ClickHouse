@@ -142,7 +142,7 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Cannot backup the {} twice", formatTableNameOrTemporaryTableName(new_table_name));
 
             /// Make a create query for this table.
-            auto create_query = renameInCreateQuery(database->getCreateTableQuery(table_name_.second, context));
+            auto create_query = prepareCreateQueryForBackup(database->getCreateTableQuery(table_name_.second, context));
 
             bool has_data = storage->hasDataToBackup() && !backup_settings.structure_only;
             if (has_data)
@@ -165,7 +165,7 @@ namespace
                 if (!databases.contains(new_table_name.first))
                 {
                     /// Add a create query to backup the database if we haven't done it yet.
-                    auto create_db_query = renameInCreateQuery(database->getCreateDatabaseQuery());
+                    auto create_db_query = prepareCreateQueryForBackup(database->getCreateDatabaseQuery());
                     create_db_query->setDatabase(new_table_name.first);
 
                     CreateDatabaseInfo info_db;
@@ -181,7 +181,7 @@ namespace
                     auto & info_db = databases[new_table_name.first];
                     if (!info_db.is_explicit && (info_db.original_name != table_name_.first) && !info_db.different_create_query)
                     {
-                        auto create_db_query = renameInCreateQuery(table_.first->getCreateDatabaseQuery());
+                        auto create_db_query = prepareCreateQueryForBackup(table_.first->getCreateDatabaseQuery());
                         create_db_query->setDatabase(new_table_name.first);
                         if (!areDatabaseDefinitionsSame(*info_db.create_query, *create_db_query))
                             info_db.different_create_query = create_db_query;
@@ -210,7 +210,7 @@ namespace
             if (!isSystemOrTemporaryDatabase(database_name_))
             {
                 /// Make a create query for this database.
-                auto create_db_query = renameInCreateQuery(database_->getCreateDatabaseQuery());
+                auto create_db_query = prepareCreateQueryForBackup(database_->getCreateDatabaseQuery());
 
                 CreateDatabaseInfo info_db;
                 info_db.create_query = create_db_query;
@@ -245,9 +245,14 @@ namespace
         }
 
         /// Do renaming in the create query according to the renaming config.
-        std::shared_ptr<ASTCreateQuery> renameInCreateQuery(const ASTPtr & ast) const
+        std::shared_ptr<ASTCreateQuery> prepareCreateQueryForBackup(const ASTPtr & ast) const
         {
-            return typeid_cast<std::shared_ptr<ASTCreateQuery>>(::DB::renameInCreateQuery(ast, context, renaming_settings));
+            ASTPtr query = ast;
+            ::DB::renameInCreateQuery(query, context, renaming_settings);
+            auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(query);
+            create_query->uuid = UUIDHelpers::Nil;
+            create_query->to_inner_uuid = UUIDHelpers::Nil;
+            return create_query;
         }
 
         static bool isSystemOrTemporaryDatabase(const String & database_name)

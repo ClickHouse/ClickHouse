@@ -487,7 +487,10 @@ namespace
         /// Do renaming in the create query according to the renaming config.
         std::shared_ptr<ASTCreateQuery> renameInCreateQuery(const ASTPtr & ast) const
         {
-            return typeid_cast<std::shared_ptr<ASTCreateQuery>>(::DB::renameInCreateQuery(ast, context, renaming_settings));
+            ASTPtr query = ast;
+            ::DB::renameInCreateQuery(query, context, renaming_settings);
+            auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(query);
+            return create_query;
         }
 
         static bool isSystemOrTemporaryDatabase(const String & database_name)
