@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <boost/lockfree/spsc_queue.hpp>
 #include <libnuraft/nuraft.hxx>
 #include <city.h>
 #include <optional>
@@ -9,6 +8,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
@@ -167,7 +167,7 @@ private:
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
-    boost::lockfree::spsc_queue<std::string> del_log_q{128};
+    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
     std::atomic_bool shutdown_clean_thread{false};
 };
