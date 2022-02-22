@@ -1,11 +1,10 @@
 ---
 toc_priority: 11
-toc_title: GitHub Events
+toc_title: GitHub 事件数据集
 ---
 
-# GitHub Events Dataset
+# GitHub 事件数据集
 
-Dataset contains all events on GitHub from 2011 to Dec 6 2020, the size is 3.1 billion records. Download size is 75 GB and it will require up to 200 GB space on disk if stored in a table with lz4 compression.
+数据集包含了GitHub上从2011年到2020年12月6日的所有事件，大小为31亿条记录。下载大小为75 GB，如果存储在使用lz4压缩的表中，则需要多达200 GB的磁盘空间。
 
-Full dataset description, insights, download instruction and interactive queries are posted [here](https://ghe.clickhouse.tech/).
-
+完整的数据集描述，见解，下载说明和交互式查询请参考[这里](https://ghe.clickhouse.tech/)。
