@@ -588,7 +588,17 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            del_log_q.push(itr->second.path);
+            /// If failed to push to queue for background removing, then we will remove it now
+            if (!log_files_to_delete_queue.tryPush(itr->second.path, 1))
+            {
+                std::error_code ec;
+                std::filesystem::remove(itr->second.path, ec);
+                if (ec)
+                {
+                    LOG_WARNING(log, "Failed to remove changelog {}, error message: {}", itr->second.path, ec.message());
+                }
+            }
+
             itr = existing_changelogs.erase(itr);
         }
         else /// Files are ordered, so all subsequent should exist
@@ -712,8 +722,12 @@ Changelog::~Changelog()
     try
     {
         flush();
+        log_files_to_delete_queue.finish();
+        /// Wait for background thread to finish to remove all logs
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         shutdown_clean_thread.store(true);
-        clean_log_thread.join();
+        if (clean_log_thread.joinable())
+            clean_log_thread.join();
     }
     catch (...)
     {
@@ -726,7 +740,7 @@ void Changelog::cleanLogThread()
     while (!shutdown_clean_thread.load())
     {
         std::string path;
-        if (del_log_q.pop(path))
+        if (log_files_to_delete_queue.tryPop(path))
         {
             std::error_code ec;
             if (std::filesystem::remove(path, ec))
