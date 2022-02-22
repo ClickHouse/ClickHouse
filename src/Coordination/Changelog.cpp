@@ -723,8 +723,6 @@ Changelog::~Changelog()
     {
         flush();
         log_files_to_delete_queue.finish();
-        /// Wait for background thread to finish to remove all logs
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         if (clean_log_thread.joinable())
             clean_log_thread.join();
     }
