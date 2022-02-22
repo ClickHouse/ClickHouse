@@ -103,6 +103,21 @@ public:
             : nested_function->getReturnType();
     }
 
+    bool isVersioned() const override
+    {
+        return nested_function->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_function->getDefaultVersion();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         initFlag(place);
@@ -141,7 +156,11 @@ public:
     {
         bool flag = getFlag(place);
         if constexpr (serialize_flag)
-            writeBinary(flag, buf);
+        {
+            if (nested_function->canSerializeFlag(version))
+                writeBinary(flag, buf);
+        }
+
         if (flag)
             nested_function->serialize(nestedPlace(place), buf, version);
     }
@@ -150,7 +169,11 @@ public:
     {
         bool flag = 1;
         if constexpr (serialize_flag)
-            readBinary(flag, buf);
+        {
+            if (nested_function->canSerializeFlag(version))
+                readBinary(flag, buf);
+        }
+
         if (flag)
         {
             setFlag(place);

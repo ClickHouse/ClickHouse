@@ -139,6 +139,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         AggregateFunctionForEachData & state = data(place);

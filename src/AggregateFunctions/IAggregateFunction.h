@@ -93,7 +93,12 @@ public:
 
     virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
 
-    virtual size_t getDefaultVersion() const { return 0; }
+    virtual bool canSerializeFlag(std::optional<size_t> /* version */) const { return true; }
+
+    virtual size_t getDefaultVersion() const
+    {
+        return 0;
+    }
 
     virtual ~IAggregateFunction() = default;
 

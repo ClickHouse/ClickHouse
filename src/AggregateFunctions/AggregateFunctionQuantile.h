@@ -67,6 +67,8 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54453;
+
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
@@ -86,6 +88,23 @@ public:
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    bool isVersioned() const override { return true; }
+
+    size_t getDefaultVersion() const override { return 0; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= STATE_VERSION_1_MIN_REVISION)
+            return 1;
+        else
+            return 0;
+    }
+
+    bool canSerializeFlag(std::optional<size_t> version) const override
+    {
+        return version.has_value() && *version > 0;
     }
 
     String getName() const override { return Name::name; }
