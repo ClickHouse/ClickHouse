@@ -1,5 +1,6 @@
 #include <Columns/ColumnTuple.h>
 
+#include <base/sort.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
@@ -384,9 +385,9 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
         limit = 0;
 
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        std::sort(res.begin(), res.end(), less);
+        ::sort(res.begin(), res.end(), less);
 }
 
 void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const

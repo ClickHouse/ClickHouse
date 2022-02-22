@@ -450,7 +450,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (replica_identity != 'd' && replica_identity != 'i')
             {
                 LOG_WARNING(log,
-                        "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index");
+                    "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index",
+                    replica_identity);
                 markTableAsSkipped(relation_id, table_name);
                 return;
             }

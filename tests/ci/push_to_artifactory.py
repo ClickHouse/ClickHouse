@@ -8,19 +8,7 @@ from typing import Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
-
-
-# Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str):
-    if string.startswith(prefix):
-        return string[len(prefix) :]  # noqa: ignore E203, false positive
-    return string
-
-
-def removesuffix(string: str, suffix: str):
-    if string.endswith(suffix):
-        return string[: -len(suffix)]
-    return string
+from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
 # Necessary ENV variables
@@ -44,7 +32,6 @@ class Packages:
         ("clickhouse-common-static", "amd64"),
         ("clickhouse-common-static-dbg", "amd64"),
         ("clickhouse-server", "all"),
-        ("clickhouse-test", "all"),
     )
 
     def __init__(self, version: str):
@@ -124,7 +111,7 @@ class S3:
 
 class Release:
     def __init__(self, name: str):
-        r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
+        r = re.compile(TAG_REGEXP)
         # Automatically remove refs/tags/ if full refname passed here
         name = removeprefix(name, "refs/tags/")
         if not r.match(name):
@@ -210,15 +197,6 @@ class Artifactory:
 
     def tgz_path(self, package_file: str) -> ArtifactorySaaSPath:
         return self.__path_helper("_tgz", package_file)
-
-
-def commit(name: str):
-    r = re.compile(r"^([0-9]|[a-f]){40}$")
-    if not r.match(name):
-        raise argparse.ArgumentTypeError(
-            "commit hash should contain exactly 40 hex characters"
-        )
-    return name
 
 
 def parse_args() -> argparse.Namespace:

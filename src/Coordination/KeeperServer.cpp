@@ -287,10 +287,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
     for (const auto & [session_id, time, request] : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(session_id, time, request));
 
-    {
-        std::lock_guard lock(append_entries_mutex);
-        return raft_instance->append_entries(entries);
-    }
+    return raft_instance->append_entries(entries);
 }
 
 bool KeeperServer::isLeader() const

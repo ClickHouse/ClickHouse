@@ -243,16 +243,6 @@ function make_rpm {
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 
-    PACKAGE=clickhouse-test
-    ARCH=all
-    TARGET=noarch
-    deb_unpack
-    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
-    echo "Requires: python3" >> ${PACKAGE}-$VERSION_FULL-2.spec
-    #echo "Requires: python3-termcolor" >> ${PACKAGE}-$VERSION-2.spec
-    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
-    rpm_pack
-
     PACKAGE=clickhouse-common-static
     ARCH=amd64
     TARGET=x86_64
@@ -271,7 +261,7 @@ function make_tgz {
     VERSION_FULL="${VERSION_STRING}"
     PACKAGE_DIR=${PACKAGE_DIR=../}
 
-    for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
+    for PACKAGE in clickhouse-server clickhouse-client clickhouse-common-static clickhouse-common-static-dbg; do
         alien --verbose --scripts --generate --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
         PKGDIR="./${PACKAGE}-${VERSION_FULL}"
         if [ ! -d "$PKGDIR/install" ]; then
