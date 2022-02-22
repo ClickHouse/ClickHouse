@@ -69,12 +69,12 @@ class Release:
     def set_release_branch(self):
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):
-            self.update()
+            self.read_version()
             self.release_branch = f"{self.version.major}.{self.version.minor}"
 
-        self.update()
+        self.read_version()
 
-    def update(self):
+    def read_version(self):
         self._git.update()
         self.version = get_version_from_repo()
 
@@ -150,10 +150,10 @@ class Release:
     def prestable(self):
         self.check_no_tags_after()
         # Create release branch
-        self.update()
+        self.read_version()
         with self._create_branch(self.release_branch, self.release_commit):
             with self._checkout(self.release_branch, True):
-                self.update()
+                self.read_version()
                 self.version.with_description(VersionType.PRESTABLE)
                 with self._create_gh_release(True):
                     with self._bump_prestable_version():
@@ -163,7 +163,7 @@ class Release:
     @contextmanager
     def stable(self):
         self.check_no_tags_after()
-        self.update()
+        self.read_version()
         version_type = VersionType.STABLE
         if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
             version_type = VersionType.LTS
@@ -195,7 +195,7 @@ class Release:
     @contextmanager
     def testing(self):
         # Create branch for a version bump
-        self.update()
+        self.read_version()
         self.version = self.version.update(self.release_type)
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
@@ -260,7 +260,7 @@ class Release:
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str):
-        self.update()
+        self.read_version()
         self.version = self.version.update(self.release_type)
         self.version.with_description("testing")
         update_cmake_version(self.version)
@@ -309,8 +309,11 @@ class Release:
             raise
 
     @contextmanager
-    def _create_gh_label(self, label: str, color: str):
-        self.run(f"gh api repos/{self.repo}/labels -f name={label} -f color={color}")
+    def _create_gh_label(self, label: str, color_hex: str):
+        # API call, https://docs.github.com/en/rest/reference/issues#create-a-label
+        self.run(
+            f"gh api repos/{self.repo}/labels -f name={label} -f color={color_hex}"
+        )
         rollback_cmd = f"gh api repos/{self.repo}/labels/{label} -X DELETE"
         self._rollback_stack.append(rollback_cmd)
         try:
