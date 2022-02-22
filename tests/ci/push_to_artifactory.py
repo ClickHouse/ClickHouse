@@ -32,7 +32,6 @@ class Packages:
         ("clickhouse-common-static", "amd64"),
         ("clickhouse-common-static-dbg", "amd64"),
         ("clickhouse-server", "all"),
-        ("clickhouse-test", "all"),
     )
 
     def __init__(self, version: str):

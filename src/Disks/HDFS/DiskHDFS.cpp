@@ -106,8 +106,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(
-        std::move(hdfs_buffer), std::move(create_metadata_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), path);
 }
 
 
