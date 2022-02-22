@@ -22,7 +22,6 @@ namespace
         ReadBufferFromNuraftBuffer buffer(data);
         KeeperStorage::RequestForSession request_for_session;
         readIntBinary(request_for_session.session_id, buffer);
-        readIntBinary(request_for_session.time, buffer);
 
         int32_t length;
         Coordination::read(length, buffer);
@@ -37,6 +36,8 @@ namespace
         request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
         request_for_session.request->xid = xid;
         request_for_session.request->readImpl(buffer);
+
+        readIntBinary(request_for_session.time, buffer);
         return request_for_session;
     }
 }
