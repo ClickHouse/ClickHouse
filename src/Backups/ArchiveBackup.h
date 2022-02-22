@@ -38,7 +38,7 @@ private:
     void closeImpl(bool writing_finalized_) override;
     bool supportsWritingInMultipleThreads() const override { return false; }
     std::unique_ptr<ReadBuffer> readFileImpl(const String & file_name) const override;
-    std::unique_ptr<WriteBuffer> addFileImpl(const String & file_name) override;
+    std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) override;
 
     const DiskPtr disk;
     const String path;

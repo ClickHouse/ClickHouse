@@ -4,6 +4,7 @@
 #include <Backups/BackupInfo.h>
 #include <map>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -34,8 +35,9 @@ public:
     bool fileExists(const String & file_name) const override;
     size_t getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
+    std::optional<String> findFileByChecksum(const UInt128 & checksum) const override;
     BackupEntryPtr readFile(const String & file_name) const override;
-    void addFile(const String & file_name, BackupEntryPtr entry) override;
+    void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
 
 protected:
@@ -53,7 +55,7 @@ protected:
 
     /// Add a file to the backup.
     /// Low level: the function doesn't check base backup or checksums.
-    virtual std::unique_ptr<WriteBuffer> addFileImpl(const String & file_name) = 0;
+    virtual std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name) = 0;
 
     mutable std::mutex mutex;
 
@@ -82,7 +84,8 @@ private:
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
-    std::map<String, FileInfo> file_infos;
+    std::map<String, FileInfo> file_infos; /// Should be ordered alphabetically, see listFiles().
+    std::unordered_map<UInt128, String> file_checksums;
     bool writing_finalized = false;
 };
 

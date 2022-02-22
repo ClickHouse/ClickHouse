@@ -72,7 +72,7 @@ std::unique_ptr<ReadBuffer> DirectoryBackup::readFileImpl(const String & file_na
     return disk->readFile(file_path);
 }
 
-std::unique_ptr<WriteBuffer> DirectoryBackup::addFileImpl(const String & file_name)
+std::unique_ptr<WriteBuffer> DirectoryBackup::writeFileImpl(const String & file_name)
 {
     String file_path = path + file_name;
     disk->createDirectories(fs::path(file_path).parent_path());
