@@ -2,11 +2,11 @@
 
 
 from contextlib import contextmanager
-from typing import Optional
+from typing import List, Optional
 import argparse
 import logging
 
-from git_helper import commit
+from git_helper import commit, release_branch
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     ClickHouseVersion,
@@ -18,18 +18,190 @@ from version_helper import (
 )
 
 
+class Repo:
+    VALID = ("ssh", "https", "origin")
+
+    def __init__(self, repo: str, protocol: str):
+        self._repo = repo
+        self._url = ""
+        self.url = protocol
+
+    @property
+    def url(self) -> str:
+        return self._url
+
+    @url.setter
+    def url(self, protocol: str):
+        if protocol == "ssh":
+            self._url = f"git@github.com:{self}.git"
+        elif protocol == "https":
+            self._url = f"https://github.com/{self}.git"
+        elif protocol == "origin":
+            self._url = protocol
+        else:
+            raise Exception(f"protocol must be in {self.VALID}")
+
+    def __str__(self):
+        return self._repo
+
+
 class Release:
     BIG = ("major", "minor")
     SMALL = ("patch",)
 
-    def __init__(self, version: ClickHouseVersion):
-        self._version = version
-        self._git = version._git
+    def __init__(self, repo: Repo, release_commit: str, release_type: str):
+        self.repo = repo
         self._release_commit = ""
+        self.release_commit = release_commit
+        self.release_type = release_type
+        self._version = get_version_from_repo()
+        self._git = self._version._git
+        self._release_branch = ""
+        self._rollback_stack = []  # type: List[str]
 
     def run(self, cmd: str, cwd: Optional[str] = None) -> str:
-        logging.info("Running in directory %s, command:\n    %s", cwd or "$CWD", cmd)
+        cwd_text = ""
+        if cwd:
+            cwd_text = f" (CWD='{cwd}')"
+        logging.info("Running command%s:\n    %s", cwd_text, cmd)
         return self._git.run(cmd, cwd)
+
+    def set_release_branch(self):
+        # Get the actual version for the commit before check
+        with self._checkout(self.release_commit, True):
+            self.read_version()
+            self.release_branch = f"{self.version.major}.{self.version.minor}"
+
+        self.read_version()
+
+    def read_version(self):
+        self._git.update()
+        self.version = get_version_from_repo()
+
+    def do(self, no_check_dirty: bool, no_check_branch: bool, no_prestable: bool):
+
+        if not no_check_dirty:
+            logging.info("Checking if repo is clean")
+            self.run("git diff HEAD --exit-code")
+
+        self.set_release_branch()
+
+        if not no_check_branch:
+            self.check_branch()
+
+        with self._checkout(self.release_commit, True):
+            if self.release_type in self.BIG:
+                # Checkout to the commit, it will provide the correct current version
+                if no_prestable:
+                    logging.info("Skipping prestable stage")
+                else:
+                    with self.prestable():
+                        logging.info("Prestable part of the releasing is done")
+
+                with self.testing():
+                    logging.info("Testing part of the releasing is done")
+
+            elif self.release_type in self.SMALL:
+                with self.stable():
+                    logging.info("Stable part of the releasing is done")
+
+        self.log_rollback()
+
+    def check_no_tags_after(self):
+        tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
+        if tags_after_commit:
+            raise Exception(
+                f"Commit {self.release_commit} belongs to following tags:\n"
+                f"{tags_after_commit}\nChoose another commit"
+            )
+
+    def check_branch(self):
+        if self.release_type in self.BIG:
+            # Commit to spin up the release must belong to a main branch
+            branch = "master"
+            output = self.run(f"git branch --contains={self.release_commit} {branch}")
+            if branch not in output:
+                raise Exception(
+                    f"commit {self.release_commit} must belong to {branch} for "
+                    f"{self.release_type} release"
+                )
+            return
+        elif self.release_type in self.SMALL:
+            output = self.run(
+                f"git branch --contains={self.release_commit} {self.release_branch}"
+            )
+            if self.release_branch not in output:
+                raise Exception(
+                    f"commit {self.release_commit} must be in "
+                    f"'{self.release_branch}' branch for {self.release_type} release"
+                )
+            return
+
+    def log_rollback(self):
+        if self._rollback_stack:
+            rollback = self._rollback_stack
+            rollback.reverse()
+            logging.info(
+                "To rollback the action run the following commands:\n  %s",
+                "\n  ".join(rollback),
+            )
+
+    @contextmanager
+    def prestable(self):
+        self.check_no_tags_after()
+        # Create release branch
+        self.read_version()
+        with self._create_branch(self.release_branch, self.release_commit):
+            with self._checkout(self.release_branch, True):
+                self.read_version()
+                self.version.with_description(VersionType.PRESTABLE)
+                with self._create_gh_release(True):
+                    with self._bump_prestable_version():
+                        # At this point everything will rollback automatically
+                        yield
+
+    @contextmanager
+    def stable(self):
+        self.check_no_tags_after()
+        self.read_version()
+        version_type = VersionType.STABLE
+        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+            version_type = VersionType.LTS
+        self.version.with_description(version_type)
+        with self._create_gh_release(False):
+            self.version = self.version.update(self.release_type)
+            self.version.with_description(version_type)
+            update_cmake_version(self.version)
+            cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+            # Checkouting the commit of the branch and not the branch itself,
+            # then we are able to skip rollback
+            with self._checkout(f"{self.release_branch}@{{0}}", False):
+                current_commit = self.run("git rev-parse HEAD")
+                self.run(
+                    f"git commit -m "
+                    f"'Update version to {self.version.string}' '{cmake_path}'"
+                )
+                with self._push(
+                    "HEAD", with_rollback_on_fail=False, remote_ref=self.release_branch
+                ):
+                    # DO NOT PUT ANYTHING ELSE HERE
+                    # The push must be the last action and mean the successful release
+                    self._rollback_stack.append(
+                        f"git push {self.repo.url} "
+                        f"+{current_commit}:{self.release_branch}"
+                    )
+                    yield
+
+    @contextmanager
+    def testing(self):
+        # Create branch for a version bump
+        self.read_version()
+        self.version = self.version.update(self.release_type)
+        helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
+        with self._create_branch(helper_branch, self.release_commit):
+            with self._checkout(helper_branch, True):
+                with self._bump_testing_version(helper_branch):
+                    yield
 
     @property
     def version(self) -> ClickHouseVersion:
@@ -42,6 +214,14 @@ class Release:
         self._version = version
 
     @property
+    def release_branch(self) -> str:
+        return self._release_branch
+
+    @release_branch.setter
+    def release_branch(self, branch: str):
+        self._release_branch = release_branch(branch)
+
+    @property
     def release_commit(self) -> str:
         return self._release_commit
 
@@ -49,49 +229,63 @@ class Release:
     def release_commit(self, release_commit: str):
         self._release_commit = commit(release_commit)
 
-    def check_no_tags_after(self):
-        tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
-        if tags_after_commit:
-            raise Exception(
-                f"Commit {self.release_commit} belongs to following tags:\n"
-                f"{tags_after_commit}\nChoose another commit"
-            )
-
-    def check_branch(self, release_type: str):
-        if release_type in self.BIG:
-            # Commit to spin up the release must belong to a main branch
-            output = self.run(f"git branch --contains={self.release_commit} master")
-            if "master" not in output:
-                raise Exception(
-                    f"commit {self.release_commit} must belong to 'master' for "
-                    f"{release_type} release"
-                )
-        if release_type in self.SMALL:
-            branch = f"{self.version.major}.{self.version.minor}"
-            if self._git.branch != branch:
-                raise Exception(f"branch must be '{branch}' for {release_type} release")
-
-    def update(self):
+    @contextmanager
+    def _bump_prestable_version(self):
+        # Update only git, origal version stays the same
         self._git.update()
-        self.version = get_version_from_repo()
+        new_version = self.version.patch_update()
+        new_version.with_description("prestable")
+        update_cmake_version(new_version)
+        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+        self.run(
+            f"git commit -m 'Update version to {new_version.string}' '{cmake_path}'"
+        )
+        with self._push(self.release_branch):
+            with self._create_gh_label(
+                f"v{self.release_branch}-must-backport", "10dbed"
+            ):
+                with self._create_gh_label(
+                    f"v{self.release_branch}-affected", "c2bfff"
+                ):
+                    self.run(
+                        f"gh pr create --repo {self.repo} --title "
+                        f"'Release pull request for branch {self.release_branch}' "
+                        f"--head {self.release_branch}  --label release "
+                        "--body 'This PullRequest is a part of ClickHouse release "
+                        "cycle. It is used by CI system only. Do not perform any "
+                        "changes with it.'"
+                    )
+                    # Here the prestable part is done
+                    yield
 
     @contextmanager
-    def _new_branch(self, name: str, start_point: str = ""):
-        self.run(f"git branch {name} {start_point}")
-        try:
+    def _bump_testing_version(self, helper_branch: str):
+        self.read_version()
+        self.version = self.version.update(self.release_type)
+        self.version.with_description("testing")
+        update_cmake_version(self.version)
+        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+        self.run(
+            f"git commit -m 'Update version to {self.version.string}' '{cmake_path}'"
+        )
+        with self._push(helper_branch):
+            body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
+            self.run(
+                f"gh pr create --repo {self.repo} --title 'Update version after "
+                f"release' --head {helper_branch} --body-file '{body_file}'"
+            )
+            # Here the prestable part is done
             yield
-        except BaseException:
-            logging.warning("Rolling back created branch %s", name)
-            self.run(f"git branch -D {name}")
-            raise
 
     @contextmanager
-    def _checkout(self, ref: str, with_rollback: bool = False):
+    def _checkout(self, ref: str, with_checkout_back: bool = False):
         orig_ref = self._git.branch or self._git.sha
         need_rollback = False
         if ref not in (self._git.branch, self._git.sha):
             need_rollback = True
             self.run(f"git checkout {ref}")
+            # checkout is not put into rollback_stack intentionally
+            rollback_cmd = f"git checkout {orig_ref}"
         try:
             yield
         except BaseException:
@@ -99,131 +293,89 @@ class Release:
             self.run(f"git reset --hard; git checkout {orig_ref}")
             raise
         else:
-            if with_rollback and need_rollback:
-                self.run(f"git checkout {orig_ref}")
+            if with_checkout_back and need_rollback:
+                self.run(rollback_cmd)
 
     @contextmanager
-    def prestable(self, args: argparse.Namespace):
-        self.check_no_tags_after()
-        # Create release branch
-        # TODO: this place is wrong. If we are in stale branch, it will produce
-        # a wrong version
-        self.update()
-        release_branch = f"{self.version.major}.{self.version.minor}"
-        with self._new_branch(release_branch, self.release_commit):
-            with self._checkout(release_branch, True):
-                self.update()
-                self.version.with_description(VersionType.PRESTABLE)
-                with self._create_gh_release(args):
-                    with self._bump_prestable_version(release_branch, args):
-                        # At this point everything will rollback automatically
-                        yield
-
-    @contextmanager
-    def testing(self, args: argparse.Namespace):
-        # Create branch for a version bump
-        self.update()
-        # TODO: this place is wrong. If we are in stale branch, it will produce
-        # a wrong version
-        self.version = self.version.update(args.release_type)
-        helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
-        with self._new_branch(helper_branch, self.release_commit):
-            with self._checkout(helper_branch, True):
-                self.update()
-                self.version = self.version.update(args.release_type)
-                with self._bump_testing_version(helper_branch, args):
-                    yield
-
-    @contextmanager
-    def _bump_testing_version(self, helper_branch: str, args: argparse.Namespace):
-        update_cmake_version(self.version)
-        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
-        self.run(
-            f"git commit -m 'Update version to {self.version.string}' '{cmake_path}'"
-        )
-        with self._push(helper_branch, args):
-            body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
-            self.run(
-                f"gh pr create --repo {args.repo} --title 'Update version after "
-                f"release' --head {helper_branch} --body-file '{body_file}'"
-            )
-            # Here the prestable part is done
+    def _create_branch(self, name: str, start_point: str = ""):
+        self.run(f"git branch {name} {start_point}")
+        rollback_cmd = f"git branch -D {name}"
+        self._rollback_stack.append(rollback_cmd)
+        try:
             yield
+        except BaseException:
+            logging.warning("Rolling back created branch %s", name)
+            self.run(rollback_cmd)
+            raise
 
     @contextmanager
-    def _bump_prestable_version(self, release_branch: str, args: argparse.Namespace):
-        new_version = self.version.patch_update()
-        update_cmake_version(new_version)
-        cmake_path = get_abs_path(FILE_WITH_VERSION_PATH)
+    def _create_gh_label(self, label: str, color_hex: str):
+        # API call, https://docs.github.com/en/rest/reference/issues#create-a-label
         self.run(
-            f"git commit -m 'Update version to {new_version.string}' '{cmake_path}'"
+            f"gh api repos/{self.repo}/labels -f name={label} -f color={color_hex}"
         )
-        with self._push(release_branch, args):
-            self.run(
-                f"gh pr create --repo {args.repo} --title 'Release pull request for "
-                f"branch {release_branch}' --head {release_branch} --body 'This "
-                "PullRequest is a part of ClickHouse release cycle. It is used by CI "
-                "system only. Do not perform any changes with it.' --label release"
-            )
-            # Here the prestable part is done
+        rollback_cmd = f"gh api repos/{self.repo}/labels/{label} -X DELETE"
+        self._rollback_stack.append(rollback_cmd)
+        try:
             yield
+        except BaseException:
+            logging.warning("Rolling back label %s", label)
+            self.run(rollback_cmd)
+            raise
 
     @contextmanager
-    def _create_gh_release(self, args: argparse.Namespace):
-        with self._create_tag(args):
+    def _create_gh_release(self, as_prerelease: bool):
+        with self._create_tag():
             # Preserve tag if version is changed
             tag = self.version.describe
+            prerelease = ""
+            if as_prerelease:
+                prerelease = "--prerelease"
             self.run(
-                f"gh release create --prerelease --draft --repo {args.repo} '{tag}'"
+                f"gh release create {prerelease} --draft --repo {self.repo} "
+                f"--title 'Release {tag}' '{tag}'"
             )
+            rollback_cmd = f"gh release delete --yes --repo {self.repo} '{tag}'"
+            self._rollback_stack.append(rollback_cmd)
             try:
                 yield
             except BaseException:
                 logging.warning("Rolling back release publishing")
-                self.run(f"gh release delete --yes --repo {args.repo} '{tag}'")
+                self.run(rollback_cmd)
                 raise
 
     @contextmanager
-    def _create_tag(self, args: argparse.Namespace):
+    def _create_tag(self):
         tag = self.version.describe
         self.run(f"git tag -a -m 'Release {tag}' '{tag}'")
+        rollback_cmd = f"git tag -d '{tag}'"
+        self._rollback_stack.append(rollback_cmd)
         try:
-            with self._push(f"'{tag}'", args):
+            with self._push(f"'{tag}'"):
                 yield
         except BaseException:
             logging.warning("Rolling back tag %s", tag)
-            self.run(f"git tag -d '{tag}'")
+            self.run(rollback_cmd)
             raise
 
     @contextmanager
-    def _push(self, ref: str, args: argparse.Namespace):
-        self.run(f"git push git@github.com:{args.repo}.git {ref}")
+    def _push(self, ref: str, with_rollback_on_fail: bool = True, remote_ref: str = ""):
+        if remote_ref == "":
+            remote_ref = ref
+
+        self.run(f"git push {self.repo.url} {ref}:{remote_ref}")
+        if with_rollback_on_fail:
+            rollback_cmd = f"git push -d {self.repo.url} {remote_ref}"
+            self._rollback_stack.append(rollback_cmd)
+
         try:
             yield
         except BaseException:
-            logging.warning("Rolling back pushed ref %s", ref)
-            self.run(f"git push -d git@github.com:{args.repo}.git {ref}")
+            if with_rollback_on_fail:
+                logging.warning("Rolling back pushed ref %s", ref)
+                self.run(rollback_cmd)
+
             raise
-
-    def do(self, args: argparse.Namespace):
-        self.release_commit = args.commit
-
-        if not args.no_check_dirty:
-            logging.info("Checking if repo is clean")
-            self.run("git diff HEAD --exit-code")
-
-        if not args.no_check_branch:
-            self.check_branch(args.release_type)
-
-        if args.release_type in self.BIG:
-            if args.no_prestable:
-                logging.info("Skipping prestable stage")
-            else:
-                with self.prestable(args):
-                    logging.info("Prestable part of the releasing is done")
-
-            with self.testing(args):
-                logging.info("Testing part of the releasing is done")
 
 
 def parse_args() -> argparse.Namespace:
@@ -239,9 +391,16 @@ def parse_args() -> argparse.Namespace:
         help="repository to create the release",
     )
     parser.add_argument(
+        "--remote-protocol",
+        "-p",
+        default="ssh",
+        choices=Repo.VALID,
+        help="repo protocol for git commands remote, 'origin' is a special case and "
+        "uses 'origin' as a remote",
+    )
+    parser.add_argument(
         "--type",
         default="minor",
-        # choices=Release.BIG+Release.SMALL, # add support later
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
         help="a release type, new branch is created only for 'major' and 'minor'",
@@ -261,67 +420,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-check-dirty",
         action="store_true",
-        help="skip check repository for uncommited changes",
+        help="(dangerous) skip check repository for uncommited changes",
     )
     parser.add_argument(
         "--no-check-branch",
         action="store_true",
-        help="by default, 'major' and 'minor' types work only for master, and 'patch' "
-        "works only for a release branches, that name should be the same as "
-        "'$MAJOR.$MINOR' version, e.g. 22.2",
-    )
-    parser.add_argument(
-        "--no-publish-release",
-        action="store_true",
-        help="by default, 'major' and 'minor' types work only for master, and 'patch' ",
+        help="(debug or development only) by default, 'major' and 'minor' types work "
+        "only for master, and 'patch' works only for a release branches, that name "
+        "should be the same as '$MAJOR.$MINOR' version, e.g. 22.2",
     )
 
     return parser.parse_args()
 
 
-def prestable():
-    pass
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
-    release = Release(get_version_from_repo())
+    repo = Repo(args.repo, args.remote_protocol)
+    release = Release(repo, args.commit, args.release_type)
 
-    release.do(args)
-
-    # if not args.no_publish_release:
-    #    # Publish release on github for the current HEAD (master, if checked)
-    #    git.run(f"gh release create --draft {git.new_tag} --target {git.sha}")
-
-    ## Commit updated versions to HEAD and push to remote
-    # write_versions(versions_file, new_versions)
-    # git.run(f"git checkout -b {git.new_branch}-helper")
-    # git.run(
-    #    f"git commit -m 'Auto version update to [{new_versions['VERSION_STRING']}] "
-    #    f"[{new_versions['VERSION_REVISION']}]' {versions_file}"
-    # )
-    # git.run(f"git push -u origin {git.new_branch}-helper")
-    # git.run(
-    #    f"gh pr create --title 'Update version after release {git.new_branch}' "
-    #    f"--body-file '{git.root}/.github/PULL_REQUEST_TEMPLATE.md'"
-    # )
-
-    ## Create a new branch from the previous commit and push there with creating
-    ## a PR
-    # git.run(f"git checkout -b {git.new_branch} HEAD~")
-    # write_versions(versions_file, versions)
-    # git.run(
-    #    f"git commit -m 'Auto version update to [{versions['VERSION_STRING']}] "
-    #    f"[{versions['VERSION_REVISION']}]' {versions_file}"
-    # )
-    # git.run(f"git push -u origin {git.new_branch}")
-    # git.run(
-    #    "gh pr create --title 'Release pull request for branch "
-    #    f"{versions['VERSION_MAJOR']}.{versions['VERSION_MINOR']}' --body "
-    #    "'This PullRequest is part of ClickHouse release cycle. It is used by CI "
-    #    "system only. Do not perform any changes with it.' --label release"
-    # )
+    release.do(args.no_check_dirty, args.no_check_branch, args.no_prestable)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,10 @@ public:
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
 
+    Int64 getHardLimit() const
+    {
+        return hard_limit.load(std::memory_order_relaxed);
+    }
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);
