@@ -138,6 +138,23 @@ bool worthConvertToTwoLevel(
 }
 
 void initDataVariants(
+DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedDataVariants::Type type)
+{
+    using Type = DB::AggregatedDataVariants::Type;
+    switch (type)
+    {
+#define M(NAME) \
+    case Type::NAME: \
+        return Type::NAME##_two_level;
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+        default:
+            return type;
+    }
+    __builtin_unreachable();
+}
+
+void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
@@ -145,39 +162,26 @@ void initDataVariants(
     {
         if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
         {
+            // The value of max_size_to_preallocate_for_aggregation may change between queries, so we check it right before returning it to the client.
+            auto adjusted = std::min(*hint, stats_collecting_params.max_size_to_preallocate_for_aggregation);
+            // Seems it's better to preallocate less than to preallocate too much in case when we are going to create several hash tables for each thread of aggregation.
+            if (params.group_by_two_level_threshold != 0 && params.max_threads > 1)
+                adjusted /= params.max_threads;
             if (worthConvertToTwoLevel(
-                    params.group_by_two_level_threshold, *hint, /* group_by_two_level_threshold_bytes*/ 0, /* result_size_bytes*/ 0))
-            {
-                result.init(method_chosen);
-                if (result.isConvertibleToTwoLevel())
-                {
-                    result.convertToTwoLevel();
-                    ProfileEvents::increment(ProfileEvents::HashTablesInitedAsTwoLevel);
-                }
-            }
-            else
-            {
-                // The value of max_size_to_preallocate_for_aggregation may change between queries, so we check it right before returning it to the client.
-                auto adjusted = std::min(*hint, stats_collecting_params.max_size_to_preallocate_for_aggregation);
-                // Seems it's better to preallocate less than to preallocate too much in case when we are going to create several hash tables for each thread of aggregation.
-                if (params.group_by_two_level_threshold != 0 && params.max_threads > 1)
-                    adjusted /= params.max_threads;
-                result.init(method_chosen, adjusted);
-            }
+                    params.group_by_two_level_threshold, *hint, /*group_by_two_level_threshold_bytes*/ 0, /*result_size_bytes*/ 0))
+                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+            result.init(method_chosen, adjusted);
+            ProfileEvents::increment(ProfileEvents::HashTablesInitedAsTwoLevel, result.isTwoLevel());
             return;
         }
     }
     result.init(method_chosen);
 }
 
-// the std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
+// The std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
+// Also string hash table variants are not supported due to the fact that both local perf tests and tests in CI showed slowdowns for them.
 template <typename...>
 struct HasConstructorOfNumberOfElements : std::false_type
-{
-};
-
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<StringHashTable<Ts...>> : std::true_type
 {
 };
 
@@ -186,8 +190,23 @@ struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
 {
 };
 
+template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+{
+};
+
 template <typename... Ts>
 struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
+{
+};
+
+template <template <typename> typename Method, typename Base>
+struct HasConstructorOfNumberOfElements<Method<Base>> : HasConstructorOfNumberOfElements<Base>
 {
 };
 

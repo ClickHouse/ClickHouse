@@ -130,6 +130,7 @@ private:
 template <typename Base>
 struct AggregationDataWithNullKeyTwoLevel : public Base
 {
+    using Base::Base;
     using Base::impls;
 
     AggregationDataWithNullKeyTwoLevel() = default;
