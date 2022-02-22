@@ -491,7 +491,7 @@ void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for wri
 }
 
 
-BackupEntries StorageStripeLog::backup(ContextPtr context, const ASTs & partitions)
+BackupEntries StorageStripeLog::backupData(ContextPtr context, const ASTs & partitions)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
@@ -637,7 +637,7 @@ private:
 };
 
 
-RestoreTaskPtr StorageStripeLog::restoreFromBackup(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());

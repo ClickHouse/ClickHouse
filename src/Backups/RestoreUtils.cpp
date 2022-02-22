@@ -231,7 +231,7 @@ namespace
         {
             if (!hasData())
                 return {};
-            return storage->restoreFromBackup(context, partitions, backup, data_path_in_backup, *restore_settings);
+            return storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings);
         }
 
         ContextMutablePtr context;
