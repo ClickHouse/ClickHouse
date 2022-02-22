@@ -31,16 +31,22 @@ struct ArrayCompactImpl
         using ColVecType = ColumnVectorOrDecimal<T>;
 
         const ColVecType * check_values_column = checkAndGetColumn<ColVecType>(mapped.get());
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(array.getData());
 
-        if (!check_values_column)
+        if (!src_values_column || !check_values_column)
             return false;
 
         const IColumn::Offsets & src_offsets = array.getOffsets();
-        const typename ColVecType::Container & check_values = check_values_column->getData();
 
-        const auto & src_values = array.getData();
-        auto res_values_column = src_values.cloneEmpty();
-        res_values_column->reserve(src_values.size());
+        const auto & src_values = src_values_column->getData();
+        const auto & check_values = check_values_column->getData();
+        typename ColVecType::MutablePtr res_values_column;
+        if constexpr (is_decimal<T>)
+            res_values_column = ColVecType::create(src_values.size(), src_values_column->getScale());
+        else
+            res_values_column = ColVecType::create(src_values.size());
+
+        typename ColVecType::Container & res_values = res_values_column->getData();
 
         size_t src_offsets_size = src_offsets.size();
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
@@ -57,7 +63,7 @@ struct ArrayCompactImpl
             if (src_pos < src_offset)
             {
                 /// Insert first element unconditionally.
-                res_values_column->insertFrom(src_values, src_pos);
+                res_values[res_pos] = src_values[src_pos];
 
                 /// For the rest of elements, insert if the element is different from the previous.
                 ++src_pos;
@@ -66,13 +72,14 @@ struct ArrayCompactImpl
                 {
                     if (!bitEquals(check_values[src_pos], check_values[src_pos - 1]))
                     {
-                        res_values_column->insertFrom(src_values, src_pos);
+                        res_values[res_pos] = src_values[src_pos];
                         ++res_pos;
                     }
                 }
             }
             res_offsets[i] = res_pos;
         }
+        res_values.resize(res_pos);
 
         res_ptr = ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
         return true;
