@@ -16,6 +16,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <base/unaligned.h>
+#include <base/sort.h>
 #include <cstring> // memcpy
 
 
@@ -49,12 +50,12 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && nested_column)
+    if (!offsets_concrete->empty() && data)
     {
         Offset last_offset = offsets_concrete->getData().back();
 
         /// This will also prevent possible overflow in offset.
-        if (nested_column->size() != last_offset)
+        if (data->size() != last_offset)
             throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -810,9 +811,9 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        std::sort(res.begin(), res.end(), less);
+        ::sort(res.begin(), res.end(), less);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const

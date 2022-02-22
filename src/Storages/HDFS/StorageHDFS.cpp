@@ -172,23 +172,43 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     const String & compression_method,
     ContextPtr ctx)
 {
-    auto read_buffer_creator = [&]()
+    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
+    auto paths = getPathsList(path_from_uri, uri, ctx);
+
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-        auto paths = getPathsList(path_from_uri, uri, ctx);
-        if (paths.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-                "specify table structure manually",
-                format);
+        auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
+        {
+            read_buffer_creator_was_used = true;
 
-        auto compression = chooseCompressionMethod(paths[0], compression_method);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, paths[0], ctx->getGlobalContext()->getConfigRef()), compression);
-    };
+            if (paths.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+                    "specify table structure manually",
+                    format);
 
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+            auto compression = chooseCompressionMethod(path, compression_method);
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, ctx->getGlobalContext()->getConfigRef()), compression);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+           exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from hdfs files failed. Errors:\n{}", exception_messages);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -258,9 +278,15 @@ Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool n
     auto header = metadata_snapshot->getSampleBlock();
     /// Note: AddingDefaultsBlockInputStream doesn't change header.
     if (need_path_column)
-        header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        header.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_path"});
     if (need_file_column)
-        header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        header.insert(
+            {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             "_file"});
     return header;
 }
 
@@ -320,6 +346,7 @@ HDFSSource::HDFSSource(
 
 void HDFSSource::onCancel()
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
@@ -365,41 +392,47 @@ String HDFSSource::getName() const
 
 Chunk HDFSSource::generate()
 {
-    if (!reader)
-        return {};
-
-    Chunk chunk;
-    if (reader->pull(chunk))
+    while (true)
     {
-        Columns columns = chunk.getColumns();
-        UInt64 num_rows = chunk.getNumRows();
+        if (!reader || isCancelled())
+            break;
 
-        /// Enrich with virtual columns.
-        if (need_path_column)
+        Chunk chunk;
+        if (reader->pull(chunk))
         {
-            auto column = DataTypeString().createColumnConst(num_rows, current_path);
-            columns.push_back(column->convertToFullColumnIfConst());
+            Columns columns = chunk.getColumns();
+            UInt64 num_rows = chunk.getNumRows();
+
+            /// Enrich with virtual columns.
+            if (need_path_column)
+            {
+                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                columns.push_back(column->convertToFullColumnIfConst());
+            }
+
+            if (need_file_column)
+            {
+                size_t last_slash_pos = current_path.find_last_of('/');
+                auto file_name = current_path.substr(last_slash_pos + 1);
+
+                auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                columns.push_back(column->convertToFullColumnIfConst());
+            }
+
+            return Chunk(std::move(columns), num_rows);
         }
 
-        if (need_file_column)
         {
-            size_t last_slash_pos = current_path.find_last_of('/');
-            auto file_name = current_path.substr(last_slash_pos + 1);
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
 
-            auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
-            columns.push_back(column->convertToFullColumnIfConst());
+            if (!initialize())
+                break;
         }
-
-        return Chunk(std::move(columns), num_rows);
     }
-
-    reader.reset();
-    pipeline.reset();
-    read_buf.reset();
-
-    if (!initialize())
-        return {};
-    return generate();
+    return {};
 }
 
 
@@ -685,9 +718,8 @@ void registerStorageHDFS(StorageFactory & factory)
 NamesAndTypesList StorageHDFS::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 }

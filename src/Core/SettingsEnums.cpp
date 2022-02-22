@@ -93,6 +93,16 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64}})
@@ -130,4 +140,10 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"JSON", FormatSettings::EscapingRule::JSON},
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
+
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+                       {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
+                        {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
+                        {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
+
 }

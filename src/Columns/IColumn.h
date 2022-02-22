@@ -528,7 +528,7 @@ protected:
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
 
-    /// Uses std::sort and partial_sort as default algorithms.
+    /// Uses sort and partial_sort as default algorithms.
     /// Implements 'less' and 'equals' via comparator.
     /// If 'less' and 'equals' can be implemented more optimal
     /// (e.g. with less number of comparisons), you can use
