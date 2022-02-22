@@ -77,7 +77,7 @@ std::unique_ptr<ReadBuffer> ArchiveBackup::readFileImpl(const String & file_name
     return reader->readFile(file_name);
 }
 
-std::unique_ptr<WriteBuffer> ArchiveBackup::addFileImpl(const String & file_name)
+std::unique_ptr<WriteBuffer> ArchiveBackup::writeFileImpl(const String & file_name)
 {
     /// mutex is already locked
     return writer->writeFile(file_name);
