@@ -264,8 +264,8 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, int64_t tim
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
-    DB::writeIntBinary(time, buf);
     request->write(buf);
+    DB::writeIntBinary(time, buf);
     return buf.getBuffer();
 }
 
