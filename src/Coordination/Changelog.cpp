@@ -594,7 +594,7 @@ void Changelog::compact(uint64_t up_to_log_index)
                 std::error_code ec;
                 std::filesystem::remove(itr->second.path, ec);
                 if (ec)
-                    LOG_WARNING(log, "Failed to remove changelog {} because of compaction, error message: {}", itr->second.path, ec.message());
+                    LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", itr->second.path, ec.message());
                 else
                     LOG_INFO(log, "Removed changelog {} because of compaction", itr->second.path);
             }
@@ -743,7 +743,7 @@ void Changelog::cleanLogThread()
             if (std::filesystem::remove(path, ec))
                 LOG_INFO(log, "Removed changelog {} because of compaction.", path);
             else
-                LOG_WARNING(log, "Failed to remove changelog {} after compaction: {}", path, ec.message());
+                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
         }
     }
 }
