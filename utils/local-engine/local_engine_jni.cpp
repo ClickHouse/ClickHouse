@@ -80,6 +80,11 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
     registerAllFunctions();
+    SharedContextHolder shared_context = Context::createShared();
+    dbms::SerializedPlanParser::local_server = std::make_unique<DB::LocalServer>();
+    dbms::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
+    dbms::SerializedPlanParser::global_context->makeGlobalContext();
+    dbms::SerializedPlanParser::global_context->setPath("/");
 }
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)

@@ -16,9 +16,9 @@ std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList
     {
         columns_description.add(ColumnDescription(item.name, item.type));
     }
-    metadata->setColumns(columns_description);
+    metadata->setColumns(std::move(columns_description));
     metadata->partition_key.expression_list_ast = std::make_shared<ASTExpressionList>();
-    metadata->sorting_key = KeyDescription::getSortingKeyFromAST(makeASTFunction("tuple"), columns_description, context, {});
+    metadata->sorting_key = KeyDescription::getSortingKeyFromAST(makeASTFunction("tuple"), metadata->getColumns(), context, {});
     metadata->primary_key.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>());
     return metadata;
 }
