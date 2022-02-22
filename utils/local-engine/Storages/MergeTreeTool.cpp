@@ -53,6 +53,10 @@ MergeTreeTable parseMergeTreeTable(std::string & info)
     assertChar('\n', in);
     readString(table.relative_path, in);
     assertChar('\n', in);
+    readIntText(table.min_block, in);
+    assertChar('\n', in);
+    readIntText(table.max_block, in);
+    assertChar('\n', in);
     assertEOF(in);
     return table;
 }
@@ -66,6 +70,10 @@ std::string MergeTreeTable::toString() const
     writeString(table, out);
     writeChar('\n', out);
     writeString(relative_path, out);
+    writeChar('\n', out);
+    writeIntText(min_block, out);
+    writeChar('\n', out);
+    writeIntText(max_block, out);
     writeChar('\n', out);
     return out.str();
 }

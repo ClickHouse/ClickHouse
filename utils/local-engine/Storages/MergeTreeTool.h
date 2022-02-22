@@ -28,6 +28,8 @@ namespace local_engine
         std::string database;
         std::string table;
         std::string relative_path;
+        int min_block;
+        int max_block;
 
         std::string toString() const;
     };

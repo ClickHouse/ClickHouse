@@ -67,11 +67,11 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     }
     auto query_info = local_engine::buildQueryInfo(names_and_types_list);
     auto data_parts = query_context.custom_storage_merge_tree->getDataPartsVector();
-    int min_block = 0;
-    int max_block = 1000;
+    int min_block = merge_tree_table.min_block;
+    int max_block = merge_tree_table.max_block;
     MergeTreeData::DataPartsVector selected_parts;
     std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
-                 [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+                 [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block < max_block;});
     auto query = query_context.custom_storage_merge_tree->reader.readFromParts(selected_parts,
                                                         names_and_types_list.getNames(),
                                                         query_context.metadata,

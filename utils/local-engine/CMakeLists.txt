@@ -86,10 +86,11 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${parser_headers}
         ${parser_sources}
         ${storages_sources}
+        ${ClickHouse_SOURCE_DIR}/programs/local/LocalServer.cpp
         )
 target_include_directories(${LOCALENGINE_SHARED_LIB} PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_SOURCE_DIR}/base)
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
-target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK})
+target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} loggers)
 
 install(TARGETS ${LOCALENGINE_SHARED_LIB}
         LIBRARY DESTINATION lib

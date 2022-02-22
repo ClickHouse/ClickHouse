@@ -265,7 +265,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "test-intel/", std::move(schema)).build();
+                        .readMergeTree("default", "test", "test-intel/", 1, 12, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
@@ -277,7 +277,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
             local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
             rows += spark_row_info->getNumRows();
         }
-        std::cout << rows <<std::endl;
+//        std::cout << rows <<std::endl;
     }
 }
 
@@ -492,7 +492,7 @@ static void BM_NormalFilter(benchmark::State& state)
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(1);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
