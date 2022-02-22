@@ -99,6 +99,18 @@ def test_backup_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
+def test_materialized_view():
+    backup_name = new_backup_name()
+    instance.query("CREATE MATERIALIZED VIEW mv_1(x UInt8) ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT 1 AS x")
+
+    instance.query(f"BACKUP TABLE mv_1 TO {backup_name}")
+    instance.query("DROP TABLE mv_1")
+    instance.query(f"RESTORE TABLE mv_1 FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM mv_1") == "1\n"
+    instance.query("DROP TABLE mv_1")
+
+
 def test_incremental_backup():
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()

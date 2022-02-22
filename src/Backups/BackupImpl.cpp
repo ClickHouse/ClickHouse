@@ -1,4 +1,4 @@
-﻿#include <Backups/BackupImpl.h>
+#include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupEntry.h>
@@ -488,7 +488,6 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 /// but the entry itself has been moved or renamed.
                 base_size = size;
                 base_checksum = *checksum;
-                base_exists = true;
                 use_base = true;
             }
         }

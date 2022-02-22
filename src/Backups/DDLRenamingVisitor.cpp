@@ -59,8 +59,6 @@ namespace
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
 
-        create.uuid = UUIDHelpers::Nil;
-
         if (!create.as_table.empty() && !create.as_database.empty())
             std::tie(create.as_database, create.as_table) = data.renaming_settings.getNewTableName({create.as_database, create.as_table});
 
@@ -365,19 +363,16 @@ void DDLRenamingVisitor::visit(ASTPtr & ast, const Data & data)
         visitDictionary(*dictionary, data);
 }
 
-ASTPtr renameInCreateQuery(const ASTPtr & ast, const ContextPtr & global_context, const DDLRenamingSettings & renaming_settings)
+void renameInCreateQuery(ASTPtr & ast, const ContextPtr & global_context, const DDLRenamingSettings & renaming_settings)
 {
-    auto new_ast = ast->clone();
     try
     {
         DDLRenamingVisitor::Data data{renaming_settings, global_context};
-        DDLRenamingVisitor::Visitor{data}.visit(new_ast);
-        return new_ast;
+        DDLRenamingVisitor::Visitor{data}.visit(ast);
     }
     catch (...)
     {
         tryLogCurrentException("Backup", "Error while renaming in AST");
-        return ast;
     }
 }
 

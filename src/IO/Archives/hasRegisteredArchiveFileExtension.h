@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Returns true if a specified path has one of the registed file extensions for an archive.
+/// Returns true if a specified path has one of the registered file extensions for an archive.
 bool hasRegisteredArchiveFileExtension(const String & path);
 
 }

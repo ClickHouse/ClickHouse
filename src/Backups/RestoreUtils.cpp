@@ -297,7 +297,7 @@ namespace
         RestoreTasks makeTasks() const
         {
             /// Check that there are not `different_create_query`. (If it's set it means error.)
-            for (auto & info : databases | boost::adaptors::map_values)
+            for (const auto & info : databases | boost::adaptors::map_values)
             {
                 if (info.different_create_query)
                     throw Exception(ErrorCodes::CANNOT_RESTORE_DATABASE,
@@ -308,12 +308,12 @@ namespace
             auto restore_settings_ptr = std::make_shared<const RestoreSettings>(restore_settings);
 
             RestoreTasks res;
-            for (auto & info : databases | boost::adaptors::map_values)
+            for (const auto & info : databases | boost::adaptors::map_values)
                 res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr,
                                                                     /* ignore_if_database_def_differs = */ !info.is_explicit));
 
             /// TODO: We need to restore tables according to their dependencies.
-            for (auto & info : tables | boost::adaptors::map_values)
+            for (const auto & info : tables | boost::adaptors::map_values)
                 res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr));
 
             return res;
@@ -487,7 +487,10 @@ namespace
         /// Do renaming in the create query according to the renaming config.
         std::shared_ptr<ASTCreateQuery> renameInCreateQuery(const ASTPtr & ast) const
         {
-            return typeid_cast<std::shared_ptr<ASTCreateQuery>>(::DB::renameInCreateQuery(ast, context, renaming_settings));
+            ASTPtr query = ast;
+            ::DB::renameInCreateQuery(query, context, renaming_settings);
+            auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(query);
+            return create_query;
         }
 
         static bool isSystemOrTemporaryDatabase(const String & database_name)

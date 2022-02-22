@@ -24,8 +24,8 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesBatch.h>
 #include <Backups/IRestoreTask.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <IO/createReadBufferFromFileBase.h>
 #include <Poco/TemporaryFile.h>
 
 
@@ -35,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 

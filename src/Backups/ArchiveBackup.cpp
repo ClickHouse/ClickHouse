@@ -10,6 +10,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 ArchiveBackup::ArchiveBackup(
     const String & backup_name_,
     const DiskPtr & disk_,
