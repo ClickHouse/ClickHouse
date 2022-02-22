@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <libnuraft/nuraft.hxx>
 #include <city.h>
 #include <optional>
