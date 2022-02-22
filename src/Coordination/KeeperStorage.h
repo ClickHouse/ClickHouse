@@ -66,6 +66,7 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
+        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
     };
 
@@ -153,7 +154,7 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
 
     void finalize();
 
