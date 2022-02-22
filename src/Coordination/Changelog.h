@@ -169,7 +169,6 @@ private:
     /// 128 is enough, even if log is not removed, it's not a problem
     ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
-    std::atomic_bool shutdown_clean_thread{false};
 };
 
 }
