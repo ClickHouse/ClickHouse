@@ -39,32 +39,23 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
-        auto current_offset = 0;
+        if (input_rows_count == 0)
+            return result_type->createColumn();
 
-        const auto vec_size = res0CellCount();
-        std::vector<H3Index> hindex_vec;
+        std::vector<H3Index> res0_indexes;
+        const auto cell_count = res0CellCount();
+        res0_indexes.resize(cell_count);
+        getRes0Cells(res0_indexes.data());
 
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            hindex_vec.resize(vec_size);
-            getRes0Cells(hindex_vec.data());
-            dst_data.reserve(input_rows_count);
+        auto res = ColumnArray::create(ColumnUInt64::create());
 
-            for (auto & hindex : hindex_vec)
-            {
-                ++current_offset;
-                dst_data.insert(hindex);
-            }
-            hindex_vec.clear();
-            dst_offsets[row] = current_offset;
-        }
-        return dst;
+        Array res_indexes;
+        res_indexes.insert(res_indexes.end(), res0_indexes.begin(), res0_indexes.end());
+        res->insert(res_indexes);
+
+        return res;
     }
 };
 
