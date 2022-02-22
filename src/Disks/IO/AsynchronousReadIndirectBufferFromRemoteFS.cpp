@@ -197,7 +197,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
     }
 
-    file_offset_of_buffer_end = impl->offset();
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
 
     prefetch_future = {};
     return size;
