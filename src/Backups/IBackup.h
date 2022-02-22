@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <memory>
+#include <optional>
 
 
 namespace DB
