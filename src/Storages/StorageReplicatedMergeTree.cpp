@@ -3066,7 +3066,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         desired_mutation_version->second,
                         merge_pred.getVersion());
 
-                    if (create_result == CreateMergeEntryResult::Ok)
+                    if (create_result == CreateMergeEntryResult::Ok ||
+                        create_result == CreateMergeEntryResult::LogUpdated)
                         break;
                 }
             }

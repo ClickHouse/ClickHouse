@@ -157,7 +157,6 @@ private:
         QueryPipeline merged_pipeline;
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
-        SyncGuardPtr sync_guard{nullptr};
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
 
         size_t rows_written{0};
