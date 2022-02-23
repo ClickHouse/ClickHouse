@@ -1,10 +1,13 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <Common/HashTable/HashTable.h>
+
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/FunctionArrayMapped.h>
-#include <Common/HashTable/HashTable.h>
 
 
 namespace DB
