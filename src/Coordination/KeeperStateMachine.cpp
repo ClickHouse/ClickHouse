@@ -239,7 +239,7 @@ void KeeperStateMachine::create_snapshot(
 
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flash to disk", s.get_last_log_idx());
     /// Flush snapshot to disk in a separate thread.
-    if (!snapshots_queue.push(std::move(snapshot_task)))
+    if (!snapshots_queue.push(snapshot_task))
         LOG_WARNING(log, "Cannot push snapshot task into queue");
 }
 
