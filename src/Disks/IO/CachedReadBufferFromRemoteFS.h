@@ -34,11 +34,15 @@ public:
 private:
     void initialize(size_t offset, size_t size);
 
+    SeekableReadBufferPtr getImplementationBuffer(FileSegmentPtr file_segment);
+
     SeekableReadBufferPtr getReadBufferForFileSegment(FileSegmentPtr file_segment);
 
     SeekableReadBufferPtr getCacheReadBuffer(size_t offset) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
+
+    void predownload(FileSegmentPtr file_segment);
 
     enum class ReadType
     {
@@ -70,7 +74,7 @@ private:
     std::optional<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
 
-    SeekableReadBufferPtr impl;
+    SeekableReadBufferPtr implementation_buffer;
     bool initialized = false;
 
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
@@ -87,7 +91,6 @@ private:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
     }
-
     size_t first_offset = 0;
 };
 
