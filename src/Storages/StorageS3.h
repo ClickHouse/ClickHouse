@@ -218,6 +218,8 @@ private:
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
+    bool isColumnOriented() const;
 };
 
 }

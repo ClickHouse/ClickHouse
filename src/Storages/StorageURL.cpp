@@ -482,6 +482,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from urls failed. Errors:\n{}", exception_messages);
 }
 
+bool IStorageURLBase::isColumnOriented() const
+{
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+}
+
 Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -492,6 +497,20 @@ Pipe IStorageURLBase::read(
     unsigned num_streams)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (isColumnOriented())
+    {
+        columns_description = ColumnsDescription{
+            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = metadata_snapshot->getColumns();
+        block_for_format = metadata_snapshot->getSampleBlock();
+    }
 
     if (urlWithGlobs(uri))
     {
@@ -520,9 +539,9 @@ Pipe IStorageURLBase::read(
                 format_name,
                 format_settings,
                 getName(),
-                getHeaderBlock(column_names, metadata_snapshot),
+                block_for_format,
                 local_context,
-                metadata_snapshot->getColumns(),
+                columns_description,
                 max_block_size,
                 ConnectionTimeouts::getHTTPTimeouts(local_context),
                 compression_method, headers, params, /* glob_url */true));
@@ -542,9 +561,9 @@ Pipe IStorageURLBase::read(
             format_name,
             format_settings,
             getName(),
-            getHeaderBlock(column_names, metadata_snapshot),
+            block_for_format,
             local_context,
-            metadata_snapshot->getColumns(),
+            columns_description,
             max_block_size,
             ConnectionTimeouts::getHTTPTimeouts(local_context),
             compression_method, headers, params));
