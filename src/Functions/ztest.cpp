@@ -298,7 +298,6 @@ namespace DB
             const ColVecTTX * const col_tx = checkAndGetColumn<ColVecTTX>(col_tx_raw);
             const ColVecTTY * const col_ty = checkAndGetColumn<ColVecTTY>(col_ty_raw);
 
-
             if (col_sx && col_sy && col_tx && col_ty)
             {
                 return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
@@ -306,86 +305,86 @@ namespace DB
             else if (col_sx && col_sy && col_tx && col_ty_const)
             {
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, false, false, true>(arguments, col_sx->getData().data(), col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
             }
             else if (col_sx && col_sy && col_tx_const && col_ty)
             {
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, false, true, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx && col_sy && col_tx_const && col_ty_const)
             {
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, false, true, true>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
             }
             else if (col_sx && col_sy_const && col_tx && col_ty)
             {
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, true, false, false>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx && col_sy_const && col_tx && col_ty_const)
             {
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, true, false, true>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
             }
             else if (col_sx && col_sy_const && col_tx_const && col_ty)
             {
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, true, true, false>(arguments, col_sx->getData().data(), &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx && col_sy_const && col_tx_const && col_ty_const)
             {
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), &sy_value, &tx_value, &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, false, true, true, true>(arguments, col_sx->getData().data(), &sy_value, &tx_value, &ty_value, input_rows_count);
             }
             else if (col_sx_const && col_sy && col_tx && col_ty)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, false, false, false>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx_const && col_sy && col_tx && col_ty_const)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, false, false, true>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
             }
             else if (col_sx_const && col_sy && col_tx_const && col_ty)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, false, true, false>(arguments, &sx_value, col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx_const && col_sy && col_tx_const && col_ty_const)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, false, true, true>(arguments, &sx_value, col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
             }
             else if (col_sx_const && col_sy_const && col_tx && col_ty)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, true, false, false>(arguments, &sx_value, &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx_const && col_sy_const && col_tx && col_ty_const)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, true, false, true>(arguments, &sx_value, &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
             }
             else if (col_sx_const && col_sy_const && col_tx_const && col_ty)
             {
                 const TSX sx_value = col_sx_const->template getValue<TSX>();
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, true, true, false>(arguments, &sx_value, &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
             }
             else if (col_sx_const && col_sy_const && col_tx_const && col_ty_const)
             {
@@ -393,7 +392,7 @@ namespace DB
                 const TSY sy_value = col_sy_const->template getValue<TSY>();
                 const TTX tx_value = col_tx_const->template getValue<TTX>();
                 const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, &sx_value, &sy_value, &tx_value, &ty_value, input_rows_count);
+                return calculate<TSX, TSY, TTX, TTY, true, true, true, true>(arguments, &sx_value, &sy_value, &tx_value, &ty_value, input_rows_count);
             }
             else
             {
