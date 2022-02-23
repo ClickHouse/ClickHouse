@@ -142,7 +142,7 @@ public:
                             + toString(arguments.size()) + ".",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments.size() == 1)
+        if ((arguments.size() == 1) && std::is_same_v<typename Impl::data_type, DataTypeArray>)
         {
             const auto * array_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
 

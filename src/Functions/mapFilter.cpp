@@ -34,7 +34,7 @@ struct MapFilterImpl
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
-    static bool needOneArray() { return false; }
+    static bool needOneArray() { return true; }
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypes & elems)
     {
@@ -101,7 +101,7 @@ struct MapApplyImpl
     /// true if the expression (for an overload of f(expression, maps)) or a map (for f(map)) should be boolean.
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
-    static bool needOneArray() { return false; }
+    static bool needOneArray() { return true; }
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypes & /*elems*/)
     {
