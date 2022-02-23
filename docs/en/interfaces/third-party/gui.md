@@ -145,7 +145,7 @@ Features:
 
 ### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
 
-[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a Zeppelin interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
+[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
 ## Commercial {#commercial}
 
