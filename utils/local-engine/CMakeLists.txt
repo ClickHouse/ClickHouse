@@ -19,34 +19,9 @@ include_directories(${JNI_INCLUDE_DIRS})
 
 set(JNI_NATIVE_SOURCES
         local_engine_jni.cpp)
-
-# Set the jni header file (from the java class).
-set(JNI_HEADERS_DIR ${PROJECT_SOURCE_DIR}/utils/local-engine/include)
-
-file(MAKE_DIRECTORY ${JNI_HEADERS_DIR})
-if(${Java_VERSION_MAJOR} VERSION_GREATER_EQUAL "10" AND ${CMAKE_VERSION} VERSION_LESS "3.11.4")
-    # Java 10 and newer don't have javah, but the alternative GENERATE_NATIVE_HEADERS requires CMake 3.11.4 or newer
-    message(FATAL_ERROR "Detected Java 10 or newer (${Java_VERSION_STRING}), to build with CMake please upgrade CMake to 3.11.4 or newer")
-
-elseif(${CMAKE_VERSION} VERSION_LESS "3.11.4" OR (${Java_VERSION_MINOR} STREQUAL "7" AND ${Java_VERSION_MAJOR} STREQUAL "1"))
-    # Old CMake or Java 1.7 prepare the JAR...
-    message(FATAL_ERROR "Don't support old JDK ${Java_VERSION_STRING}")
-
-else ()
-    # Java 1.8 or newer prepare the JAR...
-    message("Preparing Jar for JDK ${Java_VERSION_STRING}")
-    add_jar(
-            local_engine
-            SOURCES ${JAVA_MAIN_CLASSES}
-            GENERATE_NATIVE_HEADERS local_engine_headers DESTINATION ${JNI_HEADERS_DIR}
-    )
-    message("generating headers to ${JNI_HEADERS_DIR}")
-endif()
 set (CLICKHOUSE_SERVER_LINK
-        PUBLIC
-
-#        "-Wl,-whole-archive"
-        dbms
+        PRIVATE
+#        dbms
         boost::program_options
         clickhouse_aggregate_functions
         clickhouse_common_config
@@ -56,8 +31,8 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_parsers
         clickhouse_storages_system
         clickhouse_table_functions
-        string_utils
         substrait
+
         )
 
 function(add_cxx_compile_options option)
@@ -89,7 +64,6 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${ClickHouse_SOURCE_DIR}/programs/local/LocalServer.cpp
         )
 target_include_directories(${LOCALENGINE_SHARED_LIB} PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_SOURCE_DIR}/base)
-add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
 target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} loggers)
 
 install(TARGETS ${LOCALENGINE_SHARED_LIB}
