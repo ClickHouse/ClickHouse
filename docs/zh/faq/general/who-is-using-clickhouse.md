@@ -1,19 +1,19 @@
 ---
-title: Who is using ClickHouse?
+title: 谁在使用 ClickHouse?
 toc_hidden: true
 toc_priority: 9
 ---
 
-# Who Is Using ClickHouse? {#who-is-using-clickhouse}
+# 谁在使用 ClickHouse? {#who-is-using-clickhouse}
 
-Being an open-source product makes this question not so straightforward to answer. You do not have to tell anyone if you want to start using ClickHouse, you just go grab source code or pre-compiled packages. There’s no contract to sign and the [Apache 2.0 license](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE) allows for unconstrained software distribution.
+作为一个开源产品，这个问题的答案并不那么简单。如果你想开始使用ClickHouse，你不需要告诉任何人，你只需要获取源代码或预编译包。不需要签署任何合同，[Apache 2.0许可证](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE)允许不受约束的软件分发。
 
-Also, the technology stack is often in a grey zone of what’s covered by an NDA. Some companies consider technologies they use as a competitive advantage even if they are open-source and do not allow employees to share any details publicly. Some see some PR risks and allow employees to share implementation details only with their PR department approval.
+此外，技术堆栈通常处于保密协议所涵盖的灰色地带。一些公司认为他们使用的技术是一种竞争优势，即使这些技术是开源的，并且不允许员工公开分享任何细节。一些公司看到了一些公关风险，只允许员工在获得公关部门批准后分享实施细节。
 
-So how to tell who is using ClickHouse?
+那么，如何辨别谁在使用ClickHouse呢?
 
-One way is to **ask around**. If it’s not in writing, people are much more willing to share what technologies are used in their companies, what the use cases are, what kind of hardware is used, data volumes, etc. We’re talking with users regularly on [ClickHouse Meetups](https://www.youtube.com/channel/UChtmrD-dsdpspr42P_PyRAw/playlists) all over the world and have heard stories about 1000+ companies that use ClickHouse. Unfortunately, that’s not reproducible and we try to treat such stories as if they were told under NDA to avoid any potential troubles. But you can come to any of our future meetups and talk with other users on your own. There are multiple ways how meetups are announced, for example, you can subscribe to [our Twitter](http://twitter.com/ClickHouseDB/).
+一种方法是询问周围的人。如果不是书面形式，人们更愿意分享他们公司使用的技术、用例、使用的硬件类型、数据量等。我们定期在[ClickHouse meetup](https://www.youtube.com/channel/UChtmrD-dsdpspr42P_PyRAw/playlists)上与世界各地的用户进行交流，并听到了大约1000多家使用ClickHouse的公司的故事。不幸的是，这是不可复制的，我们试图把这些故事当作是在保密协议下被告知的，以避免任何潜在的麻烦。但你可以参加我们未来的任何聚会，并与其他用户单独交谈。有多种方式宣布聚会，例如，你可以订阅[我们的Twitter](http://twitter.com/ClickHouseDB/)。
 
-The second way is to look for companies **publicly saying** that they use ClickHouse. It’s more substantial because there’s usually some hard evidence like a blog post, talk video recording, slide deck, etc. We collect the collection of links to such evidence on our **[Adopters](../../introduction/adopters.md)** page. Feel free to contribute the story of your employer or just some links you’ve stumbled upon (but try not to violate your NDA in the process).
+第二种方法是寻找**公开表示**使用ClickHouse的公司。因为通常会有一些确凿的证据，如博客文章、谈话视频录音、幻灯片等。我们在我们的[**Adopters**](../../introduction/adopters.md)页面上收集指向此类证据的链接。你可以随意提供你雇主的故事，或者只是一些你偶然发现的链接(但尽量不要在这个过程中违反保密协议)。
 
-You can find names of very large companies in the adopters list, like Bloomberg, Cisco, China Telecom, Tencent, or Uber, but with the first approach, we found that there are many more. For example, if you take [the list of largest IT companies by Forbes (2020)](https://www.forbes.com/sites/hanktucker/2020/05/13/worlds-largest-technology-companies-2020-apple-stays-on-top-zoom-and-uber-debut/) over half of them are using ClickHouse in some way. Also, it would be unfair not to mention [Yandex](../../introduction/history.md), the company which initially open-sourced ClickHouse in 2016 and happens to be one of the largest IT companies in Europe.
+你可以在采用者名单中找到一些非常大的公司，比如彭博社、思科、中国电信、腾讯或优步，但通过第一种方法，我们发现还有更多。例如，如果你看看《福布斯》[(2020年)列出的最大IT公司名单](https://www.forbes.com/sites/hanktucker/2020/05/13/worlds-largest-technology-companies-2020-apple-stays-on-top-zoom-and-uber-debut/)，超过一半的公司都在以某种方式使用ClickHouse。此外，不提[Yandex](../../introduction/history.md)是不公平的，该公司最初于2016年开放ClickHouse，碰巧是欧洲最大的it公司之一。
