@@ -89,7 +89,8 @@ public:
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -432,8 +433,11 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnUnique<ColumnType>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
+    (void)(stability);
+    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+
     if (equal_ranges.empty())
         return;
 
@@ -464,7 +468,8 @@ void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int
             }
         }
     }
-    getNestedColumn()->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
+
+    getNestedColumn()->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 template <typename IndexType>
