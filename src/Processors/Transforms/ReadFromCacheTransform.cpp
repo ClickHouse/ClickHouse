@@ -7,9 +7,10 @@ Chunk ReadFromCacheTransform::generate()
 {
     auto query_cache = cache[query_ptr->getTreeHash()];
     if (chunks_read_count < query_cache.size()) {
-        // FIXME: find a way to return chunk from cache without invalidating it for further usage
-        return std::move(*query_cache[chunks_read_count++]);
+        const auto &chunk = query_cache[chunks_read_count++];
+        return Chunk(chunk.getColumns(), chunk.getNumRows(), chunk.getChunkInfo());
     }
+    return {};
 }
 
 ReadFromCacheTransform::ReadFromCacheTransform(const Block & header_, std::unordered_map<IAST::Hash, Data> & cache_, ASTPtr query_ptr_)
