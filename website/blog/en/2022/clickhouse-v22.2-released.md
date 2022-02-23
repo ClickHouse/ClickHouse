@@ -34,7 +34,7 @@ This feature [was developed](https://github.com/ClickHouse/ClickHouse/pull/33302
 
 ## Custom deduplication token
 
-`ReplicatedMergeTree` and `MergeTree` types of tables implement block-level deduplication. When a block of data is inserted, it's cryptographic hash is calculated and if the same block was already inserted before, then the duplicate is skipped and the insert query succeeds. This makes it possible to implement exactly-once semantics for inserts.
+`ReplicatedMergeTree` and `MergeTree` types of tables implement block-level deduplication. When a block of data is inserted, its cryptographic hash is calculated and if the same block was already inserted before, then the duplicate is skipped and the insert query succeeds. This makes it possible to implement exactly-once semantics for inserts.
 
 In ClickHouse version 22.2 you can provide your own deduplication token instead of an automatically calculated hash. This makes sense if you already have batch identifiers from some other system and you want to reuse them. It also makes sense when blocks can be identical but they should actually be inserted multiple times. Or the opposite - when blocks contain some random data and you want to deduplicate only by significant columns.
 
