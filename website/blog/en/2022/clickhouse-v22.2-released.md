@@ -87,4 +87,6 @@ This feature is contributed by **Aaron Katz**. Very nice.
 
 ## ... And Many More
 
+Maxim Kita, Danila Kutenin, Anton Popov, zhanglistar, Federico Rodriguez, Raúl Marín, Amos Bird and Alexey Milovidov have contributed a ton of performance optimizations for this release. We are obsessed with high performance, as usual :)
+
 Read the [full changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md) for the 22.2 release and follow [the roadmap](https://github.com/ClickHouse/ClickHouse/issues/32513).
