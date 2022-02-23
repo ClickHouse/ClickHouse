@@ -14,7 +14,6 @@ $ ls -l deb/test_output
 -rw-r--r-- 1 root root     14940 clickhouse-server_18.14.2+debug_all.deb
 -rw-r--r-- 1 root root 340206010 clickhouse-server-base_18.14.2+debug_amd64.deb
 -rw-r--r-- 1 root root      7900 clickhouse-server-common_18.14.2+debug_all.deb
--rw-r--r-- 1 root root   2880432 clickhouse-test_18.14.2+debug_all.deb
 
 ```
 

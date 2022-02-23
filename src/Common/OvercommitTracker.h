@@ -43,7 +43,7 @@ class MemoryTracker;
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
-    OvercommitTracker();
+    explicit OvercommitTracker(std::mutex & global_mutex_);
 
     void setMaxWaitTime(UInt64 wait_time);
 
@@ -87,7 +87,7 @@ private:
         }
     }
 
-    friend struct BlockQueryIfMemoryLimit;
+    std::mutex & global_mutex;
 };
 
 namespace DB
@@ -98,7 +98,7 @@ namespace DB
 
 struct UserOvercommitTracker : OvercommitTracker
 {
-    explicit UserOvercommitTracker(DB::ProcessListForUser * user_process_list_);
+    explicit UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_);
 
     ~UserOvercommitTracker() override = default;
 
@@ -113,9 +113,7 @@ private:
 
 struct GlobalOvercommitTracker : OvercommitTracker
 {
-    explicit GlobalOvercommitTracker(DB::ProcessList * process_list_)
-        : process_list(process_list_)
-    {}
+    explicit GlobalOvercommitTracker(DB::ProcessList * process_list_);
 
     ~GlobalOvercommitTracker() override = default;
 
@@ -126,30 +124,4 @@ protected:
 private:
     DB::ProcessList * process_list;
     Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
-};
-
-// UserOvercommitTracker requires to check the whole list of user's queries
-// to pick one to stop. BlockQueryIfMemoryLimit struct allows to wait until
-// query selection is finished. It's used in ProcessList to make user query
-// list immutable when UserOvercommitTracker reads it.
-struct BlockQueryIfMemoryLimit
-{
-    BlockQueryIfMemoryLimit(OvercommitTracker const & overcommit_tracker)
-        : mutex(overcommit_tracker.overcommit_m)
-        , lk(mutex)
-    {
-        if (overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::RUNNING)
-        {
-            overcommit_tracker.cv.wait_for(lk, overcommit_tracker.max_wait_time, [&overcommit_tracker]()
-            {
-                return overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::NONE;
-            });
-        }
-    }
-
-    ~BlockQueryIfMemoryLimit() = default;
-
-private:
-    std::mutex & mutex;
-    std::unique_lock<std::mutex> lk;
 };

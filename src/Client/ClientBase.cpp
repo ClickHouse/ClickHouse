@@ -120,8 +120,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (!dst)
     {
-        dst = src;
-        return;
+        dst = src.cloneEmpty();
     }
 
     assertBlocksHaveEqualStructure(src, dst, "ProfileEvents");
@@ -142,7 +141,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
     const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
-    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    // const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
     const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
     const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
 
@@ -150,12 +149,11 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     {
         StringRef name;
         StringRef host_name;
-        UInt64 thread_id;
 
         bool operator<(const Id & rhs) const
         {
-            return std::tie(name, host_name, thread_id)
-                 < std::tie(rhs.name, rhs.host_name, rhs.thread_id);
+            return std::tie(name, host_name)
+                 < std::tie(rhs.name, rhs.host_name);
         }
     };
     std::map<Id, UInt64> rows_by_name;
@@ -164,7 +162,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             src_column_name.getDataAt(src_row),
             src_column_host_name.getDataAt(src_row),
-            src_array_thread_id[src_row],
         };
         rows_by_name[id] = src_row;
     }
@@ -175,7 +172,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             dst_column_name.getDataAt(dst_row),
             dst_column_host_name.getDataAt(dst_row),
-            dst_array_thread_id[dst_row],
         };
 
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
@@ -206,7 +202,18 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
+    /// Filter out snapshots
+    std::set<size_t> thread_id_filter_mask;
+    for (size_t i = 0; i < dst_array_thread_id.size(); ++i)
+    {
+        if (dst_array_thread_id[i] != 0)
+        {
+            thread_id_filter_mask.emplace(i);
+        }
+    }
+
     dst.setColumns(std::move(mutable_columns));
+    dst.erase(thread_id_filter_mask);
 }
 
 
