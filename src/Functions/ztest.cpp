@@ -78,7 +78,7 @@ namespace DB
             {
                 if (!isNativeInteger(arguments[i]))
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a interger or unsigned integer.", i + 1, getName());
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a integer or unsigned integer.", i + 1, getName());
                 }
             }
 
