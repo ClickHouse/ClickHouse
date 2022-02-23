@@ -1,6 +1,6 @@
 ---
 title: 'Opensee: Analyzing Terabytes of Financial Data a Day With ClickHouse'
-image: 'https://blog-images.clickhouse.com/en/2022/opensee/featured.jpg'
+image: 'https://blog-images.clickhouse.com/en/2022/opensee/featured.png'
 date: '2022-02-22'
 author: 'Christophe Rivoire, Elena Bessis'
 tags: ['company', 'community']
@@ -37,7 +37,7 @@ Ultimately, none of these technologies could simultaneously combine scalability,
 _Pivot table from the Opensee UI on a liquidity use case_
 
 
-## Opensee Architecture 	
+## Opensee Architecture 
 
 Opensee provides a series of APIs which allows users to fully abstract all the complexity and in particular the physical data model. These APIs are typically used for data ingestion, data query, model management, etc. Thanks to Opensee’s low-code API, users don’t need to access data through complex quasi-SQL queries, but rather through simple business queries that are optimized by Opensee to deliver performance. Opensee’s back end, which provides indirect access to Clickhouse, is written in Scala, while PostgreSQL contains all the configuration and context data that must be managed transactionally. Opensee also provides various options for front ends (dedicated Opensee web or rich user interface, Excel, others…) to interact with the data, navigate through the cube and leverage functionality like data versioning — built for the financial institution’s use. 
 
@@ -72,4 +72,4 @@ The cost efficiency factor is a key improvement for large financial institutions
 
 Opensee empowers financial data divers to analyze deeper and faster. Headquartered in Paris, with offices in London and New York, Opensee is working with a trusted client base across global Tier 1 banks, asset managers, hedge funds and trading platforms.
 
-For more information please visit [www.opensee.io](http://www.opensee.io) or follow them on [LinkedIn](https://www.linkedin.com/company/opensee-company) and [Twitter](https://twitter.com/opensee_io). 
+For more information please visit [www.opensee.io](http://www.opensee.io) or follow them on [LinkedIn](https://www.linkedin.com/company/opensee-company) and [Twitter](https://twitter.com/opensee_io).
