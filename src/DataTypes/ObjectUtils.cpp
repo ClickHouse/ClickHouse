@@ -327,14 +327,9 @@ namespace
 void flattenTupleImpl(
     PathInDataBuilder & builder,
     DataTypePtr type,
-    size_t array_level,
-    PathsInData & new_paths,
+    std::vector<PathInData::Parts> & new_paths,
     DataTypes & new_types)
 {
-    bool is_nested = isNested(type);
-    if (is_nested)
-        type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         const auto & tuple_names = type_tuple->getElementNames();
@@ -342,19 +337,32 @@ void flattenTupleImpl(
 
         for (size_t i = 0; i < tuple_names.size(); ++i)
         {
-            builder.append(tuple_names[i], is_nested);
-            flattenTupleImpl(builder, tuple_types[i], array_level + is_nested, new_paths, new_types);
+            builder.append(tuple_names[i], false);
+            flattenTupleImpl(builder, tuple_types[i], new_paths, new_types);
             builder.popBack();
         }
     }
     else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        flattenTupleImpl(builder, type_array->getNestedType(), array_level + 1, new_paths, new_types);
+        PathInDataBuilder element_builder;
+        std::vector<PathInData::Parts> element_paths;
+        DataTypes element_types;
+
+        flattenTupleImpl(element_builder, type_array->getNestedType(), element_paths, element_types);
+        assert(element_paths.size() == element_types.size());
+
+        for (size_t i = 0; i < element_paths.size(); ++i)
+        {
+            builder.append(element_paths[i], true);
+            new_paths.emplace_back(builder.getParts());
+            new_types.emplace_back(std::make_shared<DataTypeArray>(element_types[i]));
+            builder.popBack(element_paths[i].size());
+        }
     }
     else
     {
         new_paths.emplace_back(builder.getParts());
-        new_types.push_back(createArrayOfType(type, array_level));
+        new_types.emplace_back(type);
     }
 }
 
@@ -428,16 +436,16 @@ struct ColumnWithTypeAndDimensions
 using SubcolumnsTreeWithTypes = SubcolumnsTree<ColumnWithTypeAndDimensions>;
 using Node = SubcolumnsTreeWithTypes::Node;
 
-std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
+ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
 {
     auto collect_tuple_elemets = [](const auto & children)
     {
-        std::vector<std::tuple<String, ColumnPtr, DataTypePtr>> tuple_elements;
+        std::vector<std::tuple<String, ColumnWithTypeAndDimensions>> tuple_elements;
         tuple_elements.reserve(children.size());
         for (const auto & [name, child] : children)
         {
-            auto [column, type] = createTypeFromNode(child.get());
-            tuple_elements.emplace_back(name, std::move(column), std::move(type));
+            auto column = createTypeFromNode(child.get());
+            tuple_elements.emplace_back(name, std::move(column));
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
@@ -446,35 +454,44 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
 
         auto tuple_names = extractVector<0>(tuple_elements);
         auto tuple_columns = extractVector<1>(tuple_elements);
-        auto tuple_types = extractVector<2>(tuple_elements);
 
-        return std::make_tuple(tuple_names, tuple_columns, tuple_types);
+        return std::make_tuple(std::move(tuple_names), std::move(tuple_columns));
     };
 
     if (node->kind == Node::SCALAR)
     {
-        return {node->data.column, node->data.type};
+        return node->data;
     }
     else if (node->kind == Node::NESTED)
     {
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node->children);
+
         Columns offsets_columns;
-        ColumnPtr current_column = node->data.column;
+        offsets_columns.reserve(tuple_columns[0].array_dimensions + 1);
 
-        assert(node->data.array_dimensions > 0);
-        offsets_columns.reserve(node->data.array_dimensions);
+        const auto & current_array = assert_cast<const ColumnArray &>(*node->data.column);
+        offsets_columns.push_back(current_array.getOffsetsPtr());
 
-        for (size_t i = 0; i < node->data.array_dimensions; ++i)
+        for (size_t i = 0; i < tuple_columns[0].array_dimensions; ++i)
         {
-            const auto & column_array = assert_cast<const ColumnArray &>(*current_column);
-
+            const auto & column_array = assert_cast<const ColumnArray &>(*tuple_columns[0].column);
             offsets_columns.push_back(column_array.getOffsetsPtr());
-            current_column = column_array.getDataPtr();
+            tuple_columns[0].column = column_array.getDataPtr();
         }
 
-        auto [tuple_names, tuple_columns, tuple_types] = collect_tuple_elemets(node->children);
+        size_t num_elements = tuple_columns.size();
+        Columns tuple_elements_columns(num_elements);
+        DataTypes tuple_elements_types(num_elements);
 
-        auto result_column = ColumnArray::create(ColumnTuple::create(tuple_columns), offsets_columns.back());
-        auto result_type = createNested(tuple_types, tuple_names);
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
+            tuple_elements_columns[i] = reduceNumberOfDimensions(tuple_columns[i].column, tuple_columns[i].array_dimensions);
+            tuple_elements_types[i] = reduceNumberOfDimensions(tuple_columns[i].type, tuple_columns[i].array_dimensions);
+        }
+
+        auto result_column = ColumnArray::create(ColumnTuple::create(tuple_elements_columns), offsets_columns.back());
+        auto result_type = createNested(tuple_elements_types, tuple_names);
 
         for (auto it = offsets_columns.rbegin() + 1; it != offsets_columns.rend(); ++it)
         {
@@ -482,16 +499,27 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
             result_type = std::make_shared<DataTypeArray>(result_type);
         }
 
-        return {result_column, result_type};
+        return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
     else
     {
-        auto [tuple_names, tuple_columns, tuple_types] = collect_tuple_elemets(node->children);
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node->children);
 
-        auto result_column = ColumnTuple::create(tuple_columns);
-        auto result_type = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
+        size_t num_elements = tuple_columns.size();
+        Columns tuple_elements_columns(num_elements);
+        DataTypes tuple_elements_types(num_elements);
 
-        return {result_column, result_type};
+        for (size_t i = 0; i < tuple_columns.size(); ++i)
+        {
+            assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
+            tuple_elements_columns[i] = tuple_columns[i].column;
+            tuple_elements_types[i] = tuple_columns[i].type;
+        }
+
+        auto result_column = ColumnTuple::create(tuple_elements_columns);
+        auto result_type = std::make_shared<DataTypeTuple>(tuple_elements_types, tuple_names);
+
+        return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
 }
 
@@ -499,11 +527,13 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
 
 std::pair<PathsInData, DataTypes> flattenTuple(const DataTypePtr & type)
 {
-    PathsInData new_paths;
+    std::vector<PathInData::Parts> new_path_parts;
     DataTypes new_types;
     PathInDataBuilder builder;
 
-    flattenTupleImpl(builder, type, 0, new_paths, new_types);
+    flattenTupleImpl(builder, type, new_path_parts, new_types);
+
+    PathsInData new_paths(new_path_parts.begin(), new_path_parts.end());
     return {new_paths, new_types};
 }
 
@@ -546,15 +576,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
         auto type = tuple_types[i];
 
         const auto & parts = paths[i].getParts();
-
         size_t num_parts = parts.size();
-        size_t nested_level = std::count_if(parts.begin(), parts.end(), [](const auto & part) { return part.is_nested; });
-        size_t array_level = getNumberOfDimensions(*type);
-
-        if (array_level < nested_level)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Number of dimensions ({}) is less than number Nested types ({}) for path {}",
-                array_level, nested_level, paths[i].getPath());
 
         size_t pos = 0;
         tree.add(paths[i], [&](Node::Kind kind, bool exists) -> std::shared_ptr<Node>
@@ -564,27 +586,13 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
                         "Not enough name parts for path {}. Expected at least {}, got {}",
                             paths[i].getPath(), pos + 1, num_parts);
 
-                ColumnWithTypeAndDimensions current_column;
-                if (kind == Node::NESTED)
+                size_t array_dimensions = kind == Node::NESTED ? 1 : parts[pos].anonymous_array_level;
+                ColumnWithTypeAndDimensions current_column{column, type, array_dimensions};
+
+                if (array_dimensions)
                 {
-                    assert(parts[pos].is_nested);
-
-                    size_t dimensions_to_reduce = array_level - nested_level + 1;
-                    --nested_level;
-
-                    current_column = ColumnWithTypeAndDimensions{column, type, dimensions_to_reduce};
-
-                    if (dimensions_to_reduce)
-                    {
-                        type = reduceNumberOfDimensions(type, dimensions_to_reduce);
-                        column = reduceNumberOfDimensions(column, dimensions_to_reduce);
-                    }
-
-                    array_level -= dimensions_to_reduce;
-                }
-                else
-                {
-                    current_column = ColumnWithTypeAndDimensions{column, type, 0};
+                    type = reduceNumberOfDimensions(type, array_dimensions);
+                    column = reduceNumberOfDimensions(column, array_dimensions);
                 }
 
                 ++pos;
@@ -597,7 +605,8 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
             });
     }
 
-    return createTypeFromNode(tree.getRoot());
+    const auto & [column, type, _] = createTypeFromNode(tree.getRoot());
+    return std::make_pair(std::move(column), std::move(type));
 }
 
 static void addConstantToWithClause(const ASTPtr & query, const String & column_name, const DataTypePtr & data_type)

@@ -26,13 +26,13 @@ PathInData::PathInData(std::string_view path_)
         if (*it == '.')
         {
             size_t size = static_cast<size_t>(it - begin);
-            parts.emplace_back(std::string_view{begin, size}, false);
+            parts.emplace_back(std::string_view{begin, size}, false, 0);
             begin = it + 1;
         }
     }
 
     size_t size = static_cast<size_t>(end - begin);
-    parts.emplace_back(std::string_view{begin, size}, false);
+    parts.emplace_back(std::string_view{begin, size}, false, 0.);
 }
 
 PathInData::PathInData(const Parts & parts_)
@@ -65,6 +65,7 @@ UInt128 PathInData::getPartsHash(const Parts & parts_)
     {
         hash.update(part.key.data(), part.key.length());
         hash.update(part.is_nested);
+        hash.update(part.anonymous_array_level);
     }
 
     UInt128 res;
@@ -78,7 +79,8 @@ void PathInData::writeBinary(WriteBuffer & out) const
     for (const auto & part : parts)
     {
         writeStringBinary(part.key, out);
-        writeVarUInt(static_cast<UInt8>(part.is_nested) , out);
+        writeVarUInt(part.is_nested, out);
+        writeVarUInt(part.anonymous_array_level, out);
     }
 }
 
@@ -93,11 +95,14 @@ void PathInData::readBinary(ReadBuffer & in)
 
     for (size_t i = 0; i < num_parts; ++i)
     {
-        UInt8 is_nested;
+        bool is_nested;
+        UInt8 anonymous_array_level;
+
         auto ref = readStringBinaryInto(arena, in);
         readVarUInt(is_nested, in);
+        readVarUInt(anonymous_array_level, in);
 
-        temp_parts.emplace_back(static_cast<std::string_view>(ref), is_nested);
+        temp_parts.emplace_back(static_cast<std::string_view>(ref), is_nested, anonymous_array_level);
     }
 
     path = buildPath(temp_parts);
@@ -122,16 +127,16 @@ String PathInData::buildPath(const Parts & other_parts)
     return res;
 }
 
-PathInData::Parts PathInData::buildParts(const String & path, const Parts & other_parts)
+PathInData::Parts PathInData::buildParts(const String & other_path, const Parts & other_parts)
 {
     if (other_parts.empty())
         return {};
 
     Parts res;
-    const char * begin = path.data();
+    const char * begin = other_path.data();
     for (const auto & part : other_parts)
     {
-        res.emplace_back(std::string_view{begin, part.key.length()}, part.is_nested);
+        res.emplace_back(std::string_view{begin, part.key.length()}, part.is_nested, part.anonymous_array_level);
         begin += part.key.length() + 1;
     }
     return res;
@@ -139,24 +144,43 @@ PathInData::Parts PathInData::buildParts(const String & path, const Parts & othe
 
 size_t PathInData::Hash::operator()(const PathInData & value) const
 {
-    return std::hash<String>{}(value.path);
+    auto hash = getPartsHash(value.parts);
+    return hash.items[0] ^ hash.items[1];
 }
 
-PathInDataBuilder & PathInDataBuilder::append(std::string_view key, bool is_nested)
+PathInDataBuilder & PathInDataBuilder::append(std::string_view key, bool is_array)
 {
-    if (!parts.empty())
-        parts.back().is_nested = is_nested;
+    if (parts.empty())
+        current_anonymous_array_level += is_array;
 
-    parts.emplace_back(key, false);
+    if (!key.empty())
+    {
+        if (!parts.empty())
+            parts.back().is_nested = is_array;
+
+        parts.emplace_back(key, false, current_anonymous_array_level);
+        current_anonymous_array_level = 0;
+    }
+
     return *this;
 }
 
-PathInDataBuilder & PathInDataBuilder::append(const PathInData::Parts & path, bool is_nested)
+PathInDataBuilder & PathInDataBuilder::append(const PathInData::Parts & path, bool is_array)
 {
-    if (!parts.empty())
-        parts.back().is_nested = is_nested;
+    if (parts.empty())
+        current_anonymous_array_level += is_array;
 
-    parts.insert(parts.end(), path.begin(), path.end());
+    if (!path.empty())
+    {
+        if (!parts.empty())
+            parts.back().is_nested = is_array;
+
+        auto it = parts.insert(parts.end(), path.begin(), path.end());
+        for (; it != parts.end(); ++it)
+            it->anonymous_array_level += current_anonymous_array_level;
+        current_anonymous_array_level = 0;
+    }
+
     return *this;
 }
 

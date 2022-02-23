@@ -1,8 +1,10 @@
 #include <DataTypes/Serializations/JSONDataParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <IO/ReadBufferFromString.h>
-#include <gtest/gtest.h>
 #include <Common/FieldVisitorToString.h>
+
+#include <ostream>
+#include <gtest/gtest.h>
 
 #if USE_SIMDJSON
 
@@ -49,25 +51,31 @@ TEST(JSONDataParser, ReadJSON)
 
 struct JSONPathAndValue
 {
-    String path;
+    PathInData path;
     Field value;
-    std::vector<bool> is_nested;
-
-    JSONPathAndValue(const String & path_, const Field & value_, const std::vector<bool> & is_nested_)
-        : path(path_), value(value_), is_nested(is_nested_)
-    {
-    }
 
     JSONPathAndValue(const PathInData & path_, const Field & value_)
-        : path(path_.getPath()), value(value_)
+        : path(path_), value(value_)
     {
-        for (const auto & part : path_.getParts())
-            is_nested.push_back(part.is_nested);
     }
 
     bool operator==(const JSONPathAndValue & other) const = default;
-    bool operator<(const JSONPathAndValue & other) const { return path < other.path; }
+    bool operator<(const JSONPathAndValue & other) const { return path.getPath() < other.path.getPath(); }
 };
+
+static std::ostream & operator<<(std::ostream & ostr, const JSONPathAndValue & path_and_value)
+{
+    ostr << "{ PathInData{";
+    bool first = true;
+    for (const auto & part : path_and_value.path.getParts())
+    {
+        ostr << (first ? "{" : ", {") << part.key << ", " << part.is_nested << ", " << part.anonymous_array_level << "}";
+        first = false;
+    }
+
+    ostr << "}, Field{" << applyVisitor(FieldVisitorToString(), path_and_value.value) << "} }";
+    return ostr;
+}
 
 using JSONValues = std::vector<JSONPathAndValue>;
 
@@ -100,17 +108,17 @@ TEST(JSONDataParser, Parse)
     {
         check(json1, "json1",
             {
-                {"k1", 1, {false}},
-                {"k2.k3", "aa", {false, false}},
-                {"k2.k4", 2, {false, false}},
+                { PathInData{{{"k1", false, 0}}}, 1 },
+                { PathInData{{{"k2", false, 0}, {"k3", false, 0}}}, "aa" },
+                { PathInData{{{"k2", false, 0}, {"k4", false, 0}}}, 2 },
             });
     }
 
     {
         check(json2, "json2",
             {
-                {"k1.k2", Array{"aaa", "ddd"}, {true, false}},
-                {"k1.k3.k4", Array{Array{"bbb", "ccc"}, Array{"eee", "fff"}}, {true, true, false}},
+                { PathInData{{{"k1", true, 0}, {"k2", false, 0}}}, Array{"aaa", "ddd"} },
+                { PathInData{{{"k1", true, 0}, {"k3", true, 0}, {"k4", false, 0}}}, Array{Array{"bbb", "ccc"}, Array{"eee", "fff"}} },
             });
     }
 
@@ -134,15 +142,11 @@ TEST(JSONDataParser, Parse)
             }
         ]})";
 
-        Strings paths = {"k1.k2.k4", "k1.k5", "k1.k2.k3"};
-
-        auto k1k2k4 = Array{Array{3, 4}, Array{7, 8}};
-
         check(json3, "json3",
             {
-                {"k1.k5", Array{"foo", "bar"}, {true, false}},
-                {"k1.k2.k3", Array{Array{1, 2}, Array{5, 6}}, {true, false, false}},
-                {"k1.k2.k4", Array{Array{3, 4}, Array{7, 8}}, {true, false, false}},
+                { PathInData{{{"k1", true, 0}, {"k5", false, 0}}}, Array{"foo", "bar"} },
+                { PathInData{{{"k1", true, 0}, {"k2", false, 0}, {"k3", false, 0}}}, Array{Array{1, 2}, Array{5, 6}} },
+                { PathInData{{{"k1", true, 0}, {"k2", false, 0}, {"k4", false, 0}}}, Array{Array{3, 4}, Array{7, 8}} },
             });
     }
 
@@ -162,15 +166,18 @@ TEST(JSONDataParser, Parse)
 
         check(json4, "json4",
             {
-                {"k1.k5", Array{"foo", "bar"}, {true, false}},
-                {"k1.k2.k3", Array{Array{1, 2}, Array{5, 6}}, {true, true, false}},
-                {"k1.k2.k4", Array{Array{3, 4}, Array{7, 8}}, {true, true, false}},
+                { PathInData{{{"k1", true, 0}, {"k5", false, 0}}}, Array{"foo", "bar"} },
+                { PathInData{{{"k1", true, 0}, {"k2", true, 0}, {"k3", false, 0}}}, Array{Array{1, 2}, Array{5, 6}} },
+                { PathInData{{{"k1", true, 0}, {"k2", true, 0}, {"k4", false, 0}}}, Array{Array{3, 4}, Array{7, 8}} },
             });
     }
 
     {
         const String json5 = R"({"k1": [[1, 2, 3], [4, 5], [6]]})";
-        check(json5, "json5", {{"k1", Array{Array{1, 2, 3}, Array{4, 5}, Array{6}}, {false}}});
+        check(json5, "json5",
+            {
+                { PathInData{{{"k1", false, 0}}}, Array{Array{1, 2, 3}, Array{4, 5}, Array{6}} }
+            });
     }
 
     {
@@ -182,15 +189,10 @@ TEST(JSONDataParser, Parse)
             ]
         })";
 
-        Strings paths = {"k1.k2", "k1.k3"};
-
-        auto k1k2 = Array{Array{1, 3}, Array{5}};
-        auto k1k3 = Array{Array{2, 4}, Array{6}};
-
         check(json6, "json6",
             {
-                {"k1.k2", Array{Array{1, 3}, Array{5}}, {true, false}},
-                {"k1.k3", Array{Array{2, 4}, Array{6}}, {true, false}},
+                { PathInData{{{"k1", true, 0}, {"k2", false, 1}}}, Array{Array{1, 3}, Array{5}} },
+                { PathInData{{{"k1", true, 0}, {"k3", false, 1}}}, Array{Array{2, 4}, Array{6}} },
             });
     }
 
@@ -205,8 +207,8 @@ TEST(JSONDataParser, Parse)
 
         check(json7, "json7",
             {
-                {"k1.k2", Array{Array{1, 3}, Array{5}}, {true, false}},
-                {"k1.k3", Array{Array{2, 4}, Array{6}}, {true, false}},
+                { PathInData{{{"k1", true, 0}, {"k2", false, 0}}}, Array{Array{1, 3}, Array{5}} },
+                { PathInData{{{"k1", true, 0}, {"k3", false, 0}}}, Array{Array{2, 4}, Array{6}} },
             });
     }
 }

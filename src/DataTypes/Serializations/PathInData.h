@@ -16,13 +16,16 @@ public:
     struct Part
     {
         Part() = default;
-        Part(std::string_view key_, bool is_nested_)
-            : key(key_), is_nested(is_nested_)
+        Part(std::string_view key_, bool is_nested_, UInt8 anonymous_array_level_)
+            : key(key_), is_nested(is_nested_), anonymous_array_level(anonymous_array_level_)
         {
         }
 
         std::string_view key;
         bool is_nested = false;
+        UInt8 anonymous_array_level = 0;
+
+        bool operator==(const Part & other) const = default;
     };
 
     using Parts = std::vector<Part>;
@@ -47,13 +50,12 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 
-    bool operator==(const PathInData & other) const { return path == other.path; }
-    bool operator!=(const PathInData & other) const { return !(*this == other); }
+    bool operator==(const PathInData & other) const { return parts == other.parts; }
     struct Hash { size_t operator()(const PathInData & value) const; };
 
 private:
     static String buildPath(const Parts & other_parts);
-    static Parts buildParts(const String & path, const Parts & other_parts);
+    static Parts buildParts(const String & other_path, const Parts & other_parts);
 
     String path;
     Parts parts;
@@ -64,14 +66,15 @@ class PathInDataBuilder
 public:
     const PathInData::Parts & getParts() const { return parts; }
 
-    PathInDataBuilder & append(std::string_view key, bool is_nested);
-    PathInDataBuilder & append(const PathInData::Parts & path, bool is_nested);
+    PathInDataBuilder & append(std::string_view key, bool is_array);
+    PathInDataBuilder & append(const PathInData::Parts & path, bool is_array);
 
     void popBack();
     void popBack(size_t n);
 
 private:
     PathInData::Parts parts;
+    size_t current_anonymous_array_level = 0;
 };
 
 using PathsInData = std::vector<PathInData>;
