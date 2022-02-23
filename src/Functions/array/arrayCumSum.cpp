@@ -101,9 +101,8 @@ struct ArrayCumSumImpl
             typename ColVecResult::MutablePtr res_nested;
             if constexpr (is_decimal<Element>)
             {
-                const typename ColVecType::Container & data =
-                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
-                res_nested = ColVecResult::create(0, data.getScale());
+                const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
+                res_nested = ColVecResult::create(0, column_typed->getScale());
             }
             else
                 res_nested = ColVecResult::create();
@@ -120,7 +119,7 @@ struct ArrayCumSumImpl
 
         typename ColVecResult::MutablePtr res_nested;
         if constexpr (is_decimal<Element>)
-            res_nested = ColVecResult::create(0, data.getScale());
+            res_nested = ColVecResult::create(0, column->getScale());
         else
             res_nested = ColVecResult::create();
 

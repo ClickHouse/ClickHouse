@@ -11,7 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
 
 #include <h3api.h>
 
@@ -23,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -51,19 +51,41 @@ public:
                 arg->getName(), 1, getName());
 
         arg = arguments[1].get();
-        if (!isInteger(arg))
+        if (!WhichDataType(arg).isUInt16())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be integer",
-                arg->getName(), 2, getName());
+                "Illegal type {} of argument {} of function {}. Must be UInt16",
+                arg->getName(),
+                2,
+                getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_k = arguments[1].column.get();
+        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        if (!col_hindex)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
+        const auto & data_hindex = col_hindex->getData();
+
+        /// ColumnUInt16 is sufficient as the max value of 2nd arg is checked (arg > 0 < 10000) in implementation below
+        const auto * col_k = checkAndGetColumn<ColumnUInt16>(arguments[1].column.get());
+        if (!col_k)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt16.",
+                arguments[1].type->getName(),
+                2,
+                getName());
+
+        const auto & data_k = col_k->getData();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -73,8 +95,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const H3Index origin_hindex = col_hindex->getUInt(row);
-            const int k = col_k->getInt(row);
+            const H3Index origin_hindex = data_hindex[row];
+            const int k = data_k[row];
 
             /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
             /// The calculation is similar to square of k but several times more.
@@ -82,6 +104,7 @@ public:
             constexpr auto max_k = 10000;
             if (k > max_k)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
+            /// Check is already made while fetching the argument for k (to determine if it's an unsigned integer). Nevertheless, it's checked again here.
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 

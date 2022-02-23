@@ -37,6 +37,7 @@ enum class AttributeUnderlyingType : TypeIndexUnderlying
     map_item(UInt8), map_item(UInt16), map_item(UInt32), map_item(UInt64), map_item(UInt128), map_item(UInt256),
     map_item(Float32), map_item(Float64),
     map_item(Decimal32), map_item(Decimal64), map_item(Decimal128), map_item(Decimal256),
+    map_item(DateTime64),
 
     map_item(UUID), map_item(String), map_item(Array)
 };

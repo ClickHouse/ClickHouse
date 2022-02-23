@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <base/sort.h>
+
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -743,9 +745,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
     {
         while (true)
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
+                future_part, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
@@ -1184,7 +1185,7 @@ std::vector<StorageMergeTree::PartVersionWithName> StorageMergeTree::getSortedPa
             getUpdatedDataVersion(part, currently_processing_in_background_mutex_lock),
             part->name
         });
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end());
+    ::sort(part_versions_with_names.begin(), part_versions_with_names.end());
     return part_versions_with_names;
 }
 
@@ -1228,7 +1229,7 @@ bool StorageMergeTree::optimize(
                 constexpr const char * message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
                     disable_reason = "unknown reason";
-                LOG_INFO(log, message, disable_reason);
+                LOG_INFO(log, fmt::runtime(message), disable_reason);
 
                 if (local_context->getSettingsRef().optimize_throw_if_noop)
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
@@ -1254,7 +1255,7 @@ bool StorageMergeTree::optimize(
             constexpr const char * message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.empty())
                 disable_reason = "unknown reason";
-            LOG_INFO(log, message, disable_reason);
+            LOG_INFO(log, fmt::runtime(message), disable_reason);
 
             if (local_context->getSettingsRef().optimize_throw_if_noop)
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);

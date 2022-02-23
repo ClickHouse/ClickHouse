@@ -177,6 +177,7 @@ private:
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
+            CollectionType<DateTime64>,
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
