@@ -26,7 +26,6 @@ FROM system.parts_columns
 WHERE table = 't_json' AND database = currentDatabase() AND active AND column = 'data'
 ORDER BY name;
 
-
 SELECT '============';
 TRUNCATE TABLE t_json;
 

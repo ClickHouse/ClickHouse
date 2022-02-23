@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} -q \
         SELECT arrayJoin(arrayJoin(data.teams.players)) as players from nbagames \
     ) \
 ) \
-GROUP BY player ORDER BY triple_doubles DESC LIMIT 5"
+GROUP BY player ORDER BY triple_doubles DESC, player LIMIT 5"
 
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames"

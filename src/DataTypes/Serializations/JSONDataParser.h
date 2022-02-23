@@ -153,13 +153,11 @@ private:
                 paths.reserve(paths.size() + arrays_by_path.size());
                 values.reserve(values.size() + arrays_by_path.size());
 
-                bool is_nested = arrays_by_path.size() > 1 || !arrays_by_path.begin()->getMapped().first.empty();
-
                 for (auto && [_, value] : arrays_by_path)
                 {
                     auto && [path, path_array] = value;
 
-                    paths.push_back(builder.append(path, is_nested).getParts());
+                    paths.push_back(builder.append(path, true).getParts());
                     values.push_back(std::move(path_array));
 
                     builder.popBack(path.size());
