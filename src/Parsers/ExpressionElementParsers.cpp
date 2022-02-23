@@ -769,8 +769,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (has_all || has_distinct)
     {
-        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
-        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier,
+        /// case f(ALL = 1...) should also treat ALL as identifier.
+        /// If ALL/DISTINCT followed by an identifier, then ALL/DISTINCT should be treat as noop
+        if (!id_parser.checkWithoutMoving(pos, expected))
         {
             pos = pos_after_bracket;
             expected = old_expected;
