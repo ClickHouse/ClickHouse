@@ -62,8 +62,6 @@ public:
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
 
-    virtual void remove(const Key & key) = 0;
-
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
 
@@ -81,16 +79,20 @@ protected:
 
     virtual void remove(
         Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
 
     virtual bool isLastFileSegmentHolder(
         const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
 
     /// If file segment was partially downloaded and then space reservation fails (because of no
     /// space left), then update corresponding cache cell metadata (file segment size).
     virtual void reduceSizeToDownloaded(
-        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) = 0;
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
 };
 
 using FileCachePtr = std::shared_ptr<IFileCache>;
@@ -105,8 +107,6 @@ public:
         size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
-
-    void remove(const Key & key) override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -166,14 +166,18 @@ private:
 
     void remove(
         Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock) override;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) override;
 
     bool isLastFileSegmentHolder(
         const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock) override;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) override;
 
     void reduceSizeToDownloaded(
-        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) override;
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) override;
 
     size_t availableSize() const { return max_size - current_size; }
 

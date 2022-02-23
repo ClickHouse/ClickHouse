@@ -107,6 +107,8 @@ public:
 
     bool isDownloader() const;
 
+    bool isDownloaded() const { return is_downloaded.load(); }
+
     static String getCallerId();
 
     size_t getDownloadOffset() const;
@@ -121,7 +123,8 @@ private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
     void complete();
-    void completeImpl(std::lock_guard<std::mutex> & /* segment_lock */);
+    void completeImpl(std::lock_guard<std::mutex> & segment_lock);
+    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
 
@@ -143,6 +146,8 @@ private:
     Poco::Logger * log;
 
     bool detached = false;
+
+    std::atomic<bool> is_downloaded{false};
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

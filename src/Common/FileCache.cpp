@@ -81,7 +81,8 @@ void LRUFileCache::useCell(
     const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     auto file_segment = cell.file_segment;
-    if (file_segment->download_state == FileSegment::State::DOWNLOADED
+
+    if (file_segment->isDownloaded()
         && fs::file_size(getPathInLocalCache(file_segment->key(), file_segment->offset())) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot have zero size downloaded file segments. Current file segment: {}",
@@ -296,13 +297,6 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
         }
     }
 
-    /// TODO: remove this extra debug logging.
-    String ranges;
-    for (const auto & s : file_segments)
-        ranges += "\nRange: " + s->range().toString() + ", download state: " + FileSegment::stateToString(s->download_state) + " ";
-    LOG_TEST(log, "Cache getOrSet. Key: {}, range: {}, file_segments number: {}, ranges: {}",
-             keyToStr(key), range.toString(), file_segments.size(), ranges);
-
     assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }
@@ -340,7 +334,8 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
-bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std::lock_guard<std::mutex> & cache_lock)
+bool LRUFileCache::tryReserve(
+    const Key & key_, size_t offset_, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
     auto removed_size = 0;
     size_t queue_size = queue.size();
@@ -361,7 +356,7 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
             || (max_element_size != 0 && queue_size > max_element_size);
     };
 
-    std::vector<FileKeyAndOffset> to_evict;
+    std::vector<FileSegmentCell *> to_evict;
 
     auto key_it = queue.begin();
     while (is_overflow() && key_it != queue.end())
@@ -380,19 +375,23 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
 
         if (cell->releasable())
         {
-            switch (cell->file_segment->download_state)
+            auto & file_segment = cell->file_segment;
+
+            std::lock_guard segment_lock(file_segment->mutex);
+
+            switch (file_segment->download_state)
             {
                 case FileSegment::State::DOWNLOADED:
                 {
                     /// Cell will actually be removed only if
                     /// we managed to reserve enough space.
 
-                    to_evict.emplace_back(key, offset);
+                    to_evict.push_back(cell);
                     break;
                 }
                 default:
                 {
-                    remove(key, offset, cache_lock);
+                    remove(key, offset, cache_lock, segment_lock);
                     break;
                 }
             }
@@ -408,8 +407,12 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
     if (cell_for_reserve && !cell_for_reserve->queue_iterator)
         cell_for_reserve->queue_iterator = queue.insert(queue.end(), std::make_pair(key_, offset_));
 
-    for (auto & [key, offset] : to_evict)
-        remove(key, offset, cache_lock);
+    for (auto & cell : to_evict)
+    {
+        auto & file_segment = cell->file_segment;
+        std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+    }
 
     current_size += size - removed_size;
     if (current_size > (1ull << 63))
@@ -419,7 +422,8 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
 }
 
 void LRUFileCache::remove(
-    Key key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+    Key key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
 {
     LOG_TEST(log, "Remove. Key: {}, offset: {}", keyToStr(key), offset);
 
@@ -519,20 +523,6 @@ void LRUFileCache::loadCacheInfoIntoMemory()
         queue.splice(queue.end(), queue, *cell->queue_iterator);
 }
 
-void LRUFileCache::remove(const Key & key)
-{
-    std::lock_guard cache_lock(mutex);
-
-    auto it = files.find(key);
-    if (it == files.end())
-        return;
-
-    auto & offsets = it->second;
-
-    for (auto & [offset, _] : offsets)
-        remove(key, offset, cache_lock);
-}
-
 LRUFileCache::Stat LRUFileCache::getStat()
 {
     std::lock_guard cache_lock(mutex);
@@ -573,7 +563,8 @@ LRUFileCache::Stat LRUFileCache::getStat()
 }
 
 void LRUFileCache::reduceSizeToDownloaded(
-    const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
 {
     /**
      * In case file was partially downloaded and it's download cannot be continued
@@ -596,7 +587,8 @@ void LRUFileCache::reduceSizeToDownloaded(
 }
 
 bool LRUFileCache::isLastFileSegmentHolder(
-    const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
 {
     auto * cell = getCell(key, offset, cache_lock);
 

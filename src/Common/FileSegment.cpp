@@ -169,10 +169,10 @@ FileSegment::State FileSegment::wait()
         assert(downloader_id != getCallerId());
 
 #ifndef NDEBUG
-        {
-            std::lock_guard cache_lock(cache->mutex);
-            assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock));
-        }
+        // {
+        //     std::lock_guard cache_lock(cache->mutex);
+        //     assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock));
+        // }
 #endif
 
         cv.wait_for(segment_lock, std::chrono::seconds(60));
@@ -216,6 +216,18 @@ bool FileSegment::reserve(size_t size)
     return reserved;
 }
 
+void FileSegment::setDownloaded(std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    download_state = State::DOWNLOADED;
+    is_downloaded = true;
+
+    if (cache_writer)
+    {
+        cache_writer->finalize();
+        cache_writer.reset();
+    }
+}
+
 void FileSegment::completeBatchAndResetDownloader()
 {
     {
@@ -230,9 +242,7 @@ void FileSegment::completeBatchAndResetDownloader()
 
         if (downloaded_size == range().size())
         {
-            download_state = State::DOWNLOADED;
-            cache_writer->finalize();
-            cache_writer.reset();
+            setDownloaded(segment_lock);
         }
         else
             download_state = State::PARTIALLY_DOWNLOADED;
@@ -289,9 +299,7 @@ void FileSegment::complete()
 
         if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
         {
-            download_state = State::DOWNLOADED;
-            cache_writer->finalize();
-            cache_writer.reset();
+            setDownloaded(segment_lock);
         }
 
         if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
@@ -303,7 +311,7 @@ void FileSegment::complete()
     cv.notify_all();
 }
 
-void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
+void FileSegment::completeImpl(std::lock_guard<std::mutex> & segment_lock)
 {
     std::lock_guard cache_lock(cache->mutex);
 
@@ -312,7 +320,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
     if (download_state == State::PARTIALLY_DOWNLOADED
                 || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
     {
-        bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock);
+        bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
         download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
 
         if (!download_can_continue)
@@ -321,7 +329,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
             {
                 download_state = State::SKIP_CACHE;
                 LOG_TEST(log, "Remove cell {} (downloaded: {})", range().toString(), downloaded_size);
-                cache->remove(key(), offset(), cache_lock);
+                cache->remove(key(), offset(), cache_lock, segment_lock);
 
                 detached = true;
             }
@@ -334,7 +342,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
                 * it only when nobody needs it.
                 */
                 LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
-                cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
+                cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
 
                 detached = true;
             }
