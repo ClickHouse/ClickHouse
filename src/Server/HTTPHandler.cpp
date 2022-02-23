@@ -1123,7 +1123,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, query_param_name);
 
     factory->addFiltersFromConfig(server.config(), config_prefix);
 
