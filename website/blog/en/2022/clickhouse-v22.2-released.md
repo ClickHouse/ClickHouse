@@ -6,7 +6,7 @@ author: 'Alexey Milovidov'
 tags: ['company', 'community']
 ---
 
-On 2022-02-22, we released version 22.2 of ClickHouse! (That's a lot of 2's!) This latest release includes 2,140 new commits from 118 contributors, including 41 new contributors:
+We prepared a new ClickHouse release 22.2, so it's nice if you have tried it on 2022-02-22. If not, you can try it today. This latest release includes 2,140 new commits from 118 contributors, including 41 new contributors:
 
 > Aaron Katz, Andre Marianiello, Andrew, Andrii Buriachevskyi, Brian Hunter, CoolT2, Federico Rodriguez, Filippov Denis, Gaurav Kumar, Geoff Genz, HarryLeeIBM, Heena Bansal, ILya Limarenko, Igor Nikonov, IlyaTsoi, Jake Liu, JaySon-Huang, Lemore, Leonid Krylov, Michail Safronov, Mikhail Fursov, Nikita, RogerYK, Roy Bellingan, Saad Ur Rahman, W, Yakov Olkhovskiy, alexeypavlenko, cnmade, grantovsky, hanqf-git, liuneng1994, mlkui, s-kat, tesw yew isal, vahid-sohrabloo, yakov-olkhovskiy, zhifeng, zkun, zxealous, 박동철.
 
