@@ -469,34 +469,3 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
-
-@pytest.mark.parametrize(
-    "node_name,read_method", [
-        ("node", "read"),
-        ("node", "threadpool")
-])
-def test_read_with_cache_1(cluster, node_name, read_method):
-    node = cluster.instances[node_name]
-    table_name = 's3_test'
-
-    node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
-    node.query(f"""
-        CREATE TABLE {table_name} (key UInt32, value2 String)
-        ENGINE=MergeTree() ORDER BY key
-        SETTINGS storage_policy ='s3';
-    """)
-
-    node.query(f"INSERT INTO {table_name} SELECT number, randomString(10) from numbers(1000000);")
-    result = node.query(f"SELECT count() FROM {table_name} WHERE key > 123456 AND key < 123460 SETTINGS remote_filesystem_read_method='{read_method}'")
-    assert(int(result) == 3)
-
-    ### Test not finished.
-
-    query = """
-    SELECT query,
-    ProfileEvents['RemoteFSReadBytes'] as remote_fs_read,
-    ProfileEvents['RemoteFSCacheReadBytes'] as remote_fs_cache_read,
-    ProfileEvents['RemoteFSCacheDownloadedBytes'] as remote_fs_read_and_download FROM system.query_log;
-    """
-    result = node.query(query);
-    print(result)
