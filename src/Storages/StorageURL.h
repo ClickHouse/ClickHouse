@@ -96,6 +96,8 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
+
+    bool isColumnOriented() const;
 };
 
 class StorageURLSink : public SinkToStorage
