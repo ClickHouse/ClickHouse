@@ -162,7 +162,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 │ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
 └───────┴─────────┴───┴─────┴─────────────────────┘
 ```
-Multiple arrays with different size can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
+Multiple arrays with different sizes can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
 
 ```sql
 SELECT s, arr, a, b 
