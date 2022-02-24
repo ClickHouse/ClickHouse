@@ -1242,6 +1242,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     /// We don't have many tests with server restarts and it's really inconvenient to write such tests.
     /// So we use debug assertions to ensure that part version is written correctly.
 
+    if (isProjectionPart())
+        return true;
+
     if (!wasInvolvedInTransaction())
         return true;
 
