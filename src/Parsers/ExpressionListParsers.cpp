@@ -17,8 +17,13 @@
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
+#include <base/logger_useful.h>
+
 using namespace std::literals;
 
+#include <stack>
+#include <unordered_map>
+#include <string_view>
 
 namespace DB
 {
@@ -592,6 +597,421 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return elem_parser.parse(pos, node, expected);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// class Operator:
+//   - defines structure of certain operator
+class Operator
+{
+public:
+    Operator()
+    {
+    }
+
+    Operator(String func_name_, Int32 priority_, Int32 arity_) : func_name(func_name_), priority(priority_), arity(arity_)
+    {
+    }
+
+    String func_name;
+    Int32 priority;
+    Int32 arity;
+};
+
+
+class Layer
+{
+public:
+    Layer(TokenType end_bracket_ = TokenType::Whitespace, String func_name_ = "") : end_bracket(end_bracket_), func_name(func_name_)
+    {
+    }
+
+    bool popOperator(Operator & op)
+    {
+        if (operators.size() == 0)
+            return false;
+
+        op = std::move(operators.back());
+        operators.pop_back();
+
+        return true;
+    }
+
+    void pushOperator(Operator op)
+    {
+        operators.push_back(std::move(op));
+    }
+
+    bool popOperand(ASTPtr & op)
+    {
+        if (operands.size() == 0)
+            return false;
+
+        op = std::move(operands.back());
+        operands.pop_back();
+
+        return true;
+    }
+
+    void pushOperand(ASTPtr op)
+    {
+        operands.push_back(std::move(op));
+    }
+
+    void pushResult(ASTPtr op)
+    {
+        result.push_back(std::move(op));
+    }
+
+    bool getResult(ASTPtr & op)
+    {
+        ASTs res;
+        std::swap(res, result);
+
+        if (!func_name.empty())
+        {
+            // Round brackets can mean priority operator together with function tuple()
+            if (func_name == "tuple" && res.size() == 1)
+                op = std::move(res[0]);
+            else
+                op = makeASTFunction(func_name, std::move(res));
+
+            return true;
+        }
+
+        if (res.size() == 1)
+        {
+            op = std::move(res[0]);
+            return true;
+        }
+
+        return false;
+    }
+
+    TokenType endBracket()
+    {
+        return end_bracket;
+    }
+
+    int previousPriority()
+    {
+        if (operators.empty())
+            return 0;
+
+        return operators.back().priority;
+    }
+
+    int empty()
+    {
+        return operators.empty() && operands.empty();
+    }
+
+    bool lastNOperands(ASTs & asts, size_t n)
+    {
+        if (n > operands.size())
+            return false;
+
+        auto start = operands.begin() + operands.size() - n;
+        asts.insert(asts.end(), std::make_move_iterator(start), std::make_move_iterator(operands.end()));
+        operands.erase(start, operands.end());
+
+        return true;
+    }
+
+private:
+    std::vector<Operator> operators;
+    ASTs operands;
+    ASTs result;
+    TokenType end_bracket;
+    String func_name;
+};
+
+
+bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    IParser::Pos begin = pos;
+
+    if (ParserCastOperator().parse(pos, node, expected))
+        return true;
+
+    pos = begin;
+
+    /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
+    if (pos->type == TokenType::Minus)
+    {
+        if (ParserLiteral().parse(pos, node, expected))
+            return true;
+
+        pos = begin;
+    }
+    return false;
+}
+
+bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no DATE keyword, go to the nested parser.
+    if (!ParserKeyword("DATE").ignore(pos, expected))
+        return false;
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return false;
+    }
+
+    node = makeASTFunction("toDate", expr);
+    return true;
+}
+
+bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no TIMESTAMP keyword, go to the nested parser.
+    if (!ParserKeyword("TIMESTAMP").ignore(pos, expected))
+        return false;
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return false;
+    }
+
+    node = makeASTFunction("toDateTime", expr);
+
+    return true;
+}
+
+bool wrapLayer(Layer & layer)
+{
+    Operator cur_op;
+    while (layer.popOperator(cur_op))
+    {
+        auto func = makeASTFunction(cur_op.func_name);
+
+        if (!layer.lastNOperands(func->children[0]->children, cur_op.arity))
+            return false;
+
+        layer.pushOperand(func);
+    }
+
+    ASTPtr res;
+    if (!layer.popOperand(res))
+        return false;
+
+    layer.pushResult(res);
+
+    return layer.empty();
+}
+
+enum Action
+{
+    OPERAND,
+    OPERATOR
+};
+
+bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    static std::vector<std::pair<const char *, Operator>> op_table({
+        {"+",             Operator("plus", 20, 2)},            // Base arithmetics
+        {"-",             Operator("minus", 20, 2)},
+        {"*",             Operator("multiply", 30, 2)},
+        {"/",             Operator("divide", 30, 2)},
+        {"%",             Operator("modulo", 30, 2)},
+        {"MOD",           Operator("modulo", 30, 2)},
+        {"DIV",           Operator("intDiv", 30, 2)},
+        {"==",            Operator("equals", 10, 2)},          // Base logic
+        {"!=",            Operator("notEquals", 10, 2)},
+        {"<>",            Operator("notEquals", 10, 2)},
+        {"<=",            Operator("lessOrEquals", 10, 2)},
+        {">=",            Operator("greaterOrEquals", 10, 2)},
+        {"<",             Operator("less", 10, 2)},
+        {">",             Operator("greater", 10, 2)},
+        {"=",             Operator("equals", 10, 2)},
+        {"AND",           Operator("and", 5, 2)},              // AND OR
+        {"OR",            Operator("or", 4, 2)},
+        {"||",            Operator("concat", 30, 2)},          // concat() func
+        {".",             Operator("tupleElement", 40, 2)},    // tupleElement() func
+        {"IS NULL",       Operator("isNull", 40, 1)},          // IS (NOT) NULL - correct priority ?
+        {"IS NOT NULL",   Operator("isNotNull", 40, 1)},
+        {"LIKE",          Operator("like", 10, 2)},            // LIKE funcs
+        {"ILIKE",         Operator("ilike", 10, 2)},
+        {"NOT LIKE",      Operator("notLike", 10, 2)},
+        {"NOT ILIKE",     Operator("notILike", 10, 2)},
+        {"IN",            Operator("in", 10, 2)},              // IN funcs
+        {"NOT IN",        Operator("notIn", 10, 2)},
+        {"GLOBAL IN",     Operator("globalIn", 10, 2)},
+        {"GLOBAL NOT IN", Operator("globalNotIn", 10, 2)},
+    });
+
+    static std::vector<std::pair<const char *, Operator>> op_table_unary({
+        {"-",    Operator("negate", 40, 1)},
+        {"NOT",  Operator("not", 9, 1)}
+    });
+
+    ParserCompoundIdentifier identifier_parser;
+    ParserNumber number_parser;
+    ParserAsterisk asterisk_parser;
+    ParserStringLiteral literal_parser;
+
+    Action next = Action::OPERAND;
+
+    std::vector<Layer> storage(1);
+
+    while (pos.isValid())
+    {
+        if (next == Action::OPERAND)
+        {
+            next = Action::OPERATOR;
+            ASTPtr tmp;
+
+            /// Special case for cast expression
+            if (ParseCastExpression(pos, tmp, expected))
+            {
+                storage.back().pushOperand(std::move(tmp));
+                continue;
+            }
+
+            /// Try to find any unary operators
+            auto cur_op = op_table_unary.begin();
+            for (; cur_op != op_table_unary.end(); ++cur_op)
+            {
+                if (parseOperator(pos, cur_op->first, expected))
+                    break;
+            }
+
+            if (cur_op != op_table_unary.end())
+            {
+                next = Action::OPERAND;
+                storage.back().pushOperator(cur_op->second);
+            }
+            else if (ParseDateOperatorExpression(pos, tmp, expected) ||
+                     ParseTimestampOperatorExpression(pos, tmp, expected))
+            {
+                storage.back().pushOperand(std::move(tmp));
+            }
+            else if (identifier_parser.parse(pos, tmp, expected) ||
+                     number_parser.parse(pos, tmp, expected) ||
+                     asterisk_parser.parse(pos, tmp, expected) ||
+                     literal_parser.parse(pos, tmp, expected))
+            {
+                /// If the next token is '(' then it is a plain function, '[' - arrayElement function
+
+                if (pos->type == TokenType::OpeningRoundBracket)
+                {
+                    next = Action::OPERAND;
+
+                    storage.emplace_back(TokenType::ClosingRoundBracket, getIdentifierName(tmp));
+                    ++pos;
+                }
+                else if (pos->type == TokenType::OpeningSquareBracket)
+                {
+                    next = Action::OPERAND;
+
+                    storage.back().pushOperand(std::move(tmp));
+                    storage.back().pushOperator(Operator("arrayElement", 40, 2));
+                    storage.emplace_back(TokenType::ClosingSquareBracket);
+                    ++pos;
+                }
+                else
+                {
+                    storage.back().pushOperand(std::move(tmp));
+                }
+            }
+            else if (pos->type == TokenType::OpeningRoundBracket)
+            {
+                next = Action::OPERAND;
+                storage.emplace_back(TokenType::ClosingRoundBracket, "tuple");
+                ++pos;
+            }
+            else if (pos->type == TokenType::OpeningSquareBracket)
+            {
+                next = Action::OPERAND;
+                storage.emplace_back(TokenType::ClosingSquareBracket, "array");
+                ++pos;
+            }
+            else
+            {
+                break;
+            }
+        }
+        else
+        {
+            next = Action::OPERAND;
+
+            /// Try to find operators from 'op_table'
+            auto cur_op = op_table.begin();
+            for (; cur_op != op_table.end(); ++cur_op)
+            {
+                if (parseOperator(pos, cur_op->first, expected))
+                    break;
+            }
+
+            if (cur_op != op_table.end())
+            {
+                while (storage.back().previousPriority() >= cur_op->second.priority)
+                {
+                    Operator prev_op;
+                    storage.back().popOperator(prev_op);
+                    auto func = makeASTFunction(prev_op.func_name);
+
+                    if (!storage.back().lastNOperands(func->children[0]->children, prev_op.arity))
+                        return false;
+
+                    storage.back().pushOperand(func);
+                }
+                storage.back().pushOperator(cur_op->second);
+            }
+            else if (pos->type == TokenType::Comma)
+            {
+                if (storage.size() == 1)
+                    break;
+
+                if (!wrapLayer(storage.back()))
+                    return false;
+
+                ++pos;
+            }
+            else if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
+            {
+                next = Action::OPERATOR;
+
+                if (pos->type != storage.back().endBracket())
+                    return false;
+
+                if (!wrapLayer(storage.back()))
+                    return false;
+
+                ASTPtr res;
+                if (!storage.back().getResult(res))
+                    return false;
+
+                storage.pop_back();
+                storage.back().pushOperand(res);
+                ++pos;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    if (storage.size() > 1)
+        return false;
+
+    if (!wrapLayer(storage.back()))
+        return false;
+
+    if (!storage.back().getResult(node))
+        return false;
+
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -745,6 +1165,11 @@ bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return nested_parser.parse(pos, node, expected) && !node->children.empty();
+}
+
+bool ParserNotEmptyExpressionList2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }

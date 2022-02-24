@@ -510,6 +510,68 @@ protected:
 };
 
 
+class ParserExpression2 : public IParserBase
+{
+private:
+    ParserTernaryOperatorExpression elem_parser;
+
+protected:
+    const char * getName() const override { return "lambda expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserExpressionWithOptionalAlias2 : public IParserBase
+{
+public:
+    explicit ParserExpressionWithOptionalAlias2(bool allow_alias_without_as_keyword, bool is_table_function = false)
+    : impl(std::make_unique<ParserWithOptionalAlias>(
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression2>()),
+        allow_alias_without_as_keyword)) {}
+protected:
+    ParserPtr impl;
+
+    const char * getName() const override { return "expression with optional alias"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return impl->parse(pos, node, expected);
+    }
+};
+
+/** A comma-separated list of expressions, probably empty. */
+class ParserExpressionList2 : public IParserBase
+{
+public:
+    explicit ParserExpressionList2(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
+
+protected:
+    bool allow_alias_without_as_keyword;
+    bool is_table_function; // This expression list is used by a table function
+
+    const char * getName() const override { return "list of expressions"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return ParserList(
+            std::make_unique<ParserExpressionWithOptionalAlias2>(allow_alias_without_as_keyword, is_table_function),
+            std::make_unique<ParserToken>(TokenType::Comma))
+        .parse(pos, node, expected);
+    }
+};
+
+class ParserNotEmptyExpressionList2 : public IParserBase
+{
+public:
+    explicit ParserNotEmptyExpressionList2(bool allow_alias_without_as_keyword)
+        : nested_parser(allow_alias_without_as_keyword) {}
+private:
+    ParserExpressionList2 nested_parser;
+protected:
+    const char * getName() const override { return "not empty list of expressions"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserOrderByExpressionList : public IParserBase
 {
 protected:
