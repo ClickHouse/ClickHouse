@@ -68,7 +68,7 @@ Another improvement is the option to specify TTL MOVE TO DISK/VOLUME **IF EXISTS
 
 ## Flexible memory limits
 
-We split per-query and per-user memory limits to a pair of hard and soft limits. The settings `max_memory_usage` and `max_memory_usage_for_user` act as hard limits. When memory consumption is approaching the hard limit, an exception will be thrown. Two other settings: `max_guaranteed_memory_usage` and `max_guaranteed_memory_usage_for_user` act like soft limits.
+We split per-query and per-user memory limits into a pair of hard and soft limits. The settings `max_memory_usage` and `max_memory_usage_for_user` act as hard limits. When memory consumption is approaching the hard limit, an exception will be thrown. Two other settings: `max_guaranteed_memory_usage` and `max_guaranteed_memory_usage_for_user` act as soft limits.
 
 A query will be allowed to use more memory than a soft limit if there is available memory. But if there will be memory shortage (with relative to per user hard limit or total per server memory consumption), we calculate the "overcommit ratio" - how more memory every query is consumed in relative to the soft limit, and we will kill the most overcommitted query to let other queries to run.
  
