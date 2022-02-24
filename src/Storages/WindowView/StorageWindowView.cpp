@@ -652,7 +652,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     DropTableIdentifierMatcher::Data drop_table_identifier_data;
     DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
 
-
     auto visit = [&](const IAST * ast)
     {
         auto node = ast->clone();
