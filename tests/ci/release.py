@@ -78,21 +78,21 @@ class Release:
         self._git.update()
         self.version = get_version_from_repo()
 
-    def do(self, no_check_dirty: bool, no_check_branch: bool, no_prestable: bool):
+    def do(self, check_dirty: bool, check_branch: bool, with_prestable: bool):
 
-        if not no_check_dirty:
+        if check_dirty:
             logging.info("Checking if repo is clean")
             self.run("git diff HEAD --exit-code")
 
         self.set_release_branch()
 
-        if not no_check_branch:
+        if check_branch:
             self.check_branch()
 
         with self._checkout(self.release_commit, True):
             if self.release_type in self.BIG:
                 # Checkout to the commit, it will provide the correct current version
-                if no_prestable:
+                if with_prestable:
                     logging.info("Skipping prestable stage")
                 else:
                     with self.prestable():
@@ -406,27 +406,37 @@ def parse_args() -> argparse.Namespace:
         help="a release type, new branch is created only for 'major' and 'minor'",
     )
     parser.add_argument(
-        "--no-prestable",
-        action="store_true",
-        help=f"for release types in {Release.BIG} skip creating prestable release and "
-        "release branch",
-    )
-    parser.add_argument(
         "--commit",
         default=git.sha,
         type=commit,
         help="commit create a release, default to HEAD",
     )
+    parser.add_argument("--with-prestable", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-prestable",
+        dest="with_prestable",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help=f"if set, for release types in {Release.BIG} skip creating prestable "
+        "release and  release branch",
+    )
+    parser.add_argument("--check-dirty", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-dirty",
-        action="store_true",
-        help="(dangerous) skip check repository for uncommited changes",
+        dest="check_dirty",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(dangerous) if set, skip check repository for uncommited changes",
     )
+    parser.add_argument("--check-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-branch",
-        action="store_true",
-        help="(debug or development only) by default, 'major' and 'minor' types work "
-        "only for master, and 'patch' works only for a release branches, that name "
+        dest="check_branch",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(debug or development only) if set, skip the branch check for a run. "
+        "By default, 'major' and 'minor' types workonly for master, and 'patch' works "
+        "only for a release branches, that name "
         "should be the same as '$MAJOR.$MINOR' version, e.g. 22.2",
     )
 
@@ -439,7 +449,7 @@ def main():
     repo = Repo(args.repo, args.remote_protocol)
     release = Release(repo, args.commit, args.release_type)
 
-    release.do(args.no_check_dirty, args.no_check_branch, args.no_prestable)
+    release.do(args.check_dirty, args.check_branch, args.with_prestable)
 
 
 if __name__ == "__main__":
