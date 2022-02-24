@@ -27,13 +27,13 @@
     <create_query>CREATE TABLE merge_tree_insert_5 (value_1 String, value_2 String, value_3 String) ENGINE = MergeTree ORDER BY (value_1, value_2)</create_query>
     <create_query>CREATE TABLE merge_tree_insert_6 (value_1 String, value_2 String, value_3 String) ENGINE = MergeTree ORDER BY (value_1, value_2, value_3)</create_query>
 
-    <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 50000</query>
     <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 500000</query>
     <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 1000000</query>
+    <query>INSERT INTO {integer_primary_key_table_name} SELECT rand64(0), rand64(1), rand64(2) FROM system.numbers LIMIT 1500000</query>
 
-    <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 50000</query>
     <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 500000</query>
     <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 1000000</query>
+    <query>INSERT INTO {string_primary_key_table_name} SELECT toString(rand64(0)), toString(rand64(1)), toString(rand64(2)) FROM system.numbers LIMIT 1500000</query>
 
     <drop_query>DROP TABLE IF EXISTS {integer_primary_key_table_name}</drop_query>
     <drop_query>DROP TABLE IF EXISTS {string_primary_key_table_name}</drop_query>
