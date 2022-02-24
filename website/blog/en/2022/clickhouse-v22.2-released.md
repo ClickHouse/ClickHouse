@@ -10,7 +10,7 @@ We prepared a new ClickHouse release 22.2, so it's nice if you have tried it on 
 
 > Aaron Katz, Andre Marianiello, Andrew, Andrii Buriachevskyi, Brian Hunter, CoolT2, Federico Rodriguez, Filippov Denis, Gaurav Kumar, Geoff Genz, HarryLeeIBM, Heena Bansal, ILya Limarenko, Igor Nikonov, IlyaTsoi, Jake Liu, JaySon-Huang, Lemore, Leonid Krylov, Michail Safronov, Mikhail Fursov, Nikita, RogerYK, Roy Bellingan, Saad Ur Rahman, W, Yakov Olkhovskiy, alexeypavlenko, cnmade, grantovsky, hanqf-git, liuneng1994, mlkui, s-kat, tesw yew isal, vahid-sohrabloo, yakov-olkhovskiy, zhifeng, zkun, zxealous, 박동철.
 
-Let me tell what is most interesting in 22.2...
+Let me tell you what is most interesting in 22.2...
 
 ## Projections are production ready
 
