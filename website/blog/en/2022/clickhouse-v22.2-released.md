@@ -62,7 +62,7 @@ You can configure multiple disks to store ClickHouse data instead of managing RA
 
 Since version 22.2 ClickHouse can automatically repair broken disks without server restart by downloading the missing parts from replicas and placing them on the healthy disks.
 
-This feature is implemented by **Amos Bird** and is already being used for more than 1.5 years in production in KuaiShou.
+This feature was implemented by **Amos Bird** and is already being used for more than 1.5 years in production at Kuaishou.
 
 Another improvement is the option to specify TTL MOVE TO DISK/VOLUME **IF EXISTS**. It allows replicas with non-uniform disk configuration and to have one replica to move old data to cold storage while another replica has all the data on hot storage. Data will be moved only on replicas that have the specified disk or volume, hence *if exists*. This was developed by **Anton Popov**.
 
