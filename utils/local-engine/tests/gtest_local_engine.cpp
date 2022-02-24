@@ -249,8 +249,58 @@ TEST(TestSelect, MergeTreeWriteTest)
     query_pipeline.execute()->execute(1);
 }
 
+TEST(TestSubstrait, TestGenerate) {
+    dbms::SerializedSchemaBuilder schema_builder;
+    auto schema = schema_builder
+                      .column("l_discount", "FP64")
+                      .column("l_extendedprice", "FP64")
+                      .column("l_quantity", "FP64")
+                      .column("l_shipdate_new", "Date")
+                      .build();
+    dbms::SerializedPlanBuilder plan_builder;
+    auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
+    auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
+    auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+    auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+    auto plan = plan_builder.registerSupportedFunctions()
+                    .aggregate({}, {measure1, measure2, measure3})
+                    .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
+                    .filter(dbms::scalarFunction(dbms::AND, {
+                                                                dbms::scalarFunction(AND, {
+                                                                                              dbms::scalarFunction(AND, {
+                                                                                                                            dbms::scalarFunction(AND, {
+                                                                                                                                                          dbms::scalarFunction(AND, {
+                                                                                                                                                                                        dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                      dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(3)}),
+                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(0)})
+                                                                                                                                                                                                                                                }),
+                                                                                                                                                                                                                      scalarFunction(IS_NOT_NULL, {selection(2)})
+                                                                                                                                                                                                                  }),
+                                                                                                                                                                                        dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
+                                                                                                                                                                                    }),
+                                                                                                                                                          scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
+                                                                                                                                                      }),
+                                                                                                                            scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
+                                                                                                                        }),
+                                                                                              scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
+                                                                                          }),
+                                                                scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
+                                                            }))
+                    .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema)).build();
+    std::ofstream output;
+    output.open("/home/kyligence/Documents/code/ClickHouse/plan.txt", std::fstream::in | std::fstream::out | std::fstream::trunc);
+        output << plan->SerializeAsString();
+//    plan->SerializeToOstream(&output);
+    output.flush();
+    output.close();
+}
+
 int main(int argc, char **argv)
 {
+    SharedContextHolder shared_context = Context::createShared();
+    dbms::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
+    dbms::SerializedPlanParser::global_context->makeGlobalContext();
     dbms::SerializedPlanParser::initFunctionEnv();
     ::testing::InitGoogleTest(&argc,argv);
     return RUN_ALL_TESTS();

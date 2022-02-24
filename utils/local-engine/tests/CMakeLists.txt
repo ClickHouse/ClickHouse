@@ -3,7 +3,6 @@ enable_testing()
 include(CTest)
 
 include (${PROJECT_SOURCE_DIR}/cmake/find/gtest.cmake)
-#include (${PROJECT_SOURCE_DIR}/cmake/warnings.cmake)
 include_directories(${GTEST_INCLUDE_DIRS})
 macro (grep_gtest_sources BASE_DIR DST_VAR)
     # Cold match files that are not in tests/ directories
@@ -17,7 +16,6 @@ configure_file(
 )
 
 set(BENCHMARK_ENABLE_TESTING OFF)
-#set(BENCHMARK_ENABLE_LIBPFM ON)
 include(FetchContent)
 FetchContent_Declare(googlebenchmark GIT_REPOSITORY https://github.com/google/benchmark GIT_TAG master)
 FetchContent_MakeAvailable(googlebenchmark)
