@@ -78,7 +78,7 @@ This experimental feature was implemented by **Dmitry Novik** and is continuing 
 
 ## Shell-style comments in SQL
 
-Now we allow comments starting with `# ` or `#!`, similarly to MySQL. The variant with `#!` allows using shell scripts with "shebang" interpreted by `clickhouse-local`.
+Now we allow comments starting with `# ` or `#!`, similar to MySQL. The variant with `#!` allows using shell scripts with "shebang" interpreted by `clickhouse-local`.
 
 This feature was contributed by **Aaron Katz**. Very nice.  
 
