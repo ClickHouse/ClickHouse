@@ -361,7 +361,8 @@ bool LRUFileCache::tryReserve(
     auto key_it = queue.begin();
     while (is_overflow() && key_it != queue.end())
     {
-        const auto [key, offset] = *key_it++;
+        const auto [key, offset] = *key_it;
+        ++key_it;
 
         auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
@@ -410,8 +411,11 @@ bool LRUFileCache::tryReserve(
     for (auto & cell : to_evict)
     {
         auto & file_segment = cell->file_segment;
-        std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+        if (file_segment)
+        {
+            std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+        }
     }
 
     current_size += size - removed_size;
