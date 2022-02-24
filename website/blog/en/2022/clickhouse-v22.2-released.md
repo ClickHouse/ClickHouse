@@ -72,7 +72,7 @@ We split per-query and per-user memory limits into a pair of hard and soft limit
 
 A query will be allowed to use more memory than a soft limit if there is available memory. But if there will be memory shortage (relative to the per-user hard limit or total per-server memory consumption), we calculate the "overcommit ratio" - how much more memory every query is consuming relative to the soft limit - and we will kill the most overcommitted query to let other queries run.
  
-In short, your query will not be limited to a few gigabytes of RAM if you have hundreds gigabytes available.
+In short, your query will not be limited to a few gigabytes of RAM if you have hundreds of gigabytes available.
 
 This experimental feature is implemented by **Dmitry Novik** and is continuing to be developed.
 
