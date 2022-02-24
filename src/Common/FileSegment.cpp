@@ -186,18 +186,20 @@ bool FileSegment::reserve(size_t size)
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
-    std::lock_guard segment_lock(mutex);
+    {
+        std::lock_guard segment_lock(mutex);
 
-    if (downloaded_size + size > range().size())
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                        "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                        size, range().toString(), downloaded_size);
+        if (downloaded_size + size > range().size())
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                            "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
+                            size, range().toString(), downloaded_size);
 
-    auto caller_id = getCallerId();
-    if (downloader_id != caller_id)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
+        auto caller_id = getCallerId();
+        if (downloader_id != caller_id)
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
 
-    assert(reserved_size >= downloaded_size);
+        assert(reserved_size >= downloaded_size);
+    }
 
     /**
      * It is possible to have downloaded_size < reserved_size when reserve is called
@@ -280,6 +282,7 @@ void FileSegment::complete(State state, bool complete_because_of_error)
     }
 
     download_state = state;
+
     completeImpl(segment_lock);
 
     cv.notify_all();
@@ -393,8 +396,6 @@ String FileSegment::stateToString(FileSegment::State state)
 
 String FileSegmentsHolder::toString()
 {
-    std::lock_guard lock(mutex);
-
     String ranges;
     for (const auto & file_segment : file_segments)
     {
