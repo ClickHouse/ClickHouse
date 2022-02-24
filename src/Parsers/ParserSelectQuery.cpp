@@ -11,6 +11,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -152,8 +153,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 select_query->limit_with_ties = true;
         }
 
-        if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
-            return false;
+        // TEST
+        ParserToken test(TokenType::DollarSign);
+        if (test.ignore(pos, expected))
+        {
+            if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
+                return false;
+        }
+        else
+        {
+            ParserNotEmptyExpressionList2 exp_list_for_select_clause2(true);
+            if (!exp_list_for_select_clause2.parse(pos, select_expression_list, expected))
+                return false;
+        }
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
