@@ -74,7 +74,7 @@ A query will be allowed to use more memory than a soft limit if there is availab
  
 In short, your query will not be limited to a few gigabytes of RAM if you have hundreds of gigabytes available.
 
-This experimental feature is implemented by **Dmitry Novik** and is continuing to be developed.
+This experimental feature was implemented by **Dmitry Novik** and is continuing to be developed.
 
 ## Shell-style comments in SQL
 
