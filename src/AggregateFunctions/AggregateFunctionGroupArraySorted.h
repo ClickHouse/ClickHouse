@@ -66,7 +66,7 @@ getFirstNElements_low_threshold(const TColumn * data, int num_elements, int thre
         if (cur < threshold)
         {
             //Move all the higher values 1 position to the right
-            for (z = current_max - 1; z > cur; z--)
+            for (z = std::min(threshold - 1, current_max); z > cur; z--)
                 results[z] = results[z - 1];
 
             if (current_max < threshold)
@@ -218,8 +218,8 @@ public:
         }
         else
         {
-            StringRef ref = columns[data_column]->getRawData();
-            values = reinterpret_cast<const TColumn *>(ref.data);
+            const auto & column = assert_cast<const ColumnVector<TColumn> &>(*columns[data_column]);
+            values = column.getData().data();
         }
 
         const UInt8 * filter = nullptr;
