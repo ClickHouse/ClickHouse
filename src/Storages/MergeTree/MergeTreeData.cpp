@@ -3655,6 +3655,8 @@ public:
     {
         RestoreTasks restore_part_tasks;
         Strings part_names = backup->listFiles(data_path_in_backup);
+        auto lock = lockParts();
+        UInt64 max_block_num = increment ? increment->get() : 0;
         for (const String & part_name : part_names)
         {
             const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, storage->format_version);
@@ -3665,9 +3667,33 @@ public:
             if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
                 continue;
 
+            auto containing_part = getActiveContainingPart(*part_info);
+            if (containing_part)
+            {
+                if (containing_part->info == *part_info)
+                {
+                    if (containing_part->info.checksums.getTotalChecksumUInt128() == part_info->checksums.getTotalChecksumUInt128())
+                        continue;
+                }
+                else
+                    continue;
+            }
+
+            if (increment)
+                max_block_num = std::max({max_block_num, part->info.max_block, part->info.mutation});
+
             restore_part_tasks.push_back(
-                std::make_unique<RestorePartTask>(storage, backup, data_path_in_backup, part_name, *part_info, increment));
+                std::make_unique<RestorePartTask>(storage, backup, data_path_in_backup, part_name, *part_info));
         }
+
+        if (increment)
+        {
+            UInt64 old_max_block_num = increment->get();
+            while (old_max_block_num < max_block_num)
+                increment->value.exchange(old_max_block_num, max_block_num);
+            increment->set(max_block_num);
+        }
+
         return restore_part_tasks;
     }
 
@@ -3686,14 +3712,12 @@ private:
             const BackupPtr & backup_,
             const String & data_path_in_backup_,
             const String & part_name_,
-            const MergeTreePartInfo & part_info_,
-            SimpleIncrement * increment_)
+            const MergeTreePartInfo & part_info_)
             : storage(storage_)
             , backup(backup_)
             , data_path_in_backup(data_path_in_backup_)
             , part_name(part_name_)
             , part_info(part_info_)
-            , increment(increment_)
         {
         }
 
@@ -3727,7 +3751,7 @@ private:
             auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
             auto part = storage->createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
             part->loadColumnsChecksumsIndexes(false, true);
-            storage->renameTempPartAndAdd(part, increment);
+            storage->renameTempPartAndReplace(part);
             return {};
         }
 
@@ -3737,7 +3761,6 @@ private:
         String data_path_in_backup;
         String part_name;
         MergeTreePartInfo part_info;
-        SimpleIncrement * increment;
     };
 };
 
