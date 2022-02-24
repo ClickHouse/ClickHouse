@@ -19,6 +19,8 @@ SELECT groupArraySorted(5)(text,text) from (SELECT toString(number) as text FROM
 
 SELECT groupArraySorted(50)(text,(number,text)) from (SELECT toString(number) as text, number FROM numbers(100));
 
+SELECT groupArraySorted(10)(toInt64(number/2)) FROM numbers(100);
+
 
 DROP TABLE IF EXISTS test;
 DROP VIEW IF EXISTS mv_test;
