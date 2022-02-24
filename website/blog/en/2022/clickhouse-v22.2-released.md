@@ -24,7 +24,7 @@ Read an example of how to optimize queries with projections [in our docs](https:
 
 ## Control of file creation and rewriting on data export
 
-When you export your data with an `INSERT INTO TABLE FUNCTION` statement into `file`, `s3` or `hdfs` and the target file already exists, now you can control how to deal with it: you can append new data into the file if it is possible, or rewrite it with a new data, or create another file with a similar name like 'data.1.parquet.gz'. 
+When you export your data with an `INSERT INTO TABLE FUNCTION` statement into `file`, `s3` or `hdfs` and the target file already exists, you can now control how to deal with it: you can append new data into the file if it is possible, rewrite it with new data, or create another file with a similar name like 'data.1.parquet.gz'. 
 
 Some storage systems like `s3` and some formats like `Parquet` don't support data appending. In previous ClickHouse versions, if you insert multiple times into a file with Parquet data format, you will end up with a file that is not recognized by other systems. Now you can choose between throwing exceptions on subsequent inserts or creating more files.
 
