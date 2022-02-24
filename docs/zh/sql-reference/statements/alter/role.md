@@ -1,13 +1,13 @@
 ---
 toc_priority: 46
-toc_title: ROLE
+toc_title: 角色
 ---
 
-## ALTER ROLE {#alter-role-statement}
+## 操作角色 {#alter-role-statement}
 
-Changes roles.
+修改角色.
 
-Syntax:
+语法示例:
 
 ``` sql
 ALTER ROLE [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
