@@ -391,7 +391,7 @@ SetPtr makeExplicitSet(
 
 ScopeStack::Level::~Level() = default;
 ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 class ScopeStack::Index
 {
