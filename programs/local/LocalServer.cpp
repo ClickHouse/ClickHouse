@@ -313,9 +313,15 @@ void LocalServer::cleanup()
 }
 
 
+static bool checkIfStdinIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -519,22 +525,17 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
-
-        load_suggestions = true;
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+
     print_stack_trace = config().getBool("stacktrace", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -774,7 +775,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());

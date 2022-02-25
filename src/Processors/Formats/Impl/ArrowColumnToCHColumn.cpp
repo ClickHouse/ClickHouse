@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -206,38 +207,19 @@ static ColumnWithTypeAndName readColumnWithDate64Data(std::shared_ptr<arrow::Chu
 
 static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
-    auto internal_type = std::make_shared<DataTypeUInt32>();
+    const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
+    const UInt8 scale = arrow_type.unit() * 3;
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, arrow_type.timezone());
     auto internal_column = internal_type->createColumn();
-    auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
+    auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
-        const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
-
-        UInt32 divide = 1;
-        const auto unit = type.unit();
-        switch (unit)
-        {
-            case arrow::TimeUnit::SECOND:
-                divide = 1;
-                break;
-            case arrow::TimeUnit::MILLI:
-                divide = 1000;
-                break;
-            case arrow::TimeUnit::MICRO:
-                divide = 1000000;
-                break;
-            case arrow::TimeUnit::NANO:
-                divide = 1000000000;
-                break;
-        }
-
+        const auto & chunk = dynamic_cast<const arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
-            column_data.emplace_back(timestamp);
+            column_data.emplace_back(chunk.Value(value_i));
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -485,7 +467,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
-            // TODO: support TIMESTAMP_MICROS and TIMESTAMP_MILLIS with truncated micro- and milliseconds?
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
         default:
