@@ -406,7 +406,7 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
 {
     bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
 
-    auto comparator = [this, nan_direction_hint, ascending, stability](size_t lhs, size_t rhs)
+    auto comparator = [this, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
     {
         int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
         if (stability == IColumn::PermutationSortStability::Stable)
@@ -439,13 +439,26 @@ void ColumnLowCardinality::getPermutationWithCollation(const Collator & collator
 void ColumnLowCardinality::updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    (void)(stability);
-    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
 
-    auto comparator = [this, &collator, reverse, nan_direction_hint](size_t lhs, size_t rhs)
+    auto comparator = [this, &collator, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
     {
-        int ret = getDictionary().getNestedColumn()->compareAtWithCollation(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), *getDictionary().getNestedColumn(), nan_direction_hint, collator);
-        return reverse ? -ret : ret;
+        auto nested_column = getDictionary().getNestedColumn();
+        size_t lhs_index = getIndexes().getUInt(lhs);
+        size_t rhs_index = getIndexes().getUInt(rhs);
+
+        int ret = nested_column->compareAtWithCollation(lhs_index, rhs_index, *nested_column, nan_direction_hint, collator);
+
+        if (stability == IColumn::PermutationSortStability::Stable)
+        {
+            if (unlikely(ret == 0))
+                return lhs < rhs;
+        }
+
+        if (ascending)
+            return ret < 0;
+        else
+            return ret > 0;
     };
 
     auto equal_comparator = [this, &collator, nan_direction_hint](size_t lhs, size_t rhs)
