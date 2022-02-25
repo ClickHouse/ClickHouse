@@ -516,8 +516,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     });
 
             if (insert_it == metadata.secondary_indices.end())
-                throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
-                        ErrorCodes::BAD_ARGUMENTS);
+            {
+                auto hints = metadata.secondary_indices.getHints(after_index_name);
+                auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                throw Exception(
+                    "Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after" + hints_string,
+                    ErrorCodes::BAD_ARGUMENTS);
+            }
 
             ++insert_it;
         }
@@ -540,7 +545,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 if (if_exists)
                     return;
-                throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
+                auto hints = metadata.secondary_indices.getHints(index_name);
+                auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                throw Exception(
+                    "Wrong index name. Cannot find index " + backQuote(index_name) + " to drop" + hints_string, ErrorCodes::BAD_ARGUMENTS);
             }
 
             metadata.secondary_indices.erase(erase_it);
@@ -582,7 +590,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (if_exists)
                 return;
-            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
+            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop",
                     ErrorCodes::BAD_ARGUMENTS);
         }
         constraints.erase(erase_it);
@@ -763,8 +771,12 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
+
+    /// Drop alias is metadata alter, in other case mutation is required.
+    if (type == DROP_COLUMN)
+        return metadata.columns.hasPhysical(column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;

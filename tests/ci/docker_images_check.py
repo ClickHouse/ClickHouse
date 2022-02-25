@@ -349,14 +349,20 @@ def parse_args() -> argparse.Namespace:
         help="list of image paths to build instead of using pr_info + diff URL, "
         "e.g. 'docker/packager/binary'",
     )
+    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
-        action="store_true",
+        action="store_false",
+        dest="reports",
+        default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
-        action="store_true",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
         help="don't push images to docker hub",
     )
 
@@ -375,8 +381,7 @@ def main():
     else:
         changed_json = os.path.join(TEMP_PATH, "changed_images.json")
 
-    push = not args.no_push_images
-    if push:
+    if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
             input=get_parameter_from_ssm("dockerhub_robot_password"),
@@ -408,7 +413,7 @@ def main():
     images_processing_result = []
     for image in changed_images:
         images_processing_result += process_image_with_parents(
-            image, image_versions, push
+            image, image_versions, args.push
         )
         result_images[image.repo] = result_version
 
@@ -437,7 +442,7 @@ def main():
     print(f"::notice ::Report url: {url}")
     print(f'::set-output name=url_output::"{url}"')
 
-    if args.no_reports:
+    if not args.reports:
         return
 
     gh = Github(get_best_robot_token())
