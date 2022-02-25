@@ -39,7 +39,7 @@ void registerAllFunctions()
     registerAggregateFunctions();
 }
 
-bool inside_main = false;
+bool inside_main = true;
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,10 +77,12 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(illegal_access_exception_class);
     env->DeleteGlobalRef(illegal_argument_exception_class);
 }
+static SharedContextHolder shared_context;
+
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
     registerAllFunctions();
-    SharedContextHolder shared_context = Context::createShared();
+    shared_context = SharedContextHolder(Context::createShared());
     dbms::SerializedPlanParser::local_server = std::make_unique<DB::LocalServer>();
     dbms::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
     dbms::SerializedPlanParser::global_context->makeGlobalContext();
@@ -93,9 +95,11 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
-    dbms::SerializedPlanParser parser(dbms::SerializedPlanParser::global_context);
+    auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
+    context->makeQueryContext();
+    dbms::SerializedPlanParser parser(context->getQueryContext());
     auto query_plan = parser.parse(plan_string);
-    dbms::LocalExecutor * executor = new dbms::LocalExecutor();
+    dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));
     return reinterpret_cast<jlong>(executor);
 }

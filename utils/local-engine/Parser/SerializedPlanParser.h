@@ -72,6 +72,11 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"EQUAL_TO", "equals"}
 };
 
+struct QueryContext {
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
+    std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
+};
+
 class SerializedPlanParser
 {
 public:
@@ -87,11 +92,8 @@ public:
 
     static ContextMutablePtr global_context;
     static std::unique_ptr<DB::LocalServer> local_server;
+    QueryContext query_context;
 
-    struct QueryContext {
-        std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
-        std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
-    };
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
@@ -128,7 +130,7 @@ private:
     int name_no = 0;
     std::unordered_map<std::string, std::string> function_mapping;
     ContextPtr context;
-    QueryContext query_context;
+
 
 //    DB::QueryPlanPtr query_plan;
 
@@ -143,6 +145,7 @@ struct SparkBuffer
 class LocalExecutor
 {
 public:
+    LocalExecutor(QueryContext& _query_context);
     void execute(QueryPlanPtr query_plan);
     local_engine::SparkRowInfoPtr next();
     bool hasNext();
@@ -158,6 +161,7 @@ public:
     Block & getHeader();
 
 private:
+    QueryContext query_context;
     std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
     QueryPipelinePtr query_pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
