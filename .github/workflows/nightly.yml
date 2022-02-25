@@ -1,35 +1,15 @@
-name: DocsCheck
+name: NightlyBuilds
 
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 
-on: # yamllint disable-line rule:truthy
-  pull_request:
-    types:
-      - synchronize
-      - reopened
-      - opened
-    branches:
-      - master
-    paths:
-      - 'docs/**'
-      - 'website/**'
+"on":
+  schedule:
+    - cron: '13 3 * * *'
+
 jobs:
-  CheckLabels:
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Clear repository
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Labels check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 run_check.py
   DockerHubPushAarch64:
-    needs: CheckLabels
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Clear repository
@@ -40,14 +20,13 @@ jobs:
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix aarch64
+          python3 docker_images_check.py --suffix aarch64 --all
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
-    needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
@@ -58,7 +37,7 @@ jobs:
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix amd64
+          python3 docker_images_check.py --suffix amd64 --all
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -92,34 +71,3 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
-  DocsCheck:
-    needs: DockerHubPush
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/docs_check
-          REPO_COPY=${{runner.temp}}/docs_check/ClickHouse
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Docs Check
-        run: |
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 docs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH"

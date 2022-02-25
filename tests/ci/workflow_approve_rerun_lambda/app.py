@@ -6,8 +6,8 @@ import fnmatch
 from collections import namedtuple
 import jwt
 
-import requests
-import boto3
+import requests  # type: ignore
+import boto3  # type: ignore
 
 API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
 
@@ -22,8 +22,12 @@ SUSPICIOUS_PATTERNS = [
     "release",
 ]
 
+# Number of retries for API calls.
 MAX_RETRY = 5
-MAX_WORKFLOW_RERUN = 7
+
+# Number of times a check can re-run as a whole.
+# It is needed, because we are using AWS "spot" instances, that are terminated very frequently.
+MAX_WORKFLOW_RERUN = 20
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
@@ -45,23 +49,26 @@ WorkflowDescription = namedtuple(
     ],
 )
 
-TRUSTED_WORKFLOW_IDS = {
-    14586616,  # Cancel workflows, always trusted
-}
-
+# See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
     7409213,  # yandex
     28471076,  # altinity
     54801242,  # clickhouse
 }
 
+# See https://api.github.com/repos/ClickHouse/ClickHouse/actions/workflows
+# Use ID to not inject a malicious workflow
+TRUSTED_WORKFLOW_IDS = {
+    14586616,  # Cancel workflows, always trusted
+}
+
 NEED_RERUN_WORKFLOWS = {
-    14738810,  # DocsRelease
-    15834118,  # Docs
-    15522500,  # MasterCI
-    15516108,  # ReleaseCI
-    15797242,  # BackportPR
-    16441423,  # PullRequestCI
+    "BackportPR",
+    "Docs",
+    "DocsRelease",
+    "MasterCI",
+    "PullRequestCI",
+    "ReleaseCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -107,7 +114,8 @@ TRUSTED_CONTRIBUTORS = {
         "s-mx",  # Maxim Sabyanin, former employee, present contributor
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
-        "ucasfl",  # Amos Bird's friend
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",
         "YiuRULE",
@@ -390,10 +398,10 @@ def main(event):
             "completed and failed, let's check for rerun",
         )
 
-        if workflow_description.workflow_id not in NEED_RERUN_WORKFLOWS:
+        if workflow_description.name not in NEED_RERUN_WORKFLOWS:
             print(
                 "Workflow",
-                workflow_description.workflow_id,
+                workflow_description.name,
                 "not in list of rerunable workflows",
             )
             return
@@ -435,7 +443,8 @@ def main(event):
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)
     if check_suspicious_changed_files(changed_files):
         print(
-            f"Pull Request {pull_request['number']} has suspicious changes, label it for manuall approve"
+            f"Pull Request {pull_request['number']} has suspicious changes, "
+            "label it for manuall approve"
         )
         label_manual_approve(pull_request, token)
     else:
