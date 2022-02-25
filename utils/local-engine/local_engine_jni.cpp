@@ -33,6 +33,8 @@
 
 using namespace DB;
 
+
+
 void registerAllFunctions()
 {
     registerFunctions();
@@ -77,20 +79,24 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(illegal_access_exception_class);
     env->DeleteGlobalRef(illegal_argument_exception_class);
 }
-static SharedContextHolder shared_context;
+//static SharedContextHolder shared_context;
 
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
     registerAllFunctions();
-    shared_context = SharedContextHolder(Context::createShared());
-    dbms::SerializedPlanParser::local_server = std::make_unique<DB::LocalServer>();
-    dbms::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
-    dbms::SerializedPlanParser::global_context->makeGlobalContext();
-    dbms::SerializedPlanParser::global_context->setPath("/");
+
 }
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
 {
+    if (!dbms::SerializedPlanParser::global_context)
+    {
+        dbms::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
+        dbms::SerializedPlanParser::local_server = std::make_unique<DB::LocalServer>();
+        dbms::SerializedPlanParser::global_context = Context::createGlobal(dbms::SerializedPlanParser::shared_context.get());
+        dbms::SerializedPlanParser::global_context->makeGlobalContext();
+        dbms::SerializedPlanParser::global_context->setPath("/");
+    }
     jsize plan_size = env->GetArrayLength(plan);
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;

@@ -425,6 +425,8 @@ dbms::ContextMutablePtr dbms::SerializedPlanParser::global_context = nullptr;
 
 std::unique_ptr<DB::LocalServer> dbms::SerializedPlanParser::local_server = nullptr;
 
+SharedContextHolder dbms::SerializedPlanParser::shared_context;
+
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
     while (!finished_generate)

@@ -92,6 +92,7 @@ public:
 
     static ContextMutablePtr global_context;
     static std::unique_ptr<DB::LocalServer> local_server;
+    static SharedContextHolder shared_context;
     QueryContext query_context;
 
 private:
