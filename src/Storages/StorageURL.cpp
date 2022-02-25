@@ -484,7 +484,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
 bool IStorageURLBase::isColumnOriented() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
 }
 
 Pipe IStorageURLBase::read(
