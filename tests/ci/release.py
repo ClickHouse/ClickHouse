@@ -78,7 +78,15 @@ class Release:
         self._git.update()
         self.version = get_version_from_repo()
 
+    def check_prerequisites(self):
+        """
+        Check tooling installed in the system
+        """
+        self.run("gh auth status")
+        self.run("git status")
+
     def do(self, check_dirty: bool, check_branch: bool, with_prestable: bool):
+        self.check_prerequisites()
 
         if check_dirty:
             logging.info("Checking if repo is clean")
