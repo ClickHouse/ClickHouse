@@ -115,8 +115,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_SYSCTL;
-    extern const int KERNEL_STRUCTURE_SIZE_MISMATCH;
+    extern const int SYSTEM_ERROR;
 }
 
 MemoryStatisticsOS::MemoryStatisticsOS()
@@ -137,14 +136,14 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     size_t len = sizeof(struct kinfo_proc);
 
     if (-1 == ::sysctl(mib, 4, &kp, &len, NULL, 0))
-        throwFromErrno("Cannot sysctl(kern.proc.pid." + std::to_string(self) + ")", ErrorCodes::CANNOT_SYSCTL);
+        throwFromErrno("Cannot sysctl(kern.proc.pid." + std::to_string(self) + ")", ErrorCodes::SYSTEM_ERROR);
 
     if (sizeof(struct kinfo_proc) != len)
-        throw DB::Exception(DB::ErrorCodes::KERNEL_STRUCTURE_SIZE_MISMATCH, "Kernel returns structure of {} bytes instead of expected {}",
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Kernel returns structure of {} bytes instead of expected {}",
             len, sizeof(struct kinfo_proc));
 
     if (sizeof(struct kinfo_proc) != kp.ki_structsize)
-        throw DB::Exception(DB::ErrorCodes::KERNEL_STRUCTURE_SIZE_MISMATCH, "Kernel stucture size ({}) does not match expected ({}).",
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Kernel stucture size ({}) does not match expected ({}).",
             kp.ki_structsize, sizeof(struct kinfo_proc));
 
     data.virt = kp.ki_size;
