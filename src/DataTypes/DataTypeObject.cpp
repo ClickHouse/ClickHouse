@@ -4,6 +4,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -35,49 +36,41 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     return default_serialization;
 }
 
-static constexpr auto NAME_DEFAULT = "Default";
-static constexpr auto NAME_NULL = "Null";
-
 String DataTypeObject::doGetName() const
 {
     WriteBufferFromOwnString out;
-    out << "Object(" << quote << schema_format;
     if (is_nullable)
-        out << ", " << quote << NAME_NULL;
-    out << ")";
+        out << "Object(Nullable(" << quote << schema_format << "))";
+    else
+        out << "Object(" << quote << schema_format << ")";
     return out.str();
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.empty() || arguments->children.size() > 2)
-        throw Exception("Object data type family must have one or two arguments -"
-            " name of schema format and type of default value",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (!arguments || arguments->children.size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Object data type family must have one argument - name of schema format");
 
-    const auto * literal = arguments->children[0]->as<ASTLiteral>();
-    if (!literal || literal->value.getType() != Field::Types::String)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-            "Object data type family must have a const string as its first argument");
-
+    ASTPtr schema_argument = arguments->children[0];
     bool is_nullable = false;
-    if (arguments->children.size() == 2)
-    {
-        const auto * default_literal = arguments->children[1]->as<ASTLiteral>();
-        if (!default_literal || default_literal->value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Object data type family must have a const string as its second argument");
 
-        const auto & default_kind = default_literal->value.get<const String &>();
-        if (default_kind == NAME_NULL)
-            is_nullable = true;
-        else if (default_kind != NAME_DEFAULT)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected type of default value '{}'. Should be {} or {}",
-                default_kind, NAME_DEFAULT, NAME_NULL);
+    if (const auto * func = schema_argument->as<ASTFunction>())
+    {
+        if (func->name != "Nullable" || func->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "Expected 'Nullable(<schema_name>)' as parameter for type Object", func->name);
+
+        schema_argument = func->arguments->children[0];
+        is_nullable = true;
     }
 
-    return std::make_shared<DataTypeObject>(literal->value.get<const String>(), is_nullable);
+    const auto * literal = schema_argument->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            "Object data type family must have a const string as its schema name parameter");
+
+    return std::make_shared<DataTypeObject>(literal->value.get<const String &>(), is_nullable);
 }
 
 void registerDataTypeObject(DataTypeFactory & factory)
