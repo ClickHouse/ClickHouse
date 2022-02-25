@@ -425,7 +425,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     -   `status` — use with `static` type, response status code.
 
-    -   `content_type` — use with `static` type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
