@@ -571,7 +571,7 @@ Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short
 
 **13.** Passing arguments.
 
-Pass complex values by reference (including `std::string`).
+Pass complex values by value if they are going to be moved and use std::move; pass by reference if you want to update value in a loop.
 
 If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
 
@@ -581,7 +581,7 @@ In most cases, just use `return`. Do not write `return std::move(res)`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
-In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
+In rare cases (updating a value in a loop) you might need to return the value via an argument. In this case, the argument should be a reference.
 
 ``` cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
