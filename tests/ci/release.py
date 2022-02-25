@@ -394,6 +394,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--commit",
+        required=True,
+        type=commit,
+        help="commit create a release",
+    )
+    parser.add_argument(
         "--repo",
         default="ClickHouse/ClickHouse",
         help="repository to create the release",
@@ -412,12 +418,6 @@ def parse_args() -> argparse.Namespace:
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
         help="a release type, new branch is created only for 'major' and 'minor'",
-    )
-    parser.add_argument(
-        "--commit",
-        default=git.sha,
-        type=commit,
-        help="commit create a release, default to HEAD",
     )
     parser.add_argument("--with-prestable", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
