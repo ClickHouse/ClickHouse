@@ -293,10 +293,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
     , log(&Poco::Logger::get(name))
     , default_settings(server.context()->getSettingsRef())
+    , content_type_override(content_type_override_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -819,9 +820,9 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.setContentType(content_type);
+            response.setContentType(content_type_override.value_or(content_type));
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
@@ -991,8 +992,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
-    : HTTPHandler(server_, "DynamicQueryHandler"), param_name(param_name_)
+DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
+    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
 {
 }
 
@@ -1052,8 +1053,9 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const NameSet & receive_params_,
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server_, "PredefinedQueryHandler")
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+    const std::optional<String> & content_type_override_)
+    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -1123,6 +1125,11 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+
+    std::optional<String> content_type_override;
+    if (server.config().has(config_prefix + ".handler.content_type"))
+        content_type_override = server.config().getString(config_prefix + ".handler.content_type");
+
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
 
     factory->addFiltersFromConfig(server.config(), config_prefix);
@@ -1180,6 +1187,10 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
+    std::optional<String> content_type_override;
+    if (configuration.has(config_prefix + ".handler.content_type"))
+        content_type_override = configuration.getString(config_prefix + ".handler.content_type");
+
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
     if (configuration.has(config_prefix + ".url"))
@@ -1197,14 +1208,20 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
                 std::move(analyze_receive_params),
                 std::move(predefined_query),
                 std::move(regex),
-                std::move(headers_name_with_regex));
+                std::move(headers_name_with_regex),
+                std::move(content_type_override));
             factory->addFiltersFromConfig(configuration, config_prefix);
             return factory;
         }
     }
 
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex));
+        server,
+        std::move(analyze_receive_params),
+        std::move(predefined_query),
+        CompiledRegexPtr{},
+        std::move(headers_name_with_regex),
+        std::move(content_type_override));
     factory->addFiltersFromConfig(configuration, config_prefix);
 
     return factory;
