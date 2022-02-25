@@ -143,7 +143,6 @@ ActionsDAGPtr createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    const NamesAndTypesList & required_columns,
     ContextPtr context)
 {
     if (!expr_list)
@@ -154,12 +153,6 @@ ActionsDAGPtr createExpressions(
     auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
     dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
-
-    if (save_unneeded_columns)
-    {
-        dag->removeUnusedActions(required_columns.getNames());
-        dag->addMaterializingOutputActions();
-    }
 
     return dag;
 }
@@ -172,7 +165,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
+    if (auto dag = createExpressions(block, conversion_expr_list, true, context))
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
@@ -191,7 +184,7 @@ ActionsDAGPtr evaluateMissingDefaults(
         return nullptr;
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressions(header, expr_list, save_unneeded_columns, required_columns, context);
+    return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
 static bool arrayHasNoElementsRead(const IColumn & column)

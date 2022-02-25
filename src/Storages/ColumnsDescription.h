@@ -35,9 +35,10 @@ struct GetColumnsOptions
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
+        Ephemeral = 8,
 
         AllPhysical = Ordinary | Materialized,
-        All = AllPhysical | Aliases,
+        All = AllPhysical | Aliases | Ephemeral,
     };
 
     GetColumnsOptions(Kind kind_) : kind(kind_) {}
@@ -121,9 +122,11 @@ public:
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
+    NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
     NamesAndTypesList getAliases() const;
+    NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
-    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
+    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
     NamesAndTypesList getSubcolumns(const String & name_in_storage) const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;

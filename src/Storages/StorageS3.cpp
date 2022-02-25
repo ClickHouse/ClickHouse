@@ -302,40 +302,42 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
-    if (!reader)
-        return {};
-
-    Chunk chunk;
-    if (reader->pull(chunk))
+    while (true)
     {
-        UInt64 num_rows = chunk.getNumRows();
+        if (!reader || isCancelled())
+            break;
 
-        if (with_path_column)
-            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                .createColumnConst(num_rows, file_path)
-                                ->convertToFullColumnIfConst());
-        if (with_file_column)
+        Chunk chunk;
+        if (reader->pull(chunk))
         {
-            size_t last_slash_pos = file_path.find_last_of('/');
-            chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
-                                ->convertToFullColumnIfConst());
+            UInt64 num_rows = chunk.getNumRows();
+
+            if (with_path_column)
+                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                    .createColumnConst(num_rows, file_path)
+                                    ->convertToFullColumnIfConst());
+            if (with_file_column)
+            {
+                size_t last_slash_pos = file_path.find_last_of('/');
+                chunk.addColumn(DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                    .createColumnConst(num_rows, file_path.substr(last_slash_pos + 1))
+                                    ->convertToFullColumnIfConst());
+            }
+
+            return chunk;
         }
 
-        return chunk;
+        {
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
+
+            if (!initialize())
+                break;
+        }
     }
-
-    {
-        std::lock_guard lock(reader_mutex);
-        reader.reset();
-        pipeline.reset();
-        read_buf.reset();
-
-        if (!initialize())
-            return {};
-    }
-
-    return generate();
+    return {};
 }
 
 static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
@@ -886,23 +888,44 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     ContextPtr ctx)
 {
     std::vector<String> keys = {client_auth.uri.key};
-    auto read_buffer_creator = [&]()
+    auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
+
+    std::string current_key;
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    do
     {
-        auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
-        String current_key = (*file_iterator)();
-        if (current_key.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-                "table structure manually",
-                format);
+        current_key = (*file_iterator)();
+        auto read_buffer_creator = [&]()
+        {
+            read_buffer_creator_was_used = true;
+            if (current_key.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
+                    "table structure manually",
+                    format);
 
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromS3>(client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
-            chooseCompressionMethod(current_key, compression_method));
-    };
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromS3>(
+                    client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
+                chooseCompressionMethod(current_key, compression_method));
+        };
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_creator, ctx);
+        try
+        {
+            return readSchemaFromFormat(format, format_settings, read_buffer_creator, ctx);
+        }
+        catch (...)
+        {
+            if (!is_key_with_globs || !read_buffer_creator_was_used)
+                throw;
+
+            exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    } while (!current_key.empty());
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from s3 files failed. Errors:\n{}", exception_messages);
 }
 
 

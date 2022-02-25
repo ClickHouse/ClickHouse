@@ -95,8 +95,9 @@ StorageFileLog::StorageFileLog(
 void StorageFileLog::loadMetaFiles(bool attach)
 {
     const auto & storage = getStorageID();
+    /// FIXME Why do we need separate directory? Why not to use data directory?
     root_meta_path
-        = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
+        = std::filesystem::path(getContext()->getPath()) / "stream_engines/filelog/" / DatabaseCatalog::getPathForUUID(storage.uuid);
 
     /// Attach table
     if (attach)

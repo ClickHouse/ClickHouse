@@ -436,6 +436,7 @@ struct ColumnWithTypeAndDimensions
 using SubcolumnsTreeWithTypes = SubcolumnsTree<ColumnWithTypeAndDimensions>;
 using Node = SubcolumnsTreeWithTypes::Node;
 
+/// Creates data type and column from tree of subcolumns.
 ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
 {
     auto collect_tuple_elemets = [](const auto & children)
@@ -468,6 +469,12 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
 
         Columns offsets_columns;
         offsets_columns.reserve(tuple_columns[0].array_dimensions + 1);
+
+        /// If we have a Nested node and child node with anonymous array levels
+        /// we need to push a Nested type through all array levels.
+        /// Example: { "k1": [[{"k2": 1, "k3": 2}] } should be parsed as
+        /// `k1 Array(Nested(k2 Int, k3 Int))` and k1 is marked as Nested
+        /// and `k2` and `k3` has anonymous_array_level = 1 in that case.
 
         const auto & current_array = assert_cast<const ColumnArray &>(*node->data.column);
         offsets_columns.push_back(current_array.getOffsetsPtr());

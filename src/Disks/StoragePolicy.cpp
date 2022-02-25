@@ -179,7 +179,7 @@ DiskPtr StoragePolicy::getAnyDisk() const
 }
 
 
-DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const
+DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
         for (auto && disk : volume->getDisks())
@@ -265,11 +265,11 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 }
 
 
-VolumePtr StoragePolicy::getVolumeByName(const String & volume_name) const
+VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 {
     auto it = volume_index_by_volume_name.find(volume_name);
     if (it == volume_index_by_volume_name.end())
-        throw Exception("No such volume " + backQuote(volume_name) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
+        return nullptr;
     return getVolume(it->second);
 }
 
