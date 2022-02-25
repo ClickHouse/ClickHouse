@@ -490,7 +490,7 @@ if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-`Do not use assert`.
+You can use assert to check invariants in code.
 
 **4.** Exception types.
 
