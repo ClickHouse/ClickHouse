@@ -536,3 +536,6 @@ DB::Block & dbms::LocalExecutor::getHeader()
 dbms::LocalExecutor::LocalExecutor(dbms::QueryContext & _query_context):query_context(_query_context)
 {
 }
+dbms::LocalExecutor::LocalExecutor()
+{
+}

@@ -146,7 +146,10 @@ struct SparkBuffer
 class LocalExecutor
 {
 public:
-    LocalExecutor(QueryContext& _query_context);
+
+    LocalExecutor();
+
+    explicit LocalExecutor(QueryContext& _query_context);
     void execute(QueryPlanPtr query_plan);
     local_engine::SparkRowInfoPtr next();
     bool hasNext();
