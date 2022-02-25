@@ -120,6 +120,11 @@ public:
         return emplaceImpl(milliseconds, x);
     }
 
+    [[nodiscard]] bool tryPush(T && x, UInt64 milliseconds = 0)
+    {
+        return emplaceImpl(milliseconds, std::move(x));
+    }
+
     /// Returns false if queue is finished or object was not emplaced during timeout
     template <typename... Args>
     [[nodiscard]] bool tryEmplace(UInt64 milliseconds, Args &&... args)
