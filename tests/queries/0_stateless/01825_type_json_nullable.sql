@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS t_json_null;
 
-CREATE TABLE t_json_null(id UInt64, data Object('JSON', 'Null'))
+CREATE TABLE t_json_null(id UInt64, data Object(Nullable('JSON')))
 ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_json_null FORMAT JSONEachRow {"id": 1, "data": {"k1": 1, "k2" : 2}} {"id": 2, "data": {"k2": 3, "k3" : 4}};
