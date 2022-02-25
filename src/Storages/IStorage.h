@@ -610,10 +610,6 @@ public:
         return getStorageSnapshot(metadata_snapshot);
     }
 
-    /// Should table->drop be called at once or with delay (in case of atomic database engine).
-    /// Needed for integration engines, when there must be no delay for calling drop() method.
-    virtual bool dropTableImmediately() { return false; }
-
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
