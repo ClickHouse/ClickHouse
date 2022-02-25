@@ -1,7 +1,11 @@
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#if defined(OS_FREEBSD)
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <cassert>
@@ -17,6 +21,8 @@
 
 namespace DB
 {
+
+#if defined(OS_LINUX)
 
 namespace ErrorCodes
 {
@@ -102,6 +108,54 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 
     return data;
 }
+
+#endif
+
+#if defined(OS_FREEBSD)
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_SYSCTL;
+    extern const int KERNEL_STRUCTURE_SIZE_MISMATCH;
+}
+
+MemoryStatisticsOS::MemoryStatisticsOS()
+{
+    pagesize = ::getpagesize();
+    self = ::getpid();
+}
+
+MemoryStatisticsOS::~MemoryStatisticsOS()
+{
+}
+
+MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
+{
+    Data data;
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, self };
+    struct kinfo_proc kp;
+    size_t len = sizeof(struct kinfo_proc);
+
+    if (-1 == ::sysctl(mib, 4, &kp, &len, NULL, 0))
+        throwFromErrno("Cannot sysctl(kern.proc.pid." + std::to_string(self) + ")", ErrorCodes::CANNOT_SYSCTL);
+
+    if (sizeof(struct kinfo_proc) != len)
+        throw DB::Exception(DB::ErrorCodes::KERNEL_STRUCTURE_SIZE_MISMATCH, "Kernel returns structure of {} bytes instead of expected {}",
+            len, sizeof(struct kinfo_proc));
+
+    if (sizeof(struct kinfo_proc) != kp.ki_structsize)
+        throw DB::Exception(DB::ErrorCodes::KERNEL_STRUCTURE_SIZE_MISMATCH, "Kernel stucture size ({}) does not match expected ({}).",
+            kp.ki_structsize, sizeof(struct kinfo_proc));
+
+    data.virt = kp.ki_size;
+    data.resident = kp.ki_rssize * pagesize;
+    data.code = kp.ki_tsize * pagesize;
+    data.data_and_stack = (kp.ki_dsize + kp.ki_ssize) * pagesize;
+
+    return data;
+}
+
+#endif
 
 }
 
