@@ -84,19 +84,19 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
     registerAllFunctions();
-
+    dbms::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
+    dbms::SerializedPlanParser::global_context = Context::createGlobal(dbms::SerializedPlanParser::shared_context.get());
+    dbms::SerializedPlanParser::global_context->makeGlobalContext();
+    dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
+    dbms::SerializedPlanParser::global_context->setPath("/");
 }
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
 {
-    if (!dbms::SerializedPlanParser::global_context)
-    {
-        dbms::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
-        dbms::SerializedPlanParser::local_server = std::make_unique<DB::LocalServer>();
-        dbms::SerializedPlanParser::global_context = Context::createGlobal(dbms::SerializedPlanParser::shared_context.get());
-        dbms::SerializedPlanParser::global_context->makeGlobalContext();
-        dbms::SerializedPlanParser::global_context->setPath("/");
-    }
+//    if (!dbms::SerializedPlanParser::global_context)
+//    {
+//
+//    }
     jsize plan_size = env->GetArrayLength(plan);
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;
@@ -114,6 +114,7 @@ jboolean Java_com_intel_oap_row_RowIterator_nativeHasNext(JNIEnv * env, jobject 
 {
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     return executor->hasNext();
+//    return false;
 }
 
 jobject Java_com_intel_oap_row_RowIterator_nativeNext(JNIEnv * env, jobject obj, jlong executor_address)

@@ -14,7 +14,6 @@
 #include <arrow/ipc/writer.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Storages/CustomStorageMergeTree.h>
-#include <local/LocalServer.h>
 #include "CHColumnToSparkRow.h"
 
 namespace DB
@@ -91,7 +90,7 @@ public:
     DB::DataTypePtr parseType(const substrait::Type& type);
 
     static ContextMutablePtr global_context;
-    static std::unique_ptr<DB::LocalServer> local_server;
+    static Context::ConfigurationPtr config;
     static SharedContextHolder shared_context;
     QueryContext query_context;
 

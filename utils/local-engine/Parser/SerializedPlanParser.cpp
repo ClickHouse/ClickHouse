@@ -26,6 +26,8 @@
 #include <Storages/MergeTreeTool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/CustomStorageMergeTree.h>
+#include <Poco/Util/MapConfiguration.h>
+
 
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
@@ -423,7 +425,7 @@ dbms::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context)
 }
 dbms::ContextMutablePtr dbms::SerializedPlanParser::global_context = nullptr;
 
-std::unique_ptr<DB::LocalServer> dbms::SerializedPlanParser::local_server = nullptr;
+Context::ConfigurationPtr dbms::SerializedPlanParser::config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
 SharedContextHolder dbms::SerializedPlanParser::shared_context;
 
