@@ -4,10 +4,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <settings>
-        <max_size_to_preallocate_for_aggregation>1000000000</max_size_to_preallocate_for_aggregation>
-    </settings>
-
     <query>SELECT number FROM numbers(5000000) GROUP BY number FORMAT Null</query>
     <query>SELECT number FROM numbers(10000000) GROUP BY number FORMAT Null</query>
     <query short="1">SELECT number FROM numbers_mt(500000) GROUP BY number FORMAT Null</query>
