@@ -11,7 +11,6 @@ from version_helper import (
     FILE_WITH_VERSION_PATH,
     ClickHouseVersion,
     VersionType,
-    git,
     get_abs_path,
     get_version_from_repo,
     update_cmake_version,
