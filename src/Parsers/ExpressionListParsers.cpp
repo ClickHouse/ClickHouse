@@ -21,9 +21,6 @@
 
 using namespace std::literals;
 
-#include <stack>
-#include <unordered_map>
-#include <string_view>
 
 namespace DB
 {
@@ -739,8 +736,6 @@ bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (ParserLiteral().parse(pos, node, expected))
             return true;
-
-        pos = begin;
     }
     return false;
 }
@@ -815,7 +810,7 @@ enum Action
 bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     static std::vector<std::pair<const char *, Operator>> op_table({
-        {"+",             Operator("plus", 20, 2)},            // Base arithmetics
+        {"+",             Operator("plus", 20, 2)},            // Base arithmetic
         {"-",             Operator("minus", 20, 2)},
         {"*",             Operator("multiply", 30, 2)},
         {"/",             Operator("divide", 30, 2)},
@@ -854,7 +849,9 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCompoundIdentifier identifier_parser;
     ParserNumber number_parser;
     ParserAsterisk asterisk_parser;
-    ParserStringLiteral literal_parser;
+    ParserLiteral literal_parser;
+    ParserTupleOfLiterals tuple_literal_parser;
+    ParserArrayOfLiterals array_literal_parser;
 
     Action next = Action::OPERAND;
 
@@ -888,23 +885,35 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage.back().pushOperator(cur_op->second);
             }
             else if (ParseDateOperatorExpression(pos, tmp, expected) ||
-                     ParseTimestampOperatorExpression(pos, tmp, expected))
+                     ParseTimestampOperatorExpression(pos, tmp, expected) ||
+                     tuple_literal_parser.parse(pos, tmp, expected) ||
+                     array_literal_parser.parse(pos, tmp, expected) ||
+                     number_parser.parse(pos, tmp, expected) ||
+                     literal_parser.parse(pos, tmp, expected))
             {
                 storage.back().pushOperand(std::move(tmp));
             }
             else if (identifier_parser.parse(pos, tmp, expected) ||
-                     number_parser.parse(pos, tmp, expected) ||
-                     asterisk_parser.parse(pos, tmp, expected) ||
-                     literal_parser.parse(pos, tmp, expected))
+                     asterisk_parser.parse(pos, tmp, expected))
             {
                 /// If the next token is '(' then it is a plain function, '[' - arrayElement function
 
                 if (pos->type == TokenType::OpeningRoundBracket)
                 {
-                    next = Action::OPERAND;
-
-                    storage.emplace_back(TokenType::ClosingRoundBracket, getIdentifierName(tmp));
                     ++pos;
+
+                    /// Special case for function with zero arguments: f()
+                    if (pos->type == TokenType::ClosingRoundBracket)
+                    {
+                        ++pos;
+                        auto function = makeASTFunction(getIdentifierName(tmp));
+                        storage.back().pushOperand(function);
+                    }
+                    else
+                    {
+                        next = Action::OPERAND;
+                        storage.emplace_back(TokenType::ClosingRoundBracket, getIdentifierName(tmp));
+                    }
                 }
                 else if (pos->type == TokenType::OpeningSquareBracket)
                 {
@@ -928,9 +937,20 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (pos->type == TokenType::OpeningSquareBracket)
             {
-                next = Action::OPERAND;
-                storage.emplace_back(TokenType::ClosingSquareBracket, "array");
                 ++pos;
+
+                /// Special case for empty array: []
+                if (pos->type == TokenType::ClosingSquareBracket)
+                {
+                    ++pos;
+                    auto function = makeASTFunction("array");
+                    storage.back().pushOperand(function);
+                }
+                else
+                {
+                    next = Action::OPERAND;
+                    storage.emplace_back(TokenType::ClosingSquareBracket, "array");
+                }
             }
             else
             {
