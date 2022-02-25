@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
+#include "Common/Exception.h"
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -97,10 +98,15 @@ public:
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             if (seconds > 3.0)   /// The choice is arbitrary
-                throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
+                throw Exception(ErrorCodes::TOO_SLOW,
+                    "The maximum sleep time is 3 seconds. Requested: {}", seconds);
 
             UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
             UInt64 microseconds = seconds * count * 1e6;
+            if (microseconds > 3e6)
+                throw Exception(ErrorCodes::TOO_SLOW,
+                    "The maximum sleep time is 3 seconds. Requested: {} microseconds per block (of size {})",
+                    microseconds, size);
             sleepForMicroseconds(microseconds);
             ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
             ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
