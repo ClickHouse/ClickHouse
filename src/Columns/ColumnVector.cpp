@@ -107,7 +107,7 @@ struct ColumnVector<T>::less_stable
     less_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(lhs == rhs))
+        if (unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
         return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint);
@@ -131,7 +131,7 @@ struct ColumnVector<T>::greater_stable
     greater_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if (unlikely(lhs == rhs))
+        if (unlikely(parent.data[lhs] == parent.data[rhs]))
             return lhs < rhs;
 
         return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint);
