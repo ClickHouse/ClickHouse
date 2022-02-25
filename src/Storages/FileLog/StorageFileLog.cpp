@@ -222,12 +222,12 @@ void StorageFileLog::serialize() const
         }
         else
         {
-            checkOffsetIsValid(full_name, meta.last_writen_position);
+            checkOffsetIsValid(full_name, meta.last_written_position);
         }
         WriteBufferFromFile out(full_name);
         writeIntText(inode, out);
         writeChar('\n', out);
-        writeIntText(meta.last_writen_position, out);
+        writeIntText(meta.last_written_position, out);
     }
 }
 
@@ -244,12 +244,12 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
     }
     else
     {
-        checkOffsetIsValid(full_name, file_meta.last_writen_position);
+        checkOffsetIsValid(full_name, file_meta.last_written_position);
     }
     WriteBufferFromFile out(full_name);
     writeIntText(inode, out);
     writeChar('\n', out);
-    writeIntText(file_meta.last_writen_position, out);
+    writeIntText(file_meta.last_written_position, out);
 }
 
 void StorageFileLog::deserialize()
@@ -284,7 +284,7 @@ void StorageFileLog::deserialize()
         }
 
         meta.file_name = dir_entry.path().filename();
-        meta.last_writen_position = last_written_pos;
+        meta.last_written_position = last_written_pos;
 
         file_infos.meta_by_inode.emplace(inode, meta);
     }
@@ -435,7 +435,17 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE)
         {
-            file_ctx.reader.emplace(getFullDataPath(file));
+            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+
+            auto current_path = getFullDataPath(file);
+            if (!std::filesystem::exists(file) && meta.last_written_position != 0)
+            {
+                file_ctx.status = FileStatus::REMOVED;
+                continue;
+            }
+
+            file_ctx.reader.emplace(current_path);
+
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
@@ -445,23 +455,24 @@ void StorageFileLog::openFilesAndSetPos()
             auto file_end = reader.tellg();
             assertStreamGood(reader);
 
-            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
-            if (meta.last_writen_position > static_cast<UInt64>(file_end))
+            if (meta.last_written_position > static_cast<UInt64>(file_end))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
                     "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
-                    meta.last_writen_position,
+                    meta.last_written_position,
                     file_end);
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
 
-            reader.seekg(meta.last_writen_position);
+            reader.seekg(meta.last_written_position);
             assertStreamGood(reader);
         }
     }
+
+    removeInvalidFiles();
     serialize();
 }
 
@@ -927,6 +938,18 @@ bool StorageFileLog::updateFileInfos()
             }
         }
     }
+
+    removeInvalidFiles();
+
+    /// These file infos should always have same size(one for one)
+    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+
+    return events.empty() || file_infos.file_names.empty();
+}
+
+void StorageFileLog::removeInvalidFiles()
+{
     std::vector<String> valid_files;
 
     /// Remove file infos with REMOVE status
@@ -956,12 +979,6 @@ bool StorageFileLog::updateFileInfos()
         }
     }
     file_infos.file_names.swap(valid_files);
-
-    /// These file infos should always have same size(one for one)
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-
-    return events.empty() || file_infos.file_names.empty();
 }
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
