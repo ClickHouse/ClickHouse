@@ -120,7 +120,7 @@ namespace ErrorCodes
 
 MemoryStatisticsOS::MemoryStatisticsOS()
 {
-    pagesize = ::getpagesize();
+    pagesize = static_cast<size_t>(::getPageSize());
     self = ::getpid();
 }
 
@@ -143,7 +143,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
             len, sizeof(struct kinfo_proc));
 
     if (sizeof(struct kinfo_proc) != kp.ki_structsize)
-        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Kernel stucture size ({}) does not match expected ({}).",
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Kernel structure size ({}) does not match expected ({}).",
             kp.ki_structsize, sizeof(struct kinfo_proc));
 
     data.virt = kp.ki_size;
