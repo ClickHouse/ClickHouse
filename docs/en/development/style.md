@@ -322,7 +322,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` are named the same way as classes, or with `_t` on the end.
+**4.** `using` are named the same way as classes.
 
 **5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
 
