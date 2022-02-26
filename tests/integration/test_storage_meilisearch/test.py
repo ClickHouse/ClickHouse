@@ -18,6 +18,7 @@ def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         node = cluster.add_instance('meili',
+                                    main_configs=['configs/named_collection.xml'],
                                     with_meili=True)
         cluster.start()
         yield cluster
@@ -402,7 +403,58 @@ def test_types(started_cluster):
     node.query("DROP TABLE types_table")
     table.delete()    
 
-    
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_named_collection(started_cluster):
+    client = get_meili_client(started_cluster)
+    table = client.index("new_table")
+    data = []
+    for i in range(0, 100):
+        data.append({'id': i, 'data': hex(i * i)})
+
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+    node.query(
+        "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili )")
+
+    assert node.query("SELECT COUNT() FROM simple_meili_table") == '100\n'
+    assert node.query("SELECT sum(id) FROM simple_meili_table") == str(sum(range(0, 100))) + '\n'
+
+    assert node.query("SELECT data FROM simple_meili_table WHERE id = 42") == hex(42 * 42) + '\n'
+    node.query("DROP TABLE simple_meili_table")
+    table.delete()    
 
 
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_named_collection_secure(started_cluster):
+    client = get_meili_secure_client(started_cluster)
+    table = client.index("new_table")
+    data = []
+    for i in range(0, 100):
+        data.append({'id': i, 'data': hex(i * i)})
 
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+    node.query(
+        "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure, key='password')")
+
+    node.query(
+        "CREATE TABLE wrong_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure )")
+
+    assert node.query("SELECT COUNT() FROM simple_meili_table") == '100\n'
+    assert node.query("SELECT sum(id) FROM simple_meili_table") == str(sum(range(0, 100))) + '\n'
+    assert node.query("SELECT data FROM simple_meili_table WHERE id = 42") == hex(42 * 42) + '\n'
+
+    error = node.query_and_get_error("SELECT COUNT() FROM wrong_meili_table")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    error = node.query_and_get_error("SELECT sum(id) FROM wrong_meili_table")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    error = node.query_and_get_error("SELECT data FROM wrong_meili_table WHERE id = 42")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    node.query("DROP TABLE simple_meili_table")
+    node.query("DROP TABLE wrong_meili_table")
+    table.delete()

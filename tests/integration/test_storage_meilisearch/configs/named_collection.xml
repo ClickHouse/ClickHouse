@@ -1,0 +1,16 @@
+<clickhouse>
+  <named_collections>
+    <named_collection_for_meili>
+        <database>MeiliSearch</database>
+        <addresses_expr>meili1:7700</addresses_expr> 
+        <table>new_table</table>
+    </named_collection_for_meili>
+
+
+    <named_collection_for_meili_secure>
+        <database>MeiliSearch</database>
+        <addresses_expr>meili_secure:7700</addresses_expr> 
+        <table>new_table</table>
+    </named_collection_for_meili_secure>
+  </named_collections>
+</clickhouse>
