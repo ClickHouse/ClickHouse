@@ -14,7 +14,7 @@ ${CLICKHOUSE_CLIENT} --query="select * from orc_load FORMAT ORC" > $DATA_FILE
 ${CLICKHOUSE_CLIENT} --query="truncate table orc_load"
 
 cat "$DATA_FILE"  | ${CLICKHOUSE_CLIENT} -q "insert into orc_load format ORC"
-timeout 3 ${CLICKHOUSE_CLIENT} -q "insert into orc_load format ORC" < $DATA_FILE
+clickhouse_client_timeout 3 ${CLICKHOUSE_CLIENT} -q "insert into orc_load format ORC" < $DATA_FILE
 ${CLICKHOUSE_CLIENT} --query="select * from orc_load"
 ${CLICKHOUSE_CLIENT} --query="drop table orc_load"
 rm -rf "$DATA_FILE"
