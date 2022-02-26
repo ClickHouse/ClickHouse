@@ -23,7 +23,7 @@ select 'right subs';
 select s.*, j.* from (select * from X) as s right join (select * from Y) as j using id order by s.id, j.id, s.x_name, j.y_name;
 
 select 'full';
-select X.*, Y.* from X full join Y using id order by X.id, Y.id;
+select X.*, Y.* from X full join Y using id order by X.id, Y.id, X.x_name, Y.y_name;
 select 'full subs';
 select s.*, j.* from (select * from X) as s full join (select * from Y) as j using id order by s.id, j.id, s.x_name, j.y_name;
 

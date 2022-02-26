@@ -141,9 +141,6 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
 
-    if (table->dropTableImmediately())
-        table->drop();
-
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
