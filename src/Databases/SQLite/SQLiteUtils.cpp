@@ -49,7 +49,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         return nullptr;
 
     if (!fs::exists(database_path))
-        LOG_WARNING(&Poco::Logger::get("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
+        LOG_DEBUG(&Poco::Logger::get("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
