@@ -1,37 +1,37 @@
 ---
-title: How do I export data from ClickHouse to a file?
+title: 如何从 ClickHouse 导出数据到一个文件?
 toc_hidden: true
 toc_priority: 10
 ---
 
-# How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
+# 如何从 ClickHouse 导出数据到一个文件? {#how-to-export-to-file}
 
-## Using INTO OUTFILE Clause {#using-into-outfile-clause}
+## 使用 INTO OUTFILE 语法 {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../../sql-reference/statements/select/into-outfile.md#into-outfile-clause) clause to your query.
+加一个 [INTO OUTFILE](../../sql-reference/statements/select/into-outfile.md#into-outfile-clause) 语法到你的查询语句中.
 
-For example:
+例如:
 
 ``` sql
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-By default, ClickHouse uses the [TabSeparated](../../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../../interfaces/formats.md), use the [FORMAT clause](../../sql-reference/statements/select/format.md#format-clause).
+ClickHouse 默认使用[TabSeparated](../../interfaces/formats.md#tabseparated) 格式写入数据. 修改[数据格式](../../interfaces/formats.md), 请用 [FORMAT 语法](../../sql-reference/statements/select/format.md#format-clause).
 
-For example:
+例如:
 
 ``` sql
 SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ```
 
-## Using a File-Engine Table {#using-a-file-engine-table}
+## 使用一个文件引擎表 {#using-a-file-engine-table}
 
-See [File](../../engines/table-engines/special/file.md) table engine.
+查看 [File](../../engines/table-engines/special/file.md) 表引擎.
 
-## Using Command-Line Redirection {#using-command-line-redirection}
+## 使用命令行重定向 {#using-command-line-redirection}
 
 ``` bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
-See [clickhouse-client](../../interfaces/cli.md).
+查看 [clickhouse-client](../../interfaces/cli.md).
