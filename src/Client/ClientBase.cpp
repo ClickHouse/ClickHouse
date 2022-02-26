@@ -702,7 +702,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    bool cancelled = false;
     QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
@@ -773,7 +772,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 /// Receive a part of the result, or progress info or an exception and process it.
 /// Returns true if one should continue receiving packets.
 /// Output of result is suppressed if query was cancelled.
-bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
+bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 {
     Packet packet = connection->receivePacket();
 
@@ -783,7 +782,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Data:
-            if (!cancelled)
+            if (!cancelled_)
                 onData(packet.block, parsed_query);
             return true;
 
@@ -796,12 +795,12 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Totals:
-            if (!cancelled)
+            if (!cancelled_)
                 onTotals(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Extremes:
-            if (!cancelled)
+            if (!cancelled_)
                 onExtremes(packet.block, parsed_query);
             return true;
 
@@ -1265,6 +1264,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 {
     resetOutput();
     have_error = false;
+    cancelled = false;
     client_exception.reset();
     server_exception.reset();
 
@@ -1392,6 +1392,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
     std::optional<Exception> & current_exception)
 {
+    if (!is_interactive && cancelled)
+        return MultiQueryProcessingStage::QUERIES_END;
+
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
