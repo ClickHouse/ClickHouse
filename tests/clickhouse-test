@@ -404,7 +404,7 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
+        testcase_args.testcase_client = f"{testcase_args.client} --log_comment '{testcase_basename}'"
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
