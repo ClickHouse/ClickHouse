@@ -23,7 +23,7 @@ public:
     {
     }
 
-    virtual ~WritingToCacheWriteBuffer() override
+    ~WritingToCacheWriteBuffer() override
     {
         try
         {
@@ -274,6 +274,7 @@ void DiskCacheWrapper::removeDirectory(const String & path)
 {
     if (cache_disk->exists(path))
         cache_disk->removeDirectory(path);
+
     DiskDecorator::removeDirectory(path);
 }
 
@@ -296,6 +297,18 @@ void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
     if (cache_disk->exists(path))
         cache_disk->removeSharedRecursive(path, keep_s3);
     DiskDecorator::removeSharedRecursive(path, keep_s3);
+}
+
+
+void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3)
+{
+    for (const auto & file : files)
+    {
+        if (cache_disk->exists(file.path))
+            cache_disk->removeSharedFile(file.path, keep_s3);
+    }
+
+    DiskDecorator::removeSharedFiles(files, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

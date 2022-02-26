@@ -1061,7 +1061,6 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                                         "Cannot find column `{}` in source stream, there are only columns: [{}]",
                                         res_elem.name, Block(source).dumpNames());
-
                 }
                 else
                 {
@@ -1080,14 +1079,16 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 if (ignore_constant_values)
                     dst_node = &actions_dag->addColumn(res_elem);
                 else if (res_const->getField() != src_const->getField())
-                    throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
-                                    "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
+                        res_elem.name);
             }
             else
-                throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
-                                "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot convert column `{}` because it is non constant in source stream but must be constant in result",
+                    res_elem.name);
         }
 
         /// Add CAST function to convert into result type if needed.
@@ -1119,10 +1120,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             if (add_casted_columns)
             {
                 if (inputs.contains(dst_node->result_name))
-                    throw Exception("Cannot convert column " + backQuote(res_elem.name) +
-                                    " to "+ backQuote(dst_node->result_name) +
-                                    " because other column have same name",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column `{}` to `{}` because other column have same name",
+                                    res_elem.name, dst_node->result_name);
                 if (new_names)
                     new_names->emplace(res_elem.name, dst_node->result_name);
 

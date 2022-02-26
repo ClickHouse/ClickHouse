@@ -29,6 +29,7 @@
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
 
+struct OvercommitTracker;
 
 namespace DB
 {
@@ -169,7 +170,7 @@ struct SharedContextHolder
     explicit SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
-    SharedContextHolder & operator=(SharedContextHolder &&);
+    SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
     ContextSharedPart * get() const { return shared.get(); }
     void reset();
@@ -656,6 +657,8 @@ public:
     /// List all queries.
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
+
+    OvercommitTracker * getGlobalOvercommitTracker() const;
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
