@@ -129,3 +129,37 @@ function clickhouse_client_removed_host_parameter()
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
+
+function clickhouse_client_timeout()
+{
+    local timeout=$1 && shift
+    timeout -s INT "$timeout" "$@"
+}
+# Helper function to stop the clickhouse-client after SIGINT properly.
+function clickhouse_client_loop_timeout()
+{
+    local timeout=$1 && shift
+
+    local cmd
+    cmd="$(printf '%q ' "$@")"
+
+    timeout -s INT "$timeout" bash -c "trap 'STOP_THE_LOOP=1' INT; while true; do [ ! -v STOP_THE_LOOP ] || break; $cmd; done"
+}
+# wait for queries to be finished
+function clickhouse_test_wait_queries()
+{
+    local timeout=${1:-"600"} && shift
+    local query_id="wait-$CLICKHOUSE_TEST_UNIQUE_NAME"
+    local query="SELECT count() FROM system.processes WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id != '$query_id'"
+    local i=0
+    (( timeout*=2 ))
+    while [[ "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$query_id" --data-binary "$query")" != "0" ]]; do
+        sleep 0.5
+
+        (( ++i ))
+        if [[ $i -gt $timeout ]]; then
+            echo "clickhouse_test_wait_queries: timeout exceeded"
+            exit 1
+        fi
+    done
+}
