@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <base/logger_useful.h>
 
 #include <array>
@@ -22,6 +23,9 @@ NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+
+        {"id", std::make_shared<DataTypeUInt64>()},
+        {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
 
         {"query_id", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -38,6 +42,15 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
+
+    columns[i++]->insert(id);
+    {
+        Array parent_ids_array;
+        parent_ids_array.reserve(parent_ids.size());
+        for (const UInt64 parent : parent_ids)
+            parent_ids_array.emplace_back(parent);
+        columns[i++]->insert(parent_ids_array);
+    }
 
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insertData(processor_name.data(), processor_name.size());

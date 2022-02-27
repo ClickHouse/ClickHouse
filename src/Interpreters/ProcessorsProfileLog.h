@@ -13,8 +13,12 @@ struct ProcessorProfileLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
+    UInt64 id;
+    std::vector<UInt64> parent_ids;
+
     String query_id;
     String processor_name;
+
     /// Milliseconds spend in IProcessor::work()
     UInt32 elapsed_us{};
     /// IProcessor::NeedData
