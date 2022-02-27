@@ -37,7 +37,7 @@ int CertificateReloader::setCertificate(SSL * ssl)
         return -1;
 
     SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
-    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(current->key.operator const EVP_PKEY *()));
+    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
 
     int err = SSL_check_private_key(ssl);
     if (err != 1)
