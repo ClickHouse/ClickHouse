@@ -51,6 +51,7 @@ using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
 using GRPCResult = clickhouse::grpc::Result;
 using GRPCException = clickhouse::grpc::Exception;
 using GRPCProgress = clickhouse::grpc::Progress;
+using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportCompression;
 
 namespace DB
 {
@@ -101,62 +102,6 @@ namespace
         });
     }
 
-    grpc_compression_algorithm parseCompressionAlgorithm(const String & str)
-    {
-        if (str == "none")
-            return GRPC_COMPRESS_NONE;
-        else if (str == "deflate")
-            return GRPC_COMPRESS_DEFLATE;
-        else if (str == "gzip")
-            return GRPC_COMPRESS_GZIP;
-        else if (str == "stream_gzip")
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
-    }
-
-    grpc_compression_level parseCompressionLevel(const String & str)
-    {
-        if (str == "none")
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (str == "low")
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (str == "medium")
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (str == "high")
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
-    }
-
-    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
-    {
-        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
-            return GRPC_COMPRESS_NONE;
-        else if (algorithm == ::clickhouse::grpc::DEFLATE)
-            return GRPC_COMPRESS_DEFLATE;
-        else if (algorithm == ::clickhouse::grpc::GZIP)
-            return GRPC_COMPRESS_GZIP;
-        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
-    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
-    {
-        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
     {
@@ -193,6 +138,102 @@ namespace
         return grpc::InsecureServerCredentials();
     }
 
+    /// Transport compression makes gRPC library to compress packed Result messages before sending them through network.
+    struct TransportCompression
+    {
+        grpc_compression_algorithm algorithm;
+        grpc_compression_level level;
+
+        /// Extracts the settings of transport compression from a query info if possible.
+        static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
+        {
+            TransportCompression res;
+            if (!query_info.transport_compression_type().empty())
+            {
+                res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                res.setLevel(query_info.transport_compression_level(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                return res;
+            }
+
+            if (query_info.has_obsolete_result_compression())
+            {
+                switch (query_info.obsolete_result_compression().algorithm())
+                {
+                    case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
+                    case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
+                    case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
+                    default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
+                }
+
+                switch (query_info.obsolete_result_compression().level())
+                {
+                    case GRPCObsoleteTransportCompression::COMPRESSION_NONE: res.level = GRPC_COMPRESS_LEVEL_NONE; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_LOW: res.level = GRPC_COMPRESS_LEVEL_LOW; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_MEDIUM: res.level = GRPC_COMPRESS_LEVEL_MED; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_HIGH: res.level = GRPC_COMPRESS_LEVEL_HIGH; break;
+                    default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression level: {}", GRPCObsoleteTransportCompression::CompressionLevel_Name(query_info.obsolete_result_compression().level()));
+                }
+                return res;
+            }
+
+            return std::nullopt;
+        }
+
+        /// Extracts the settings of transport compression from the server configuration.
+        static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
+        {
+            TransportCompression res;
+            if (config.has("grpc.transport_compression_type"))
+            {
+                res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+                res.setLevel(config.getInt("grpc.transport_compression_level", 0), ErrorCodes::INVALID_CONFIG_PARAMETER);
+            }
+            else
+            {
+                res.setAlgorithm(config.getString("grpc.compression", "none"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+                res.setLevel(config.getString("grpc.compression_level", "none"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+            }
+            return res;
+        }
+
+    private:
+        void setAlgorithm(const String & str, int error_code)
+        {
+            if (str == "none")
+                algorithm = GRPC_COMPRESS_NONE;
+            else if (str == "deflate")
+                algorithm = GRPC_COMPRESS_DEFLATE;
+            else if (str == "gzip")
+                algorithm = GRPC_COMPRESS_GZIP;
+            else if (str == "stream_gzip")
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
+            else
+                throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
+        }
+
+        void setLevel(const String & str, int error_code)
+        {
+            if (str == "none")
+                level = GRPC_COMPRESS_LEVEL_NONE;
+            else if (str == "low")
+                level = GRPC_COMPRESS_LEVEL_LOW;
+            else if (str == "medium")
+                level = GRPC_COMPRESS_LEVEL_MED;
+            else if (str == "high")
+                level = GRPC_COMPRESS_LEVEL_HIGH;
+            else
+                throw Exception(error_code, "Unknown compression level: '{}'", str);
+        }
+
+        void setLevel(int level_, int error_code)
+        {
+            if (0 <= level_ && level_ < GRPC_COMPRESS_LEVEL_COUNT)
+                level = static_cast<grpc_compression_level>(level_);
+            else
+                throw Exception(error_code, "Compression level {} is out of range 0..{}", level_, GRPC_COMPRESS_LEVEL_COUNT - 1);
+        }
+    };
 
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
@@ -293,15 +334,10 @@ namespace
             return std::nullopt;
         }
 
-        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
+        void setTransportCompression(const TransportCompression & transport_compression)
         {
-            grpc_context.set_compression_algorithm(algorithm);
-            grpc_context.set_compression_level(level);
-        }
-
-        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
-        {
-            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
+            grpc_context.set_compression_algorithm(transport_compression.algorithm);
+            grpc_context.set_compression_level(transport_compression.level);
         }
 
     protected:
@@ -606,6 +642,9 @@ namespace
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
 
+        void addQueryDetailsToResult();
+        void addOutputFormatToResult();
+        void addOutputColumnsNamesAndTypesToResult(const Block & headers);
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
@@ -628,10 +667,12 @@ namespace
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
+        CompressionMethod input_compression_method = CompressionMethod::None;
         PODArray<char> output;
         String output_format;
-        CompressionMethod compression_method = CompressionMethod::None;
-        int compression_level = 0;
+        bool send_output_columns_names_and_types = false;
+        CompressionMethod output_compression_method = CompressionMethod::None;
+        int output_compression_level = 0;
 
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
@@ -815,9 +856,9 @@ namespace
         if (!query_info.database().empty())
             query_context->setCurrentDatabase(query_info.database());
 
-        /// Apply compression settings for this call.
-        if (query_info.has_result_compression())
-            responder->setResultCompression(query_info.result_compression());
+        /// Apply transport compression for this call.
+        if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))
+            responder->setTransportCompression(*transport_compression);
 
         /// The interactive delay will be used to show progress.
         interactive_delay = settings.interactive_delay;
@@ -851,9 +892,19 @@ namespace
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
 
+        send_output_columns_names_and_types = query_info.send_output_columns();
+
         /// Choose compression.
-        compression_method = chooseCompressionMethod("", query_info.compression_type());
-        compression_level = query_info.compression_level();
+        String input_compression_method_str = query_info.input_compression_type();
+        if (input_compression_method_str.empty())
+            input_compression_method_str = query_info.obsolete_compression_type();
+        input_compression_method = chooseCompressionMethod("", input_compression_method_str);
+
+        String output_compression_method_str = query_info.output_compression_type();
+        if (output_compression_method_str.empty())
+            output_compression_method_str = query_info.obsolete_compression_type();
+        output_compression_method = chooseCompressionMethod("", output_compression_method_str);
+        output_compression_level = query_info.output_compression_level();
 
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -984,7 +1035,7 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), compression_method);
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
         auto source = query_context->getInputFormat(
@@ -1105,6 +1156,9 @@ namespace
 
     void Call::generateOutput()
     {
+        /// We add query_id and time_zone to the first result anyway.
+        addQueryDetailsToResult();
+
         if (!io.pipeline.initialized() || io.pipeline.pushing())
             return;
 
@@ -1112,13 +1166,13 @@ namespace
         if (io.pipeline.pulling())
             header = io.pipeline.getHeader();
 
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), compression_method, compression_level);
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1143,6 +1197,9 @@ namespace
                 }
                 return true;
             };
+
+            addOutputFormatToResult();
+            addOutputColumnsNamesAndTypesToResult(header);
 
             Block block;
             while (check_for_cancel())
@@ -1394,6 +1451,29 @@ namespace
         return false;
     }
 
+    void Call::addQueryDetailsToResult()
+    {
+        *result.mutable_query_id() = query_context->getClientInfo().current_query_id;
+        *result.mutable_time_zone() = DateLUT::instance().getTimeZone();
+    }
+
+    void Call::addOutputFormatToResult()
+    {
+        *result.mutable_output_format() = output_format;
+    }
+
+    void Call::addOutputColumnsNamesAndTypesToResult(const Block & header)
+    {
+        if (!send_output_columns_names_and_types)
+            return;
+        for (const auto & column : header)
+        {
+            auto & name_and_type = *result.add_output_columns();
+            *name_and_type.mutable_name() = column.name;
+            *name_and_type.mutable_type() = column.type->getName();
+        }
+    }
+
     void Call::addProgressToResult()
     {
         auto values = progress.fetchAndResetPiecewiseAtomically();
@@ -1414,10 +1494,10 @@ namespace
             return;
 
         PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1432,10 +1512,10 @@ namespace
             return;
 
         PODArray<char> memory;
-        if (compression_method != CompressionMethod::None)
+        if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
@@ -1772,8 +1852,9 @@ void GRPCServer::start()
     builder.RegisterService(&grpc_service);
     builder.SetMaxSendMessageSize(iserver.config().getInt("grpc.max_send_message_size", -1));
     builder.SetMaxReceiveMessageSize(iserver.config().getInt("grpc.max_receive_message_size", -1));
-    builder.SetDefaultCompressionAlgorithm(parseCompressionAlgorithm(iserver.config().getString("grpc.compression", "none")));
-    builder.SetDefaultCompressionLevel(parseCompressionLevel(iserver.config().getString("grpc.compression_level", "none")));
+    auto default_transport_compression = TransportCompression::fromConfiguration(iserver.config());
+    builder.SetDefaultCompressionAlgorithm(default_transport_compression.algorithm);
+    builder.SetDefaultCompressionLevel(default_transport_compression.level);
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();

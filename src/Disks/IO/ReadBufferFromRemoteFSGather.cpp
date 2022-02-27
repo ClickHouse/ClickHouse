@@ -157,6 +157,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (bytes_to_ignore)
     {
         current_buf->ignore(bytes_to_ignore);
+        file_offset_of_buffer_end += bytes_to_ignore;
         bytes_to_ignore = 0;
     }
 
