@@ -877,12 +877,31 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
                         processor_elem.query_id = elem.client_info.current_query_id;
 
+                        auto get_proc_id = [](const IProcessor & proc) -> UInt64
+                        {
+                            return reinterpret_cast<std::uintptr_t>(&proc);
+                        };
+
                         for (const auto & processor : query_pipeline.getProcessors())
                         {
+                            std::vector<UInt64> parents;
+                            for (const auto & port : processor->getOutputs())
+                            {
+                                if (!port.isConnected())
+                                    continue;
+                                const IProcessor & next = port.getInputPort().getProcessor();
+                                parents.push_back(get_proc_id(next));
+                            }
+
+                            processor_elem.id = get_proc_id(*processor);
+                            processor_elem.parent_ids = std::move(parents);
+
                             processor_elem.processor_name = processor->getName();
+
                             processor_elem.elapsed_us = processor->getElapsedUs();
                             processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
                             processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
                             processors_profile_log->add(processor_elem);
                         }
                     }

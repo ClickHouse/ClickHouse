@@ -6,6 +6,8 @@ Columns:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 -   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the event happened.
+-   `id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — ID of processor
+-   `parent_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Parent processors IDs
 -   `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query
 -   `name` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Name of the processor.
 -   `elapsed_us` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of microseconds this processor was executed.
