@@ -18,9 +18,9 @@ struct ProcessorProfileLogElement
     /// Milliseconds spend in IProcessor::work()
     UInt32 elapsed_us{};
     /// IProcessor::NeedData
-    UInt32 need_data_elapsed_us{};
+    UInt32 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt32 port_full_elapsed_us{};
+    UInt32 output_wait_elapsed_us{};
 
     static std::string name() { return "ProcessorsProfileLog"; }
     static NamesAndTypesList getNamesAndTypes();

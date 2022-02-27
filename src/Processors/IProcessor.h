@@ -301,8 +301,8 @@ public:
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
     uint64_t getElapsedUs() const { return elapsed_us; }
-    uint64_t getNeedDataElapsedUs() const { return need_data_elapsed_us; }
-    uint64_t getPortFullElapsedUs() const { return port_full_elapsed_us; }
+    uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
+    uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
 protected:
     virtual void onCancel() {}
@@ -312,8 +312,8 @@ private:
     /// - elapsed_us
     friend class ExecutionThreadContext;
     /// For
-    /// - need_data_elapsed_us
-    /// - port_full_elapsed_us
+    /// - input_wait_elapsed_us
+    /// - output_wait_elapsed_us
     friend class ExecutingGraph;
 
     std::atomic<bool> is_cancelled{false};
@@ -322,10 +322,10 @@ private:
 
     /// For processors_profile_log
     uint64_t elapsed_us = 0;
-    Stopwatch need_data_watch;
-    uint64_t need_data_elapsed_us = 0;
-    Stopwatch port_full_watch;
-    uint64_t port_full_elapsed_us = 0;
+    Stopwatch input_wait_watch;
+    uint64_t input_wait_elapsed_us = 0;
+    Stopwatch output_wait_watch;
+    uint64_t output_wait_elapsed_us = 0;
 
     size_t stream_number = NO_STREAM;
 

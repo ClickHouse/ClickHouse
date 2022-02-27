@@ -26,8 +26,8 @@ NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
         {"query_id", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"elapsed_us", std::make_shared<DataTypeUInt64>()},
-        {"need_data_elapsed_us", std::make_shared<DataTypeUInt64>()},
-        {"port_full_elapsed_us", std::make_shared<DataTypeUInt64>()},
+        {"input_wait_elapsed_us", std::make_shared<DataTypeUInt64>()},
+        {"output_wait_elapsed_us", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -42,8 +42,8 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insertData(processor_name.data(), processor_name.size());
     columns[i++]->insert(elapsed_us);
-    columns[i++]->insert(need_data_elapsed_us);
-    columns[i++]->insert(port_full_elapsed_us);
+    columns[i++]->insert(input_wait_elapsed_us);
+    columns[i++]->insert(output_wait_elapsed_us);
 }
 
 ProcessorsProfileLog::ProcessorsProfileLog(ContextPtr context_, const String & database_name_,
