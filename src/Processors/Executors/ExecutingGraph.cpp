@@ -10,7 +10,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExecutingGraph::ExecutingGraph(Processors & processors_) : processors(processors_)
+ExecutingGraph::ExecutingGraph(Processors & processors_, bool profile_processors_)
+    : processors(processors_)
+    , profile_processors(profile_processors_)
 {
     uint64_t num_processors = processors.size();
     nodes.reserve(num_processors);
@@ -268,24 +270,27 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
 
-                    /// NeedData
-                    if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
+                    if (profile_processors)
                     {
-                        processor.input_wait_watch.restart();
-                    }
-                    else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
-                    {
-                        processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
-                    }
+                        /// NeedData
+                        if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
+                        }
 
-                    /// PortFull
-                    if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
-                    {
-                        processor.output_wait_watch.restart();
-                    }
-                    else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
-                    {
-                        processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
+                        /// PortFull
+                        if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
+                        }
                     }
                 }
                 catch (...)
