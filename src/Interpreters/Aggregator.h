@@ -184,7 +184,9 @@ struct AggregationMethodOneNumber
     AggregationMethodOneNumber() = default;
 
     template <typename Other>
-    AggregationMethodOneNumber(const Other & other) : data(other.data) {}
+    explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
+    {
+    }
 
     /// To use one `Method` in different threads, use different `State`.
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
@@ -219,7 +221,9 @@ struct AggregationMethodString
     AggregationMethodString() = default;
 
     template <typename Other>
-    AggregationMethodString(const Other & other) : data(other.data) {}
+    explicit AggregationMethodString(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
@@ -247,7 +251,9 @@ struct AggregationMethodStringNoCache
     AggregationMethodStringNoCache() = default;
 
     template <typename Other>
-    AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
+    explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
 
@@ -275,7 +281,9 @@ struct AggregationMethodFixedString
     AggregationMethodFixedString() = default;
 
     template <typename Other>
-    AggregationMethodFixedString(const Other & other) : data(other.data) {}
+    explicit AggregationMethodFixedString(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
 
@@ -302,7 +310,9 @@ struct AggregationMethodFixedStringNoCache
     AggregationMethodFixedStringNoCache() = default;
 
     template <typename Other>
-    AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
+    explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
 
@@ -373,7 +383,9 @@ struct AggregationMethodKeysFixed
     AggregationMethodKeysFixed() = default;
 
     template <typename Other>
-    AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
+    explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodKeysFixed<
         typename Data::value_type,
@@ -462,7 +474,9 @@ struct AggregationMethodSerialized
     AggregationMethodSerialized() = default;
 
     template <typename Other>
-    AggregationMethodSerialized(const Other & other) : data(other.data) {}
+    explicit AggregationMethodSerialized(const Other & other) : data(other.data)
+    {
+    }
 
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
@@ -1138,12 +1152,12 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
 
-    static void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataWithoutKey & res,
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena);
+        Arena * arena) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1307,7 +1321,7 @@ private:
         NestedColumnsHolder & nested_columns_holder) const;
 
     void addSingleKeyToAggregateColumns(
-        const AggregatedDataVariants & data_variants,
+        AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
     void addArenasToAggregateColumns(

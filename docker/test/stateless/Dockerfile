@@ -31,7 +31,8 @@ RUN apt-get update -y \
             wget \
             mysql-client=8.0* \
             postgresql-client \
-            sqlite3
+            sqlite3 \
+            awscli
 
 RUN pip3 install numpy scipy pandas Jinja2
 
