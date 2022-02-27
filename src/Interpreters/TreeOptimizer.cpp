@@ -17,6 +17,7 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
+#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -720,6 +721,12 @@ void optimizeFuseQuantileFunctions(ASTPtr & query)
     }
 }
 
+void optimizeOrLikeChain(ASTPtr & query)
+{
+    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor(data).visit(query);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -828,6 +835,14 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_syntax_fuse_functions)
         optimizeFuseQuantileFunctions(query);
+
+    if (settings.optimize_or_like_chain
+        && settings.allow_hyperscan
+        && settings.max_hyperscan_regexp_length == 0
+        && settings.max_hyperscan_regexp_total_length == 0)
+    {
+        optimizeOrLikeChain(query);
+    }
 }
 
 }
