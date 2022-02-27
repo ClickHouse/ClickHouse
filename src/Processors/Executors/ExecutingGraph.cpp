@@ -271,21 +271,21 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                     /// NeedData
                     if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
                     {
-                        processor.need_data_watch.restart();
+                        processor.input_wait_watch.restart();
                     }
                     else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
                     {
-                        processor.need_data_elapsed_us += processor.need_data_watch.elapsedMicroseconds();
+                        processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
                     }
 
                     /// PortFull
                     if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
                     {
-                        processor.port_full_watch.restart();
+                        processor.output_wait_watch.restart();
                     }
                     else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
                     {
-                        processor.port_full_elapsed_us += processor.port_full_watch.elapsedMicroseconds();
+                        processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
                     }
                 }
                 catch (...)

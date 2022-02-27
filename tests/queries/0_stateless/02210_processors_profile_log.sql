@@ -18,10 +18,10 @@ SELECT
         name = 'ExpressionTransform', elapsed_us>1e6,
         -- SourceFromSingleChunk, that feed data to ExpressionTransform,
         -- will feed first block and then wait in PortFull.
-        name = 'SourceFromSingleChunk', port_full_elapsed_us>1e6,
+        name = 'SourceFromSingleChunk', output_wait_elapsed_us>1e6,
         -- NullSource/LazyOutputFormatLazyOutputFormat are the outputs
         -- so they cannot starts to execute before sleep(1) will be executed.
-        need_data_elapsed_us>1e6)
+        input_wait_elapsed_us>1e6)
     elapsed
 FROM system.processors_profile_log
 WHERE query_id = query_id_

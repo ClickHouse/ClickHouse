@@ -881,8 +881,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             processor_elem.processor_name = processor->getName();
                             processor_elem.elapsed_us = processor->getElapsedUs();
-                            processor_elem.need_data_elapsed_us = processor->getNeedDataElapsedUs();
-                            processor_elem.port_full_elapsed_us = processor->getPortFullElapsedUs();
+                            processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
+                            processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
                             processors_profile_log->add(processor_elem);
                         }
                     }
