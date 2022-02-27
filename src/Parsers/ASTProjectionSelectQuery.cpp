@@ -1,5 +1,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -15,6 +16,73 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+void ASTProjectionColumnsWithSettingsAndComment::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+{
+    ASTExpressionList list;
+
+    if (columns)
+    {
+        for (const auto & column : columns->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "";
+            elem->set(elem->elem, column->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (indices)
+    {
+        for (const auto & index : indices->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "INDEX";
+            elem->set(elem->elem, index->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (comment)
+    {
+        auto elem = std::make_shared<ASTColumnsElement>();
+        elem->prefix = "COMMENT";
+        elem->set(elem->elem, comment->clone());
+        list.children.push_back(elem);
+    }
+
+    /// Must at last
+    if (settings)
+    {
+        auto elem = std::make_shared<ASTColumnsElement>();
+        elem->prefix = "SETTINGS";
+        elem->set(elem->elem, settings->clone());
+        list.children.push_back(elem);
+    }
+
+    if (!list.children.empty())
+    {
+        if (s.one_line)
+            list.formatImpl(s, state, frame);
+        else
+            list.formatImplMultiline(s, state, frame);
+    }
+}
+
+ASTPtr ASTProjectionColumnsWithSettingsAndComment::clone() const
+{
+    auto res = std::make_shared<ASTProjectionColumnsWithSettingsAndComment>(*this);
+    res->children.clear();
+
+    if (columns)
+        res->set(res->columns, columns->clone());
+    if (indices)
+        res->set(res->indices, indices->clone());
+    if (settings)
+        res->set(res->settings, settings->clone());
+    if (comment)
+        res->set(res->comment, comment->clone());
+
+    return res;
 }
 
 
@@ -72,18 +140,8 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 
     if (orderBy())
     {
-        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
-        /// between GROUP BY and ORDER BY projection definition.
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
-        ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>())
-            order_by = func->arguments;
-        else
-        {
-            order_by = std::make_shared<ASTExpressionList>();
-            order_by->children.push_back(orderBy());
-        }
-        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        s.one_line ? orderBy()->formatImpl(s, state, frame) : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 }
 
@@ -125,7 +183,16 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     if (with())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
     if (select())
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select()->clone());
+    {
+        auto select_list = select()->clone();
+        /// If it's a normal projection, prepend all order by expressions as key columns.
+        if (orderBy())
+        {
+            auto order_by_keys = orderBy()->clone();
+            select_list->children.insert(select_list->children.begin(), order_by_keys->children.begin(), order_by_keys->children.end());
+        }
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
     // Get rid of orderBy. It's used for projection definition only

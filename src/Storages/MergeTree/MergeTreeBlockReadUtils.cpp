@@ -23,6 +23,7 @@ namespace
 /// least one existing (physical) column in part.
 bool injectRequiredColumnsRecursively(
     const String & column_name,
+    const StorageMetadataPtr & metadata_snapshot,
     const ColumnsDescription & storage_columns,
     const MergeTreeData::AlterConversions & alter_conversions,
     const MergeTreeData::DataPartPtr & part,
@@ -39,7 +40,10 @@ bool injectRequiredColumnsRecursively(
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
-        if (alter_conversions.isColumnRenamed(column_name_in_part))
+        if (auto it = metadata_snapshot->expr_name_to_explicit_column_name_mapping.find(column_name_in_part);
+            it != metadata_snapshot->expr_name_to_explicit_column_name_mapping.end())
+            column_name_in_part = it->second;
+        else if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
@@ -72,7 +76,8 @@ bool injectRequiredColumnsRecursively(
 
     bool result = false;
     for (const auto & identifier : identifiers)
-        result |= injectRequiredColumnsRecursively(identifier, storage_columns, alter_conversions, part, columns, required_columns, injected_columns);
+        result |= injectRequiredColumnsRecursively(
+            identifier, metadata_snapshot, storage_columns, alter_conversions, part, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -86,7 +91,18 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
 
     bool have_at_least_one_physical_column = false;
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    auto storage_columns = metadata_snapshot->getColumns();
+    for (const auto & [column_name, expr_name] : metadata_snapshot->explicit_column_name_to_expr_name_mapping)
+    {
+        /// We need to add expression name columns instead of renaming because queries refer to
+        /// expression names while merge/mutation refers to physical columns
+        const auto & col_desc = storage_columns.get(column_name);
+        ColumnDescription new_col_desc;
+        new_col_desc.name = expr_name;
+        new_col_desc.type = col_desc.type;
+        new_col_desc.default_desc = col_desc.default_desc;
+        storage_columns.add(std::move(new_col_desc));
+    }
     MergeTreeData::AlterConversions alter_conversions;
     if (!part->isProjectionPart())
         alter_conversions = storage.getAlterConversionsForPart(part);
@@ -97,7 +113,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_columns, alter_conversions,
+            columns[i], metadata_snapshot, storage_columns, alter_conversions,
             part, columns, required_columns, injected_columns);
     }
 
@@ -305,6 +321,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     MergeTreeReadTaskColumns result;
 
     auto columns = metadata_snapshot->getColumns();
+    /// Queries can only refer to expression names instead of explicit column names
+    for (const auto & [column_name, expr_name] : metadata_snapshot->explicit_column_name_to_expr_name_mapping)
+        columns.rename(column_name, expr_name);
     result.pre_columns = columns.getByNames(ColumnsDescription::All, pre_column_names, true);
     result.columns = columns.getByNames(ColumnsDescription::All, column_names, true);
     result.should_reorder = should_reorder;

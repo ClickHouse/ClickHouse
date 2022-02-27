@@ -1233,7 +1233,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     // expressions before ORDER BY and the preliminary DISTINCT
                     // now, on shards (first_stage).
                     assert(!expressions.before_window);
-                    executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                    executeExpression(
+                        query_plan,
+                        query_info.projection && query_info.projection->before_order_by ? query_info.projection->before_order_by
+                                                                                        : expressions.before_order_by,
+                        "Before ORDER BY");
                     executeDistinct(query_plan, true, expressions.selected_columns, true);
                 }
             }

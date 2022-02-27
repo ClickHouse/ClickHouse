@@ -2,10 +2,12 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -15,6 +17,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <base/range.h>
@@ -29,6 +32,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 };
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -59,12 +64,20 @@ ProjectionDescription ProjectionDescription::clone() const
     other.type = type;
     other.required_columns = required_columns;
     other.sample_block = sample_block;
+    other.original_sample_block = original_sample_block;
     other.sample_block_for_keys = sample_block_for_keys;
     other.metadata = metadata;
     other.key_size = key_size;
     other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
+
+    if (projection_settings)
+        other.projection_settings = projection_settings->clone();
+    other.comment = comment;
+
+    if (expr_to_explicit_column_dag)
+        other.expr_to_explicit_column_dag = expr_to_explicit_column_dag->clone();
 
     return other;
 }
@@ -83,8 +96,8 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
     return name == other.name && queryToString(definition_ast) == queryToString(other.definition_ast);
 }
 
-ProjectionDescription
-ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionDescription ProjectionDescription::getProjectionFromAST(
+    const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context, bool attach)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -113,11 +126,120 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
+    result.original_sample_block = select.getSampleBlock();
+
+    for (const auto & column_with_type_name : result.sample_block)
+    {
+        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
+    }
 
     StorageInMemoryMetadata metadata;
     metadata.partition_key = KeyDescription::buildEmptyKey();
 
-    const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
+    ColumnsDescription columns_desc(result.sample_block.getNamesAndTypesList());
+    if (projection_definition->desc)
+    {
+        bool sanity_check_compression_codecs = !attach && !query_context->getSettingsRef().allow_suspicious_codecs;
+        bool allow_experimental_codecs = attach || query_context->getSettingsRef().allow_experimental_codecs;
+
+        auto desc = projection_definition->desc->as<ASTProjectionColumnsWithSettingsAndComment &>();
+        if (desc.columns)
+        {
+            size_t num_of_explicit_columns = desc.columns->children.size();
+            std::unordered_map<String, ColumnDescription> expr_name_to_explicit_column_desc_mapping;
+            std::unordered_set<String> explicit_column_names;
+            for (size_t i = 0; i < num_of_explicit_columns; ++i)
+            {
+                const auto & col_decl = desc.columns->children[i]->as<ASTColumnDeclaration &>();
+                auto * column = result.sample_block.findByName(col_decl.expr_name->getColumnName());
+                if (!column)
+                    throw Exception(
+                        ErrorCodes::THERE_IS_NO_COLUMN,
+                        "There is no column with name {} in projection",
+                        col_decl.expr_name->getColumnName());
+
+                if (result.sample_block.findByName(col_decl.name))
+                    throw Exception(
+                        ErrorCodes::DUPLICATE_COLUMN,
+                        "Explicit column name {} conflicts with expression names in projection",
+                        col_decl.name);
+
+                if (expr_name_to_explicit_column_desc_mapping.contains(column->name))
+                    throw Exception(
+                        ErrorCodes::DUPLICATE_COLUMN,
+                        "Cannot specify multiple names for the same expression {} in projection",
+                        column->name);
+
+                if (metadata.explicit_column_name_to_expr_name_mapping.contains(col_decl.name))
+                    throw Exception(
+                        ErrorCodes::DUPLICATE_COLUMN,
+                        "Duplicate column name {} in projection",
+                        col_decl.name);
+
+                metadata.explicit_column_name_to_expr_name_mapping.emplace(col_decl.name, column->name);
+
+                ColumnDescription column_desc;
+                column_desc.name = col_decl.name;
+                column_desc.type = column->type;
+
+                if (col_decl.comment)
+                    column_desc.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
+
+                if (col_decl.codec)
+                {
+                    column_desc.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        col_decl.codec, column_desc.type, sanity_check_compression_codecs, allow_experimental_codecs);
+                }
+
+                metadata.expr_name_to_explicit_column_name_mapping.emplace(column->name, column_desc.name);
+                expr_name_to_explicit_column_desc_mapping.emplace(column->name, std::move(column_desc));
+            }
+
+            ColumnsDescription new_columns_desc;
+            Block new_block;
+            for (const auto & column : result.sample_block)
+            {
+                if (auto it = metadata.expr_name_to_explicit_column_name_mapping.find(column.name);
+                    it != metadata.expr_name_to_explicit_column_name_mapping.end())
+                {
+                    auto new_column = column;
+                    new_column.name = it->second;
+                    new_columns_desc.add(std::move(expr_name_to_explicit_column_desc_mapping[it->first]));
+                    new_block.insert(std::move(new_column));
+                }
+                else
+                {
+                    ColumnDescription column_desc;
+                    column_desc.name = column.name;
+                    column_desc.type = column.type;
+                    new_columns_desc.add(std::move(column_desc));
+                    new_block.insert(column);
+                }
+            }
+
+            result.expr_to_explicit_column_dag = ActionsDAG::makeConvertingActions(
+                result.sample_block.getColumnsWithTypeAndName(),
+                new_block.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position);
+
+            columns_desc = std::move(new_columns_desc);
+            result.sample_block = std::move(new_block);
+        }
+
+        if (desc.indices)
+        {
+            for (auto & index : desc.indices->children)
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns_desc, query_context));
+        }
+
+        if (desc.settings)
+            result.projection_settings = desc.settings->clone();
+
+        if (desc.comment)
+            result.comment = desc.comment->as<ASTLiteral &>().value.get<String>();
+    }
+
     if (select.hasAggregation())
     {
         if (query.orderBy())
@@ -125,56 +247,59 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
                 "When aggregation is used in projection, ORDER BY cannot be specified", ErrorCodes::ILLEGAL_PROJECTION);
 
         result.type = ProjectionDescription::Type::Aggregate;
-        if (const auto & group_expression_list = query_select.groupBy())
-        {
-            ASTPtr order_expression;
-            if (group_expression_list->children.size() == 1)
-            {
-                result.key_size = 1;
-                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
-            }
-            else
-            {
-                auto function_node = std::make_shared<ASTFunction>();
-                function_node->name = "tuple";
-                function_node->arguments = group_expression_list->clone();
-                result.key_size = function_node->arguments->children.size();
-                for (auto & child : function_node->arguments->children)
-                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
-                function_node->children.push_back(function_node->arguments);
-                order_expression = function_node;
-            }
-            auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
-            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
-            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
-            metadata.primary_key.definition_ast = nullptr;
-        }
-        else
-        {
-            metadata.sorting_key = KeyDescription::buildEmptyKey();
-            metadata.primary_key = KeyDescription::buildEmptyKey();
-        }
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
     }
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+    }
+
+    /// TODO need a way to make key condition work for remapped primary keys
+    auto key_expression_list = query.groupBy() ? query.groupBy() : query.orderBy();
+    if (key_expression_list)
+    {
+        ASTPtr order_expression;
+        if (key_expression_list->children.size() == 1)
+        {
+            result.key_size = 1;
+            const auto & key_name = key_expression_list->children.front()->getColumnName();
+            if (auto it = metadata.expr_name_to_explicit_column_name_mapping.find(key_name);
+                it != metadata.expr_name_to_explicit_column_name_mapping.end())
+                order_expression = std::make_shared<ASTIdentifier>(it->second);
+            else
+                order_expression = std::make_shared<ASTIdentifier>(key_name);
+        }
+        else
+        {
+            auto function_node = std::make_shared<ASTFunction>();
+            function_node->name = "tuple";
+            function_node->arguments = key_expression_list->clone();
+            result.key_size = function_node->arguments->children.size();
+            for (auto & child : function_node->arguments->children)
+            {
+                const auto & key_name = child->getColumnName();
+                if (auto it = metadata.expr_name_to_explicit_column_name_mapping.find(key_name);
+                    it != metadata.expr_name_to_explicit_column_name_mapping.end())
+                    child = std::make_shared<ASTIdentifier>(it->second);
+                else
+                    child = std::make_shared<ASTIdentifier>(key_name);
+            }
+            function_node->children.push_back(function_node->arguments);
+            order_expression = function_node;
+        }
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_desc, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_desc, query_context);
+        metadata.primary_key.definition_ast = nullptr;
+    }
+    else
+    {
+        metadata.sorting_key = KeyDescription::buildEmptyKey();
+        metadata.primary_key = KeyDescription::buildEmptyKey();
         metadata.primary_key.definition_ast = nullptr;
     }
 
-    auto block = result.sample_block;
-    for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
-        block.insertUnique({nullptr, type, name});
-    for (const auto & column_with_type_name : block)
-    {
-        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
-    }
-
-    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
+    metadata.setColumns(std::move(columns_desc));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
@@ -279,12 +404,17 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                        query_ast,
                        context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
-                       SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                       : QueryProcessingStage::WithMergeableState})
+                       SelectQueryOptions{QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
     builder.resize(1);
     builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
+
+    if (expr_to_explicit_column_dag)
+    {
+        auto projection_actions = std::make_shared<ExpressionActions>(expr_to_explicit_column_dag);
+        builder.addSimpleTransform([&](const Block & header)
+                                   { return std::make_shared<ExpressionTransform>(header, projection_actions); });
+    }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

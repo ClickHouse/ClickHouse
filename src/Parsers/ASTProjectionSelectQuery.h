@@ -6,6 +6,26 @@
 
 namespace DB
 {
+
+class ASTColumns;
+class ASTExpressionList;
+class ASTSetQuery;
+
+class ASTProjectionColumnsWithSettingsAndComment : public IAST
+{
+public:
+    ASTExpressionList * columns = nullptr;
+    ASTExpressionList * indices = nullptr;
+    IAST * comment = nullptr;
+    ASTSetQuery * settings = nullptr;
+
+    String getID(char) const override { return "Projection columns definition with optional settings and comment"; }
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+};
+
 /** PROJECTION SELECT query
   */
 class ASTProjectionSelectQuery : public IAST

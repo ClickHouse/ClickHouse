@@ -75,19 +75,6 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
 }
 
 
-class ASTColumnsElement : public IAST
-{
-public:
-    String prefix;
-    IAST * elem;
-
-    String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
-
-    ASTPtr clone() const override;
-
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-};
-
 ASTPtr ASTColumnsElement::clone() const
 {
     auto res = std::make_shared<ASTColumnsElement>();

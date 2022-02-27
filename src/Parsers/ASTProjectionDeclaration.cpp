@@ -9,8 +9,9 @@ ASTPtr ASTProjectionDeclaration::clone() const
 {
     auto res = std::make_shared<ASTProjectionDeclaration>();
     res->name = name;
-    if (query)
-        res->set(res->query, query->clone());
+    if (desc)
+        res->set(res->desc, desc->clone());
+    res->set(res->query, query->clone());
     return res;
 }
 
@@ -20,6 +21,12 @@ void ASTProjectionDeclaration::formatImpl(const FormatSettings & settings, Forma
     settings.ostr << backQuoteIfNeed(name);
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
+    if (desc)
+    {
+        settings.ostr << settings.nl_or_ws << indent_str << "(";
+        desc->formatImpl(settings, state, frame);
+        settings.ostr << nl_or_nothing << indent_str << ")";
+    }
     settings.ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;

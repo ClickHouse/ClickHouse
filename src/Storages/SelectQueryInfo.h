@@ -118,6 +118,7 @@ struct ProjectionCandidate
     String where_column_name;
     bool remove_where_filter = false;
     ActionsDAGPtr before_aggregation;
+    ActionsDAGPtr before_order_by;
     Names required_columns;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;

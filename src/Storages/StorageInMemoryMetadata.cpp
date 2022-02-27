@@ -40,6 +40,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , comment(other.comment)
+    , expr_name_to_explicit_column_name_mapping(other.expr_name_to_explicit_column_name_mapping)
+    , explicit_column_name_to_expr_name_mapping(other.explicit_column_name_to_expr_name_mapping)
 {
 }
 
@@ -68,6 +70,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     comment = other.comment;
+    expr_name_to_explicit_column_name_mapping = other.expr_name_to_explicit_column_name_mapping;
+    explicit_column_name_to_expr_name_mapping = other.explicit_column_name_to_expr_name_mapping;
     return *this;
 }
 
@@ -356,10 +360,13 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     for (const auto & name : column_names)
     {
-        auto column = getColumns().tryGetColumnOrSubcolumn(ColumnsDescription::All, name);
+        const auto * real_name = &name;
+        if (auto it = expr_name_to_explicit_column_name_mapping.find(name); it != expr_name_to_explicit_column_name_mapping.end())
+            real_name = &it->second;
+        auto column = getColumns().tryGetColumnOrSubcolumn(ColumnsDescription::All, *real_name);
         if (column)
         {
-            res.insert({column->type->createColumn(), column->type, column->name});
+            res.insert({column->type->createColumn(), column->type, name});
         }
         else if (auto * it = virtuals_map.find(name); it != virtuals_map.end())
         {
@@ -553,7 +560,10 @@ void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTy
 
     for (const auto & name : column_names)
     {
-        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, name)
+        const auto * real_name = &name;
+        if (auto it = expr_name_to_explicit_column_name_mapping.find(name); it != expr_name_to_explicit_column_name_mapping.end())
+            real_name = &it->second;
+        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, *real_name)
             || virtuals_map.find(name) != nullptr;
 
         if (!has_column)

@@ -4861,7 +4861,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         ProjectionCandidate candidate{};
         candidate.desc = &projection;
 
-        auto sample_block = projection.sample_block;
+        auto sample_block = projection.original_sample_block;
         auto sample_block_for_keys = projection.sample_block_for_keys;
         for (const auto & column : virtual_block)
         {
@@ -4933,11 +4933,22 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
             if (analysis_result.hasWhere() || analysis_result.hasPrewhere())
             {
-                const auto & actions
-                    = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
                 NameSet required_columns;
-                for (const auto & column : actions->getRequiredColumns())
-                    required_columns.insert(column.name);
+                if (analysis_result.before_aggregation)
+                {
+                    candidate.before_aggregation = analysis_result.before_aggregation->clone();
+                    for (const auto & name : candidate.before_aggregation->getNames())
+                        required_columns.insert(name);
+                    required_columns = candidate.before_aggregation->foldActionsByProjection(required_columns, sample_block);
+                }
+                else
+                {
+                    candidate.before_order_by = analysis_result.before_order_by->clone();
+                    auto required_columns_list = candidate.before_order_by->getNames();
+                    for (const auto & name : candidate.before_order_by->getNames())
+                        required_columns.insert(name);
+                    required_columns = candidate.before_order_by->foldActionsByProjection(required_columns, sample_block);
+                }
 
                 if (rewrite_before_where(candidate, projection, required_columns, sample_block, {}))
                 {

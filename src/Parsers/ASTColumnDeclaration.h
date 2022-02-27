@@ -11,6 +11,7 @@ namespace DB
 class ASTColumnDeclaration : public IAST
 {
 public:
+    ASTPtr expr_name; /// Used to describe explicit column name mappings in projection description
     String name;
     ASTPtr type;
     std::optional<bool> null_modifier;

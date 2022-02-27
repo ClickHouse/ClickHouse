@@ -50,6 +50,12 @@ struct StorageInMemoryMetadata
 
     String comment;
 
+    /// If current metadata describes a projection, it might contain explicit column names used for
+    /// storage only, which is different from the column names in block. This is useful to overcome
+    /// too long file names of projection columns.
+    std::unordered_map<String, String> expr_name_to_explicit_column_name_mapping;
+    std::unordered_map<String, String> explicit_column_name_to_expr_name_mapping;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);

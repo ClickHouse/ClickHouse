@@ -217,7 +217,12 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
     auto name_in_storage = required_column.getNameInStorage();
 
     ColumnsFromPart::ConstLookupResult it;
-    if (alter_conversions.isColumnRenamed(name_in_storage))
+    if (auto expr_it = metadata_snapshot->expr_name_to_explicit_column_name_mapping.find(name_in_storage);
+        expr_it != metadata_snapshot->expr_name_to_explicit_column_name_mapping.end())
+    {
+        it = columns_from_part.find(expr_it->second);
+    }
+    else if (alter_conversions.isColumnRenamed(name_in_storage))
     {
         String old_name = alter_conversions.getColumnOldName(name_in_storage);
         it = columns_from_part.find(old_name);

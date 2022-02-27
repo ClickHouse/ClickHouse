@@ -182,18 +182,25 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier name_p;
+    ParserProjectionDescription desc_p;
     ParserProjectionSelectQuery query_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ASTPtr name;
+    ASTPtr desc;
     ASTPtr query;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
+    auto old_pos = pos;
+    if (!desc_p.parse(pos, desc, expected))
+        pos = old_pos;
+
     if (!s_lparen.ignore(pos, expected))
         return false;
 
+    /// SELECT query defined projection
     if (!query_p.parse(pos, query, expected))
         return false;
 
@@ -202,6 +209,8 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
+    if (desc)
+        projection->set(projection->desc, desc);
     projection->set(projection->query, query);
     node = projection;
 

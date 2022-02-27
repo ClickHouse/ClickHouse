@@ -50,6 +50,9 @@ struct ProjectionDescription
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
 
+    /// Same as above, but stores column names without explicit name mapping.
+    Block original_sample_block;
+
     Block sample_block_for_keys;
 
     StorageMetadataPtr metadata;
@@ -67,9 +70,15 @@ struct ProjectionDescription
     /// partition columns.
     std::vector<size_t> partition_value_indices;
 
+    ASTPtr projection_settings;
+
+    String comment;
+
+    ActionsDAGPtr expr_to_explicit_column_dag;
+
     /// Parse projection from definition AST
     static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context, bool attach = false);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,

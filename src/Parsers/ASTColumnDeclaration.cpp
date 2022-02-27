@@ -10,6 +10,11 @@ ASTPtr ASTColumnDeclaration::clone() const
 {
     const auto res = std::make_shared<ASTColumnDeclaration>(*this);
     res->children.clear();
+    if (expr_name)
+    {
+        res->expr_name = expr_name->clone();
+        res->children.push_back(res->expr_name);
+    }
 
     if (type)
     {
@@ -49,6 +54,12 @@ ASTPtr ASTColumnDeclaration::clone() const
 void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
+
+    if (expr_name)
+    {
+        expr_name->formatImpl(settings, state, frame);
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "AS" << (settings.hilite ? hilite_none : "") << ' ';
+    }
 
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
     settings.ostr << backQuote(name);
