@@ -229,7 +229,7 @@ public:
     static bool cancelled() { return exit_on_signal.test(); }
 };
 
-/// This signal handler is set only for sigint.
+/// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
@@ -243,22 +243,22 @@ ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
-     exit_on_signal.test_and_set();
+    exit_on_signal.test_and_set();
 
-     struct sigaction new_act;
-     memset(&new_act, 0, sizeof(new_act));
+    struct sigaction new_act;
+    memset(&new_act, 0, sizeof(new_act));
 
-     new_act.sa_handler = interruptSignalHandler;
-     new_act.sa_flags = 0;
+    new_act.sa_handler = interruptSignalHandler;
+    new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
     sigemptyset(&new_act.sa_mask);
 #else
-     if (sigemptyset(&new_act.sa_mask))
+    if (sigemptyset(&new_act.sa_mask))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 #endif
 
-     if (sigaction(SIGINT, &new_act, nullptr))
+    if (sigaction(SIGINT, &new_act, nullptr))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
