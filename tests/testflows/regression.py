@@ -9,7 +9,7 @@ from helpers.argparser import argparser
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse regression.
     """
     args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "stress": stress}
