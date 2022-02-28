@@ -30,7 +30,8 @@ def test_create_parquet_table(started_cluster):
     node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
     DROP TABLE IF EXISTS default.demo_parquet;
-    CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+    CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day);
+    CREATE TABLE default.demo_parquet_parts (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String), `hour` String) ENGINE = Hive('thrift://hivetest:9083', 'test', 'parquet_demo') PARTITION BY(day, hour);
             """)
     logging.info("create result {}".format(result))
     time.sleep(120)
@@ -69,6 +70,15 @@ def test_parquet_groupby(started_cluster):
 2021-11-11	1
 2021-11-16	2
 """
+    assert result == expected_result
+
+def test_parquet_in_filter(started_cluster):
+    logging.info('Start testing groupby ...')
+    node = started_cluster.instances['h0_0_0']
+    result = node.query("""
+    SELECT day, count(*) FROM default.demo_parquet_parts where day = '2021-11-05' and hour in ('00')
+            """)
+    expected_result = """2021-11-05	2"""
     assert result == expected_result
 def test_orc_groupby(started_cluster):
     logging.info('Start testing groupby ...')
