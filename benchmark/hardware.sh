@@ -11,10 +11,6 @@ DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
-AMD64_BIN_URL="https://builds.clickhouse.com/master/amd64/clickhouse"
-AARCH64_BIN_URL="https://builds.clickhouse.com/master/aarch64/clickhouse"
-POWERPC64_BIN_URL="https://builds.clickhouse.com/master/ppc64le/clickhouse"
-
 # Note: on older Ubuntu versions, 'axel' does not support IPv6. If you are using IPv6-only servers on very old Ubuntu, just don't install 'axel'.
 
 FASTER_DOWNLOAD=wget
@@ -33,18 +29,68 @@ fi
 mkdir -p clickhouse-benchmark-$SCALE
 pushd clickhouse-benchmark-$SCALE
 
-if [[ ! -f clickhouse ]]; then
-    CPU=$(uname -m)
-    if [[ ($CPU == x86_64) || ($CPU == amd64) ]]; then
-        $FASTER_DOWNLOAD "$AMD64_BIN_URL"
-    elif [[ $CPU == aarch64 ]]; then
-        $FASTER_DOWNLOAD "$AARCH64_BIN_URL"
-    elif [[ $CPU == powerpc64le ]]; then
-        $FASTER_DOWNLOAD "$POWERPC64_BIN_URL"
-    else
-        echo "Unsupported CPU type: $CPU"
-        exit 1
+#!/bin/sh -e
+
+OS=$(uname -s)
+ARCH=$(uname -m)
+
+DIR=
+
+if [ "${OS}" = "Linux" ]
+then
+    if [ "${ARCH}" = "x86_64" ]
+    then
+        DIR="amd64"
+    elif [ "${ARCH}" = "aarch64" ]
+    then
+        DIR="aarch64"
+    elif [ "${ARCH}" = "powerpc64le" ]
+    then
+        DIR="powerpc64le"
     fi
+elif [ "${OS}" = "FreeBSD" ]
+then
+    if [ "${ARCH}" = "x86_64" ]
+    then
+        DIR="freebsd"
+    elif [ "${ARCH}" = "aarch64" ]
+    then
+        DIR="freebsd-aarch64"
+    elif [ "${ARCH}" = "powerpc64le" ]
+    then
+        DIR="freebsd-powerpc64le"
+    fi
+elif [ "${OS}" = "Darwin" ]
+then
+    if [ "${ARCH}" = "x86_64" ]
+    then
+        DIR="macos"
+    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    then
+        DIR="macos-aarch64"
+    fi
+fi
+
+if [ -z "${DIR}" ]
+then
+    echo "The '${OS}' operating system with the '${ARCH}' architecture is not supported."
+    exit 1
+fi
+
+URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
+echo
+echo "Will download ${URL}"
+echo
+curl -O "${URL}" && chmod a+x clickhouse || exit 1
+echo
+echo "Successfully downloaded the ClickHouse binary, you can run it as:
+    ./clickhouse"
+
+if [ "${OS}" = "Linux" ]
+then
+    echo
+    echo "You can also install it:
+    sudo ./clickhouse install"
 fi
 
 chmod a+x clickhouse
@@ -88,7 +134,12 @@ echo
 
 cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
     sync
-    echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+    if [ "${OS}" = "Darwin" ] 
+    then 
+        sudo purge > /dev/null
+    else
+        echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+    fi
 
     echo -n "["
     for i in $(seq 1 $TRIES); do
