@@ -390,7 +390,7 @@ void LocalServer::setupUsers()
     ConfigurationPtr users_config;
 
     //set the allow_plaintext_password setting in global context.
-     global_context->setAllowPlaintextPasswordSetting(config().getBool("allow_plaintext_password",1));
+    global_context->setAuthTypeSetting(config().getBool("allow_plaintext_and_no_password",true));
 
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {

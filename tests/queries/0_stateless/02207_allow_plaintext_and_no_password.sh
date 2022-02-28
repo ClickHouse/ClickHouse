@@ -19,8 +19,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-cp "$CURDIR"/../../../programs/server/users.xml "$CURDIR"/users.xml
- sed -i 's/<password><\/password>/<no_password\/>/g' "$CURDIR"/users.xml
+cp /etc/clickhouse-server/users.xml "$CURDIR"/users.xml
+ sed -i 's/<password><\/password>/<password_sha256_hex>c64c5e4e53ea1a9f1427d2713b3a22bbebe8940bc807adaf654744b1568c70ab<\/password_sha256_hex>/g' "$CURDIR"/users.xml
  sed -i 's/<!-- <access_management>1<\/access_management> -->/<access_management>1<\/access_management>/g' "$CURDIR"/users.xml
 
 server_opts=(
@@ -55,7 +55,7 @@ fi
 
 # wait for the server to start accepting tcp connections (max 30 seconds)
 i=0 retries=300
-while ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'select 1' 2>/dev/null && [[ $i -lt $retries ]]; do
+while ! $CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" --format Null -q 'select 1' 2>/dev/null && [[ $i -lt $retries ]]; do
     sleep 0.1
     if ! kill -0 $server_pid >& /dev/null; then
         echo "No server (pid $server_pid)"
@@ -64,15 +64,31 @@ while ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Nu
 done
 
 
-if ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'select 1'; then
+if ! $CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" --format Null -q 'select 1'; then
     echo "Cannot wait until server will start accepting connections on <tcp_port>" >&2
     exit 1
 fi
 
-$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port"   -q "CREATE USER u_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty' " " -- { serverError 43 } --" &> /dev/null ;
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q " DROP USER IF EXISTS u_02207, u1_02207";
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u_02207 IDENTIFIED WITH double_sha1_hash BY '8DCDD69CE7D121DE8013062AEAEB2A148910D50E'
+"
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q " CREATE USER u1_02207 IDENTIFIED BY 'qwe123'";
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u2_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty' " " -- { serverError 43 } --" &> /dev/null ;
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u3_02207 HOST IP '127.1' IDENTIFIED WITH no_password " " -- { serverError 43 } --" &> /dev/null ;
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u4_02207 HOST IP '127.1' NOT IDENTIFIED " " -- { serverError 43 } --" &> /dev/null ;
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER IF NOT EXISTS  u5_02207 " " -- { serverError 43 } --" &> /dev/null ;
+
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q " DROP USER u_02207, u1_02207";
+
 
 # no sleep, since flushing to stderr should not be buffered.
- grep  'User is not allowed to Create users with type PLAINTEXT_PASSWORD' clickhouse-server.stderr
+ grep  'User is not allowed to Create users' clickhouse-server.stderr
 
 
 # send TERM and save the error code to ensure that it is 0 (EXIT_SUCCESS)

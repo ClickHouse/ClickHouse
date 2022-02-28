@@ -1069,9 +1069,8 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
-    ///set the allow_plaintext_password setting in context.
-    access_control.setAllowPlaintextPasswordSetting(config().getBool("allow_plaintext_password", 1));
-
+    ///set the allow_plaintext_and_no_password setting in context.
+    global_context->setAuthTypeSetting(config().getBool("allow_plaintext_and_no_password",true));
     /// Initialize access storages.
     try
     {

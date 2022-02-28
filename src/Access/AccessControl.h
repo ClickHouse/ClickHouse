@@ -47,7 +47,7 @@ class AccessControl : public MultipleAccessStorage
 public:
     AccessControl();
     ~AccessControl() override;
-
+    //bool allow_plaintext_and_no_password;
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
@@ -144,8 +144,8 @@ public:
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
-    void setAllowPlaintextPasswordSetting(const bool allow_plaintext_password);
-    bool getAllowPlaintextPasswordSetting() const { return allow_plaintext_password; }
+    void setAuthTypeSetting(const bool allow_plaintext_and_no_password);
+    bool getAuthTypeSetting() const ;
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
@@ -170,7 +170,6 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
-    bool allow_plaintext_password;
 };
 
 }
