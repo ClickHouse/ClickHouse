@@ -76,7 +76,7 @@ def test_parquet_in_filter(started_cluster):
     logging.info('Start testing groupby ...')
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
-    SELECT day, count(*) FROM default.demo_parquet_parts where day = '2021-11-05' and hour in ('00')
+    SELECT count(*) FROM default.demo_parquet_parts where day = '2021-11-05' and hour in ('00')
             """)
     expected_result = """2021-11-05	2"""
     assert result == expected_result
