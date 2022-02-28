@@ -158,8 +158,8 @@ public:
                 int c_l_u32 = Poco::Unicode::toLower(*c_u32);
                 int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
 
-                uint8_t dst_l_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq)));
-                uint8_t dst_u_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq)));
+                size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq));
+                size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq));
 
                 /// @note Unicode standard states it is a rare but possible occasion
                 if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
