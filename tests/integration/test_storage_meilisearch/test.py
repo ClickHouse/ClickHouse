@@ -458,3 +458,98 @@ def test_named_collection_secure(started_cluster):
     node.query("DROP TABLE simple_meili_table")
     node.query("DROP TABLE wrong_meili_table")
     table.delete()
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_table_function(started_cluster):
+    client = get_meili_client(started_cluster)
+    table = client.index("new_table")
+    data = []
+    for i in range(0, 100):
+        data.append({'id': i, 'data': hex(i * i)})
+
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+
+    assert node.query("SELECT COUNT() FROM MeiliSearch('meili1:7700', 'new_table', '')") == '100\n'
+    assert node.query("SELECT sum(id) FROM MeiliSearch('meili1:7700', 'new_table', '')") == str(sum(range(0, 100))) + '\n'
+    assert node.query("SELECT data FROM MeiliSearch('meili1:7700', 'new_table', '') WHERE id = 42") == hex(42 * 42) + '\n'
+
+    table.delete()
+
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_table_function_secure(started_cluster):
+    client = get_meili_secure_client(started_cluster)
+    table = client.index("new_table")
+    data = []
+    for i in range(0, 100):
+        data.append({'id': i, 'data': hex(i * i)})
+
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+
+    assert node.query("SELECT COUNT() FROM MeiliSearch('meili_secure:7700', 'new_table', 'password')") == '100\n'
+    assert node.query("SELECT sum(id) FROM MeiliSearch('meili_secure:7700', 'new_table', 'password')") == str(sum(range(0, 100))) + '\n'
+    assert node.query("SELECT data FROM MeiliSearch('meili_secure:7700', 'new_table', 'password') WHERE id = 42") == hex(42 * 42) + '\n'
+
+    error = node.query_and_get_error("SELECT COUNT() FROM MeiliSearch('meili_secure:7700', 'new_table', 'wrong_password')")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    error = node.query_and_get_error("SELECT sum(id) FROM MeiliSearch('meili_secure:7700', 'new_table', 'wrong_password')")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    error = node.query_and_get_error("SELECT data FROM MeiliSearch('meili_secure:7700', 'new_table', 'wrong_password') WHERE id = 42")
+    assert("MEILISEARCH_EXCEPTION" in error)
+
+    table.delete()
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_types_in_table_function(started_cluster):
+    client = get_meili_client(started_cluster)
+    table = client.index("types_table")
+
+    data = {
+        'id' : 1,
+        'UInt8_test' : 128,
+        'UInt16_test' : 32768,
+        'UInt32_test' : 2147483648,
+        'Int8_test' : -128,
+        'Int16_test' : -32768,
+        'Int32_test' : -2147483648,
+        'Int64_test' : -9223372036854775808,
+        'String_test' : "abacaba",
+        'Float32_test' : 42.42,
+        'Float64_test' : 42.42,
+        'Array_test' : [['aba', 'caba'], ['2d', 'array']],
+        'Null_test1' : "value",
+        'Null_test2' : NULL,
+        'Bool_test1' : True,
+        'Bool_test2' : False,
+        'Json_test' : {"a" : 1, "b" : {"in_json" : "qwerty"}}
+        }
+
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+
+    assert node.query("SELECT id FROM MeiliSearch('meili1:7700', 'types_table', '')") == '1\n'
+    assert node.query("SELECT UInt8_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '128\n'
+    assert node.query("SELECT UInt16_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '32768\n'
+    assert node.query("SELECT UInt32_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '2147483648\n'
+    assert node.query("SELECT Int8_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '-128\n'
+    assert node.query("SELECT Int16_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '-32768\n'
+    assert node.query("SELECT Int32_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '-2147483648\n'
+    assert node.query("SELECT Int64_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '-9223372036854775808\n'
+    assert node.query("SELECT String_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == 'abacaba\n'
+    assert node.query("SELECT Float32_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '42.42\n'
+    assert node.query("SELECT Float32_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '42.42\n'
+    assert node.query("SELECT Array_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == "[['aba','caba'],['2d','array']]\n"
+    assert node.query("SELECT Null_test1 FROM MeiliSearch('meili1:7700', 'types_table', '')") == 'value\n'
+    assert node.query("SELECT Null_test2 FROM MeiliSearch('meili1:7700', 'types_table', '')") == 'NULL\n'
+    assert node.query("SELECT Bool_test1 FROM MeiliSearch('meili1:7700', 'types_table', '')") == '1\n'
+    assert node.query("SELECT Bool_test2 FROM MeiliSearch('meili1:7700', 'types_table', '')") == '0\n'
+    assert node.query("SELECT Json_test FROM MeiliSearch('meili1:7700', 'types_table', '')") == '{"a":1,"b":{"in_json":"qwerty"}}\n'
+    
+    table.delete()    
