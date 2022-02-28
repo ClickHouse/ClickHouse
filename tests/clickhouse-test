@@ -447,7 +447,7 @@ class TestCase:
             os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params + '&' + '&'.join(self.random_settings)
 
         new_options = " --" + " --".join(self.random_settings)
-        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options + new_options
+        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options + new_options + ' '
         return client_options + new_options
 
     def remove_random_settings_from_env(self):
