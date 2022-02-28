@@ -82,7 +82,7 @@ protected:
     ExternalDataSourceCache();
 
 private:
-    // root directory of local cache for remote filesystem
+    // Root directory of local cache for remote filesystem.
     String root_dir;
     size_t local_cache_bytes_read_before_flush = 0;
 

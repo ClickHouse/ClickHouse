@@ -197,7 +197,7 @@ void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_d
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
     lru_caches = std::make_unique<RemoteFileCacheType>(limit_size_);
 
-    /// create if root_dir not exists
+    /// Create if root_dir not exists.
     if (!fs::exists(fs::path(root_dir)))
     {
         fs::create_directories(fs::path(root_dir));
@@ -209,7 +209,7 @@ void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_d
 
 String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metadata) const
 {
-    // add version into the full_path, and not block to read the new version
+    // Add version into the full_path, and not block to read the new version.
     String full_path = metadata->getName() + ":" + metadata->remote_path + ":" + metadata->getVersion();
     UInt128 hashcode = sipHash128(full_path.c_str(), full_path.size());
     String hashcode_str = getHexUIntLowercase(hashcode);
@@ -219,7 +219,7 @@ String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metada
 std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> ExternalDataSourceCache::createReader(
     ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed)
 {
-    // If something is wrong on startup, rollback to read from the original ReadBuffer
+    // If something is wrong on startup, rollback to read from the original ReadBuffer.
     if (!isInitialized())
     {
         LOG_ERROR(log, "ExternalDataSourceCache has not been initialized");
@@ -237,7 +237,8 @@ std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> Externa
         {
             return {nullptr, std::move(read_buffer)};
         }
-        // the remote file has been updated, need to redownload
+
+        // The remote file has been updated, need to redownload.
         if (!cache->value().isValid() || cache->value().isModified(remote_file_metadata))
         {
             LOG_TRACE(
@@ -258,7 +259,7 @@ std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> Externa
     if (!fs::exists(local_path))
         fs::create_directories(local_path);
 
-    // cache is not found or is invalid, try to remove it at first
+    // Cache is not found or is invalid, try to remove it at first.
     lru_caches->tryRemove(local_path);
 
     auto new_cache_controller

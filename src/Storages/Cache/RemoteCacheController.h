@@ -29,7 +29,7 @@ public:
         IRemoteFileMetadataPtr file_metadata_, const std::filesystem::path & local_path_, size_t cache_bytes_before_flush_);
     ~RemoteCacheController();
 
-    // recover from local disk
+    // Recover from local disk.
     static std::shared_ptr<RemoteCacheController> recover(const std::filesystem::path & local_path);
 
     /**
@@ -40,9 +40,9 @@ public:
     void close();
 
     /**
-     * called in LocalCachedFileReader read(), the reading process would be blocked until
+     * Called in LocalCachedFileReader read(), the reading process would be blocked until
      * enough data be downloaded.
-     * If the file has finished download, the process would unblocked
+     * If the file has finished download, the process would unblocked.
      */
     void waitMoreData(size_t start_offset_, size_t end_offset_);
 
@@ -85,7 +85,7 @@ public:
     void startBackgroundDownload(std::unique_ptr<ReadBuffer> in_readbuffer_, BackgroundSchedulePool & thread_pool);
 
 private:
-    // flush file and status information
+    // Flush file and status information.
     void flush(bool need_flush_status = false);
 
     BackgroundSchedulePool::TaskHolder download_task_holder;
@@ -95,7 +95,7 @@ private:
     std::condition_variable more_data_signal;
 
     String metadata_class;
-    LocalFileStatus file_status = TO_DOWNLOAD; // for tracking download process
+    LocalFileStatus file_status = TO_DOWNLOAD; // For tracking download process.
     IRemoteFileMetadataPtr file_metadata_ptr;
     std::filesystem::path local_path;
 
