@@ -83,6 +83,10 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
 
     String format = config.getString(key_in_config + ".format");
     DataTypePtr result_type = DataTypeFactory::instance().get(config.getString(key_in_config + ".return_type"));
+    String result_name = "result";
+    if (config.has(key_in_config + ".return_name"))
+        result_name = config.getString(key_in_config + ".return_name");
+
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
@@ -106,33 +110,46 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     if (config.has(key_in_config + ".lifetime"))
         lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
-    std::vector<DataTypePtr> argument_types;
+    std::vector<UserDefinedExecutableFunctionArgument> arguments;
 
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(key_in_config, config_elems);
+
+    size_t argument_number = 1;
 
     for (const auto & config_elem : config_elems)
     {
         if (!startsWith(config_elem, "argument"))
             continue;
 
+        UserDefinedExecutableFunctionArgument argument;
+
         const auto argument_prefix = key_in_config + '.' + config_elem + '.';
-        auto argument_type = DataTypeFactory::instance().get(config.getString(argument_prefix + "type"));
-        argument_types.emplace_back(std::move(argument_type));
+
+        argument.type = DataTypeFactory::instance().get(config.getString(argument_prefix + "type"));
+
+        if (config.has(argument_prefix + "name"))
+            argument.name = config.getString(argument_prefix + "name");
+        else
+            argument.name = "c" + std::to_string(argument_number);
+
+        ++argument_number;
+        arguments.emplace_back(std::move(argument));
     }
 
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
-        .name = std::move(name), //-V1030
-        .command = std::move(command_value), //-V1030
-        .command_arguments = std::move(command_arguments), //-V1030
-        .argument_types = std::move(argument_types), //-V1030
-        .result_type = std::move(result_type), //-V1030
+        .name = std::move(name),
+        .command = std::move(command_value),
+        .command_arguments = std::move(command_arguments),
+        .arguments = std::move(arguments),
+        .result_type = std::move(result_type),
+        .result_name = std::move(result_name),
     };
 
     ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
     {
-        .format = std::move(format), //-V1030
+        .format = std::move(format),
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
