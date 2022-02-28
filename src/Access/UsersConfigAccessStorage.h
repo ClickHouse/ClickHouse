@@ -18,6 +18,7 @@ class ConfigReloader;
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
+    static bool ALLOW_PLAINTEXT_AND_NO_PASSWORD;
     static constexpr char STORAGE_TYPE[] = "users.xml";
     using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
 
@@ -32,12 +33,13 @@ public:
     String getPath() const;
     bool isPathEqual(const String & path_) const;
 
-    void setConfig(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password=1);
+    void setConfig(const Poco::Util::AbstractConfiguration & config);
+    static void setAuthTypeSetting(const bool allow_plaintext_and_no_password_) {  UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD=allow_plaintext_and_no_password_;}
 
     void load(const String & users_config_path,
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
-              const zkutil::GetZooKeeper & get_zookeeper_function = {}, const bool allow_plaintext_password=1);
+              const zkutil::GetZooKeeper & get_zookeeper_function = {});
     void reload();
     void startPeriodicReloading();
     void stopPeriodicReloading();
@@ -47,8 +49,7 @@ public:
     bool hasSubscription(AccessEntityType type) const override;
 
 private:
-    void parseFromConfig(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password);
-
+    void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
@@ -61,5 +62,6 @@ private:
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;
+   // bool allow_plaintext_and_no_password;
 };
 }

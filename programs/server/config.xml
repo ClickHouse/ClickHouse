@@ -368,8 +368,8 @@
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
     
-    <!-- Disable AuthType Plaintext_password for ACL. --> 
-    <!-- <allow_plaintext_password>0<allow_plaintext_password> -->
+    <!-- Disable AuthType Plaintext_password and No_password AUTH_TYPE for ACL. --> 
+    <!-- <allow_plaintext_and_no_password>0</allow_plaintext_and_no_password> -->
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.

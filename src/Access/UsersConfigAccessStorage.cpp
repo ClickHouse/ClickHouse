@@ -34,6 +34,7 @@ namespace ErrorCodes
 
 namespace
 {
+
     UUID generateID(AccessEntityType type, const String & name)
     {
         Poco::MD5Engine md5;
@@ -49,20 +50,17 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name , const bool allow_plaintext_password_)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
-
         String user_config = "users." + user_name;
-
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
-
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos;
         if (num_password_fields > 1)
             throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos' are used to specify password for user " + user_name + ". Must be only one of them.",
@@ -71,12 +69,11 @@ namespace
         if (num_password_fields < 1)
             throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-        bool allow_plaintext_password  = allow_plaintext_password_;
+        if ((has_password_plaintext || has_no_password) && !UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD)
+            throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD or NO_PASSWORD. Please configure User with authtype SHA256_PASSWORD_HASH, SHA256_PASSWORD, DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_and_no_password in server configuration to configure user with plaintext and no password Auth_Type"
+                            " Though it is not recommended to use plaintext_password and No_password for user authentication.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         if (has_password_plaintext)
         {
-            if (!allow_plaintext_password)
-               throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD. Please configure User with authtype SHA256_PASSWORD,DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_password in server configuration to configure user with plaintext password"
-                                " Though it is not recommended to use plaintext_password.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
             user->auth_data.setPassword(config.getString(user_config + ".password"));
         }
@@ -206,7 +203,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -218,7 +215,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name, allow_plaintext_password));
+                users.push_back(parseUser(config, user_name));
             }
             catch (Exception & e)
             {
@@ -490,7 +487,7 @@ namespace
     }
 }
 
-
+bool UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD=true;
 UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
     : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
 {
@@ -516,7 +513,6 @@ String UsersConfigAccessStorage::getStorageParamsJSON() const
     return oss.str();
 }
 
-
 String UsersConfigAccessStorage::getPath() const
 {
     std::lock_guard lock{load_mutex};
@@ -528,21 +524,20 @@ bool UsersConfigAccessStorage::isPathEqual(const String & path_) const
     return getPath() == path_;
 }
 
-
-void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password)
+void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock{load_mutex};
     path.clear();
     config_reloader.reset();
-    parseFromConfig(config, allow_plaintext_password);
+    parseFromConfig(config);
 }
 
-void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config, const bool allow_plaintext_password)
+void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     try
     {
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config, allow_plaintext_password))
+        for (const auto & entity : parseUsers(config))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
@@ -563,7 +558,7 @@ void UsersConfigAccessStorage::load(
     const String & users_config_path,
     const String & include_from_path,
     const String & preprocessed_dir,
-    const zkutil::GetZooKeeper & get_zookeeper_function, const bool allow_plaintext_password_)
+    const zkutil::GetZooKeeper & get_zookeeper_function)
 {
     std::lock_guard lock{load_mutex};
     path = std::filesystem::path{users_config_path}.lexically_normal();
@@ -576,7 +571,7 @@ void UsersConfigAccessStorage::load(
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
-            parseFromConfig(*new_config, allow_plaintext_password_);
+            parseFromConfig(*new_config);
 
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
         },

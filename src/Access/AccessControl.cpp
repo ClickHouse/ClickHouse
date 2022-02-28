@@ -156,7 +156,7 @@ void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & use
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
         {
-            users_config_storage->setConfig(users_config_);
+            users_config_storage->setConfig(users_config_);//,allow_plaintext_and_no_password);
             return;
         }
     }
@@ -172,7 +172,8 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
-    new_storage->setConfig(users_config_, allow_plaintext_password);
+   // auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function,allow_plaintext_and_no_password);
+    new_storage->setConfig(users_config_);//, allow_plaintext_and_no_password);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
         String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -206,18 +207,24 @@ void AccessControl::addUsersConfigStorage(
     }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
-    new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_, allow_plaintext_password);
+    new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
-void AccessControl::setAllowPlaintextPasswordSetting(const bool allow_plaintext_password_)
+void AccessControl::setAuthTypeSetting(const bool allow_plaintext_and_no_password)
 {
-    allow_plaintext_password = allow_plaintext_password_;
+    UsersConfigAccessStorage::setAuthTypeSetting(allow_plaintext_and_no_password);
 }
+
+bool AccessControl::getAuthTypeSetting() const
+{
+    return UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD;
+}
+
 void AccessControl::reloadUsersConfigs()
 {
     auto storages = getStoragesPtr();
-    for (const auto & storage : *storages)
+    for (const auto & storage : *storages)  
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
             users_config_storage->reload();
