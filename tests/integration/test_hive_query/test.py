@@ -89,7 +89,9 @@ def test_parquet_in_filter(started_cluster):
     result = node.query("""
     SELECT count(*) FROM default.demo_parquet_parts where day = '2021-11-05' and hour in ('00')
             """)
-    expected_result = """2"""
+    expected_result = """2
+"""
+    logging.info("query result:{}".format(result))
     assert result == expected_result
 def test_orc_groupby(started_cluster):
     logging.info('Start testing groupby ...')
@@ -150,4 +152,5 @@ def test_cache_read_bytes(started_cluster):
     assert result == expected_result
     result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
     logging.info("Read bytes from cache:{}".format(result))
+    
     assert result.strip() != '0'
