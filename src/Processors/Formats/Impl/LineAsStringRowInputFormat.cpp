@@ -48,7 +48,7 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     loadAtPosition(*in, object, pos);
 
     /// Last character is always \n.
-    column.insertData(object.data(), object.size() - 1);
+    column.insertData(object.data(), object.size());
 }
 
 bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
