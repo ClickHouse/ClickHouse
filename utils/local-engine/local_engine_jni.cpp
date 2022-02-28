@@ -98,8 +98,7 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
     auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-    context->makeQueryContext();
-    dbms::SerializedPlanParser parser(context->getQueryContext());
+    dbms::SerializedPlanParser parser(context);
     auto query_plan = parser.parse(plan_string);
     dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
     executor->execute(std::move(query_plan));

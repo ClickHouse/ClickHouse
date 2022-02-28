@@ -484,6 +484,62 @@ static void BM_NormalFilter(benchmark::State& state)
         }
     }
 }
+static void BM_TestCreateExecute(benchmark::State& state)
+{
+    dbms::SerializedSchemaBuilder schema_builder;
+    auto schema = schema_builder
+                      .column("l_discount", "FP64")
+                      .column("l_extendedprice", "FP64")
+                      .column("l_quantity", "FP64")
+                      .column("l_shipdate_new", "Date")
+                      .build();
+    dbms::SerializedPlanBuilder plan_builder;
+    auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
+    auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
+    auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+    auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+    auto plan = plan_builder.registerSupportedFunctions()
+                    .aggregate({}, {measure1, measure2, measure3})
+                    .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
+                    .filter(dbms::scalarFunction(dbms::AND, {
+                                                                dbms::scalarFunction(AND, {
+                                                                                              dbms::scalarFunction(AND, {
+                                                                                                                            dbms::scalarFunction(AND, {
+                                                                                                                                                          dbms::scalarFunction(AND, {
+                                                                                                                                                                                        dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                      dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(3)}),
+                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(0)})
+                                                                                                                                                                                                                                                }),
+                                                                                                                                                                                                                      scalarFunction(IS_NOT_NULL, {selection(2)})
+                                                                                                                                                                                                                  }),
+                                                                                                                                                                                        dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
+                                                                                                                                                                                    }),
+                                                                                                                                                          scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
+                                                                                                                                                      }),
+                                                                                                                            scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
+                                                                                                                        }),
+                                                                                              scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
+                                                                                          }),
+                                                                scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
+                                                            }))
+                    .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema)).build();
+    std::string plan_string = plan->SerializeAsString();
+    std::cout << plan_string << std::endl;
+    dbms::SerializedPlanParser::global_context = global_context;
+    for (auto _: state)
+    {
+        auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
+        dbms::SerializedPlanParser parser(context);
+        std::cout <<"parse\n";
+        auto query_plan = parser.parse(plan_string);
+        std::cout <<"create\n";
+        dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
+        std::cout <<"execute\n";
+        executor->execute(std::move(query_plan));
+    }
+}
+
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(1);
@@ -491,10 +547,11 @@ static void BM_NormalFilter(benchmark::State& state)
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(100);
 int main(int argc, char** argv) {
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
