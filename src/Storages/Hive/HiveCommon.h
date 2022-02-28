@@ -26,12 +26,7 @@ public:
     using Object = Apache::Hadoop::Hive::ThriftHiveMetastoreClient;
     using ObjectPtr = std::shared_ptr<Object>;
     using Entry = PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>::Entry;
-    explicit ThriftHiveMetastoreClientPool(ThriftHiveMetastoreClientBuilder builder_)
-        : PoolBase<Object>(max_connections, &Poco::Logger::get("ThriftHiveMetastoreClientPool"))
-        , builder(builder_)
-    {
-
-    }
+    explicit ThriftHiveMetastoreClientPool(ThriftHiveMetastoreClientBuilder builder_);
 
 protected:
     ObjectPtr allocObject() override
@@ -41,9 +36,6 @@ protected:
 
 private:
     ThriftHiveMetastoreClientBuilder builder;
-
-    const static unsigned max_connections;
-
 };
 class HiveMetastoreClient : public WithContext
 {
@@ -150,9 +142,6 @@ private:
     ThriftHiveMetastoreClientPool client_pool;
 
     Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
-
-    const int max_retry = 3;
-    const UInt64 get_client_timeout = 1000000;
 };
 
 using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;
@@ -168,10 +157,6 @@ public:
 private:
     std::mutex mutex;
     std::map<String, HiveMetastoreClientPtr> clients;
-
-    const static int conn_timeout_ms;
-    const static int recv_timeout_ms;
-    const static int send_timeout_ms;
 };
 
 }
