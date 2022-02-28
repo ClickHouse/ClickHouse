@@ -93,10 +93,6 @@ void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNativ
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
 {
-//    if (!dbms::SerializedPlanParser::global_context)
-//    {
-//
-//    }
     jsize plan_size = env->GetArrayLength(plan);
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;

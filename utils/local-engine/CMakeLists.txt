@@ -8,7 +8,7 @@ if(CMAKE_VERSION VERSION_LESS 3.11)
     message(FATAL_ERROR "Building local engine JNI bindings requires CMake version >= 3.11")
 endif()
 include (${ClickHouse_SOURCE_DIR}/cmake/warnings.cmake)
-include_directories("${ClickHouse_SOURCE_DIR}/programs")
+
 
 # Find java/jni
 include(FindJava)
@@ -21,7 +21,6 @@ set(JNI_NATIVE_SOURCES
         local_engine_jni.cpp)
 set (CLICKHOUSE_SERVER_LINK
         PRIVATE
-#        dbms
         boost::program_options
         clickhouse_aggregate_functions
         clickhouse_common_config
@@ -32,7 +31,6 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_storages_system
         clickhouse_table_functions
         substrait
-
         )
 
 function(add_cxx_compile_options option)
@@ -61,14 +59,10 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${parser_headers}
         ${parser_sources}
         ${storages_sources}
-        ${ClickHouse_SOURCE_DIR}/programs/local/LocalServer.cpp
         )
+#include_directories("${ClickHouse_SOURCE_DIR}/programs")
 target_include_directories(${LOCALENGINE_SHARED_LIB} PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_SOURCE_DIR}/base)
 target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} loggers)
-
-install(TARGETS ${LOCALENGINE_SHARED_LIB}
-        LIBRARY DESTINATION lib
-        )
 
 install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/flatbuffers/libflatbuffers.so.2
@@ -83,6 +77,7 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../utils/local-engine/cmake/libcxx/libcxx.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../utils/local-engine/cmake/libcxxabi/libcxxabi.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../utils/local-engine/cmake/libunwind/libunwind.so
+        ${CMAKE_CURRENT_BINARY_DIR}/../../utils/local-engine/liblocal_engine_jni.so
         DESTINATION lib)
 
 

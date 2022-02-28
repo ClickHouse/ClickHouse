@@ -26,6 +26,7 @@
 #include <Storages/MergeTreeTool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/CustomStorageMergeTree.h>
+#include <Storages/StorageMergeTreeFactory.h>
 #include <Poco/Util/MapConfiguration.h>
 
 
@@ -51,22 +52,24 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     auto merge_tree_table = local_engine::parseMergeTreeTable(table);
     auto header = parseNameStruct(rel.base_schema());
     auto names_and_types_list = header.getNamesAndTypesList();
-    auto param = DB::MergeTreeData::MergingParams();
-    auto settings = local_engine::buildMergeTreeSettings();
-    if (!query_context.custom_storage_merge_tree)
-    {
-        query_context.metadata = local_engine::buildMetaData(names_and_types_list, this->context);
-        query_context.custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
-            DB::StorageID(merge_tree_table.database, merge_tree_table.table),
-            merge_tree_table.relative_path,
-            *query_context.metadata,
-            false,
-            global_context,
-            "",
-            param,
-            std::move(settings));
-        query_context.custom_storage_merge_tree->loadDataParts(false);
-    }
+    auto factory = local_engine::StorageMergeTreeFactory::instance();
+
+    auto metadata = local_engine::buildMetaData(names_and_types_list, this->context);
+    query_context.metadata = metadata;
+    auto storage = factory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
+                auto  custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
+                    DB::StorageID(merge_tree_table.database, merge_tree_table.table),
+                    merge_tree_table.relative_path,
+                    *metadata,
+                    false,
+                    global_context,
+                    "",
+                    DB::MergeTreeData::MergingParams(),
+                    local_engine::buildMergeTreeSettings());
+                custom_storage_merge_tree->loadDataParts(false);
+                return custom_storage_merge_tree;
+           });
+    query_context.custom_storage_merge_tree = storage;
     auto query_info = local_engine::buildQueryInfo(names_and_types_list);
     auto data_parts = query_context.custom_storage_merge_tree->getDataPartsVector();
     int min_block = merge_tree_table.min_block;

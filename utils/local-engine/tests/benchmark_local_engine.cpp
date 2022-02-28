@@ -5,7 +5,6 @@
 #include <iostream>
 #include "testConfig.h"
 #include <fstream>
-#include <local/LocalServer.h>
 #include <Parser/SparkColumnToCHColumn.h>
 #include <Parser/CHColumnToSparkRow.h>
 #include <Storages/CustomStorageMergeTree.h>
@@ -498,7 +497,6 @@ BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100)
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 int main(int argc, char** argv) {
     SharedContextHolder shared_context = Context::createShared();
-    DB::LocalServer localServer;
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     dbms::SerializedPlanParser::initFunctionEnv();
