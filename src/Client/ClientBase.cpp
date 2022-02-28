@@ -233,7 +233,7 @@ public:
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(signum);
+        _exit(128 + signum);
 }
 
 
