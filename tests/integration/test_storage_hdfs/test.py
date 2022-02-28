@@ -422,7 +422,7 @@ def test_schema_inference_with_globs(started_cluster):
 
 
 def test_insert_select_schema_inference(started_cluster):
-    node1.query(f"insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst) select toUInt64(1) as x")
+    node1.query(f"insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x")
 
     result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert(result.strip() == 'x\tUInt64')
