@@ -103,17 +103,7 @@ public:
             : nested_function->getReturnType();
     }
 
-    bool isVersioned() const override
-    {
-        return nested_function->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_function->getDefaultVersion();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(std::optional<size_t> revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
@@ -152,7 +142,7 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t version) const override
     {
         bool flag = getFlag(place);
         if constexpr (serialize_flag)
@@ -165,7 +155,7 @@ public:
             nested_function->serialize(nestedPlace(place), buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t version, Arena * arena) const override
     {
         bool flag = 1;
         if constexpr (serialize_flag)

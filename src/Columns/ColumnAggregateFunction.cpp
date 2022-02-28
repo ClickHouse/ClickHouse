@@ -62,7 +62,7 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
+ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, size_t version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }

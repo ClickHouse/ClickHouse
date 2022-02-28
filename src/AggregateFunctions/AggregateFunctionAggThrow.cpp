@@ -84,13 +84,13 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr, WriteBuffer & buf, std::size_t /* version */) const override
     {
         char c = 0;
         buf.write(c);
     }
 
-    void deserialize(AggregateDataPtr /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr /* place */, ReadBuffer & buf, std::size_t /* version */, Arena *) const override
     {
         char c = 0;
         buf.read(c);

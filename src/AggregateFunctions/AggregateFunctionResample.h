@@ -157,13 +157,13 @@ public:
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::size_t version) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->serialize(place + i * size_of_data, buf, version);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::size_t version, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->deserialize(place + i * size_of_data, buf, version, arena);

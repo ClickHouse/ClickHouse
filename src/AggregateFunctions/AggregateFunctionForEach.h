@@ -129,17 +129,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_func->getReturnType());
     }
 
-    bool isVersioned() const override
-    {
-        return nested_func->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_func->getDefaultVersion();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(std::optional<size_t> revision) const override
     {
         return nested_func->getVersionFromRevision(revision);
     }
@@ -211,7 +201,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinary(state.dynamic_array_size, buf);
@@ -224,7 +214,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t version, Arena * arena) const override
     {
         AggregateFunctionForEachData & state = data(place);
 

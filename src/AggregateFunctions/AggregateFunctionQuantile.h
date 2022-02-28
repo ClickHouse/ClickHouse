@@ -90,21 +90,17 @@ public:
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    bool isVersioned() const override { return true; }
-
-    size_t getDefaultVersion() const override { return 0; }
-
-    size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(std::optional<size_t> revision) const override
     {
-        if (revision >= STATE_VERSION_1_MIN_REVISION)
+        if (!revision.has_value() || *revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
         else
             return 0;
     }
 
-    bool canSerializeFlag(std::optional<size_t> version) const override
+    bool canSerializeFlag(size_t version) const override
     {
-        return version.has_value() && *version > 0;
+        return version > 0;
     }
 
     String getName() const override { return Name::name; }
@@ -155,13 +151,13 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, size_t /* version */) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, size_t /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

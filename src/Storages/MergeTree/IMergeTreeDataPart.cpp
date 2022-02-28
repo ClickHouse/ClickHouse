@@ -1075,13 +1075,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
-
-        for (const auto & column : loaded_columns)
-        {
-            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-                aggregate_function_data_type->setVersion(0, /* if_empty */true);
-        }
+        // TODO
+        // for (const auto & column : loaded_columns)
+        // {
+        //     const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        //     if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        //         aggregate_function_data_type->setVersion(0);
+        // }
     }
 
     SerializationInfo::Settings settings =

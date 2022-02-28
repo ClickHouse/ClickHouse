@@ -79,13 +79,13 @@ public:
             this->data(place).result.change(this->data(rhs).result, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         this->data(place).result.write(buf, *serialization_res);
         this->data(place).value.write(buf, *serialization_val);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t /* version */, Arena * arena) const override
     {
         this->data(place).result.read(buf, *serialization_res, arena);
         this->data(place).value.read(buf, *serialization_val, arena);

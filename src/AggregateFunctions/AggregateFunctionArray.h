@@ -31,7 +31,8 @@ private:
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
-        , nested_func(nested_), num_arguments(arguments.size())
+        , nested_func(nested_)
+        , num_arguments(arguments.size())
     {
         assert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
@@ -47,21 +48,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    bool isVersioned() const override
-    {
-        return nested_func->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_func->getDefaultVersion();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override
-    {
-        return nested_func->getVersionFromRevision(revision);
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -126,12 +112,12 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t version) const override
     {
         nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
     }

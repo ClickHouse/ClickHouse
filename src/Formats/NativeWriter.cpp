@@ -117,16 +117,16 @@ void NativeWriter::write(const Block & block)
 
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
         const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        if (aggregate_function_data_type)
         {
             if (include_version)
             {
                 auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
-                aggregate_function_data_type->setVersion(version, /* if_empty */true);
+                aggregate_function_data_type->setVersion(version);
             }
             else
             {
-                aggregate_function_data_type->setVersion(0, /* if_empty */false);
+                aggregate_function_data_type->setVersion(0);
             }
         }
 

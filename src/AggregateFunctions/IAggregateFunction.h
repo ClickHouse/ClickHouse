@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <type_traits>
 
@@ -89,16 +90,9 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool isVersioned() const { return false; }
+    virtual size_t getVersionFromRevision(std::optional<size_t> /* revision */) const { return 0; }
 
-    virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
-
-    virtual bool canSerializeFlag(std::optional<size_t> /* version */) const { return true; }
-
-    virtual size_t getDefaultVersion() const
-    {
-        return 0;
-    }
+    virtual bool canSerializeFlag(std::size_t /* version */) const { return true; }
 
     virtual ~IAggregateFunction() = default;
 
@@ -132,10 +126,10 @@ public:
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0;
+    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t version = 0) const = 0;
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0;
+    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t version = 0, Arena * arena = nullptr) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;

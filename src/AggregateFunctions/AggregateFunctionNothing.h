@@ -64,12 +64,12 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t>) const override
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::size_t) const override
     {
         writeChar('\0', buf);
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::size_t, Arena *) const override
     {
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);

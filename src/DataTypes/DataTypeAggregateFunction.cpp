@@ -1,3 +1,4 @@
+#include <optional>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -46,9 +47,7 @@ String DataTypeAggregateFunction::getNameWithoutVersion() const
 
 size_t DataTypeAggregateFunction::getVersion() const
 {
-    if (version)
-        return *version;
-    return function->getDefaultVersion();
+    return version;
 }
 
 
@@ -58,9 +57,8 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     stream << "AggregateFunction(";
 
     /// If aggregate function does not support versioning its version is 0 and is not printed.
-    auto data_type_version = getVersion();
-    if (with_version && data_type_version)
-        stream << data_type_version << ", ";
+    if (with_version && version > 0)
+        stream << version << ", ";
     stream << function->getName();
 
     if (!parameters.empty())
@@ -135,7 +133,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
-    std::optional<size_t> version;
+    std::optional<size_t> version = {};
 
     if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "

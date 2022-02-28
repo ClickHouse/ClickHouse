@@ -13,7 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-
+#include <Common/ClickHouseRevision.h>
 
 namespace DB
 {
@@ -145,10 +145,22 @@ Block NativeReader::read()
         column.type = data_type_factory.get(type_name);
 
         const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        if (aggregate_function_data_type)
         {
-            auto version = aggregate_function_data_type->getVersionFromRevision(server_revision);
-            aggregate_function_data_type->setVersion(version, /*if_empty=*/ true);
+            size_t max_supported_version = aggregate_function_data_type->getVersionFromRevision({});
+            size_t recieved_version = aggregate_function_data_type->getVersion();
+            if (recieved_version > max_supported_version)
+            {
+                /// server should care about sending state of version that don't supported by client
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Unsupported version {} recieved of aggregate function '{}' from server ({}), but current revision ({}) supports only {}",
+                    recieved_version,
+                    aggregate_function_data_type->doGetName(),
+                    server_revision,
+                    ClickHouseRevision::getVersionRevision(),
+                    max_supported_version);
+            }
         }
 
         SerializationPtr serialization;

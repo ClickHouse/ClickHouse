@@ -1694,7 +1694,7 @@ namespace
             {
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
-                aggregate_function->deserialize(data, buf, std::nullopt, &arena);
+                aggregate_function->deserialize(data, buf, aggregate_function->getVersionFromRevision({}), &arena);
                 return data;
             }
             catch (...)

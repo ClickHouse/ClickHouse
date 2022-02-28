@@ -22,21 +22,24 @@ private:
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array parameters;
-    mutable std::optional<size_t> version;
+    mutable size_t version;
 
     String getNameImpl(bool with_version) const;
-    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
+                              const Array & parameters_, std::optional<size_t> version_ = {})
         : function(function_)
         , argument_types(argument_types_)
         , parameters(parameters_)
-        , version(version_)
+        , version(version_.value_or(function->getVersionFromRevision({})))
     {
+        if (version > function->getVersionFromRevision({}))
+        {
+            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported version {} for type {}", version, doGetName());
+        }
     }
 
     String getFunctionName() const { return function->getName(); }
@@ -68,22 +71,20 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
     bool supportsSparseSerialization() const override { return false; }
 
-    bool isVersioned() const { return function->isVersioned(); }
-
-    size_t getVersionFromRevision(size_t revision) const { return function->getVersionFromRevision(revision); }
+    size_t getVersionFromRevision(std::optional<size_t> revision) const { return function->getVersionFromRevision(revision); }
 
     /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according
     /// to server revision.
     /// It is ok to have an empty version value here - then for serialization a default (latest)
     /// version is used. This method is used to force some zero version to be used instead of
     /// default, or to set version for serialization in distributed queries.
-    void setVersion(size_t version_, bool if_empty) const
+    /// TODO(@vdimir) update comment
+    void setVersion(size_t version_) const
     {
-        if (version && if_empty)
-            return;
-
         version = version_;
     }
+
+    size_t getVersion() const;
 };
 
 }

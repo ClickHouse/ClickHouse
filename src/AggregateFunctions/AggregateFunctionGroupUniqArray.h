@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         auto & set = this->data(place).value;
         size_t size = set.size();
@@ -96,7 +96,7 @@ public:
             writeIntBinary(elem, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t /* version */, Arena *) const override
     {
         this->data(place).value.read(buf);
     }
@@ -169,7 +169,7 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
@@ -180,7 +180,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         size_t size;

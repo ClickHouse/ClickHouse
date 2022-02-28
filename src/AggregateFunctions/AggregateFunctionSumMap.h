@@ -105,13 +105,9 @@ public:
         }
     }
 
-    bool isVersioned() const override { return true; }
-
-    size_t getDefaultVersion() const override { return 1; }
-
-    size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(std::optional<size_t> revision) const override
     {
-        if (revision >= STATE_VERSION_1_MIN_REVISION)
+        if (revision >= STATE_VERSION_1_MIN_REVISION || revision == 0)
             return 1;
         else
             return 0;
@@ -282,17 +278,14 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, size_t version) const override
     {
-        if (!version)
-            version = getDefaultVersion();
-
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
 
         std::function<void(size_t, const Array &)> serialize;
-        switch (*version)
+        switch (version)
         {
             case 0:
             {
@@ -314,17 +307,14 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, size_t version, Arena *) const override
     {
-        if (!version)
-            version = getDefaultVersion();
-
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
         readVarUInt(size, buf);
 
         std::function<void(size_t, Array &)> deserialize;
-        switch (*version)
+        switch (version)
         {
             case 0:
             {

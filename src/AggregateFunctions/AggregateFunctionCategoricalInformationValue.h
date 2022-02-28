@@ -87,12 +87,12 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         buf.write(place, sizeOfData());
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::size_t /* version */, Arena *) const override
     {
         buf.read(place, sizeOfData());
     }

@@ -1469,8 +1469,8 @@ struct WindowFunction
     size_t alignOfData() const override { return 1; }
     void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
     void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override { fail(); }
-    void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t>, Arena *) const override { fail(); }
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::size_t) const override { fail(); }
+    void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::size_t, Arena *) const override { fail(); }
     void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }
 };
 

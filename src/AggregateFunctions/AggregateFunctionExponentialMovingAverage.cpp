@@ -62,13 +62,13 @@ public:
         this->data(place).merge(this->data(rhs), half_decay);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::size_t /* version */) const override
     {
         writeBinary(this->data(place).value, buf);
         writeBinary(this->data(place).time, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::size_t /* version */, Arena *) const override
     {
         readBinary(this->data(place).value, buf);
         readBinary(this->data(place).time, buf);

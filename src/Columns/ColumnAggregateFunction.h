@@ -82,7 +82,7 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    std::optional<size_t> version;
+    size_t version;
 
     ColumnAggregateFunction() = default;
 
@@ -94,7 +94,7 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, size_t version_ = 0);
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
