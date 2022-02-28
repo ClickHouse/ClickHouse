@@ -17,3 +17,15 @@ rm $USER_FILES_PATH/data.jsonl
 $CLICKHOUSE_CLIENT -q "attach table test"
 $CLICKHOUSE_CLIENT -q "select * from test" 2>&1 | grep -q "FILE_DOESNT_EXIST" && echo "OK" || echo "FAIL"
 
+
+$CLICKHOUSE_CLIENT -q "drop table test"
+$CLICKHOUSE_CLIENT -q "create table test (x UInt64) engine=Memory()"
+
+$CLICKHOUSE_CLIENT -q "drop table if exists test_dist"
+$CLICKHOUSE_CLIENT -q "create table test_dist engine=Distributed('test_shard_localhost', currentDatabase(), 'test')"
+
+$CLICKHOUSE_CLIENT -q "detach table test_dist"
+$CLICKHOUSE_CLIENT -q "drop table test"
+$CLICKHOUSE_CLIENT -q "attach table test_dist"
+$CLICKHOUSE_CLIENT -q "select * from test_dist" 2>&1 | grep -q "UNKNOWN_TABLE" && echo "OK" || echo "FAIL"
+
