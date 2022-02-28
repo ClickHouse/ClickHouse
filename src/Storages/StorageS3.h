@@ -219,7 +219,7 @@ private:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
-    bool isColumnOriented() const;
+    bool isColumnOriented() const override;
 };
 
 }
