@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/Hive/HiveCommon.h>
 
 #if USE_HIVE
@@ -5,6 +6,7 @@
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
+#include <Storages/Hive/HiveFile.h>
 
 
 namespace DB
@@ -14,6 +16,8 @@ namespace ErrorCodes
     extern const int NO_HIVEMETASTORE;
     extern const int BAD_ARGUMENTS;
 }
+
+const unsigned ThriftHiveMetastoreClientPool::max_connections = 16;
 
 bool HiveMetastoreClient::shouldUpdateTableMetadata(
     const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions)
@@ -40,25 +44,42 @@ bool HiveMetastoreClient::shouldUpdateTableMetadata(
     return false;
 }
 
+void HiveMetastoreClient::tryCallHiveClient(std::function<void(ThriftHiveMetastoreClientPool::Entry &)> func)
+{
+    int i = 0;
+    String err_msg;   
+    for (; i < max_retry; ++i)
+    {
+        auto client = client_pool.get(get_client_timeout);
+        try
+        {
+            func(client);
+        }
+        catch (apache::thrift::transport::TTransportException & e)
+        {
+            client.expire();
+            err_msg = e.what();
+            continue;
+        }
+        break;
+    }
+    if (i >= max_retry)
+        throw Exception(ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore expired because {}", err_msg);
+}
+
 HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(const String & db_name, const String & table_name)
 {
     LOG_TRACE(log, "Get table metadata for {}.{}", db_name, table_name);
-    std::lock_guard lock{mutex};
 
     auto table = std::make_shared<Apache::Hadoop::Hive::Table>();
     std::vector<Apache::Hadoop::Hive::Partition> partitions;
-    try
+    auto client_call = [&](ThriftHiveMetastoreClientPool::Entry & client)
     {
         client->get_table(*table, db_name, table_name);
-
         /// Query the latest partition info to check new change.
         client->get_partitions(partitions, db_name, table_name, -1);
-    }
-    catch (apache::thrift::transport::TTransportException & e)
-    {
-        setExpired();
-        throw Exception(ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore expired because {}", String(e.what()));
-    }
+    };
+    tryCallHiveClient(client_call);
 
     bool update_cache = shouldUpdateTableMetadata(db_name, table_name, partitions);
     String cache_key = getCacheKey(db_name, table_name);
@@ -103,21 +124,24 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
     return metadata;
 }
 
+std::shared_ptr<Apache::Hadoop::Hive::Table> HiveMetastoreClient::getHiveTable(const String & db_name, const String & table_name)
+{
+    auto table = std::make_shared<Apache::Hadoop::Hive::Table>();
+    auto client_call = [&](ThriftHiveMetastoreClientPool::Entry & client)
+    {
+        client->get_table(*table, db_name, table_name);
+    };
+    tryCallHiveClient(client_call);
+    return table;
+}
+
 void HiveMetastoreClient::clearTableMetadata(const String & db_name, const String & table_name)
 {
     String cache_key = getCacheKey(db_name, table_name);
 
-    std::lock_guard lock{mutex};
     HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (metadata)
         table_metadata_cache.remove(cache_key);
-}
-
-void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_)
-{
-    std::lock_guard lock{mutex};
-    client = client_;
-    clearExpired();
 }
 
 bool HiveMetastoreClient::PartitionInfo::haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const
@@ -192,52 +216,54 @@ HiveMetastoreClientFactory & HiveMetastoreClientFactory::instance()
     return factory;
 }
 
+using namespace apache::thrift;
+using namespace apache::thrift::protocol;
+using namespace apache::thrift::transport;
+using namespace Apache::Hadoop::Hive;
+
 HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & name, ContextPtr context)
 {
-    using namespace apache::thrift;
-    using namespace apache::thrift::protocol;
-    using namespace apache::thrift::transport;
-    using namespace Apache::Hadoop::Hive;
 
     std::lock_guard lock(mutex);
     auto it = clients.find(name);
-    if (it == clients.end() || it->second->isExpired())
+    if (it == clients.end())
     {
-        /// Connect to hive metastore
-        Poco::URI hive_metastore_url(name);
-        const auto & host = hive_metastore_url.getHost();
-        auto port = hive_metastore_url.getPort();
-
-        std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
-        socket->setKeepAlive(true);
-        socket->setConnTimeout(conn_timeout_ms);
-        socket->setRecvTimeout(recv_timeout_ms);
-        socket->setSendTimeout(send_timeout_ms);
-        std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
-        std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
-        std::shared_ptr<ThriftHiveMetastoreClient> thrift_client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
-        try
+        auto builder = [name]()
         {
-            transport->open();
-        }
-        catch (TException & tx)
-        {
-            throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        if (it == clients.end())
-        {
-            HiveMetastoreClientPtr client = std::make_shared<HiveMetastoreClient>(std::move(thrift_client), context);
-            clients[name] = client;
-            return client;
-        }
-        else
-        {
-            it->second->setClient(std::move(thrift_client));
-            return it->second;
-        }
+            return createThriftHiveMetastoreClient(name);
+        };
+        auto client = std::make_shared<HiveMetastoreClient>(builder, context->getGlobalContext());
+        clients[name] = client;
+        return client;
     }
     return it->second;
+}
+const int HiveMetastoreClientFactory::conn_timeout_ms = 10000;
+const int HiveMetastoreClientFactory::recv_timeout_ms = 10000;
+const int HiveMetastoreClientFactory::send_timeout_ms = 10000;
+std::shared_ptr<ThriftHiveMetastoreClient> HiveMetastoreClientFactory::createThriftHiveMetastoreClient(const String &name)
+{
+    Poco::URI hive_metastore_url(name);
+    const auto & host = hive_metastore_url.getHost();
+    auto port = hive_metastore_url.getPort();
+
+    std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
+    socket->setKeepAlive(true);
+    socket->setConnTimeout(conn_timeout_ms);
+    socket->setRecvTimeout(recv_timeout_ms);
+    socket->setSendTimeout(send_timeout_ms);
+    std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+    std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
+    std::shared_ptr<ThriftHiveMetastoreClient> thrift_client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
+    try
+    {
+        transport->open();
+    }
+    catch (TException & tx)
+    {
+        throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
+    }
+    return thrift_client;
 }
 
 }
