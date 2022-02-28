@@ -47,7 +47,7 @@ bool HiveMetastoreClient::shouldUpdateTableMetadata(
 void HiveMetastoreClient::tryCallHiveClient(std::function<void(ThriftHiveMetastoreClientPool::Entry &)> func)
 {
     int i = 0;
-    String err_msg;   
+    String err_msg;
     for (; i < max_retry; ++i)
     {
         auto client = client_pool.get(get_client_timeout);
