@@ -38,6 +38,7 @@ COPY hadoop-env.sh /hadoop-3.1.0/etc/hadoop/
 #COPY core-site.xml /hadoop-3.1.0/etc/hadoop
 COPY core-site.xml.template /hadoop-3.1.0/etc/hadoop
 COPY hive-site.xml /apache-hive-2.3.9-bin/conf
+RUN echo "123"
 COPY prepare_hive_data.sh /
 COPY demo_data.txt /
 
