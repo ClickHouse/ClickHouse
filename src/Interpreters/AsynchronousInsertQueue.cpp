@@ -184,6 +184,8 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
+    /// For table functions we check access while executing
+    /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
     if (insert_query.table_id)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
