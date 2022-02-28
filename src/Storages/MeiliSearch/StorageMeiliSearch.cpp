@@ -121,7 +121,7 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
 }
 
-MeiliSearchConfiguration getConfiguration(ASTs engine_args, ContextPtr context)
+MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
@@ -177,7 +177,7 @@ void registerStorageMeiliSearch(StorageFactory & factory)
     factory.registerStorage(
         "MeiliSearch",
         [](const StorageFactory::Arguments & args) {
-            auto config = getConfiguration(args.engine_args, args.getLocalContext());
+            auto config = StorageMeiliSearch::getConfiguration(args.engine_args, args.getLocalContext());
             return StorageMeiliSearch::create(args.table_id, config, args.columns, args.constraints, args.comment);
         },
         {

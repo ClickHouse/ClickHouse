@@ -164,7 +164,8 @@ Chunk MeiliSearchSource::generate()
             insertWithTypeId(col, kv_pair.getValue(), type_ptr);
         }
         if (cnt_fields != columns.size())
-            throw Exception(ErrorCodes::MEILISEARCH_MISSING_SOME_COLUMNS, "Some columns were not found in the table");
+            throw Exception(
+                ErrorCodes::MEILISEARCH_MISSING_SOME_COLUMNS, "Some columns were not found in the table, json = " + json.toString());
     }
 
 
