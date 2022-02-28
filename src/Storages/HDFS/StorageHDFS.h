@@ -150,7 +150,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    /// onCancel and generate can be called concurrently
+    /// OnCancel and generate can be called concurrently.
     std::mutex reader_mutex;
     String current_path;
 
