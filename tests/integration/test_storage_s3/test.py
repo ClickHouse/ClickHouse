@@ -1050,10 +1050,3 @@ def test_insert_select_schema_inference(started_cluster):
     result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(int(result) == 1)
 
-    instance.query(f"insert into function url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') select toUInt64(1)")
-    result = instance.query(f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
-    assert(result.strip() == 'x\tUInt64')
-
-    result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') order by x format TSV")
-    assert(result == '0\n1')
-
