@@ -44,7 +44,7 @@ ffails ={
 )
 @XFails(xfails)
 @FFails(ffails)
-def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse LDAP external user directory regression module.
     """
     nodes = {

@@ -37,7 +37,7 @@ xfails = {
     RQ_SRS_007_LDAP_Authentication("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse integration with LDAP regression module.
     """
     nodes = {

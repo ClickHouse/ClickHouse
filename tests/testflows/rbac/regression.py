@@ -184,7 +184,7 @@ ffails ={
 @Specifications(
     SRS_006_ClickHouse_Role_Based_Access_Control
 )
-def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """RBAC regression.
     """
     nodes = {

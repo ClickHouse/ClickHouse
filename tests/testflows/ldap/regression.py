@@ -9,7 +9,7 @@ from helpers.argparser import argparser
 @TestModule
 @Name("ldap")
 @ArgumentParser(argparser)
-def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse LDAP integration regression module.
     """
     args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "clickhouse_version": clickhouse_version}
