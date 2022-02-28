@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+echo $CLICKHOUSE_CLIENT_SECURE
 $CLICKHOUSE_CLIENT_SECURE -q "SELECT 2;"
 
 #disable test
