@@ -131,13 +131,13 @@ public:
         // hive table header doesn't contain partition columns, we need at least one column to read.
         if (!to_read_block.columns())
         {
+            all_to_read_are_partition_columns = true;
             for (size_t i = 0; i < header_block.columns(); ++i)
             {
                 auto & col = header_block.getByPosition(i);
                 if (source_info->partition_name_types.contains(col.name))
                     continue;
                 to_read_block.insert(0, col);
-                all_to_read_are_partition_columns = true;
                 break;
             }
         }
@@ -636,7 +636,7 @@ Pipe StorageHive::read(
         if (column == "_file")
             sources_info->need_file_column = true;
     }
-    // Columming pruning only support parque and orc which are used arrow to read
+    // Columms pruning only support parque and orc which are used arrow to read
     if (format_name != "Parquet" && format_name != "ORC")
         to_read_block = sample_block;
 
