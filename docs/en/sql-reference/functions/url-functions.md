@@ -345,6 +345,21 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ]
 ```
 
+### encodeURLComponent(URL) {#encodeurlcomponenturl}
+
+Returns the encoded URL.
+Example:
+
+``` sql
+SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedURL;
+```
+
+``` text
+┌─EncodedURL───────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT%201%3B │
+└──────────────────────────────────────────────────────────┘
+```
+
 ### decodeURLComponent(URL) {#decodeurlcomponenturl}
 
 Returns the decoded URL.
@@ -358,6 +373,21 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
+```
+
+### encodeURLFormComponent(URL) {#encodeurlformcomponenturl}
+
+Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
+Example:
+
+``` sql
+SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS EncodedURL;
+```
+
+``` text
+┌─EncodedURL────────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT+1+2%2B3 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ### decodeURLFormComponent(URL) {#decodeurlformcomponenturl}
