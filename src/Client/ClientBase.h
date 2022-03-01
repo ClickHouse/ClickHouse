@@ -105,6 +105,13 @@ protected:
 
 protected:
     bool processQueryText(const String & text);
+    virtual void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
+
 
 private:
     void receiveResult(ASTPtr parsed_query);
@@ -136,12 +143,6 @@ private:
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
-    void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTCreateQuery & ast_create);
