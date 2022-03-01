@@ -17,7 +17,7 @@ using namespace DB;
 
 namespace local_engine
 {
-    std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList& columns, ContextPtr context);
+    std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList columns, ContextPtr context);
 
     std::unique_ptr<MergeTreeSettings> buildMergeTreeSettings();
 

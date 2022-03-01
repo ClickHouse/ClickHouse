@@ -8,7 +8,7 @@ using namespace DB;
 
 namespace local_engine
 {
-std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList& columns, ContextPtr context)
+std::shared_ptr<DB::StorageInMemoryMetadata> buildMetaData(DB::NamesAndTypesList columns, ContextPtr context)
 {
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
     ColumnsDescription columns_description;

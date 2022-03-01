@@ -52,11 +52,13 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     auto merge_tree_table = local_engine::parseMergeTreeTable(table);
     auto header = parseNameStruct(rel.base_schema());
     auto names_and_types_list = header.getNamesAndTypesList();
-    auto factory = local_engine::StorageMergeTreeFactory::instance();
+    auto storageFactory = local_engine::StorageMergeTreeFactory::instance();
 
-    auto metadata = local_engine::buildMetaData(names_and_types_list, this->context);
+    auto metadata = storageFactory.getMetadata(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [names_and_types_list, this]()->local_engine::StorageInMemoryMetadataPtr {
+        return local_engine::buildMetaData(names_and_types_list, this->context);
+    });
     query_context.metadata = metadata;
-    auto storage = factory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
+    auto storage = storageFactory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
                 auto  custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
                     DB::StorageID(merge_tree_table.database, merge_tree_table.table),
                     merge_tree_table.relative_path,
@@ -491,14 +493,17 @@ DB::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB:
 }
 void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
-    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+    Stopwatch stopwatch;
+    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = true};
     this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings{
                                                                                      .actions_settings = ExpressionActionsSettings{
                                                                                          .can_compile_expressions = true,
                                                                                          .min_count_to_compile_expression = 3,
                                                                                      .compile_expressions = CompileExpressions::yes
                                                                                     }});
+    std::cout << "build pipeline" << stopwatch.elapsedMicroseconds() << std::endl;
     this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
+    std::cout << "create executor" << stopwatch.elapsedMicroseconds() << std::endl;
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }
