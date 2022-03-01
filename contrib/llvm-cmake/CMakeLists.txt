@@ -6,7 +6,7 @@ endif()
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
-    set (USE_EMBEDDED_COMPILER 0)
+    message(STATUS "Not using LLVM")
     return()
 endif()
 

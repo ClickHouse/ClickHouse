@@ -82,7 +82,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_center1 = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_center1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_center1)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -92,7 +96,7 @@ public:
                 getName());
         const auto & data_center1 = col_center1->getData();
 
-        const auto * col_radius1 = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
+        const auto * col_radius1 = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
         if (!col_radius1)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -102,7 +106,7 @@ public:
                 getName());
         const auto & data_radius1 = col_radius1->getData();
 
-        const auto * col_center2 = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
+        const auto * col_center2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
         if (!col_center2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -112,7 +116,7 @@ public:
                 getName());
         const auto & data_center2 = col_center2->getData();
 
-        const auto * col_radius2 = checkAndGetColumn<ColumnFloat64>(arguments[3].column.get());
+        const auto * col_radius2 = checkAndGetColumn<ColumnFloat64>(non_const_arguments[3].column.get());
         if (!col_radius2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
