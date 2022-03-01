@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3
+/* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3.
  */
 class TableFunctionS3 : public ITableFunction
 {
@@ -24,6 +24,10 @@ public:
         return name;
     }
     bool hasStaticStructure() const override { return s3_configuration->structure != "auto"; }
+
+    bool needStructureHint() const override { return s3_configuration->structure == "auto"; }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
 protected:
     StoragePtr executeImpl(
@@ -38,6 +42,7 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::optional<StorageS3Configuration> s3_configuration;
+    ColumnsDescription structure_hint;
 };
 
 class TableFunctionCOS : public TableFunctionS3
