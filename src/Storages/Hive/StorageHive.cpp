@@ -104,6 +104,7 @@ public:
         String hdfs_namenode_url_,
         String format_,
         String compression_method_,
+        Block header_block_,
         Block sample_block_,
         ContextPtr context_,
         UInt64 max_block_size_,
@@ -115,19 +116,31 @@ public:
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
-        , sample_block(std::move(sample_block_))
+        , header_block(header_block_)
+        , sample_block(sample_block_)
         , to_read_block(sample_block)
         , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
     {
         /// Initialize to_read_block, which is used to read data from HDFS.
-        to_read_block = sample_block;
         for (const auto & name_type : source_info->partition_name_types)
         {
             to_read_block.erase(name_type.name);
         }
-
+        // hive table header doesn't contain partition columns, we need at least one column to read.
+        if (!to_read_block.columns())
+        {
+            for (size_t i = 0; i < header_block.columns(); ++i)
+            {
+                auto & col = header_block.getByPosition(i);
+                if (source_info->partition_name_types.contains(col.name))
+                    continue;
+                to_read_block.insert(0, col);
+                all_to_read_are_partition_columns = true;
+                break;
+            }
+        }
         /// Initialize format settings
         format_settings.hive_text.input_field_names = text_input_field_names;
     }
@@ -204,14 +217,18 @@ public:
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
+                if (all_to_read_are_partition_columns)
+                    columns.clear();
 
                 /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
                 for (size_t i = 0; i < types.size(); ++i)
                 {
+                    if (!sample_block.has(source_info->partition_name_types.getNames()[i]))
+                        continue;
                     auto column = types[i]->createColumnConst(num_rows, source_info->hive_files[current_idx]->getPartitionValues()[i]);
                     auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
-                    columns.insert(columns.begin() + previous_idx, column->convertToFullColumnIfConst());
+                    columns.insert(columns.begin() + previous_idx, column);
                 }
 
                 /// Enrich with virtual columns.
@@ -247,8 +264,10 @@ private:
     String format;
     String compression_method;
     UInt64 max_block_size;
+    Block header_block; // hive table header
     Block sample_block;
     Block to_read_block;
+    bool all_to_read_are_partition_columns = false;
     ColumnsDescription columns_description;
     const Names & text_input_field_names;
     FormatSettings format_settings;
@@ -606,13 +625,20 @@ Pipe StorageHive::read(
     sources_info->table_name = hive_table;
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
+
+    Block to_read_block;
+    const auto & sample_block = metadata_snapshot->getSampleBlock();
     for (const auto & column : column_names)
     {
+        to_read_block.insert(sample_block.getByName(column));
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
             sources_info->need_file_column = true;
     }
+    // Columming pruning only support parque and orc which are used arrow to read
+    if (format_name != "Parquet" && format_name != "ORC")
+        to_read_block = sample_block;
 
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
@@ -625,7 +651,8 @@ Pipe StorageHive::read(
             hdfs_namenode_url,
             format_name,
             compression_method,
-            metadata_snapshot->getSampleBlock(),
+            sample_block,
+            to_read_block,
             context_,
             max_block_size,
             text_input_field_names));
