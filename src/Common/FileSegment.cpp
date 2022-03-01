@@ -256,61 +256,63 @@ void FileSegment::completeBatchAndResetDownloader()
 
 void FileSegment::complete(State state, bool complete_because_of_error)
 {
-    std::lock_guard segment_lock(mutex);
-
-    bool is_downloader = downloader_id == getCallerId();
-    if (!is_downloader)
     {
-        cv.notify_all();
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                        "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
+        std::lock_guard segment_lock(mutex);
+
+        bool is_downloader = downloader_id == getCallerId();
+        if (!is_downloader)
+        {
+            cv.notify_all();
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                            "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
+        }
+
+        if (state != State::DOWNLOADED
+            && state != State::PARTIALLY_DOWNLOADED
+            && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        {
+            cv.notify_all();
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                            "Cannot complete file segment with state: {}", stateToString(state));
+        }
+
+        if (complete_because_of_error)
+        {
+            /// Let's use a new buffer on the next attempt in this case.
+            remote_file_reader.reset();
+        }
+
+        download_state = state;
     }
 
-    if (state != State::DOWNLOADED
-        && state != State::PARTIALLY_DOWNLOADED
-        && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-    {
-        cv.notify_all();
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                        "Cannot complete file segment with state: {}", stateToString(state));
-    }
-
-    if (complete_because_of_error)
-    {
-        /// Let's use a new buffer on the next attempt in this case.
-        remote_file_reader.reset();
-    }
-
-    download_state = state;
-
-    completeImpl(segment_lock);
-
+    completeImpl();
     cv.notify_all();
 }
 
 void FileSegment::complete()
 {
-    std::lock_guard segment_lock(mutex);
-
-    if (download_state == State::SKIP_CACHE || detached)
-        return;
-
-    if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
     {
-        setDownloaded(segment_lock);
+        std::lock_guard segment_lock(mutex);
+
+        if (download_state == State::SKIP_CACHE || detached)
+            return;
+
+        if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
+            setDownloaded(segment_lock);
+
+        if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
+            download_state = State::PARTIALLY_DOWNLOADED;
     }
 
-    if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
-        download_state = State::PARTIALLY_DOWNLOADED;
-
-    completeImpl(segment_lock);
-
+    completeImpl();
     cv.notify_all();
 }
 
-void FileSegment::completeImpl(std::lock_guard<std::mutex> & segment_lock)
+void FileSegment::completeImpl()
 {
+    /// cache lock is always taken before segment lock.
     std::lock_guard cache_lock(cache->mutex);
+    std::lock_guard segment_lock(mutex);
 
     bool download_can_continue = false;
 

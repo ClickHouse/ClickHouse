@@ -410,7 +410,7 @@ bool LRUFileCache::tryReserve(
 
     for (auto & cell : to_evict)
     {
-        auto & file_segment = cell->file_segment;
+        auto file_segment = cell->file_segment;
         if (file_segment)
         {
             std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
