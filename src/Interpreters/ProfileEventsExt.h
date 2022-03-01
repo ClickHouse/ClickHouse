@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Columns/IColumn.h>
 
@@ -23,10 +24,11 @@ using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot
 /// Dumps profile events to columns Map(String, UInt64)
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 
-/// Add records about provided non-zero ProfileEvents::Counters.
-void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name);
-
-void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name);
+void getProfileEvents(
+    const String & server_display_name,
+    DB::InternalProfileEventsQueuePtr profile_queue,
+    DB::Block & block,
+    ThreadIdToCountersSnapshot & last_sent_snapshots);
 
 /// This is for ProfileEvents packets.
 enum Type : int8_t
