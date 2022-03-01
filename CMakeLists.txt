@@ -560,6 +560,7 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
+add_subdirectory (python_module)
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
