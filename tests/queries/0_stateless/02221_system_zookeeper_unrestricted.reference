@@ -1,3 +1,5 @@
+1
+1
 alter_partition_version
 alter_partition_version
 block_numbers
@@ -56,12 +58,8 @@ queue
 queue
 quorum
 quorum
-r1
-r1
 replicas
 replicas
-s1
-s1
 shared
 shared
 shared
