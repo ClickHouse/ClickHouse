@@ -259,8 +259,8 @@ std::shared_ptr<ThriftHiveMetastoreClient> HiveMetastoreClientFactory::createThr
     socket->setConnTimeout(hive_metastore_client_conn_timeout_ms);
     socket->setRecvTimeout(hive_metastore_client_recv_timeout_ms);
     socket->setSendTimeout(hive_metastore_client_send_timeout_ms);
-    std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
-    std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
+    std::shared_ptr<TTransport> transport = std::make_shared<TBufferedTransport>(socket);
+    std::shared_ptr<TProtocol> protocol = std::make_shared<TBinaryProtocol>(transport);
     std::shared_ptr<ThriftHiveMetastoreClient> thrift_client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
     try
     {
@@ -268,7 +268,7 @@ std::shared_ptr<ThriftHiveMetastoreClient> HiveMetastoreClientFactory::createThr
     }
     catch (TException & tx)
     {
-        throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "connect to hive metastore: {} failed. {}", name, tx.what());
     }
     return thrift_client;
 }
