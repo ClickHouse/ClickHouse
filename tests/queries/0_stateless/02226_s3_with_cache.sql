@@ -9,12 +9,13 @@ SELECT 1, * FROM test LIMIT 10 FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT query,
-       ProfileEvents['RemoteFSReadBytes'] as remote_fs_read,
-       ProfileEvents['RemoteFSCacheReadBytes'] as remote_fs_cache_read,
-       ProfileEvents['RemoteFSCacheDownloadedBytes'] as remote_fs_read_and_download
+       ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read,
+       ProfileEvents['RemoteFSCacheReadBytes'] > 0 as remote_fs_cache_read,
+       ProfileEvents['RemoteFSCacheDownloadBytes'] > 0 as remote_fs_read_and_download
 FROM system.query_log
 WHERE query LIKE 'SELECT 1, * FROM test LIMIT%'
 AND type = 'QueryFinish'
+AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
 
@@ -28,11 +29,14 @@ SELECT 2, * FROM test LIMIT 10 FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT query,
-       ProfileEvents['RemoteFSReadBytes'] as remote_fs_read,
-       ProfileEvents['RemoteFSCacheReadBytes'] as remote_fs_cache_read,
-       ProfileEvents['RemoteFSCacheDownloadedBytes'] as remote_fs_read_and_download
+       ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read,
+       ProfileEvents['RemoteFSCacheReadBytes'] > 0 as remote_fs_cache_read,
+       ProfileEvents['RemoteFSCacheDownloadBytes'] > 0 as remote_fs_read_and_download
 FROM system.query_log
 WHERE query LIKE 'SELECT 2, * FROM test LIMIT%'
 AND type = 'QueryFinish'
+AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
+
+DROP TABLE test NO DELAY;
