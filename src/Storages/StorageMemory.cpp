@@ -202,7 +202,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
         snapshot_data->blocks->begin(),
         snapshot_data->blocks->end(),
         metadata_snapshot->getColumns(),
-        [](const auto & block) { return block.getColumnsWithTypeAndName(); });
+        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }

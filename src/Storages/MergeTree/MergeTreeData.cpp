@@ -6117,7 +6117,7 @@ ColumnsDescription MergeTreeData::getObjectColumns(
 {
     return DB::getObjectColumns(
         parts.begin(), parts.end(),
-        storage_columns, [](const auto & part) { return part->getColumns(); });
+        storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 }
 
 ColumnsDescription MergeTreeData::getObjectColumns(
@@ -6125,7 +6125,7 @@ ColumnsDescription MergeTreeData::getObjectColumns(
 {
     return DB::getObjectColumns(
         range.begin(), range.end(),
-        storage_columns, [](const auto & part) { return part->getColumns(); });
+        storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 }
 
 void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lock*/)
