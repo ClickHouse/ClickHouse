@@ -88,7 +88,7 @@
 	url = https://github.com/ClickHouse/h3
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
-	url = https://github.com/ClickHouse/hyperscan.git
+	url = https://github.com/Algunenano/hyperscan.git
 [submodule "contrib/libunwind"]
 	path = contrib/libunwind
 	url = https://github.com/ClickHouse/libunwind.git
