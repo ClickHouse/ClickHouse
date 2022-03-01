@@ -1044,7 +1044,7 @@ def test_signatures(started_cluster):
 def test_select_columns(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
-    name = "test_table"
+    name = "test_table2"
     structure = "id UInt32, value1 Int32, value2 Int32"
 
     instance.query(f"drop table if exists {name}")
