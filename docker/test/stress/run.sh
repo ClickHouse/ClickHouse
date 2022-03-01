@@ -294,6 +294,8 @@ then
 
     stop
     
+    rm -rf /var/lib/clickhouse/coordination
+    
     # Start new server
     configure
     start
