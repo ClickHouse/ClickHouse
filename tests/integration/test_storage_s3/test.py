@@ -994,3 +994,59 @@ def test_format_detection(started_cluster):
     assert(int(result) == 1)
 
 
+def test_schema_inference_from_globs(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL")
+    instance.query(f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0")
+
+    url_filename = "test{1,2}.jsoncompacteachrow"
+    result = instance.query(f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')")
+    assert(result.strip() == 'c1\tNullable(Float64)')
+
+    result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')")
+    assert(sorted(result.split()) == ['0', '\\N'])
+
+    result = instance.query(f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')")
+    assert(result.strip() == 'c1\tNullable(Float64)')
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')")
+    assert(sorted(result.split()) == ['0', '\\N'])
+
+
+def test_signatures(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"create table test_signatures (x UInt64) engine=S3(s3_arrow)")
+    instance.query(f"truncate table test_signatures")
+    instance.query(f"insert into test_signatures select 1")
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64', 'auto')")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', 'Arrow')")
+    assert(int(result) == 1)
+
+
+def test_insert_select_schema_inference(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow') select toUInt64(1) as x settings s3_truncate_on_insert=1")
+    result = instance.query(f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
+    assert(result.strip() == 'x\tUInt64')
+
+    result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
+    assert(int(result) == 1)
+
