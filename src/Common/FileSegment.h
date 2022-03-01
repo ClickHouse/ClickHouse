@@ -123,7 +123,7 @@ private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
     void complete();
-    void completeImpl(std::lock_guard<std::mutex> & segment_lock);
+    void completeImpl();
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
