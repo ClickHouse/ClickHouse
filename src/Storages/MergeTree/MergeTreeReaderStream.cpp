@@ -42,7 +42,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
-        auto [_, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
+        size_t left_offset = left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0;
+        auto mark_range_bytes = getRightOffset(right_mark) - left_offset;
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
         sum_mark_range_bytes += mark_range_bytes;
@@ -85,6 +86,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         cached_buffer = std::move(buffer);
         data_buffer = cached_buffer.get();
+        compressed_data_buffer = cached_buffer.get();
     }
     else
     {
@@ -102,22 +104,21 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
+        compressed_data_buffer = non_cached_buffer.get();
     }
 }
 
 
-std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark_non_included)
+size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
     /// Special case, can happen in Collapsing/Replacing engines
     if (marks_count == 0)
-        return std::make_pair(0, 0);
+        return 0;
 
-    assert(left_mark < marks_count);
     assert(right_mark_non_included <= marks_count);
-    assert(left_mark <= right_mark_non_included);
 
     size_t result_right_offset;
     if (0 < right_mark_non_included && right_mark_non_included < marks_count)
@@ -177,19 +178,12 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
         }
     }
     else if (right_mark_non_included == 0)
-    {
         result_right_offset = marks_loader.getMark(right_mark_non_included).offset_in_compressed_file;
-    }
     else
-    {
         result_right_offset = file_size;
-    }
 
-    size_t mark_range_bytes = result_right_offset - (left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0);
-
-    return std::make_pair(result_right_offset, mark_range_bytes);
+    return result_right_offset;
 }
-
 
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
@@ -197,10 +191,7 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
     }
     catch (Exception & e)
     {
@@ -220,10 +211,7 @@ void MergeTreeReaderStream::seekToStart()
 {
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(0, 0);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(0, 0);
+        compressed_data_buffer->seek(0, 0);
     }
     catch (Exception & e)
     {
@@ -236,24 +224,21 @@ void MergeTreeReaderStream::seekToStart()
 }
 
 
-void MergeTreeReaderStream::adjustForRange(MarkRange range)
+void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
 {
     /**
      * Note: this method is called multiple times for the same range of marks -- each time we
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
-    auto [right_offset, _] = getRightOffsetAndBytesRange(range.begin, range.end);
+    auto right_offset = getRightOffset(right_mark);
     if (!right_offset)
     {
         if (last_right_offset && *last_right_offset == 0)
             return;
 
         last_right_offset = 0; // Zero value means the end of file.
-        if (cached_buffer)
-            cached_buffer->setReadUntilEnd();
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilEnd();
+        data_buffer->setReadUntilEnd();
     }
     else
     {
@@ -261,10 +246,7 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
             return;
 
         last_right_offset = right_offset;
-        if (cached_buffer)
-            cached_buffer->setReadUntilPosition(right_offset);
-        if (non_cached_buffer)
-            non_cached_buffer->setReadUntilPosition(right_offset);
+        data_buffer->setReadUntilPosition(right_offset);
     }
 }
 
