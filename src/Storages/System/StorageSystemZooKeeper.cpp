@@ -258,7 +258,8 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         paths.pop_front();
 
         String prefix;
-        if (path_type == ZkPathType::Prefix) {
+        if (path_type == ZkPathType::Prefix)
+        {
             prefix = path;
             size_t last_slash = prefix.rfind('/');
             path = prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
@@ -273,7 +274,8 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         if (!prefix.empty())
         {
             // Remove nodes that do not match specified prefix
-            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node) {
+            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node)
+            {
                 return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
             }), nodes.end());
         }
