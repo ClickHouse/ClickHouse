@@ -12,9 +12,6 @@
 namespace DB
 {
 
-class StorageFileBlockInputStream;
-class StorageFileBlockOutputStream;
-
 class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
 friend struct shared_ptr_helper<StorageFile>;
