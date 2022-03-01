@@ -1056,9 +1056,7 @@ namespace MySQLReplication
             return false;
         if (replicate_do_db != db)
             return false;
-        if (replicate_tables.empty() || table_name.empty() || replicate_tables.contains(table_name))
-            return true;
-        return false;
+        return replicate_tables.empty() || table_name.empty() || replicate_tables.contains(table_name);
     }
 }
 
