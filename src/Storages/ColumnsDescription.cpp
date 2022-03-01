@@ -671,6 +671,22 @@ ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
     return ret;
 }
 
+void ColumnsDescription::resetColumnTTLs()
+{
+    std::vector<ColumnDescription> old_columns;
+    old_columns.reserve(columns.size());
+    for (const auto & col : columns)
+        old_columns.emplace_back(col);
+
+    columns.clear();
+
+    for (auto & col : old_columns)
+    {
+        col.ttl.reset();
+        add(col);
+    }
+}
+
 
 String ColumnsDescription::toString() const
 {
