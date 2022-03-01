@@ -7,7 +7,6 @@
         "name": "clickhouse/binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
     },
@@ -29,11 +28,6 @@
     },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
-        "dependent": []
-    },
-    "docker/test/pvs": {
-        "only_amd64": true,
-        "name": "clickhouse/pvs-test",
         "dependent": []
     },
     "docker/test/util": {

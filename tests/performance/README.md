@@ -21,6 +21,6 @@ TODO @akuzm
 ### How to validate single test
 
 ```
-pip3 install clickhouse_driver
+pip3 install clickhouse_driver scipy
 ../../docker/test/performance-comparison/perf.py --runs 1 insert_parallel.xml
 ```

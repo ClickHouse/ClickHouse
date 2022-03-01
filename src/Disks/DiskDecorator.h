@@ -72,17 +72,9 @@ public:
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const override { return delegate->readMetaFile(path, settings, size); }
+    DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode) override { return delegate->writeMetaFile(path, buf_size, mode); }
-
-    void removeMetaFileIfExists(const String & path) override { delegate->removeMetaFileIfExists(path); }
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 

@@ -642,6 +642,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
         }
+        else
+        {
+            /// Only MergeTree support TTL
+            properties.columns.resetColumnTTLs();
+        }
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
@@ -1105,6 +1110,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             else
                 throw Exception(storage_already_exists_error_code,
                     "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        }
+        else if (!create.attach)
+        {
+            /// Checking that table may exists in detached/detached permanently state
+            try
+            {
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
+            catch (const Exception &)
+            {
+                if (create.if_not_exists)
+                    return false;
+                throw;
+            }
         }
 
 
