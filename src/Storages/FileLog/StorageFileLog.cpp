@@ -99,8 +99,18 @@ void StorageFileLog::loadMetaFiles(bool attach)
     /// Attach table
     if (attach)
     {
+        const auto & storage = getStorageID();
+
+        auto metadata_path_exist = std::filesystem::exists(metadata_base_path);
+        auto previous_path = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
+
+        /// For compatibility with the previous path version.
+        if (std::filesystem::exists(previous_path) && !metadata_path_exist)
+        {
+            std::filesystem::copy(previous_path, metadata_base_path, std::filesystem::copy_options::recursive);
+        }
         /// Meta file may lost, log and create directory
-        if (!std::filesystem::exists(metadata_base_path))
+        else if (!metadata_path_exist)
         {
             /// Create metadata_base_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
