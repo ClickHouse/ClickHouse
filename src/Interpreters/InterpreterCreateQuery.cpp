@@ -642,6 +642,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
         }
+        else
+        {
+            /// Only MergeTree support TTL
+            properties.columns.resetColumnTTLs();
+        }
 
         properties.constraints = as_storage_metadata->getConstraints();
     }

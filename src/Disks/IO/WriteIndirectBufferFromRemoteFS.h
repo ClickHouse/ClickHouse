@@ -12,12 +12,11 @@ namespace DB
 using CreateMetadataCallback = std::function<void(size_t bytes_count)>;
 
 /// Stores data in S3/HDFS and adds the object path and object size to metadata file on local FS.
-template <typename T>
 class WriteIndirectBufferFromRemoteFS final : public WriteBufferFromFileDecorator
 {
 public:
     WriteIndirectBufferFromRemoteFS(
-        std::unique_ptr<T> impl_,
+        std::unique_ptr<WriteBuffer> impl_,
         CreateMetadataCallback && create_callback_,
         const String & metadata_file_path_);
 

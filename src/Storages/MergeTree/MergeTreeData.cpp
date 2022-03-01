@@ -4720,6 +4720,10 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (select_query->sampleSize())
         return std::nullopt;
 
+    // Currently projection don't support deduplication when moving parts between shards.
+    if (settings.allow_experimental_query_deduplication)
+        return std::nullopt;
+
     // Currently projections don't support ARRAY JOIN yet.
     if (select_query->arrayJoinExpressionList().first)
         return std::nullopt;
