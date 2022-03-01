@@ -100,6 +100,7 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     void reset();
+    void cancel();
 
 private:
     PipelineResourcesHolder resources;
