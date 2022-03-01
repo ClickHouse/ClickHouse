@@ -32,6 +32,13 @@ protected:
         const std::vector<Arguments> & hosts_and_ports_arguments) override;
     void processConfig() override;
 
+    void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments) override;
+
 private:
     void printChangedSettings() const;
     std::vector<String> loadWarningMessages();

@@ -43,6 +43,8 @@ protected:
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
     void processConfig() override;
+    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
+
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
