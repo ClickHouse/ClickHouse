@@ -27,7 +27,7 @@ std::shared_ptr<DiskCacheWrapper> wrapWithCache(
     return std::make_shared<DiskCacheWrapper>(disk, cache_disk, cache_file_predicate);
 }
 
-String getDiskMetadataPath(
+static String getDiskMetadataPath(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
