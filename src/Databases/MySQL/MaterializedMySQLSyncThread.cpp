@@ -25,10 +25,10 @@
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 #include <base/bit_cast.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/MySQL/ASTDDLTableIdentifier.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -150,6 +150,61 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
 
         throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
+}
+
+static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
+{
+    String table_name;
+    String database_name;
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
+
+    bool parse_failed = false;
+    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
+    IParser::Pos pos(tokens, 0);
+    Expected expected;
+    ASTPtr res;
+    ASTPtr table;
+    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
+    {
+        ParserKeyword("TABLE").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else
+    {
+        parse_failed = true;
+    }
+    if (!parse_failed)
+    {
+        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
+        {
+            database_name = table_id.database_name;
+            table_name = table_id.table_name;
+        }
+    }
+    return std::make_tuple(database_name, table_name);
 }
 
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
@@ -810,11 +865,12 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         String query = query_event.query;
         if (!materialized_tables_list.empty())
         {
-            MySQLParser::ParseDDLTableIdentifier parser;
-            ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, query_context->getSettings().max_parser_depth);
-            if (const auto * table_identifier = ast->as<MySQLParser::ASTDDLTableIdentifier>())
+             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
+
+            if (!ddl_table_name.empty())
             {
-                if (!materialized_tables_list.contains(table_identifier->table))
+                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
+                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
                 {
                     LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
                     return;

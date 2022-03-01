@@ -1192,17 +1192,23 @@ def materialized_database_settings_materialized_mysql_tables_list(clickhouse_nod
     mysql_node.query("CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
     mysql_node.query("INSERT INTO test_database.a VALUES(1, 'foo')")
     mysql_node.query("INSERT INTO test_database.a VALUES(2, 'bar')")
-    # table b(not in materialized_mysql_tables_list) can be skip
-    mysql_node.query("CREATE TABLE test_database.b (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    # table b(include json type, not in materialized_mysql_tables_list) can be skip
+    mysql_node.query("CREATE TABLE test_database.b (id INT(11) NOT NULL PRIMARY KEY, value JSON)")
 
-    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse') SETTINGS materialized_mysql_tables_list = ' a,c'".format(service_name))
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse') SETTINGS materialized_mysql_tables_list = ' a,c,d'".format(service_name))
 
     check_query(clickhouse_node, "SELECT name from system.tables where database = 'test_database' FORMAT TSV", "a\n")
     check_query(clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n")
 
     # mysql data(binlog) can be skip
-    mysql_node.query("INSERT INTO test_database.b VALUES(1, 'foo')")
-    mysql_node.query("INSERT INTO test_database.b VALUES(2, 'bar')")
+    mysql_node.query("INSERT INTO test_database.b VALUES(1, '{\"name\":\"testjson\"}')")
+    mysql_node.query("INSERT INTO test_database.b VALUES(2, '{\"name\":\"testjson\"}')")
+
+    # irrelevant database can be skip
+    mysql_node.query("DROP DATABASE IF EXISTS other_database")
+    mysql_node.query("CREATE DATABASE other_database")
+    mysql_node.query("CREATE TABLE other_database.d (id INT(11) NOT NULL PRIMARY KEY, value json)")
+    mysql_node.query("INSERT INTO other_database.d VALUES(1, '{\"name\":\"testjson\"}')")
 
     mysql_node.query("CREATE TABLE test_database.c (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
     mysql_node.query("INSERT INTO test_database.c VALUES(1, 'foo')")
