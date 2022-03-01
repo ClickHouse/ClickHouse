@@ -2,4 +2,4 @@
 
 import mylib
 
-print(mylib.hello())
+print(mylib.hello("SELECT 42 as x"))
