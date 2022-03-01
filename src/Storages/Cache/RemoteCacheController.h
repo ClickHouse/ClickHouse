@@ -63,6 +63,22 @@ public:
         std::lock_guard lock(mutex);
         return valid;
     }
+        inline bool isEnable()
+    {
+        std::lock_guard lock(mutex);
+        return is_enable;
+
+    }
+    inline void disable()
+    {
+        std::lock_guard lock(mutex);
+        is_enable = false;
+    }
+    inline void enable()
+    {
+        std::lock_guard lock(mutex);
+        is_enable = true;
+    }
     IRemoteFileMetadataPtr getFileMetadata() { return file_metadata_ptr; }
     inline size_t getFileSize() const { return file_metadata_ptr->file_size; }
 
@@ -83,6 +99,7 @@ private:
     IRemoteFileMetadataPtr file_metadata_ptr;
     std::filesystem::path local_path;
 
+    bool is_enable = true;
     bool valid = true;
     size_t local_cache_bytes_read_before_flush;
     size_t current_offset;
