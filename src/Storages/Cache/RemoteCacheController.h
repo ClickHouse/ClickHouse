@@ -63,7 +63,7 @@ public:
         std::lock_guard lock(mutex);
         return valid;
     }
-        inline bool isEnable()
+    inline bool isEnable()
     {
         std::lock_guard lock(mutex);
         return is_enable;
