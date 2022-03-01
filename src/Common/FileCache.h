@@ -38,6 +38,9 @@ public:
 
     virtual ~IFileCache() = default;
 
+    /// Restore cache from local filesystem.
+    virtual void initialize() = 0;
+
     static bool shouldBypassCache();
 
     /// Cache capacity in bytes.
@@ -70,6 +73,8 @@ protected:
     size_t max_size;
     size_t max_element_size;
     size_t max_file_segment_size;
+
+    bool is_initialized = false;
 
     mutable std::mutex mutex;
 
@@ -108,6 +113,8 @@ public:
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
+    void initialize() override;
+
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
     using LRUQueue = std::list<FileKeyAndOffset>;
@@ -143,9 +150,6 @@ private:
     LRUQueue queue;
     size_t current_size = 0;
     Poco::Logger * log;
-
-    /// Needed in loadCacheInfoIntoMemory() method.
-    bool startup_restore_finished = false;
 
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,
