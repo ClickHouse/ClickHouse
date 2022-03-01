@@ -262,3 +262,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/pybind11"]
+	path = contrib/pybind11
+	url = git@github.com:pybind/pybind11.git
