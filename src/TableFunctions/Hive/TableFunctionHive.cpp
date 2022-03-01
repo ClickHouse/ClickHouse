@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -42,11 +43,11 @@ namespace DB
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
 
-        hive_metastore_url = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        hive_database = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        hive_table = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        table_structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        partition_by_def = args[5]->as<ASTLiteral &>().value.safeGet<String>();
+        hive_metastore_url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        hive_database = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        hive_table = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        table_structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        partition_by_def = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         actual_columns = parseColumnsListFromString(table_structure, context_);
     }
