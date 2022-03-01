@@ -638,7 +638,7 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
         snapshot_data->objects_by_shard.begin(),
         snapshot_data->objects_by_shard.end(),
         metadata_snapshot->getColumns(),
-        [](const auto & shard_num_and_columns) { return shard_num_and_columns.second; });
+        [](const auto & shard_num_and_columns) -> const auto & { return shard_num_and_columns.second; });
 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }

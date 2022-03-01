@@ -592,7 +592,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 {
     size_t col_size = getOffsets().size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     if (0 == col_size)
         return ColumnArray::create(data);
@@ -660,7 +660,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 {
     size_t size = getOffsets().size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     if (size == 0)
         return ColumnArray::create(data);
