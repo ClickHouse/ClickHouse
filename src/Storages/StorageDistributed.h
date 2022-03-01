@@ -61,6 +61,8 @@ public:
 
     bool isRemote() const override { return true; }
 
+    /// Snapshot for StorageDistributed fixes current descriptions
+    /// of columns of type Object for each shard.
     struct SnapshotData : public StorageSnapshot::Data
     {
         ColumnsDescriptionByShardNum objects_by_shard;

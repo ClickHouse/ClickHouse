@@ -8,6 +8,8 @@
 namespace DB
 {
 
+/// Tree that represents paths in document
+/// with additional data in nodes.
 template <typename NodeData>
 class SubcolumnsTree
 {
@@ -47,6 +49,7 @@ public:
     using NodeKind = typename Node::Kind;
     using NodePtr = std::shared_ptr<Node>;
 
+    /// Add a leaf without any data in other nodes.
     bool add(const PathInData & path, const NodeData & leaf_data)
     {
         return add(path, [&](NodeKind kind, bool exists) -> NodePtr
@@ -61,6 +64,8 @@ public:
         });
     }
 
+    /// Callback for creation of node. Receives kind of node and
+    /// flag, which is true if node already exists.
     using NodeCreator = std::function<NodePtr(NodeKind, bool)>;
 
     bool add(const PathInData & path, const NodeCreator & node_creator)
@@ -107,16 +112,19 @@ public:
         return true;
     }
 
+    /// Find node that matches the path the best.
     const Node * findBestMatch(const PathInData & path) const
     {
         return findImpl(path, false);
     }
 
+    /// Find node that matches the path exactly.
     const Node * findExact(const PathInData & path) const
     {
         return findImpl(path, true);
     }
 
+    /// Find leaf by path.
     const Node * findLeaf(const PathInData & path) const
     {
         const auto * candidate = findExact(path);
@@ -127,6 +135,7 @@ public:
 
     using NodePredicate = std::function<bool(const Node &)>;
 
+    /// Finds leaf that satisfies the predicate.
     const Node * findLeaf(const NodePredicate & predicate)
     {
         return findLeaf(root.get(), predicate);
@@ -147,6 +156,7 @@ public:
         return nullptr;
     }
 
+    /// Find first parent node that satisfies the predicate.
     static const Node * findParent(const Node * node, const NodePredicate & predicate)
     {
         while (node && !predicate(*node))

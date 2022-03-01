@@ -2912,6 +2912,9 @@ private:
         std::vector<WrapperType> element_wrappers;
         std::vector<std::optional<size_t>> to_reverse_index;
 
+        /// For named tuples allow conversions for tuples with
+        /// different sets of elements. If element exists in @to_type
+        /// and doesn't exist in @to_type it will be filled by default values.
         if (from_type->haveExplicitNames() && from_type->serializeNames()
             && to_type->haveExplicitNames() && to_type->serializeNames())
         {

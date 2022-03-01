@@ -132,7 +132,7 @@ ColumnsDescription getObjectColumns(
     }
 
     for (const auto & [name, types] : types_in_entries)
-        res.add({String(name), getLeastCommonTypeForObject(types)});
+        res.add({name, getLeastCommonTypeForObject(types)});
 
     return res;
 }

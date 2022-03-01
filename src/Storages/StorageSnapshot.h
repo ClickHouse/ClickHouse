@@ -1,24 +1,22 @@
 #pragma once
 #include <Storages/StorageInMemoryMetadata.h>
-// #include <sparsehash/dense_hash_map>
 
 namespace DB
 {
 
 class IStorage;
 
-// #if !defined(ARCADIA_BUILD)
-//     using NamesAndTypesMap = google::dense_hash_map<StringRef, DataTypePtr, StringRefHash>;
-// #else
-//     using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, DataTypePtr, StringRefHash>;
-// #endif
-
+/// Snapshot of storage that fixes set columns that can be read in query.
+/// There are 3 sources of columns: regular columns from metadata,
+/// dynamic columns from object Types, virtual columns.
 struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
     const ColumnsDescription object_columns;
 
+    /// Additional data, on which set of columns may depend.
+    /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
     struct Data
     {
         virtual ~Data() = default;
@@ -27,7 +25,7 @@ struct StorageSnapshot
     using DataPtr = std::unique_ptr<const Data>;
     const DataPtr data;
 
-    /// TODO: fix
+    /// Projection that is used in query.
     mutable const ProjectionDescription * projection = nullptr;
 
     StorageSnapshot(
@@ -57,7 +55,10 @@ struct StorageSnapshot
         init();
     }
 
+    /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
+
+    /// Get columns with types according to options only for requested names.
     NamesAndTypesList getColumnsByNames(const GetColumnsOptions & options, const Names & names) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
@@ -71,9 +72,8 @@ struct StorageSnapshot
 
     void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
 
-    StorageMetadataPtr getMetadataForQuery() const { return (projection ? projection->metadata : metadata); }
-
-    bool isSubcolumnOfObject(const String & name) const;
+    /// If we have a projection then we should use its metadata.
+    StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
 
 private:
     void init();

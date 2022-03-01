@@ -5,6 +5,10 @@
 namespace DB
 {
 
+/// Serialization for data type Object.
+/// Supported only test serialization/deserialization.
+/// and binary bulk serialization/deserialization without position independent
+/// encoding, i.e. serialization/deserialization into Native format.
 template <typename Parser>
 class SerializationObject : public ISerialization
 {
@@ -54,7 +58,7 @@ public:
 
 private:
     template <typename TSettings, typename TStatePtr>
-    void checkSerializationIsSupported(TSettings & settings, TStatePtr & state) const;
+    void checkSerializationIsSupported(const TSettings & settings, const TStatePtr & state) const;
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, Reader && reader) const;

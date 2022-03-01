@@ -12,9 +12,6 @@ namespace DB
 class ReadBuffer;
 
 /// This format parses a sequence of JSON objects separated by newlines, spaces and/or comma.
-/// Each JSON object is parsed as a whole to string.
-/// This format can only parse a table with single field of type String.
-
 class JSONAsRowInputFormat : public IRowInputFormat
 {
 public:
@@ -41,6 +38,8 @@ private:
     bool allow_new_rows = true;
 };
 
+/// Each JSON object is parsed as a whole to string.
+/// This format can only parse a table with single field of type String.
 class JSONAsStringRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
@@ -51,6 +50,9 @@ private:
     void readJSONObject(IColumn & column) override;
 };
 
+
+/// Each JSON object is parsed as a whole to object.
+/// This format can only parse a table with single field of type Object.
 class JSONAsObjectRowInputFormat final : public JSONAsRowInputFormat
 {
 public:

@@ -601,6 +601,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+/// Reads chunk of data between {} in that way,
+/// that it has balanced parentheses sequence of {}.
+/// So, it may form a JSON object, but it can be incorrenct.
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
 

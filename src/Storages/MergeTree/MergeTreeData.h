@@ -422,6 +422,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
+    /// Snapshot for MergeTree fixes the current set of data parts.
     struct SnapshotData : public StorageSnapshot::Data
     {
         DataPartsVector parts;
@@ -709,6 +710,7 @@ public:
 
     const ColumnsDescription & getObjectColumns() const { return object_columns; }
 
+    /// Creates desciprion of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
@@ -1002,6 +1004,9 @@ protected:
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
+    /// Current descriprion of columns of data type Object.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
     MergeTreePartsMover parts_mover;
@@ -1040,6 +1045,7 @@ protected:
         return {begin, end};
     }
 
+    /// Creates desciprion of columns of data type Object from the range of data parts.
     static ColumnsDescription getObjectColumns(
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 

@@ -105,6 +105,7 @@ void PathInData::readBinary(ReadBuffer & in)
         temp_parts.emplace_back(static_cast<std::string_view>(ref), is_nested, anonymous_array_level);
     }
 
+    /// Recreate path and parts.
     path = buildPath(temp_parts);
     parts = buildParts(path, temp_parts);
 }

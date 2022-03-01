@@ -836,7 +836,7 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
         if (balance == 0)
             return ReturnType(true);
 
-        if (balance < 0)
+        if (balance <    0)
             break;
     }
 

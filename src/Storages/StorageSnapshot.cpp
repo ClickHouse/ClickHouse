@@ -178,11 +178,4 @@ DataTypePtr StorageSnapshot::getConcreteType(const String & column_name) const
     return metadata->getColumns().get(column_name).type;
 }
 
-bool StorageSnapshot::isSubcolumnOfObject(const String & name) const
-{
-    auto split = Nested::splitName(name);
-    return !split.second.empty()
-        && object_columns.tryGetColumn(GetColumnsOptions::All, split.first);
-}
-
 }

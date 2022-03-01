@@ -23,6 +23,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 
+/// Returns descriptions of columns of type Object for each shard.
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const Cluster & cluster,
     const StorageID & remote_table_id,
