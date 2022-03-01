@@ -11,7 +11,8 @@ dpkg -i package_folder/clickhouse-common-static_*.deb;
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-dpkg -i package_folder/clickhouse-test_*.deb
+
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh

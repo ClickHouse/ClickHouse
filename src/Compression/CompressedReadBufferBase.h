@@ -48,8 +48,8 @@ protected:
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);
-    ~CompressedReadBufferBase();
+    explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);
+    virtual ~CompressedReadBufferBase();
 
     /** Disable checksums.
       * For example, may be used when
@@ -60,7 +60,9 @@ public:
         disable_checksum = true;
     }
 
-public:
+    /// Some compressed read buffer can do useful seek operation
+    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */) {}
+
     CompressionCodecPtr codec;
 };
 
