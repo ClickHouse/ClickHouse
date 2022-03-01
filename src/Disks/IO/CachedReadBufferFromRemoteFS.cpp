@@ -311,7 +311,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
             if (download_offset != impl_range.left)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "BUFFER INIT. Buffer's offsets mismatch; cached buffer offset: {}, implementation buffer offset: {}, "
+                    "Buffer's offsets mismatch; cached buffer offset: {}, implementation buffer offset: {}, "
                     "implementation buffer reading until: {}, file segment info: {}",
                     file_offset_of_buffer_end, impl_range.left, *impl_range.right, file_segment->getInfoForLog());
 

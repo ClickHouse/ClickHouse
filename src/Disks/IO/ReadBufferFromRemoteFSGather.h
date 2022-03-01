@@ -25,7 +25,7 @@ class ReadBufferFromRemoteFSGather : public ReadBuffer
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    explicit ReadBufferFromRemoteFSGather(
+    ReadBufferFromRemoteFSGather(
         const RemoteMetadata & metadata_,
         const ReadSettings & settings_,
         const String & path_);

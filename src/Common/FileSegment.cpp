@@ -168,13 +168,6 @@ FileSegment::State FileSegment::wait()
         assert(!downloader_id.empty());
         assert(downloader_id != getCallerId());
 
-#ifndef NDEBUG
-        // {
-        //     std::lock_guard cache_lock(cache->mutex);
-        //     assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock));
-        // }
-#endif
-
         cv.wait_for(segment_lock, std::chrono::seconds(60));
     }
 
@@ -223,6 +216,7 @@ void FileSegment::setDownloaded(std::lock_guard<std::mutex> & /* segment_lock */
     download_state = State::DOWNLOADED;
     is_downloaded = true;
 
+    assert(cache_writer);
     if (cache_writer)
     {
         cache_writer->finalize();
