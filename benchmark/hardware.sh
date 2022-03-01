@@ -29,8 +29,6 @@ fi
 mkdir -p clickhouse-benchmark-$SCALE
 pushd clickhouse-benchmark-$SCALE
 
-#!/bin/sh -e
-
 OS=$(uname -s)
 ARCH=$(uname -m)
 
