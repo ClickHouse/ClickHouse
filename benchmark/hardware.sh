@@ -155,27 +155,45 @@ echo
 echo "Benchmark complete. System info:"
 echo
 
-echo '----Version, build id-----------'
-./clickhouse local --query "SELECT format('Version: {}, build id: {}', version(), buildId())"
-./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
-./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
-echo '----CPU-------------------------'
-cat /proc/cpuinfo | grep -i -F 'model name' | uniq
-lscpu
-echo '----Block Devices---------------'
-lsblk
-echo '----Disk Free and Total--------'
-df -h .
-echo '----Memory Free and Total-------'
-free -h
-echo '----Physical Memory Amount------'
-cat /proc/meminfo | grep MemTotal
-echo '----RAID Info-------------------'
-cat /proc/mdstat
-#echo '----PCI-------------------------'
-#lspci
-#echo '----All Hardware Info-----------'
-#lshw
-echo '--------------------------------'
-
+if [ "${OS}" = "Darwin" ] 
+then 
+    echo '----Version, build id-----------'
+    ./clickhouse local --query "SELECT format('Version: {}', version())"
+    sw_vers | grep BuildVersion
+    ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
+    ./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
+    echo '----CPU-------------------------'
+    sysctl hw.model 
+    sysctl -a | grep -E 'hw.activecpu|hw.memsize|hw.byteorder|cachesize'
+    echo '----Disk Free and Total--------'
+    df -h .
+    echo '----Memory Free and Total-------'
+    vm_stat
+    echo '----Physical Memory Amount------'
+    ls -l /var/vm
+    echo '--------------------------------'
+else
+    echo '----Version, build id-----------'
+    ./clickhouse local --query "SELECT format('Version: {}, build id: {}', version(), buildId())"
+    ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
+    ./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
+    echo '----CPU-------------------------'
+    cat /proc/cpuinfo | grep -i -F 'model name' | uniq
+    lscpu
+    echo '----Block Devices---------------'
+    lsblk
+    echo '----Disk Free and Total--------'
+    df -h .
+    echo '----Memory Free and Total-------'
+    free -h
+    echo '----Physical Memory Amount------'
+    cat /proc/meminfo | grep MemTotal
+    echo '----RAID Info-------------------'
+    cat /proc/mdstat
+    #echo '----PCI-------------------------'
+    #lspci
+    #echo '----All Hardware Info-----------'
+    #lshw
+    echo '--------------------------------'
+fi
 echo
