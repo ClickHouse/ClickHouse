@@ -194,7 +194,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
         String pattern = literal->value.safeGet<String>();
         bool has_metasymbol = false;
-        String prefix; // pattern prefix before the first metasymbol occurance
+        String prefix; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)
         {
             char c = pattern[i];
@@ -210,7 +210,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
                 }
             }
 
-            // Stop prefix on the first metasymbols occurance
+            // Stop prefix on the first metasymbols occurrence
             if (c == '_' || c == '%')
             {
                 has_metasymbol = true;
