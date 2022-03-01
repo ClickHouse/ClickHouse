@@ -81,15 +81,7 @@ echo "Will download ${URL}"
 echo
 curl -O "${URL}" && chmod a+x clickhouse || exit 1
 echo
-echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ./clickhouse"
-
-if [ "${OS}" = "Linux" ]
-then
-    echo
-    echo "You can also install it:
-    sudo ./clickhouse install"
-fi
+echo "Successfully downloaded the ClickHouse binary"
 
 chmod a+x clickhouse
 
