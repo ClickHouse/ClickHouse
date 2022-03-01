@@ -1279,7 +1279,7 @@ void Client::readArguments(
         else
         {
             in_external_group = false;
-            if (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv || arg == "--structure"sv || arg == "--types"sv)
+            if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
             /// Parameter arg after underline.
