@@ -769,18 +769,20 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
 
+    bool is_initiator = context->getClientInfo().distributed_depth == 0;
+
     /// Move all operations out of any function
-    if (settings.optimize_move_functions_out_of_any)
+    if (is_initiator && settings.optimize_move_functions_out_of_any)
         optimizeAnyFunctions(query);
 
-    if (settings.optimize_normalize_count_variants)
+    if (is_initiator && settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query);
 
-    if (settings.optimize_rewrite_sum_if_to_count_if)
+    if (is_initiator && settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
 
     /// Remove injective functions inside uniq
-    if (settings.optimize_injective_functions_inside_uniq)
+    if (is_initiator && settings.optimize_injective_functions_inside_uniq)
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
