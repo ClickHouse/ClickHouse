@@ -238,7 +238,7 @@ std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> Externa
             return {nullptr, std::move(read_buffer)};
         }
 
-        // The remote file has been updated, need to redownload.
+        // the remote file has been updated, need to redownload
         if (!cache->value().isValid() || cache->value().isModified(remote_file_metadata))
         {
             LOG_TRACE(
