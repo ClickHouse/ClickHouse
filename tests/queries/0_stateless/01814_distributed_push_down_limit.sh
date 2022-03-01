@@ -115,7 +115,7 @@ function main()
     trap cleanup EXIT
 
     echo 'distributed_push_down_limit=0'
-    test_distributed_push_down_limit_0 --format Null
+    test_distributed_push_down_limit_0 --external --format Null
 
     #
     # The following tests (tests with distributed_push_down_limit=1) requires
