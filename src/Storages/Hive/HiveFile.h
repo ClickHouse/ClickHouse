@@ -7,8 +7,6 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
-#include <orc/Statistics.hh>
-#include <arrow/filesystem/filesystem.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
@@ -18,6 +16,8 @@
 namespace orc
 {
 class Reader;
+class Statistics;
+class ColumnStatistics;
 }
 
 namespace parquet
@@ -34,6 +34,11 @@ namespace arrow
 namespace io
 {
     class RandomAccessFile;
+}
+
+namespace fs
+{
+    class FileSystem;
 }
 
 class Buffer;
