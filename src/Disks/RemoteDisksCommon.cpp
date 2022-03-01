@@ -1,7 +1,7 @@
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/FileCache_fwd.h>
 #include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 
 namespace DB
 {
@@ -74,6 +74,9 @@ FileCachePtr getCachePtrForDisk(
     size_t max_cache_elements = config.getUInt64(config_prefix + ".data_cache_max_elements", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS);
     size_t max_file_segment_size = config.getUInt64(config_prefix + ".max_file_segment_size", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
-    return FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements, max_file_segment_size);
+    auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements, max_file_segment_size);
+    cache->initialize();
+    return cache;
 }
+
 }

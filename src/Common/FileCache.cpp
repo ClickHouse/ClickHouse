@@ -69,12 +69,16 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, si
     : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
     , log(&Poco::Logger::get("LRUFileCache"))
 {
+}
+
+void LRUFileCache::initialize()
+{
     if (fs::exists(cache_base_path))
         loadCacheInfoIntoMemory();
     else
         fs::create_directories(cache_base_path);
 
-    startup_restore_finished = true;
+    is_initialized = true;
 }
 
 void LRUFileCache::useCell(
@@ -448,7 +452,7 @@ void LRUFileCache::remove(
         {
             fs::remove(cache_file_path);
 
-            if (startup_restore_finished && offsets.empty())
+            if (is_initialized && offsets.empty())
             {
                 auto key_path = getPathInLocalCache(key);
 

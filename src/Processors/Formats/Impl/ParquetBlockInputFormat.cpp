@@ -140,6 +140,7 @@ void ParquetBlockInputFormat::prepareReader()
         nested_table_names = Nested::getAllTableNames(getPort().getHeader());
 
     int index = 0;
+    std::cerr << "\n\nnum fields: " << schema->num_fields() << "\n\n";
     for (int i = 0; i < schema->num_fields(); ++i)
     {
         /// STRUCT type require the number of indexes equal to the number of
@@ -147,6 +148,7 @@ void ParquetBlockInputFormat::prepareReader()
         /// count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
+        std::cerr << "name: " << name << "\n";
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
@@ -154,6 +156,7 @@ void ParquetBlockInputFormat::prepareReader()
         }
         index += indexes_count;
     }
+    std::cerr << "indexes count: " << index << "\n\n";
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
