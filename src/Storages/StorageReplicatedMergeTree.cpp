@@ -7556,7 +7556,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     auto new_data_part = createPart(
         lost_part_name,
-        choosePartType(0, block.rows()),
+        choosePartType(0, block.rows(), {}),
         new_part_info,
         createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + lost_part_name);

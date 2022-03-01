@@ -18,24 +18,26 @@ namespace ErrorCodes
 
 
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
-       MergeTreeData & storage_,
-        const String & name_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    MergeTreeData & storage_,
+    const String & name_,
+    const VolumePtr & volume_,
+    const std::optional<String> & relative_path_,
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_, projection_settings_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
 
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
-        const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    const MergeTreeData & storage_,
+    const String & name_,
+    const MergeTreePartInfo & info_,
+    const VolumePtr & volume_,
+    const std::optional<String> & relative_path_,
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_, projection_settings_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -73,7 +75,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     const auto & disk = volume->getDisk();
     String destination_path = base_path + new_relative_path;
 
-    auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
+    auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count, projection_settings);
     auto new_data_part = storage.createPart(name, new_type, info, volume, new_relative_path);
 
     new_data_part->uuid = uuid;
@@ -109,10 +111,17 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
             }
 
             auto projection_part = asInMemoryPart(projection);
-            auto projection_type = storage.choosePartTypeOnDisk(projection_part->block.bytes(), rows_count);
+            auto projection_type
+                = storage.choosePartTypeOnDisk(projection_part->block.bytes(), rows_count, projection_part->getProjectionSettings());
             MergeTreePartInfo projection_info("all", 0, 0, 0);
-            auto projection_data_part
-                = storage.createPart(projection_name, projection_type, projection_info, volume, projection_name + ".proj", parent_part);
+            auto projection_data_part = storage.createPart(
+                projection_name,
+                projection_type,
+                projection_info,
+                volume,
+                projection_name + ".proj",
+                parent_part,
+                projection_part->getProjectionSettings());
             projection_data_part->is_temp = false; // clean up will be done on parent part
             projection_data_part->setColumns(projection->getColumns());
 

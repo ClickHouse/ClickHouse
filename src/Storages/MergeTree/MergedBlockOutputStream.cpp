@@ -26,7 +26,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     MergeTreeWriterSettings writer_settings(
         storage.getContext()->getSettings(),
-        storage.getSettings(),
+        data_part->getStorageSettings(),
         data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);

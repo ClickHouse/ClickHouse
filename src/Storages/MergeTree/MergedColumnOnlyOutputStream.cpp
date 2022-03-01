@@ -15,19 +15,15 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const Block & header_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
-    WrittenOffsetColumns * offset_columns_,
-    const MergeTreeIndexGranularity & index_granularity,
-    const MergeTreeIndexGranularityInfo * index_granularity_info)
+    WrittenOffsetColumns * offset_columns,
+    const MergeTreeIndexGranularity & index_granularity)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettings();
-    const auto & storage_settings = data_part->storage.getSettings();
-
     MergeTreeWriterSettings writer_settings(
-        global_settings,
-        storage_settings,
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        storage.getContext()->getSettings(),
+        data_part->getStorageSettings(),
+        data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */false);
 
     writer = data_part->getWriter(
@@ -42,7 +38,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     if (!writer_on_disk)
         throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
 
-    writer_on_disk->setWrittenOffsetColumns(offset_columns_);
+    writer_on_disk->setWrittenOffsetColumns(offset_columns);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)

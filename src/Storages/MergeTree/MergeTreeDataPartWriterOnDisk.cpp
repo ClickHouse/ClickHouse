@@ -143,7 +143,7 @@ static size_t computeIndexGranularityImpl(
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
-    const auto storage_settings = storage.getSettings();
+    const auto storage_settings = data_part->getStorageSettings();
     return computeIndexGranularityImpl(
             block,
             storage_settings->index_granularity_bytes,

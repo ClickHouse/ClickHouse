@@ -16,8 +16,33 @@
 
 namespace DB
 {
+
+class MergeTreeData;
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+#define LIST_OF_PROJECTION_SETTINGS(M) \
+    M(min_compress_block_size) \
+    M(max_compress_block_size) \
+    M(index_granularity) \
+    M(index_granularity_bytes) \
+    M(min_bytes_for_wide_part) \
+    M(min_rows_for_wide_part) \
+    M(min_bytes_for_compact_part) \
+    M(min_rows_for_compact_part)
+
+struct ProjectionSettings
+{
+#define M(SETTING) \
+    std::optional<UInt64> SETTING;
+    LIST_OF_PROJECTION_SETTINGS(M)
+#undef M
+
+    bool changed = false;
+    MergeTreeSettingsPtr getSettings(const MergeTreeSettingsPtr & settings) const;
+};
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -70,7 +95,7 @@ struct ProjectionDescription
     /// partition columns.
     std::vector<size_t> partition_value_indices;
 
-    ASTPtr projection_settings;
+    ProjectionSettings projection_settings;
 
     String comment;
 

@@ -290,7 +290,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const VolumePtr & volume_,
     const std::optional<String> & relative_path_,
     Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
@@ -299,6 +300,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+    , projection_settings(projection_settings_)
 {
     if (parent_part)
         state = State::Active;
@@ -315,7 +317,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const VolumePtr & volume_,
     const std::optional<String> & relative_path_,
     Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
     : storage(storage_)
     , name(name_)
     , info(info_)
@@ -324,6 +327,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+    , projection_settings(projection_settings_)
 {
     if (parent_part)
         state = State::Active;
@@ -645,7 +649,8 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
         String path = getFullRelativePath() + projection.name + ".proj";
         if (volume->getDisk()->exists(path))
         {
-            auto part = storage.createPart(projection.name, {"all", 0, 0, 0}, volume, projection.name + ".proj", this);
+            auto part = storage.createPart(
+                projection.name, {"all", 0, 0, 0}, volume, projection.name + ".proj", this, projection.projection_settings);
             part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
             projection_parts.emplace(projection.name, std::move(part));
         }
@@ -1659,6 +1664,14 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
     hash.get128(hash_value.bytes);
 
     return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+}
+
+MergeTreeSettingsPtr IMergeTreeDataPart::getStorageSettings() const
+{
+    auto settings = storage.getSettings();
+    if (projection_settings.changed)
+        return projection_settings.getSettings(settings);
+    return settings;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

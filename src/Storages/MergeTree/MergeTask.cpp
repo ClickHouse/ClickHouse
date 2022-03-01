@@ -156,7 +156,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->future_part->part_info,
         local_single_disk_volume,
         local_tmp_part_basename,
-        global_ctx->parent_part);
+        global_ctx->parent_part,
+        global_ctx->projection_settings);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
@@ -329,7 +330,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     {
         global_ctx->rows_written += block.rows();
 
-        const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+        global_ctx->to->write(block);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -590,6 +591,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
             global_ctx->new_data_part.get(),
+            projection.projection_settings,
             ".proj",
             global_ctx->data,
             global_ctx->mutator,

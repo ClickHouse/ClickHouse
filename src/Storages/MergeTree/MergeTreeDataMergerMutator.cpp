@@ -417,6 +417,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
+    const ProjectionSettings & projection_settings,
     const String & suffix)
 {
     return std::make_shared<MergeTask>(
@@ -431,6 +432,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
+        projection_settings,
         suffix,
         &data,
         this,

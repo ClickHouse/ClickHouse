@@ -363,7 +363,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     auto new_data_part = data.createPart(
         part_name,
-        data.choosePartType(expected_size, block.rows()),
+        data.choosePartType(expected_size, block.rows(), {}),
         new_part_info,
         createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + part_name);
@@ -476,7 +476,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         new_part_info,
         parent_part->volume,
         relative_path,
-        parent_part);
+        parent_part,
+        projection.projection_settings);
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
@@ -540,11 +541,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
+    const auto & index_factory = MergeTreeIndexFactory::instance();
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
         columns,
-        MergeTreeIndices{},
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec);
 
     out->writeWithPermutation(block, perm_ptr);
@@ -576,7 +578,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
         data.reserveSpace(expected_size, parent_part->volume);
-        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
+        part_type = data.choosePartTypeOnDisk(expected_size, block.rows(), projection.projection_settings);
     }
 
     return writeProjectionPartImpl(
@@ -613,7 +615,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
         data.reserveSpace(expected_size, parent_part->volume);
-        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
+        part_type = data.choosePartTypeOnDisk(expected_size, block.rows(), projection.projection_settings);
     }
 
     return writeProjectionPartImpl(

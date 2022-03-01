@@ -1,6 +1,8 @@
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Storages/ProjectionsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -35,6 +37,21 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int DUPLICATE_COLUMN;
 };
+
+MergeTreeSettingsPtr ProjectionSettings::getSettings(const MergeTreeSettingsPtr & settings) const
+{
+    if (!changed)
+        return settings;
+
+    auto new_settings = std::make_shared<MergeTreeSettings>(*settings);
+#define M(SETTING) else if (SETTING) new_settings->set(#SETTING, *(SETTING));
+    if (false)
+        ;
+    LIST_OF_PROJECTION_SETTINGS(M)
+#undef M
+
+    return new_settings;
+}
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -71,9 +88,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
-
-    if (projection_settings)
-        other.projection_settings = projection_settings->clone();
+    other.projection_settings = projection_settings;
     other.comment = comment;
 
     if (expr_to_explicit_column_dag)
@@ -234,7 +249,20 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         }
 
         if (desc.settings)
-            result.projection_settings = desc.settings->clone();
+        {
+            for (const auto & changed_setting : desc.settings->changes)
+            {
+                const auto & setting_name = changed_setting.name;
+                const auto & new_value = changed_setting.value;
+
+#define M(SETTING) else if (setting_name == #SETTING) result.projection_settings.SETTING = new_value.safeGet<UInt64>();
+                if (false)
+                    ;
+                LIST_OF_PROJECTION_SETTINGS(M)
+#undef M
+            }
+            result.projection_settings.changed = true;
+        }
 
         if (desc.comment)
             result.comment = desc.comment->as<ASTLiteral &>().value.get<String>();

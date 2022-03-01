@@ -16,14 +16,16 @@ public:
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const IMergeTreeDataPart * parent_part_ = nullptr,
+        const ProjectionSettings & projection_settings_ = {});
 
     MergeTreeDataPartInMemory(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const IMergeTreeDataPart * parent_part_ = nullptr,
+        const ProjectionSettings & projection_settings_ = {});
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,

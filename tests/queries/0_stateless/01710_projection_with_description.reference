@@ -1,0 +1,2 @@
+CREATE TABLE default.t\n(\n    `i` Int32,\n    `j` Int32,\n    `k` Int32,\n    `v` String,\n    PROJECTION p\n    (\n        i + j AS `a` CODEC(T64, LZ4),\n        j AS `b`,\n        INDEX i_k k TYPE minmax GRANULARITY 1,\n        COMMENT \'test\',\n        SETTINGS index_granularity = 1\n    )\n    (\n        SELECT \n            i + j,\n            k\n        ORDER BY j\n    )\n)\nENGINE = MergeTree\nORDER BY i\nSETTINGS index_granularity = 8192
+3

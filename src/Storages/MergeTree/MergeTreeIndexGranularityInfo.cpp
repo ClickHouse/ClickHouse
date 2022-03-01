@@ -29,10 +29,11 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
     return {};
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
+    const MergeTreeData & storage, MergeTreeDataPartType type_, const MergeTreeSettingsPtr & settings)
     : type(type_)
 {
-    const auto storage_settings = storage.getSettings();
+    const auto storage_settings = settings ? settings : storage.getSettings();
     fixed_index_granularity = storage_settings->index_granularity;
 
     /// Granularity is fixed

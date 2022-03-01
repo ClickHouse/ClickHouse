@@ -135,7 +135,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
 
-            if (part_type == MergeTreeDataPartType::COMPACT)
+            if (projection->getType() == MergeTreeDataPartType::COMPACT)
             {
                 auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
                 auto file_buf = disk->readFile(proj_path);
@@ -149,12 +149,15 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    get_serialization(projection_column)->enumerateStreams(
-                        [&](const ISerialization::SubstreamPath & substream_path)
-                        {
-                            String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                            projection_checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
-                        });
+                    get_serialization(projection_column)
+                        ->enumerateStreams(
+                            [&](const ISerialization::SubstreamPath & substream_path)
+                            {
+                                String projection_file_name
+                                    = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
+                                projection_checksums_data.files[projection_file_name]
+                                    = checksum_compressed_file(disk, projection_path + projection_file_name);
+                            });
                 }
             }
 

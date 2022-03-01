@@ -68,7 +68,8 @@ public:
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        const IMergeTreeDataPart * parent_part_,
+        const ProjectionSettings & projection_settings_);
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -76,7 +77,8 @@ public:
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        const IMergeTreeDataPart * parent_part_,
+        const ProjectionSettings & projection_settings_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -179,6 +181,8 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     String getZeroLevelPartBlockID(std::string_view token) const;
+
+    MergeTreeSettingsPtr getStorageSettings() const;
 
     const MergeTreeData & storage;
 
@@ -429,6 +433,8 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    const ProjectionSettings & getProjectionSettings() const { return projection_settings; }
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -452,6 +458,8 @@ protected:
 
     /// Not null when it's a projection part.
     const IMergeTreeDataPart * parent_part;
+
+    ProjectionSettings projection_settings;
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 

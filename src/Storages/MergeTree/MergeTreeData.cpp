@@ -2229,44 +2229,58 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
+MergeTreeDataPartType
+MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count, const ProjectionSettings & projection_settings) const
 {
     const auto settings = getSettings();
     if (!canUsePolymorphicParts(*settings))
         return MergeTreeDataPartType::WIDE;
 
-    if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
+    auto min_bytes_for_compact_part = projection_settings.min_bytes_for_compact_part.value_or(settings->min_bytes_for_compact_part);
+    auto min_rows_for_compact_part = projection_settings.min_rows_for_compact_part.value_or(settings->min_rows_for_compact_part);
+    auto min_bytes_for_wide_part = projection_settings.min_bytes_for_wide_part.value_or(settings->min_bytes_for_wide_part);
+    auto min_rows_for_wide_part = projection_settings.min_rows_for_wide_part.value_or(settings->min_rows_for_wide_part);
+
+    if (bytes_uncompressed < min_bytes_for_compact_part || rows_count < min_rows_for_compact_part)
         return MergeTreeDataPartType::IN_MEMORY;
 
-    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
+    if (bytes_uncompressed < min_bytes_for_wide_part || rows_count < min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
 
     return MergeTreeDataPartType::WIDE;
 }
 
-MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const
+MergeTreeDataPartType
+MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count, const ProjectionSettings & projection_settings) const
 {
     const auto settings = getSettings();
     if (!canUsePolymorphicParts(*settings))
         return MergeTreeDataPartType::WIDE;
 
-    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
+    auto min_bytes_for_wide_part = projection_settings.min_bytes_for_wide_part.value_or(settings->min_bytes_for_wide_part);
+    auto min_rows_for_wide_part = projection_settings.min_rows_for_wide_part.value_or(settings->min_rows_for_wide_part);
+    if (bytes_uncompressed < min_bytes_for_wide_part || rows_count < min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
 
     return MergeTreeDataPartType::WIDE;
 }
 
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
-    MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
+    const String & name,
+    MergeTreeDataPartType type,
+    const MergeTreePartInfo & part_info,
+    const VolumePtr & volume,
+    const String & relative_path,
+    const IMergeTreeDataPart * parent_part,
+    const ProjectionSettings & projection_settings) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part, projection_settings);
     else if (type == MergeTreeDataPartType::WIDE)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part, projection_settings);
     else if (type == MergeTreeDataPartType::IN_MEMORY)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part);
+        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part, projection_settings);
     else
         throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -2284,14 +2298,22 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+    const String & name,
+    const VolumePtr & volume,
+    const String & relative_path,
+    const IMergeTreeDataPart * parent_part,
+    const ProjectionSettings & projection_settings) const
 {
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path, parent_part);
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path, parent_part, projection_settings);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
+    const String & name,
+    const MergeTreePartInfo & part_info,
+    const VolumePtr & volume,
+    const String & relative_path,
+    const IMergeTreeDataPart * parent_part,
+    const ProjectionSettings & projection_settings) const
 {
     MergeTreeDataPartType type;
     auto full_path = fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
@@ -2302,10 +2324,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     else
     {
         /// Didn't find any mark file, suppose that part is empty.
-        type = choosePartTypeOnDisk(0, 0);
+        type = choosePartTypeOnDisk(0, 0, projection_settings);
     }
 
-    return createPart(name, type, part_info, volume, relative_path, parent_part);
+    return createPart(name, type, part_info, volume, relative_path, parent_part, projection_settings);
 }
 
 void MergeTreeData::changeSettings(

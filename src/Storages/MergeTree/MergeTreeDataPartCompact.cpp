@@ -17,23 +17,25 @@ namespace ErrorCodes
 
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
-       MergeTreeData & storage_,
-        const String & name_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
+    MergeTreeData & storage_,
+    const String & name_,
+    const VolumePtr & volume_,
+    const std::optional<String> & relative_path_,
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_, projection_settings_)
 {
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
-        const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
+    const MergeTreeData & storage_,
+    const String & name_,
+    const MergeTreePartInfo & info_,
+    const VolumePtr & volume_,
+    const std::optional<String> & relative_path_,
+    const IMergeTreeDataPart * parent_part_,
+    const ProjectionSettings & projection_settings_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_, projection_settings_)
 {
 }
 

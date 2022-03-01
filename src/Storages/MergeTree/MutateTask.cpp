@@ -641,6 +641,7 @@ public:
                 {},
                 projection_merging_params,
                 ctx->new_data_part.get(),
+                projection.projection_settings,
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
@@ -1110,8 +1111,7 @@ private:
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 nullptr,
-                ctx->source_part->index_granularity,
-                &ctx->source_part->index_granularity_info
+                ctx->source_part->index_granularity
             );
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));

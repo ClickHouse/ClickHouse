@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -59,6 +60,7 @@ public:
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
         const IMergeTreeDataPart * parent_part_,
+        ProjectionSettings projection_settings_,
         String suffix_,
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
@@ -79,6 +81,7 @@ public:
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->projection_settings = std::move(projection_settings_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
@@ -131,6 +134,7 @@ private:
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         const IMergeTreeDataPart * parent_part{nullptr};
+        ProjectionSettings projection_settings;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};

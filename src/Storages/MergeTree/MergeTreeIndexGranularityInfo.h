@@ -9,6 +9,8 @@ namespace DB
 {
 
 class MergeTreeData;
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 /// Meta information about index granularity
 struct MergeTreeIndexGranularityInfo
@@ -26,7 +28,7 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes = 0;
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
+    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_, const MergeTreeSettingsPtr & settings = {});
 
     void changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part);
 
