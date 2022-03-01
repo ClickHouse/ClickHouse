@@ -90,11 +90,13 @@ private:
             using PathPartsWithArray = std::pair<PathInData::Parts, Array>;
             using PathToArray = HashMapWithStackMemory<UInt128, PathPartsWithArray, UInt128TrivialHash, 5>;
 
+            /// Traverse elements of array and collect an array
+            /// of fields by each path.
+
             PathToArray arrays_by_path;
             Arena strings_pool;
 
             size_t current_size = 0;
-
             for (auto it = array.begin(); it != array.end(); ++it)
             {
                 std::vector<PathInData::Parts> element_paths;
@@ -118,6 +120,7 @@ private:
                     }
                     else
                     {
+                        /// We found a new key. Add and empty array with current size.
                         Array path_array;
                         path_array.reserve(array.size());
                         path_array.resize(current_size);
@@ -129,6 +132,8 @@ private:
                     }
                 }
 
+                /// If some of the keys are missed in current element,
+                /// add default values for them.
                 if (keys_to_update)
                 {
                     for (auto & [_, value] : arrays_by_path)
@@ -157,6 +162,7 @@ private:
                 {
                     auto && [path, path_array] = value;
 
+                    /// Merge prefix path and path of array element.
                     paths.push_back(builder.append(path, true).getParts());
                     values.push_back(std::move(path_array));
 

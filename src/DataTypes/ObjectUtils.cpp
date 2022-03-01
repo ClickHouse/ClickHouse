@@ -426,9 +426,8 @@ ColumnPtr reduceNumberOfDimensions(ColumnPtr column, size_t dimensions_to_reduce
     return column;
 }
 
-/// We save intermidiate column, type and number of array
-/// dimensions for each intermidiate node in path in subcolumns tree.
-
+/// We save intermediate column, type and number of array
+/// dimensions for each intermediate node in path in subcolumns tree.
 struct ColumnWithTypeAndDimensions
 {
     ColumnPtr column;
@@ -494,7 +493,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         Columns tuple_elements_columns(num_elements);
         DataTypes tuple_elements_types(num_elements);
 
-        /// Reduce extra array dimesions to get columns and types of Nested elements.
+        /// Reduce extra array dimensions to get columns and types of Nested elements.
         for (size_t i = 0; i < num_elements; ++i)
         {
             assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);

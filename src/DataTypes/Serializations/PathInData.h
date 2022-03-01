@@ -10,6 +10,7 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/// Class that represents path in document, e.g. JSON.
 class PathInData
 {
 public:
@@ -21,8 +22,17 @@ public:
         {
         }
 
+        /// Name of part of path.
         std::string_view key;
+
+        /// If this part is Nested, i.e. element
+        /// related to this key is the array of objects.
         bool is_nested = false;
+
+        /// Number of array levels between current key and previous key.
+        /// E.g. in JSON {"k1": [[[{"k2": 1, "k3": 2}]]]}
+        /// "k1" is nested and has anonymous_array_level = 0.
+        /// "k2" and "k3" are not nested and have anonymous_array_level = 2.
         UInt8 anonymous_array_level = 0;
 
         bool operator==(const Part & other) const = default;
@@ -54,10 +64,16 @@ public:
     struct Hash { size_t operator()(const PathInData & value) const; };
 
 private:
+    /// Creates full path from parts.
     static String buildPath(const Parts & other_parts);
+
+    /// Creates new parts full from full path with correct string pointers.
     static Parts buildParts(const String & other_path, const Parts & other_parts);
 
+    /// The full path. Parts are separated by dots.
     String path;
+
+    /// Parts of the path. All string_view-s in parts must point to the @path.
     Parts parts;
 };
 
@@ -74,11 +90,19 @@ public:
 
 private:
     PathInData::Parts parts;
+
+    /// Number of array levels without key to which
+    /// next non-empty key will be nested.
+    /// Example: for JSON { "k1": [[{"k2": 1, "k3": 2}] }
+    // `k2` and `k3` has anonymous_array_level = 1 in that case.
     size_t current_anonymous_array_level = 0;
 };
 
 using PathsInData = std::vector<PathInData>;
 
+/// Result of parsing of a document.
+/// Contains all paths extracted from document
+/// and values which are related to them.
 struct ParseResult
 {
     std::vector<PathInData> paths;

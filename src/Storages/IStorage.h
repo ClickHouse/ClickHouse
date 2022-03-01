@@ -159,6 +159,8 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    /// Returns true if the storage supports storing of dynamic subcolumns.
+    /// For now it makes sense only for data type Object.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
@@ -600,11 +602,13 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    /// Creates a storage snapshot from given metadata.
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
     }
 
+    /// Creates a storage snapshot from given metadata and columns, which are used in query.
     virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/) const
     {
         return getStorageSnapshot(metadata_snapshot);

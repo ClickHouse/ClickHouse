@@ -30,10 +30,12 @@ namespace ErrorCodes
 namespace
 {
 
+/// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
+/// and replaces all scalars or nested arrays to @replacement at that level.
 class FieldVisitorReplaceScalars : public StaticVisitor<Field>
 {
 public:
-    explicit FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
+    FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
         : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
     {
     }
@@ -49,7 +51,7 @@ public:
             const size_t size = x.size();
             Array res(size);
             for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(*this, x[i]);
+                res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
             return res;
         }
         else
@@ -63,6 +65,8 @@ private:
 
 using Node = typename ColumnObject::SubcolumnsTree::Node;
 
+/// Finds a subcolumn from the same Nested type as @entry and inserts
+/// an array with default values with consistent sizes as in Nested type.
 bool tryInsertDefaultFromNested(
     std::shared_ptr<Node> entry, const ColumnObject::SubcolumnsTree & subcolumns)
 {
@@ -75,12 +79,15 @@ bool tryInsertDefaultFromNested(
 
     while (current_node)
     {
+        /// Try to find the first Nested up to the current node.
         const auto * node_nested = subcolumns.findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
             break;
 
+        /// If there are no leaves, skip current node and find
+        /// the next node up to the current.
         leaf = subcolumns.findLeaf(node_nested,
             [&](const auto & candidate)
             {
@@ -105,6 +112,7 @@ bool tryInsertDefaultFromNested(
     size_t num_dimensions = getNumberOfDimensions(*least_common_type);
     assert(num_skipped_nested < num_dimensions);
 
+    /// Replace scalars to default values with consistent array sizes.
     size_t num_dimensions_to_keep = num_dimensions - num_skipped_nested;
     auto default_scalar = num_skipped_nested
         ? createEmptyArrayField(num_skipped_nested)
@@ -161,6 +169,7 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
         subcolumn.insert(std::move(values[i]), std::move(field_info));
     }
 
+    /// Insert default values to missed subcolumns.
     const auto & subcolumns = column_object.getSubcolumns();
     for (const auto & entry : subcolumns)
     {
@@ -207,7 +216,7 @@ void SerializationObject<Parser>::deserializeTextCSV(IColumn & column, ReadBuffe
 
 template <typename Parser>
 template <typename TSettings, typename TStatePtr>
-void SerializationObject<Parser>::checkSerializationIsSupported(TSettings & settings, TStatePtr & state) const
+void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings & settings, const TStatePtr & state) const
 {
     if (settings.position_independent_encoding)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -333,7 +342,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
             auto serialization = type->getDefaultSerialization();
             ColumnPtr subcolumn_data = type->createColumn();
             serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn_data, limit, settings, state, cache);
-            column_object.addSubcolumn(PathInData(key), subcolumn_data->assumeMutable());
+            column_object.addSubcolumn(key, subcolumn_data->assumeMutable());
         }
         else
         {
