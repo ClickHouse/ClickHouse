@@ -27,7 +27,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LocalFileHolder::LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller) : file_cache_controller(std::move(cache_controller))
+LocalFileHolder::LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller)
+    : file_cache_controller(std::move(cache_controller)), file_buffer(nullptr), original_readbuffer(nullptr), thread_pool(nullptr)
 {
     file_buffer = file_cache_controller->value().allocFile();
     if (!file_buffer)
@@ -35,18 +36,43 @@ LocalFileHolder::LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_cont
             ErrorCodes::LOGICAL_ERROR, "Create file readbuffer failed. {}", file_cache_controller->value().getLocalPath().string());
 }
 
+LocalFileHolder::LocalFileHolder(
+    RemoteFileCacheType::MappedHolderPtr cache_controller,
+    std::unique_ptr<ReadBuffer> original_readbuffer_,
+    BackgroundSchedulePool * thread_pool_)
+    : file_cache_controller(std::move(cache_controller))
+    , file_buffer(nullptr)
+    , original_readbuffer(std::move(original_readbuffer_))
+    , thread_pool(thread_pool_)
+{
+}
+
+LocalFileHolder::~LocalFileHolder()
+{
+    if (original_readbuffer)
+    {
+        dynamic_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
+        file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
+    }
+}
+
 RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
 {
 }
 
 std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(
-    ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size)
+    ContextPtr context,
+    IRemoteFileMetadataPtr remote_file_metadata,
+    std::unique_ptr<ReadBuffer> read_buffer,
+    size_t buff_size,
+    bool is_random_accessed)
+
 {
     auto remote_path = remote_file_metadata->remote_path;
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
 
     std::tie(remote_read_buffer->local_file_holder, read_buffer)
-        = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
+        = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer, is_random_accessed);
     if (remote_read_buffer->local_file_holder == nullptr)
         return read_buffer;
     remote_read_buffer->remote_file_size = remote_file_metadata->file_size;
@@ -55,6 +81,19 @@ std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(
 
 bool RemoteReadBuffer::nextImpl()
 {
+    if (local_file_holder->original_readbuffer)
+    {
+        auto status = local_file_holder->original_readbuffer->next();
+        if (status)
+        {
+            BufferBase::set(
+                local_file_holder->original_readbuffer->buffer().begin(),
+                local_file_holder->original_readbuffer->buffer().size(),
+                local_file_holder->original_readbuffer->offset());
+        }
+        return status;
+    }
+
     auto start_offset = local_file_holder->file_buffer->getPosition();
     auto end_offset = start_offset + local_file_holder->file_buffer->internalBuffer().size();
     local_file_holder->file_cache_controller->value().waitMoreData(start_offset, end_offset);
@@ -73,6 +112,16 @@ bool RemoteReadBuffer::nextImpl()
 
 off_t RemoteReadBuffer::seek(off_t offset, int whence)
 {
+    if (local_file_holder->original_readbuffer)
+    {
+        auto ret = dynamic_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->seek(offset, whence);
+        BufferBase::set(
+            local_file_holder->original_readbuffer->buffer().begin(),
+            local_file_holder->original_readbuffer->buffer().size(),
+            local_file_holder->original_readbuffer->offset());
+        return ret;
+    }
+
     if (!local_file_holder->file_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call seek() in this buffer. It's a bug!");
     /*
@@ -88,6 +137,10 @@ off_t RemoteReadBuffer::seek(off_t offset, int whence)
 
 off_t RemoteReadBuffer::getPosition()
 {
+    if (local_file_holder->original_readbuffer)
+    {
+        return dynamic_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->getPosition();
+    }
     return local_file_holder->file_buffer->getPosition();
 }
 
@@ -164,7 +217,7 @@ String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metada
 }
 
 std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> ExternalDataSourceCache::createReader(
-    ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer)
+    ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed)
 {
     // If something is wrong on startup, rollback to read from the original ReadBuffer
     if (!isInitialized())
@@ -180,6 +233,10 @@ std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> Externa
     auto cache = lru_caches->get(local_path);
     if (cache)
     {
+        if (!cache->value().isEnable())
+        {
+            return {nullptr, std::move(read_buffer)};
+        }
         // the remote file has been updated, need to redownload
         if (!cache->value().isValid() || cache->value().isModified(remote_file_metadata))
         {
@@ -215,6 +272,17 @@ std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> Externa
             remote_file_metadata->file_size,
             lru_caches->weight());
         return {nullptr, std::move(read_buffer)};
+    }
+    /*
+      If read_buffer is seekable, use read_buffer directly inside LocalFileHolder. And once LocalFileHolder is released,
+      start the download process in background.
+      The cache is marked disable until the download process finish.
+      For reading parquet files from hdfs, with this optimization, the speedup can reach 3x.
+    */
+    if (dynamic_cast<SeekableReadBuffer *>(read_buffer.get()) && is_random_accessed)
+    {
+        new_cache->value().disable();
+        return {std::make_unique<LocalFileHolder>(std::move(new_cache), std::move(read_buffer), &context->getSchedulePool()), nullptr};
     }
     new_cache->value().startBackgroundDownload(std::move(read_buffer), context->getSchedulePool());
     return {std::make_unique<LocalFileHolder>(std::move(new_cache)), nullptr};
