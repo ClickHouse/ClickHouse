@@ -8,7 +8,6 @@
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/ProfileEventsExt.h>
 
 
 namespace DB
@@ -64,84 +63,7 @@ void LocalConnection::updateProgress(const Progress & value)
 
 void LocalConnection::getProfileEvents(Block & block)
 {
-    using namespace ProfileEvents;
-
-    static const NamesAndTypesList column_names_and_types = {
-        {"host_name", std::make_shared<DataTypeString>()},
-        {"current_time", std::make_shared<DataTypeDateTime>()},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"type", TypeEnum},
-        {"name", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeInt64>()},
-    };
-
-    ColumnsWithTypeAndName temp_columns;
-    for (auto const & name_and_type : column_names_and_types)
-        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-    block = Block(std::move(temp_columns));
-    MutableColumns columns = block.mutateColumns();
-    auto thread_group = CurrentThread::getGroup();
-    auto const current_thread_id = CurrentThread::get().thread_id;
-    std::vector<ProfileEventsSnapshot> snapshots;
-    ThreadIdToCountersSnapshot new_snapshots;
-    ProfileEventsSnapshot group_snapshot;
-    {
-        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
-        snapshots.reserve(stats.size());
-
-        for (auto & stat : stats)
-        {
-            auto const thread_id = stat.thread_id;
-            if (thread_id == current_thread_id)
-                continue;
-            auto current_time = time(nullptr);
-            auto previous_snapshot = last_sent_snapshots.find(thread_id);
-            auto increment =
-                previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(stat.counters, previous_snapshot->second)
-                : CountersIncrement(stat.counters);
-            snapshots.push_back(ProfileEventsSnapshot{
-                thread_id,
-                std::move(increment),
-                stat.memory_usage,
-                current_time
-            });
-            new_snapshots[thread_id] = std::move(stat.counters);
-        }
-
-        group_snapshot.thread_id    = 0;
-        group_snapshot.current_time = time(nullptr);
-        group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot    = last_sent_snapshots.find(0);
-        group_snapshot.counters     =
-            prev_group_snapshot != last_sent_snapshots.end()
-            ? CountersIncrement(group_counters, prev_group_snapshot->second)
-            : CountersIncrement(group_counters);
-        new_snapshots[0]            = std::move(group_counters);
-    }
-    last_sent_snapshots = std::move(new_snapshots);
-
-    const String server_display_name = "localhost";
-    for (auto & snapshot : snapshots)
-    {
-        dumpProfileEvents(snapshot, columns, server_display_name);
-        dumpMemoryTracker(snapshot, columns, server_display_name);
-    }
-    dumpProfileEvents(group_snapshot, columns, server_display_name);
-    dumpMemoryTracker(group_snapshot, columns, server_display_name);
-
-    MutableColumns logs_columns;
-    Block curr_block;
-    size_t rows = 0;
-
-    for (; state->profile_queue->tryPop(curr_block); ++rows)
-    {
-        auto curr_columns = curr_block.getColumns();
-        for (size_t j = 0; j < curr_columns.size(); ++j)
-            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
-    }
+    ProfileEvents::getProfileEvents("local", state->profile_queue, block, last_sent_snapshots);
 }
 
 void LocalConnection::sendQuery(
