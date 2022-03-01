@@ -447,6 +447,16 @@ def test_where_false(started_cluster):
     cursor.execute("DROP TABLE test")
 
 
+def test_datetime64(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (ts timestamp)")
+    cursor.execute("insert into test select '1960-01-01 20:00:00';")
+
+    result = node1.query("select * from postgresql(postgres1, table='test')")
+    assert(result.strip() == '1960-01-01 20:00:00.000000')
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -56,7 +56,7 @@ public:
 
     enum class FileStatus
     {
-        OPEN, /// first time open file after table start up
+        OPEN, /// First time open file after table start up.
         NO_CHANGE,
         UPDATED,
         REMOVED,
@@ -83,7 +83,7 @@ public:
     {
         InodeToFileMeta meta_by_inode;
         FileNameToContext context_by_name;
-        /// file names without path
+        /// File names without path.
         Names file_names;
     };
 
@@ -199,7 +199,7 @@ private:
 
     /// Used in shutdown()
     void serialize() const;
-    /// Used in FileSource closeFileAndStoreMeta(file_name);
+    /// Used in FileSource closeFileAndStoreMeta(file_name).
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
