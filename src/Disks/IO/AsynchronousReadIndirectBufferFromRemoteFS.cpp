@@ -32,7 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -146,125 +146,127 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         return false;
 
     size_t size = 0;
-
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
 
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-        Stopwatch watch;
+        size_t offset = 0;
         {
+            Stopwatch watch;
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
             auto result = prefetch_future.get();
             size = result.size;
-            auto offset = result.offset;
-            assert(offset < size);
-
-            if (size)
-            {
-                memory.swap(prefetch_buffer);
-                size -= offset;
-                set(memory.data() + offset, size);
-                working_buffer.resize(size);
-                file_offset_of_buffer_end += size;
-            }
+            offset = result.offset;
+            /// If prefetch_future is valid, size should always be greater than zero.
+            assert(offset < size && size > 0);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
-        watch.stop();
-        ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
+        prefetch_buffer.swap(memory);
+        /// Adjust the working buffer so that it ignores `offset` bytes.
+        setWithBytesToIgnore(memory.data(), size, offset);
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
+
         auto result = readInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
-        assert(offset < size);
-
+        assert(offset < size || size == 0);
         if (size)
         {
-            size -= offset;
-            set(memory.data() + offset, size);
-            working_buffer.resize(size);
-            file_offset_of_buffer_end += size;
+            /// Adjust the working buffer so that it ignores `offset` bytes.
+            setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
 
-    if (file_offset_of_buffer_end != impl->offset())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected equality {} == {}. It's a bug", file_offset_of_buffer_end, impl->offset());
-
+    file_offset_of_buffer_end = impl->offset();
     prefetch_future = {};
     return size;
 }
 
 
-off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
+off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
-    if (whence == SEEK_CUR)
+    size_t new_pos;
+    if (whence == SEEK_SET)
     {
-        /// If position within current working buffer - shift pos.
-        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < file_offset_of_buffer_end)
-        {
-            pos += offset_;
-            return getPosition();
-        }
-        else
-        {
-            file_offset_of_buffer_end += offset_;
-        }
+        assert(offset >= 0);
+        new_pos = offset;
     }
-    else if (whence == SEEK_SET)
+    else if (whence == SEEK_CUR)
     {
-        /// If position is within current working buffer - shift pos.
-        if (!working_buffer.empty()
-            && static_cast<size_t>(offset_) >= file_offset_of_buffer_end - working_buffer.size()
-            && size_t(offset_) < file_offset_of_buffer_end)
-        {
-            pos = working_buffer.end() - (file_offset_of_buffer_end - offset_);
+        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+    }
+    else
+    {
+        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 
+    /// Position is unchanged.
+    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
+        return new_pos;
+
+    bool read_from_prefetch = false;
+    while (true)
+    {
+        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
+        {
+            /// Position is still inside the buffer.
+            /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
+
+            pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
             assert(pos >= working_buffer.begin());
             assert(pos <= working_buffer.end());
 
-            return getPosition();
+            return new_pos;
         }
-        else
+        else if (prefetch_future.valid())
         {
-            file_offset_of_buffer_end = offset_;
+            /// Read from prefetch buffer and recheck if the new position is valid inside.
+
+            if (nextImpl())
+            {
+                read_from_prefetch = true;
+                continue;
+            }
         }
-    }
-    else
-        throw Exception("Only SEEK_SET or SEEK_CUR modes are allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-    if (prefetch_future.valid())
-    {
-        ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-        prefetch_future.wait();
-        prefetch_future = {};
+        /// Prefetch is cancelled because of seek.
+        if (read_from_prefetch)
+            ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
+
+        break;
     }
 
+    assert(!prefetch_future.valid());
+
+    /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
 
     /**
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
-    off_t file_offset_before_seek = impl->offset();
     if (impl->initialized()
-        && read_until_position && file_offset_of_buffer_end < *read_until_position
-        && static_cast<off_t>(file_offset_of_buffer_end) > file_offset_before_seek
-        && static_cast<off_t>(file_offset_of_buffer_end) < file_offset_before_seek + static_cast<off_t>(min_bytes_for_seek))
+        && read_until_position && new_pos < *read_until_position
+        && new_pos > file_offset_of_buffer_end
+        && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
-        bytes_to_ignore = file_offset_of_buffer_end - file_offset_before_seek;
+        bytes_to_ignore = new_pos - file_offset_of_buffer_end;
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
         impl->reset();
+        file_offset_of_buffer_end = new_pos;
     }
 
-    return file_offset_of_buffer_end;
+    return new_pos;
 }
 
 
