@@ -24,12 +24,25 @@ bool isLocalhost(const std::string & hostname)
 
 }
 
+/// this function quite long because contains a lot of sanity checks in config:
+/// 1. No duplicate endpoints
+/// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
+/// 3. Raft internal port is equal to client port
+/// 4. No duplicate IDs
+/// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
+
+    std::unordered_set<UInt64> client_ports;
+    if (config.has(config_prefix + ".tcp_port"))
+        client_ports.insert(config.getUInt64(config_prefix + ".tcp_port"));
+
+    if (config.has(config_prefix + ".tcp_port_secure"))
+        client_ports.insert(config.getUInt64(config_prefix + ".tcp_port_secure"));
 
     /// Sometimes (especially in cloud envs) users can provide incorrect
     /// configuration with duplicated raft ids or endpoints. We check them
@@ -52,6 +65,12 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
+        if (client_ports.contains(port))
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains hostname '{}' with port '{}' which is equal to client port on current machine",
+                            hostname, port);
+        }
+
         if (isLocalhost(hostname))
             local_hostname = hostname;
         else
@@ -63,7 +82,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         auto endpoint = hostname + ":" + std::to_string(port);
         if (check_duplicated_hostnames.count(endpoint))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate endpoints: "
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
                             "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
                             endpoint, check_duplicated_hostnames[endpoint], new_server_id);
         }
@@ -73,7 +92,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
             {
                 if (new_server_id == id)
-                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate ids: id {} has been already added with endpoint {}, "
+                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
                                     "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
             }
             check_duplicated_hostnames.emplace(endpoint, new_server_id);
