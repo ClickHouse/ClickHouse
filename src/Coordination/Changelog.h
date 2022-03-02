@@ -8,7 +8,6 @@
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/HashTable/IncrementalRehashTable.h>
 
 namespace DB
 {
@@ -21,8 +20,7 @@ using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
 using IndexToOffset = std::unordered_map<uint64_t, off_t>;
-//using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
-using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
 {
@@ -125,7 +123,7 @@ public:
 
     uint64_t size() const
     {
-        return logs.size() - min_log_id + 1;
+        return logs.size();
     }
 
     /// Fsync log to disk
@@ -148,8 +146,6 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-    void cleanEntry(int count);
-
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
@@ -164,7 +160,6 @@ private:
     std::unique_ptr<ChangelogWriter> current_writer;
     /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
-    uint64_t delete_cursor = 0;
     /// Start log_id which exists in all "active" logs
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
