@@ -3,6 +3,8 @@
 #include <Coordination/Defines.h>
 #include <Common/Exception.h>
 #include <filesystem>
+#include <Common/isLocalAddress.h>
+#include <Common/DNSResolver.h>
 
 namespace DB
 {
@@ -10,6 +12,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
+}
+
+namespace
+{
+
+bool isLocalhost(const std::string & hostname)
+{
+    return isLoopback(DNSResolver::instance().resolveHost(hostname));
+}
+
 }
 
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
@@ -25,6 +37,8 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
+    std::string local_hostname;
+    std::string non_local_hostname;
     for (const auto & server_key : keys)
     {
         if (!startsWith(server_key, "server"))
@@ -37,6 +51,11 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
+
+        if (isLocalhost(hostname))
+            local_hostname = hostname;
+        else
+            non_local_hostname = hostname;
 
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
@@ -76,6 +95,14 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
 
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
+
+    if (!local_hostname.empty() && !non_local_hostname.empty())
+    {
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Mixing local and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. Different hosts can resolve it to themselves so it's not allowed.",
+            local_hostname, non_local_hostname);
+    }
 
     return result;
 }
