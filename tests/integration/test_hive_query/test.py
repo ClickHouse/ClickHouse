@@ -117,6 +117,7 @@ def test_cache_read_bytes(started_cluster):
     result = node.query("""
     SELECT day, count(*) FROM default.demo_parquet group by day order by day
             """)
+    time.sleep(10)
     result = node.query("""
     SELECT day, count(*) FROM default.demo_parquet group by day order by day
             """)
@@ -127,6 +128,8 @@ def test_cache_read_bytes(started_cluster):
 """
     time.sleep(120)
     assert result == expected_result
+    result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
+    time.sleep(10)
     result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
     logging.info("Read bytes from cache:{}".format(result))
     assert result.strip() != '0'
