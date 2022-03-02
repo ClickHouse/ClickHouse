@@ -620,13 +620,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = data.shared;
+#endif
         new_values["MemoryCode"] = data.code;
         new_values["MemoryDataAndStack"] = data.data_and_stack;
 
@@ -653,7 +655,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
+#endif
 
+#if defined(OS_LINUX)
     if (loadavg)
     {
         try
