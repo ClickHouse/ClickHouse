@@ -27,7 +27,6 @@ std::vector<StringRef> loadMetrics(const std::string & metrics_file)
     FILE * stream;
     char * line = nullptr;
     size_t len = 0;
-    ssize_t nread;
 
     stream = fopen(metrics_file.c_str(), "r");
     if (stream == nullptr)
@@ -35,7 +34,7 @@ std::vector<StringRef> loadMetrics(const std::string & metrics_file)
         throw std::runtime_error(strerror(errno));
     }
 
-    while ((nread = getline(&line, &len, stream)) != -1)
+    while (getline(&line, &len, stream) != -1)
     {
         size_t l = strlen(line);
         if (l > 0)

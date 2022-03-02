@@ -396,14 +396,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             {
                 while (!split && range.begin + marks_in_range < range.end)
                 {
-                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                    new_ranges.emplace_back(MarkRange{range.begin, range.begin + marks_in_range});
                     range.begin += marks_in_range;
                     marks_in_range *= 2;
 
                     if (marks_in_range > max_marks_in_range)
                         split = true;
                 }
-                new_ranges.emplace_back(range.begin, range.end);
+                new_ranges.emplace_back(MarkRange{range.begin, range.end});
             }
         }
         else
@@ -415,11 +415,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 auto range = *it;
                 while (range.begin + marks_in_range < range.end)
                 {
-                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
+                    new_ranges.emplace_front(MarkRange{range.end - marks_in_range, range.end});
                     range.end -= marks_in_range;
                     marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
                 }
-                new_ranges.emplace_front(range.begin, range.end);
+                new_ranges.emplace_front(MarkRange{range.begin, range.end});
             }
         }
 
@@ -484,7 +484,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     const size_t marks_in_range = range.end - range.begin;
                     const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
 
-                    ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+                    ranges_to_get_from_part.emplace_back(MarkRange{range.begin, range.begin + marks_to_get_from_range});
                     range.begin += marks_to_get_from_range;
                     marks_in_part -= marks_to_get_from_range;
                     need_marks -= marks_to_get_from_range;
@@ -982,7 +982,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
     auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(prepared_parts);
     if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(result_ptr->result)));
+        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 
     return std::get<ReadFromMergeTree::AnalysisResult>(result_ptr->result);
 }
@@ -1326,7 +1326,7 @@ bool MergeTreeDataSelectAnalysisResult::error() const
 size_t MergeTreeDataSelectAnalysisResult::marks() const
 {
     if (std::holds_alternative<std::exception_ptr>(result))
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(result)));
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
 
     const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
     if (index_stats.empty())

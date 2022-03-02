@@ -39,7 +39,7 @@ public:
 
 private:
     ReplicatedMergeTreePartHeader(std::array<char, 16> columns_hash_, MinimalisticDataPartChecksums checksums_)
-        : columns_hash(std::move(columns_hash_)), checksums(std::move(checksums_))
+        : columns_hash(columns_hash_), checksums(std::move(checksums_))
     {
     }
 

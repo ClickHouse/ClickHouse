@@ -62,7 +62,7 @@ public:
 
     HandshakeResponse(
         UInt32 capability_flags_, UInt32 max_packet_size_, UInt8 character_set_,
-        const String & username_, const String & database_, const String & auth_response_, const String & auth_plugin_name_);
+        String username_, String database_, String auth_response_, String auth_plugin_name_);
 };
 
 class AuthSwitchRequest : public IMySQLWritePacket

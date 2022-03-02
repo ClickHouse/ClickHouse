@@ -610,7 +610,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .partition_id = std::move(partition_id),
         .part_name = std::move(part_name),
         .projection_name = std::move(projection_name),
-        .block_range = std::move(block_range),
+        .block_range = block_range,
         .mark_ranges = std::move(requested_ranges)
     };
 

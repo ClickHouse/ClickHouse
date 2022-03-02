@@ -161,11 +161,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (state->pushing_async_executor)
     {
-        state->pushing_async_executor->push(std::move(block));
+        state->pushing_async_executor->push(block);
     }
     else if (state->pushing_executor)
     {
-        state->pushing_executor->push(std::move(block));
+        state->pushing_executor->push(block);
     }
 }
 
@@ -373,7 +373,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->profile_info)
             {
-                packet.profile_info = std::move(*state->profile_info);
+                packet.profile_info = *state->profile_info;
                 state->profile_info.reset();
             }
             next_packet_type.reset();

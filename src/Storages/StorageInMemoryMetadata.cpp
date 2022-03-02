@@ -90,7 +90,7 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
 
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
-    constraints = std::move(constraints_);
+    constraints = constraints_;
 }
 
 void StorageInMemoryMetadata::setProjections(ProjectionsDescription projections_)

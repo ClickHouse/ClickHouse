@@ -97,7 +97,7 @@ public:
         : SourceWithProgress(getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , read_settings(std::move(read_settings_))
+        , read_settings(read_settings_)
         , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)

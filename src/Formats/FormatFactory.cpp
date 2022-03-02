@@ -280,7 +280,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     {
         auto formatter_creator = [output_getter, sample, callback, format_settings]
         (WriteBuffer & output) -> OutputFormatPtr
-        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+        { return output_getter(output, sample, {callback}, format_settings);};
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 

@@ -173,7 +173,7 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
         columns_with_type.emplace_back(std::move(column_with_type));
     }
 
-    header = Block(std::move(columns_with_type));
+    header = Block(columns_with_type);
 }
 
 ColumnsWithTypeAndName

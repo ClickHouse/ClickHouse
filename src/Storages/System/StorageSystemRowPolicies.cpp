@@ -43,7 +43,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
 
-    boost::range::push_back(names_and_types, std::move(extra_names_and_types));
+    boost::range::push_back(names_and_types, extra_names_and_types);
     return names_and_types;
 }
 

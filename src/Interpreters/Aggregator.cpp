@@ -325,7 +325,7 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
                 .aggregate_data_offset = offset_of_aggregate_function
             };
 
-            functions_to_compile.emplace_back(std::move(function_to_compile));
+            functions_to_compile.emplace_back(function_to_compile);
 
             functions_description += function->getDescription();
             functions_description += ' ';

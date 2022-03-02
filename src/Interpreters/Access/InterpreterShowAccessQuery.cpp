@@ -80,7 +80,7 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     }
 
     ASTs result = std::move(create_queries);
-    boost::range::push_back(result, std::move(grant_queries));
+    boost::range::push_back(result, grant_queries);
     return result;
 }
 

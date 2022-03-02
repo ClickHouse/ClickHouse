@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_)
-    : host(host_), port(port_), user(user_), password(std::move(password_)),
+    : host(host_), port(port_), user(user_), password(password_),
       client_capabilities(CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION)
 {
 }

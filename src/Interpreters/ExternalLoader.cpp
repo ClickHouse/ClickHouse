@@ -56,7 +56,7 @@ namespace
             static_assert(std::is_same_v<ReturnType, ExternalLoader::Loadables>);
             ExternalLoader::Loadables objects;
             objects.reserve(results.size());
-            for (const auto & result : results)
+            for (auto & result : results)
             {
                 if (auto object = std::move(result.object))
                     objects.push_back(std::move(object));

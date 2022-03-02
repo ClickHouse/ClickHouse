@@ -1323,9 +1323,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (key_condition.alwaysUnknownOrTrue())
     {
         if (has_final_mark)
-            res.push_back(MarkRange(0, marks_count - 1));
+            res.push_back(MarkRange{0, marks_count - 1});
         else
-            res.push_back(MarkRange(0, marks_count));
+            res.push_back(MarkRange{0, marks_count});
 
         return res;
     }
@@ -1434,9 +1434,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 size_t end;
 
                 for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.emplace_back(end - step, end);
+                    ranges_stack.emplace_back(MarkRange{end - step, end});
 
-                ranges_stack.emplace_back(range.begin, end);
+                ranges_stack.emplace_back(MarkRange{range.begin, end});
             }
         }
 
@@ -1460,7 +1460,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(0, middle);
+            MarkRange range{0, middle};
             if (may_be_true_in_range(range))
                 searched_right = middle;
             else
@@ -1474,7 +1474,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(middle, marks_count);
+            MarkRange range{middle, marks_count};
             if (may_be_true_in_range(range))
                 searched_left = middle;
             else
@@ -1485,7 +1485,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
         if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
-            res.emplace_back(std::move(result_range));
+            res.emplace_back(result_range);
 
         LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
     }
@@ -1529,9 +1529,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
-        MarkRange index_range(
+        MarkRange index_range{
                 range.begin / index_granularity,
-                (range.end + index_granularity - 1) / index_granularity);
+                (range.end + index_granularity - 1) / index_granularity};
         index_ranges.push_back(index_range);
     }
 
@@ -1563,9 +1563,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
 
-            MarkRange data_range(
+            MarkRange data_range{
                     std::max(ranges[i].begin, index_mark * index_granularity),
-                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity)};
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
@@ -1642,9 +1642,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     size_t last_index_mark = 0;
     for (const auto & range : ranges)
     {
-        MarkRange index_range(
+        MarkRange index_range{
             range.begin / index_granularity,
-            (range.end + index_granularity - 1) / index_granularity);
+            (range.end + index_granularity - 1) / index_granularity};
 
         if (last_index_mark != index_range.begin || !granules_filled)
             for (auto & reader : readers)
@@ -1663,9 +1663,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 }
             }
 
-            MarkRange data_range(
+            MarkRange data_range{
                 std::max(range.begin, index_mark * index_granularity),
-                std::min(range.end, (index_mark + 1) * index_granularity));
+                std::min(range.end, (index_mark + 1) * index_granularity)};
 
             if (!condition->mayBeTrueOnGranule(granules))
             {

@@ -61,7 +61,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , database_settings(std::move(settings_))
-    , mysql_pool(std::move(pool))
+    , mysql_pool(pool)
 {
     try
     {

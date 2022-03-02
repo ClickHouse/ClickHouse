@@ -39,7 +39,7 @@ namespace
             if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
+            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -122,7 +122,7 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         {
             if (!settings)
                 settings = std::make_shared<ASTSettingsProfileElements>();
-            boost::range::push_back(settings->elements, std::move(new_settings));
+            boost::range::push_back(settings->elements, new_settings);
             continue;
         }
 

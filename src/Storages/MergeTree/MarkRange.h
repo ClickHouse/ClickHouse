@@ -18,9 +18,6 @@ struct MarkRange
     size_t begin;
     size_t end;
 
-    MarkRange() = default;
-    MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
-
     bool operator==(const MarkRange & rhs) const;
 
     bool operator<(const MarkRange & rhs) const;

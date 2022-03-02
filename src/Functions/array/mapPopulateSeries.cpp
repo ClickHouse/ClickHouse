@@ -379,7 +379,7 @@ private:
             if (!max_key_column_type->equals(*input.key_series_type))
             {
                 ColumnWithTypeAndName column_to_cast = {max_key_column, max_key_column_type, ""};
-                auto casted_column = castColumnAccurate(std::move(column_to_cast), input.key_series_type);
+                auto casted_column = castColumnAccurate(column_to_cast, input.key_series_type);
                 max_key_column = std::move(casted_column);
             }
         }

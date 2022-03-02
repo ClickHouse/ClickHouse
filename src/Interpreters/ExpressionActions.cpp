@@ -748,7 +748,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (const auto & item : block)
+    for (auto & item : block)
         res.insert(std::move(item));
 
     block.swap(res);

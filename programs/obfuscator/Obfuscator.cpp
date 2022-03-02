@@ -619,7 +619,7 @@ private:
 
 public:
     explicit MarkovModel(MarkovModelParameters params_)
-        : params(std::move(params_)), code_points(params.order, BEGIN) {}
+        : params(params_), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -830,7 +830,7 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(params_) {}
 
     void train(const IColumn & column) override
     {
@@ -909,7 +909,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_array.getOffsetsPtr())));
+        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_array.getOffsetsPtr()));
     }
 
     void updateSeed() override
@@ -947,7 +947,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_nullable.getNullMapColumnPtr())));
+        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_nullable.getNullMapColumnPtr()));
     }
 
     void updateSeed() override

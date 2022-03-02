@@ -138,7 +138,7 @@ namespace DB
         auto key_type = storageTypeToKeyType(configuration.storage_type);
         for (const auto & key : all_keys)
             if (key_type == connection->client->execute<String>(RedisCommand("TYPE").addRedisType(key)))
-                keys.addRedisType(std::move(key));
+                keys.addRedisType(key);
 
         if (configuration.storage_type == RedisStorageType::HASH_MAP)
         {
@@ -165,10 +165,10 @@ namespace DB
                 }
 
                 if (primary_with_secondary.size() > 1)
-                    hkeys.add(std::move(primary_with_secondary));
+                    hkeys.add(primary_with_secondary);
             }
 
-            keys = std::move(hkeys);
+            keys = hkeys;
         }
 
         return Pipe(std::make_shared<RedisSource>(

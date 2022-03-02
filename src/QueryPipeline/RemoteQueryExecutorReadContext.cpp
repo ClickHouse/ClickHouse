@@ -86,7 +86,7 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(IConnections & co
     }
 
     auto routine = RemoteQueryExecutorRoutine{connections, *this};
-    fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
+    fiber = boost::context::fiber(std::allocator_arg_t(), stack, routine);
 }
 
 void RemoteQueryExecutorReadContext::setConnectionFD(int fd, Poco::Timespan timeout, const std::string & fd_description)
@@ -174,7 +174,7 @@ bool RemoteQueryExecutorReadContext::resumeRoutine()
         fiber = std::move(fiber).resume();
 
         if (exception)
-            std::rethrow_exception(std::move(exception));
+            std::rethrow_exception(exception);
     }
 
     return true;

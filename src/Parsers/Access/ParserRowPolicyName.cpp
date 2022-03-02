@@ -179,7 +179,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
 
         num_added_names_last_time = new_full_names.size();
-        boost::range::push_back(full_names, std::move(new_full_names));
+        boost::range::push_back(full_names, new_full_names);
         return true;
     };
 

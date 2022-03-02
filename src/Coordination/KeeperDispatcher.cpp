@@ -252,10 +252,10 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
-        if (!requests_queue->push(std::move(request_info)))
+        if (!requests_queue->push(request_info))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queue->tryPush(request_info, configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -407,7 +407,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        if (!requests_queue->push(std::move(request_info)))
+                        if (!requests_queue->push(request_info))
                             LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     }
 
@@ -513,7 +513,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Push new session request to queue
     {
         std::lock_guard lock(push_request_mutex);
-        if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
+        if (!requests_queue->tryPush(request_info, session_timeout_ms))
             throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 

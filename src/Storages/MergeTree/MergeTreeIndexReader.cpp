@@ -19,7 +19,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
         part->volume->getDisk(),
         part->getFullRelativePath() + index->getFileName(), extension, marks_count,
         all_mark_ranges,
-        std::move(settings), mark_cache, uncompressed_cache,
+        settings, mark_cache, uncompressed_cache,
         part->getFileSizeOrZero(index->getFileName() + extension),
         &part->index_granularity_info,
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
@@ -51,7 +51,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         all_mark_ranges_,
         mark_cache,
         uncompressed_cache,
-        std::move(settings));
+        settings);
     version = index_format.version;
 
     stream->adjustRightMark(getLastMark(all_mark_ranges_));

@@ -656,7 +656,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
         if (expired)
             throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
-        if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
+        if (!requests_queue.tryPush(request, operation_timeout.totalMilliseconds()))
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
     }
     catch (...)

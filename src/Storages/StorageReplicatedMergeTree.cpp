@@ -2356,7 +2356,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             source_queue.emplace_back();
             auto & info = source_queue.back();
             info.data = std::move(res.data);
-            info.stat = std::move(res.stat);
+            info.stat = res.stat;
             try
             {
                 info.parsed_entry = LogEntry::parse(info.data, info.stat);

@@ -22,13 +22,13 @@ struct ColumnWithTypeAndName
     DataTypePtr type;
     String name;
 
-    ColumnWithTypeAndName() {}
-    ColumnWithTypeAndName(const ColumnPtr & column_, const DataTypePtr & type_, const String & name_)
-        : column(column_), type(type_), name(name_) {}
+    ColumnWithTypeAndName() = default;
+    ColumnWithTypeAndName(ColumnPtr column_, DataTypePtr type_, String name_)
+        : column(std::move(column_)), type(std::move(type_)), name(std::move(name_)) {}
 
     /// Uses type->createColumn() to create column
-    ColumnWithTypeAndName(const DataTypePtr & type_, const String & name_)
-        : column(type_->createColumn()), type(type_), name(name_) {}
+    ColumnWithTypeAndName(DataTypePtr type_, String name_)
+        : column(type_->createColumn()), type(std::move(type_)), name(std::move(name_)) {}
 
     ColumnWithTypeAndName cloneEmpty() const;
     bool operator==(const ColumnWithTypeAndName & other) const;

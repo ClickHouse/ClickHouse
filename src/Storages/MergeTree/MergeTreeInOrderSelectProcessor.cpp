@@ -21,7 +21,7 @@ try
     /// If we need to read few rows, set one range per task to reduce number of read data.
     if (has_limit_below_one_block)
     {
-        mark_ranges_for_task = { std::move(all_mark_ranges.front()) };
+        mark_ranges_for_task = { all_mark_ranges.front() };
         all_mark_ranges.pop_front();
     }
     else

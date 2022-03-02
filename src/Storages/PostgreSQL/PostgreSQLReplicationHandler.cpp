@@ -373,7 +373,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto nested_table_id = nested_storage->getStorageID();
     LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
-    return StorageInfo(nested_storage, std::move(table_attributes));
+    return StorageInfo(nested_storage, table_attributes);
 }
 
 
@@ -964,7 +964,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                             nested_storage->getStorageID().getNameForLogs(), nested_sample_block.dumpStructure());
 
                     /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
-                    consumer->updateNested(table_name, StorageInfo(nested_storage, std::move(table_attributes)), relation_id, start_lsn);
+                    consumer->updateNested(table_name, StorageInfo(nested_storage, table_attributes), relation_id, start_lsn);
 
                     auto table_to_drop = DatabaseCatalog::instance().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
                     auto drop_table_id = table_to_drop->getStorageID();

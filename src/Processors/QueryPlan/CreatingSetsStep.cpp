@@ -40,7 +40,7 @@ CreatingSetStep::CreatingSetStep(
     , WithContext(context_)
     , description(std::move(description_))
     , subquery_for_set(std::move(subquery_for_set_))
-    , network_transfer_limits(std::move(network_transfer_limits_))
+    , network_transfer_limits(network_transfer_limits_)
 {
 }
 
@@ -138,7 +138,7 @@ void addCreatingSetsStep(
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
-                std::move(description),
+                description,
                 std::move(set),
                 limits,
                 context);

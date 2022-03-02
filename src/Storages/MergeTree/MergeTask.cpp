@@ -290,10 +290,10 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
     new_ctx->column_sizes = std::move(ctx->column_sizes);
     new_ctx->compression_codec = std::move(ctx->compression_codec);
     new_ctx->tmp_disk = std::move(ctx->tmp_disk);
-    new_ctx->it_name_and_type = std::move(ctx->it_name_and_type);
-    new_ctx->column_num_for_vertical_merge = std::move(ctx->column_num_for_vertical_merge);
-    new_ctx->read_with_direct_io = std::move(ctx->read_with_direct_io);
-    new_ctx->need_sync = std::move(ctx->need_sync);
+    new_ctx->it_name_and_type = ctx->it_name_and_type;
+    new_ctx->column_num_for_vertical_merge = ctx->column_num_for_vertical_merge;
+    new_ctx->read_with_direct_io = ctx->read_with_direct_io;
+    new_ctx->need_sync = ctx->need_sync;
 
     ctx.reset();
     return new_ctx;
@@ -303,7 +303,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 {
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
 
-    new_ctx->need_sync = std::move(ctx->need_sync);
+    new_ctx->need_sync = ctx->need_sync;
 
     ctx.reset();
     return new_ctx;

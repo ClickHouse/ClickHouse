@@ -67,6 +67,10 @@ class NamesAndTypesList : public std::list<NameAndTypePair>
 {
 public:
     NamesAndTypesList() = default;
+    NamesAndTypesList(NamesAndTypesList &&) = default;
+    NamesAndTypesList(const NamesAndTypesList &) = default;
+    NamesAndTypesList & operator=(const NamesAndTypesList &) = default;
+    NamesAndTypesList & operator=(NamesAndTypesList &&) = default;
 
     NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
 

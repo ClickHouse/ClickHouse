@@ -759,7 +759,7 @@ void TCPHandler::processTablesStatusRequest()
         else
             status.is_replicated = false; //-V1048
 
-        response.table_states_by_id.emplace(table_name, std::move(status));
+        response.table_states_by_id.emplace(table_name, status);
     }
 
 
@@ -941,7 +941,7 @@ void TCPHandler::sendProfileEvents()
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 
-    Block block(std::move(temp_columns));
+    Block block(temp_columns);
 
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();

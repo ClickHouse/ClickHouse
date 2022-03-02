@@ -1032,7 +1032,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             }
         }
 
-        if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+        if (!requests_queue.tryPush(info, operation_timeout.totalMilliseconds()))
         {
             if (requests_queue.isFinished())
                 throw Exception("Session expired", Error::ZSESSIONEXPIRED);
@@ -1217,7 +1217,7 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
-    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+    if (!requests_queue.tryPush(request_info, operation_timeout.totalMilliseconds()))
         throw Exception("Cannot push close request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);

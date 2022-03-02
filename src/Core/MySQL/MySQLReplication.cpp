@@ -916,21 +916,21 @@ namespace MySQLReplication
         {
             case FORMAT_DESCRIPTION_EVENT:
             {
-                event = std::make_shared<FormatDescriptionEvent>(std::move(event_header));
+                event = std::make_shared<FormatDescriptionEvent>(event_header);
                 event->parseEvent(event_payload);
                 position.update(event);
                 break;
             }
             case ROTATE_EVENT:
             {
-                event = std::make_shared<RotateEvent>(std::move(event_header));
+                event = std::make_shared<RotateEvent>(event_header);
                 event->parseEvent(event_payload);
                 position.update(event);
                 break;
             }
             case QUERY_EVENT:
             {
-                event = std::make_shared<QueryEvent>(std::move(event_header));
+                event = std::make_shared<QueryEvent>(event_header);
                 event->parseEvent(event_payload);
                 position.update(event);
 
@@ -940,7 +940,7 @@ namespace MySQLReplication
                     case QUERY_EVENT_MULTI_TXN_FLAG:
                     case QUERY_EVENT_XA:
                     {
-                        event = std::make_shared<DryRunEvent>(std::move(query->header));
+                        event = std::make_shared<DryRunEvent>(query->header);
                         break;
                     }
                     default:
@@ -950,14 +950,14 @@ namespace MySQLReplication
             }
             case XID_EVENT:
             {
-                event = std::make_shared<XIDEvent>(std::move(event_header));
+                event = std::make_shared<XIDEvent>(event_header);
                 event->parseEvent(event_payload);
                 position.update(event);
                 break;
             }
             case TABLE_MAP_EVENT:
             {
-                event = std::make_shared<TableMapEvent>(std::move(event_header));
+                event = std::make_shared<TableMapEvent>(event_header);
                 event->parseEvent(event_payload);
                 auto table_map = std::static_pointer_cast<TableMapEvent>(event);
                 table_maps[table_map->table_id] = table_map;
@@ -968,9 +968,9 @@ namespace MySQLReplication
                 RowsEventHeader rows_header(event_header.type);
                 rows_header.parse(event_payload);
                 if (doReplicate(rows_header.table_id))
-                    event = std::make_shared<WriteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
+                    event = std::make_shared<WriteRowsEvent>(table_maps.at(rows_header.table_id), event_header, rows_header);
                 else
-                    event = std::make_shared<DryRunEvent>(std::move(event_header));
+                    event = std::make_shared<DryRunEvent>(event_header);
 
                 event->parseEvent(event_payload);
                 if (rows_header.flags & ROWS_END_OF_STATEMENT)
@@ -982,9 +982,9 @@ namespace MySQLReplication
                 RowsEventHeader rows_header(event_header.type);
                 rows_header.parse(event_payload);
                 if (doReplicate(rows_header.table_id))
-                    event = std::make_shared<DeleteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
+                    event = std::make_shared<DeleteRowsEvent>(table_maps.at(rows_header.table_id), event_header, rows_header);
                 else
-                    event = std::make_shared<DryRunEvent>(std::move(event_header));
+                    event = std::make_shared<DryRunEvent>(event_header);
 
                 event->parseEvent(event_payload);
                 if (rows_header.flags & ROWS_END_OF_STATEMENT)
@@ -996,9 +996,9 @@ namespace MySQLReplication
                 RowsEventHeader rows_header(event_header.type);
                 rows_header.parse(event_payload);
                 if (doReplicate(rows_header.table_id))
-                    event = std::make_shared<UpdateRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
+                    event = std::make_shared<UpdateRowsEvent>(table_maps.at(rows_header.table_id), event_header, rows_header);
                 else
-                    event = std::make_shared<DryRunEvent>(std::move(event_header));
+                    event = std::make_shared<DryRunEvent>(event_header);
 
                 event->parseEvent(event_payload);
                 if (rows_header.flags & ROWS_END_OF_STATEMENT)
@@ -1007,14 +1007,14 @@ namespace MySQLReplication
             }
             case GTID_EVENT:
             {
-                event = std::make_shared<GTIDEvent>(std::move(event_header));
+                event = std::make_shared<GTIDEvent>(event_header);
                 event->parseEvent(event_payload);
                 position.update(event);
                 break;
             }
             default:
             {
-                event = std::make_shared<DryRunEvent>(std::move(event_header));
+                event = std::make_shared<DryRunEvent>(event_header);
                 event->parseEvent(event_payload);
                 break;
             }

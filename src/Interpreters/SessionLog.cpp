@@ -121,7 +121,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 
     return
     {
-        {"type", std::move(event_type)},
+        {"type", event_type},
         {"auth_id", std::make_shared<DataTypeUUID>()},
         {"session_id", std::make_shared<DataTypeString>()},
         {"event_date", std::make_shared<DataTypeDate>()},
@@ -129,15 +129,15 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
         {"user", std::make_shared<DataTypeString>()},
-        {"auth_type", std::move(identified_with_column)},
+        {"auth_type", identified_with_column},
 
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
-        {"settings", std::move(settings_type_column)},
+        {"settings", settings_type_column},
 
         {"client_address", DataTypeFactory::instance().get("IPv6")},
         {"client_port", std::make_shared<DataTypeUInt16>()},
-        {"interface", std::move(interface_type_column)},
+        {"interface", interface_type_column},
 
         {"client_hostname", std::make_shared<DataTypeString>()},
         {"client_name", std::make_shared<DataTypeString>()},

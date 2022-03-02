@@ -84,7 +84,7 @@ public:
         , offsets(offsets_)
         , file_sizes(file_sizes_)
         , limited_by_file_sizes(limited_by_file_sizes_)
-        , read_settings(std::move(read_settings_))
+        , read_settings(read_settings_)
     {
     }
 

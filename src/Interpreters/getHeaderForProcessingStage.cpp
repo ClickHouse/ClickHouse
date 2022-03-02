@@ -60,7 +60,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
         for (const auto & node : collectConjunctions(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)
-                new_conj->arguments->children.push_back(std::move(node));
+                new_conj->arguments->children.push_back(node);
         }
 
         if (new_conj->arguments->children.empty())
