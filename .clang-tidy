@@ -34,7 +34,7 @@ Checks: '-*,
     performance-trivially-destructible,
     performance-unnecessary-copy-initialization,
     performance-noexcept-move-constructor,
-    # performance-move-const-arg,
+    performance-move-const-arg,
 
     readability-avoid-const-params-in-decls,
     readability-const-return-type,

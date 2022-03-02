@@ -100,6 +100,11 @@ public:
         return emplace(x);
     }
 
+    [[nodiscard]] bool push(T && x)
+    {
+        return emplace(std::move(x));
+    }
+
     /// Returns false if queue is finished
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
