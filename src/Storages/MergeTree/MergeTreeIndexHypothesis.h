@@ -70,7 +70,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const override;
 
-    MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+    MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
