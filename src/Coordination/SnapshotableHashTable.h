@@ -1,4 +1,5 @@
 #pragma once
+#include <sys/time.h>
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -7,6 +8,7 @@
 #include <list>
 #include <atomic>
 #include <iostream>
+#include <Common/HashTable/IncrementalRehashTable.h>
 
 namespace DB
 {
@@ -31,7 +33,9 @@ private:
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
     using Mapped = typename List::iterator;
-    using IndexMap = HashMap<StringRef, Mapped>;
+    //using IndexMap = HashMap<StringRef, Mapped>;
+    using IndexMap = my_unordered_map<StringRef, Mapped, StringRefHash>;
+
 
     List list;
     IndexMap map;
@@ -125,6 +129,7 @@ public:
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
+/*
     std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
@@ -146,7 +151,41 @@ public:
 
         return std::make_pair(it, false);
     }
+*/
+    static int64_t metime()
+    {
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        return tv.tv_sec *1000 + tv.tv_usec / 1000;
+    }
+    std::pair<typename IndexMap::iterator, bool> insert(const std::string & key, const V & value)
+    {
+        //size_t hash_value = map.hash(key);
+        auto it = map.find(key);
 
+        if (it == map.end())
+        {
+            auto st_tm = metime();
+            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
+            auto end_tm = metime();
+            if (end_tm - st_tm > 100)
+            {
+                std::cout << "list insert time: " << end_tm - st_tm << std::endl;
+            }
+            auto res = map.emplace(itr->key, itr);
+            auto map_end_tm = metime();
+            if (map_end_tm - end_tm > 100)
+            {
+                std::cout << "map insert time: " << map_end_tm - end_tm << std::endl;
+            }
+            updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
+            return res;
+        }
+
+        return std::make_pair(it, false);
+    }
+/*
     void insertOrReplace(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
@@ -180,6 +219,38 @@ public:
         }
         updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
     }
+    */
+
+    void insertOrReplace(const std::string & key, const V & value)
+    {
+        auto it = map.find(key);
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
+
+        if (it == map.end())
+        {
+            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            auto itr = list.insert(list.end(), std::move(elem));
+            map.emplace(itr->key, itr);
+        }
+        else
+        {
+            auto list_itr = it->second;
+            if (snapshot_mode)
+            {
+                ListElem elem{list_itr->key, value, current_version};
+                list_itr->active_in_map = false;
+                auto new_list_itr = list.insert(list.end(), std::move(elem));
+                map.erase(it);
+                map.emplace(new_list_itr->key, new_list_itr);
+                snapshot_invalid_iters.push_back(list_itr);
+            }
+            else
+            {
+                list_itr->value = value;
+            }
+        }
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
+    }
 
     bool erase(const std::string & key)
     {
@@ -187,18 +258,18 @@ public:
         if (it == map.end())
             return false;
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
             snapshot_invalid_iters.push_back(list_itr);
             list_itr->free_key = true;
-            map.erase(it->getKey());
+            map.erase(it);
         }
         else
         {
-            map.erase(it->getKey());
+            map.erase(it);
             arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
             list.erase(list_itr);
         }
@@ -212,6 +283,7 @@ public:
         return map.find(key) != map.end();
     }
 
+/*
     const_iterator updateValue(StringRef key, ValueUpdater updater)
     {
         size_t hash_value = map.hash(key);
@@ -254,12 +326,56 @@ public:
         updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
         return ret;
     }
+    */
+
+    const_iterator updateValue(StringRef key, ValueUpdater updater)
+    {
+        auto it = map.find(key);
+        assert(it != map.end());
+
+        auto list_itr = it->second;
+        uint64_t old_value_size = list_itr->value.sizeInBytes();
+
+        const_iterator ret;
+
+        if (snapshot_mode)
+        {
+            /// We in snapshot mode but updating some node which is already more
+            /// fresh than snapshot distance. So it will not participate in
+            /// snapshot and we don't need to copy it.
+            if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
+            {
+                auto elem_copy = *(list_itr);
+                list_itr->active_in_map = false;
+                map.erase(it);
+                snapshot_invalid_iters.push_back(list_itr);
+                updater(elem_copy.value);
+                elem_copy.version = current_version;
+                auto itr = list.insert(list.end(), std::move(elem_copy));
+                map.emplace(itr->key, itr);
+                ret = itr;
+            }
+            else
+            {
+                updater(list_itr->value);
+                ret = list_itr;
+            }
+        }
+        else
+        {
+            updater(list_itr->value);
+            ret = list_itr;
+        }
+
+        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
+        return ret;
+    }
 
     const_iterator find(StringRef key) const
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
-            return map_it->getMapped();
+            return map_it->second;
         return list.end();
     }
 
@@ -268,7 +384,7 @@ public:
     {
         auto it = map.find(key);
         assert(it);
-        return it->getMapped()->value;
+        return it->second->value;
     }
 
     void clearOutdatedNodes()

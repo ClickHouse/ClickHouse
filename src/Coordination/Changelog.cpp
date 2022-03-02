@@ -1,3 +1,4 @@
+#include <sys/time.h>
 #include <Coordination/Changelog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -223,7 +224,7 @@ public:
 
                 /// Check for duplicated changelog ids
                 if (logs.count(record.header.index) != 0)
-                    std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
+                    robin_hood::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
 
                 result.total_entries_read_from_log += 1;
 
@@ -407,7 +408,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             LOG_INFO(log, "Removing log {} because it's empty or read finished with error", description.path);
             std::filesystem::remove(description.path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
-            std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
+            robin_hood::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
         }
         else
         {
@@ -446,7 +447,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
         itr = existing_changelogs.erase(itr);
     }
 
-    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
+    robin_hood::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
 }
 
 void Changelog::removeAllLogs()
@@ -518,6 +519,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = log_entry;
     max_log_id = index;
+    cleanEntry(50);
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -550,15 +552,22 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
-    std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
+    robin_hood::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
 
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 }
 
+int64_t timeus()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
 void Changelog::compact(uint64_t up_to_log_index)
 {
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
+    auto start_time = timeus();
 
     bool remove_all_logs = false;
     if (up_to_log_index > max_log_id)
@@ -601,12 +610,14 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    //robin_hood::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
 
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
+    cleanEntry(1000);
+    auto end_time = timeus();
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, time: {}, logsize {}", up_to_log_index, min_log_id, max_log_id, end_time-start_time, logs.size());
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -634,6 +645,7 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
         (*ret)[result_pos] = entryAt(i);
         result_pos++;
     }
+    cleanEntry(10);
     return ret;
 }
 
@@ -645,7 +657,14 @@ LogEntryPtr Changelog::entryAt(uint64_t index)
         return nullptr;
 
     src = entry->second;
+    cleanEntry(10);
     return src;
+}
+
+void Changelog::cleanEntry(int count)
+{
+    for (int n = 0; delete_cursor < min_log_id && n < count; ++delete_cursor, ++n)
+        logs.erase(delete_cursor);
 }
 
 LogEntryPtr Changelog::getLatestConfigChange() const

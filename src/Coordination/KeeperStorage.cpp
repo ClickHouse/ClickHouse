@@ -245,6 +245,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Create, node_acls, session_auths);
     }
+    static int64_t timeme()
+    {
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    }
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
     {
@@ -316,14 +322,16 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
         created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
-
+        auto insert_st_tm = timeme();
         auto [map_key, _] = container.insert(path_created, std::move(created_node));
+        auto insert_end_tm = timeme();
         /// Take child path from key owned by map.
-        auto child_path = getBaseName(map_key->getKey());
+        auto child_path = getBaseName(map_key->first);
 
         int32_t parent_cversion = request.parent_cversion;
         int64_t prev_parent_zxid;
         int32_t prev_parent_cversion;
+        auto upd_st_tm = timeme();
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
@@ -344,7 +352,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 parent.stat.pzxid = zxid;
             ++parent.stat.numChildren;
         });
-
+        auto upd_end_tm = timeme();
         response.path_created = path_created;
 
         if (request.is_ephemeral)
@@ -371,6 +379,10 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         };
 
         response.error = Coordination::Error::ZOK;
+        if (upd_end_tm-upd_st_tm > 500 || insert_end_tm - insert_st_tm > 500)
+        {
+            std::cout << "Keeper: update: " << upd_end_tm-upd_st_tm << " insert: " << insert_end_tm - insert_st_tm << std::endl;
+        }
         return { response_ptr, undo };
     }
 };
@@ -516,7 +528,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 /// Dangerous place: we are adding StringRef to child into children unordered_hash set.
                 /// That's why we are taking getBaseName from inserted key, not from the path from request object.
                 auto [map_key, _] = storage.container.insert(path, prev_node);
-                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key->getKey())] (KeeperStorage::Node & parent)
+                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key->first)] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;

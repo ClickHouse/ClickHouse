@@ -23,11 +23,11 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 
-#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
+//#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
     #include <iomanip>
     #include <Common/Stopwatch.h>
-#endif
+//#endif
 
 /** NOTE HashTable could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
@@ -464,9 +464,9 @@ protected:
     /// Increase the size of the buffer.
     void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
-#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
+//#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         Stopwatch watch;
-#endif
+//#endif
 
         size_t old_size = grower.bufSize();
 
@@ -545,12 +545,12 @@ protected:
                     Cell::move(&buf[i], &buf[updated_place_value]);
         }
 
-#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
+//#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
         std::cerr << std::fixed << std::setprecision(3)
             << "Resize from " << old_size << " to " << grower.bufSize() << " took " << watch.elapsedSeconds() << " sec."
             << std::endl;
-#endif
+//#endif
     }
 
 

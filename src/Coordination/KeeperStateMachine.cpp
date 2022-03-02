@@ -109,8 +109,16 @@ void KeeperStateMachine::init()
         storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
 }
 
+int64_t timeit()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
+    auto be_tm = timeit();
     auto request_for_session = parseRequest(data);
     /// Special processing of session_id request
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
@@ -142,6 +150,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
 
     last_committed_idx = log_idx;
+
+    auto end_tm = timeit();
+    if (end_tm - be_tm > 500000)
+        LOG_INFO(log, "Commit took {} ms", (end_tm - be_tm) / 1000);
     return nullptr;
 }
 
