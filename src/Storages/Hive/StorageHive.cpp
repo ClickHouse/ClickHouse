@@ -104,7 +104,6 @@ public:
         String hdfs_namenode_url_,
         String format_,
         String compression_method_,
-        Block header_block_,
         Block sample_block_,
         ContextPtr context_,
         UInt64 max_block_size_,
@@ -116,7 +115,6 @@ public:
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
-        , header_block(header_block_)
         , sample_block(sample_block_)
         , to_read_block(sample_block)
         , columns_description(getColumnsDescription(sample_block, source_info))
@@ -128,19 +126,7 @@ public:
         {
             to_read_block.erase(name_type.name);
         }
-        // hive table header doesn't contain partition columns, we need at least one column to read.
-        if (!to_read_block.columns())
-        {
-            all_to_read_are_partition_columns = true;
-            for (size_t i = 0; i < header_block.columns(); ++i)
-            {
-                auto & col = header_block.getByPosition(i);
-                if (source_info->partition_name_types.contains(col.name))
-                    continue;
-                to_read_block.insert(0, col);
-                break;
-            }
-        }
+
         /// Initialize format settings
         format_settings.hive_text.input_field_names = text_input_field_names;
     }
@@ -217,8 +203,6 @@ public:
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
-                if (all_to_read_are_partition_columns)
-                    columns.clear();
 
                 /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
@@ -264,10 +248,8 @@ private:
     String format;
     String compression_method;
     UInt64 max_block_size;
-    Block header_block; // hive table header
     Block sample_block;
     Block to_read_block;
-    bool all_to_read_are_partition_columns = false;
     ColumnsDescription columns_description;
     const Names & text_input_field_names;
     FormatSettings format_settings;
@@ -561,7 +543,34 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     }
     return hive_file;
 }
+bool StorageHive::isColumnOriented()
+{
+    return format_name == "Parquet" || format_name == "ORC";
+}
 
+Block StorageHive::getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns)
+{
+    if (!isColumnOriented())
+        return header_block;
+    Block result_block = sample_block;
+    for (const auto & column : partition_columns)
+    {
+        sample_block.erase(column);
+    }
+    if (!sample_block.columns())
+    {
+        for (size_t i = 0; i < header_block.columns(); ++i)
+        {
+            const auto & col = header_block.getByPosition(i);
+            if (!partition_columns.count(col.name))
+            {
+                result_block.insert(col);
+                break;
+            }
+        }
+    }
+    return result_block;
+}
 Pipe StorageHive::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -626,19 +635,18 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    Block to_read_block;
-    const auto & sample_block = metadata_snapshot->getSampleBlock();
+    const auto & header_block = metadata_snapshot->getSampleBlock();
+    Block sample_block;
     for (const auto & column : column_names)
     {
-        to_read_block.insert(sample_block.getByName(column));
+        sample_block.insert(header_block.getByName(column));
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
             sources_info->need_file_column = true;
     }
-    // Columms pruning only support parque and orc which are used arrow to read
-    if (format_name != "Parquet" && format_name != "ORC")
-        to_read_block = sample_block;
+
+    sample_block = getActualColumnsToRead(sample_block, header_block, NameSet{partition_names.begin(), partition_names.end()});
 
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
@@ -652,7 +660,6 @@ Pipe StorageHive::read(
             format_name,
             compression_method,
             sample_block,
-            to_read_block,
             context_,
             max_block_size,
             text_input_field_names));
