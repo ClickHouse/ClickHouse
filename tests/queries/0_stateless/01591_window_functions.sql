@@ -442,6 +442,26 @@ from (
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 
+-- a test with aggregate function which is -state type
+select bitmapCardinality(bs)
+from
+    (
+        select groupBitmapMergeState(bm) over (order by k asc rows between unbounded preceding and current row) as bs
+        from
+            (
+                select
+                    groupBitmapState(number) as bm, k
+                from
+                    (
+                        select
+                            number,
+                            number % 3 as k
+                        from numbers(10)
+                    )
+                group by k
+            )
+    );
+
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
