@@ -22,8 +22,8 @@ struct RolesOrUsersSet
     RolesOrUsersSet();
     RolesOrUsersSet(const RolesOrUsersSet & src);
     RolesOrUsersSet & operator =(const RolesOrUsersSet & src);
-    RolesOrUsersSet(RolesOrUsersSet && src);
-    RolesOrUsersSet & operator =(RolesOrUsersSet && src);
+    RolesOrUsersSet(RolesOrUsersSet && src) noexcept;
+    RolesOrUsersSet & operator =(RolesOrUsersSet && src) noexcept;
 
     struct AllTag {};
     RolesOrUsersSet(AllTag);

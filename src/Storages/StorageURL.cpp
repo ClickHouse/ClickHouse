@@ -649,7 +649,7 @@ StorageURLWithFailover::StorageURLWithFailover(
         Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
         LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
-        uri_options.emplace_back(std::move(uri_option));
+        uri_options.emplace_back(uri_option);
     }
 }
 

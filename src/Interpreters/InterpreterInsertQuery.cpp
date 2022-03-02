@@ -197,7 +197,7 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, std::move(sample) , thread_status, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(

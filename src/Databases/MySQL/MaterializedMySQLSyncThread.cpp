@@ -159,7 +159,7 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
-    , pool(std::move(pool_))
+    , pool(std::move(pool_)) /// NOLINT
     , client(std::move(client_))
     , settings(settings_)
 {
