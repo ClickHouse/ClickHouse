@@ -472,6 +472,7 @@ TEST(LRUFileCache, get)
         /// Test LRUCache::restore().
 
         auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
+        cache2.initialize();
         ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
