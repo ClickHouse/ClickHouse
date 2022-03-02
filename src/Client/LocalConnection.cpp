@@ -161,11 +161,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (state->pushing_async_executor)
     {
-        state->pushing_async_executor->push(std::move(block));
+        state->pushing_async_executor->push(block);
     }
     else if (state->pushing_executor)
     {
-        state->pushing_executor->push(std::move(block));
+        state->pushing_executor->push(block);
     }
 }
 

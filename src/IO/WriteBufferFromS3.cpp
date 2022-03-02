@@ -386,7 +386,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
             while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
             {
                 auto & task = upload_object_tasks.front();
-                auto exception = std::move(task.exception);
+                auto exception = task.exception;
                 auto tag = std::move(task.tag);
                 upload_object_tasks.pop_front();
 
