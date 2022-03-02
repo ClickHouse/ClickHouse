@@ -144,6 +144,9 @@ DiskCacheWrapper::readFile(
         }
     }
 
+    auto current_read_settings = settings;
+    current_read_settings.remote_fs_method = RemoteFSReadMethod::read;
+
     if (metadata->status == DOWNLOADING)
     {
         FileDownloadStatus result_status = DOWNLOADED;
@@ -158,7 +161,7 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, settings, read_hint, file_size);
+                    auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -184,7 +187,7 @@ DiskCacheWrapper::readFile(
     if (metadata->status == DOWNLOADED)
         return cache_disk->readFile(path, settings, read_hint, file_size);
 
-    return DiskDecorator::readFile(path, settings, read_hint, file_size);
+    return DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
