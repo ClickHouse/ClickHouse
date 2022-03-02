@@ -231,12 +231,6 @@ def minify_file(path, css_digest, js_digest):
 
 
 def minify_website(args):
-    # Output greenhouse css separately from main bundle to be included via the greenhouse iframe
-    command = f"cat '{args.website_dir}/css/greenhouse.css' > '{args.output_dir}/css/greenhouse.css'"
-    logging.info(command)
-    output = subprocess.check_output(command, shell=True)
-    logging.debug(output)
-
     css_in = ' '.join(get_css_in(args))
     css_out = f'{args.output_dir}/css/base.css'
     if args.minify:
