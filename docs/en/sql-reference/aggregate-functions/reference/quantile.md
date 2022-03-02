@@ -10,6 +10,8 @@ This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservo
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
+Note that for an empty numeric sequence, `quantile` will return NaN, but its `quantile*` variants will return either NaN or a default value for the sequence type, depending on the variant.
+
 **Syntax**
 
 ``` sql
