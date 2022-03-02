@@ -122,7 +122,7 @@ private:
             nullptr,
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
+            false,
             settings.min_count_to_compile_aggregate_expression);
     }
 

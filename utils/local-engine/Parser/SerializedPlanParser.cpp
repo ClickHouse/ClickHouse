@@ -28,8 +28,7 @@
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/StorageMergeTreeFactory.h>
 #include <Poco/Util/MapConfiguration.h>
-
-
+#include <common/logger_useful.h>
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
@@ -46,6 +45,8 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
 
 DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel& rel)
 {
+    Stopwatch watch;
+    watch.start();
     assert(rel.has_extension_table());
     assert(rel.has_base_schema());
     std::string table = rel.extension_table().detail().value();
@@ -53,10 +54,10 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     auto header = parseNameStruct(rel.base_schema());
     auto names_and_types_list = header.getNamesAndTypesList();
     auto storageFactory = local_engine::StorageMergeTreeFactory::instance();
-
     auto metadata = storageFactory.getMetadata(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [names_and_types_list, this]()->local_engine::StorageInMemoryMetadataPtr {
         return local_engine::buildMetaData(names_and_types_list, this->context);
     });
+    auto t_metadata = watch.elapsedMicroseconds();
     query_context.metadata = metadata;
     auto storage = storageFactory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
                 auto  custom_storage_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
@@ -71,6 +72,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
                 custom_storage_merge_tree->loadDataParts(false);
                 return custom_storage_merge_tree;
            });
+    auto t_storage =  watch.elapsedMicroseconds() - t_metadata;
     query_context.custom_storage_merge_tree = storage;
     auto query_info = local_engine::buildQueryInfo(names_and_types_list);
     auto data_parts = query_context.custom_storage_merge_tree->getDataPartsVector();
@@ -87,6 +89,13 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
                                                         this->context,
                                                         4096 * 2,
                                                         1);
+    auto t_pipe =  watch.elapsedMicroseconds() - t_storage;
+    watch.stop();
+    LOG_DEBUG(&Poco::Logger::get("SerializedPlanParser"),
+             "get metadata {} ms; get storage {} ms; get pipe {} ms",
+             t_metadata / 1000.0,
+             t_storage / 1000.0,
+             t_pipe / 1000.0);
     return query;
 }
 
@@ -494,16 +503,22 @@ DB::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB:
 void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
     Stopwatch stopwatch;
+    stopwatch.start();
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = true};
     this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings{
                                                                                      .actions_settings = ExpressionActionsSettings{
                                                                                          .can_compile_expressions = true,
                                                                                          .min_count_to_compile_expression = 3,
-                                                                                     .compile_expressions = CompileExpressions::yes
+                                                                                     .compile_expressions = CompileExpressions::no
                                                                                     }});
-    std::cout << "build pipeline" << stopwatch.elapsedMicroseconds() << std::endl;
+    auto t_pipeline = stopwatch.elapsedMicroseconds();
     this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
-    std::cout << "create executor" << stopwatch.elapsedMicroseconds() << std::endl;
+    auto t_executor = stopwatch.elapsedMicroseconds() - t_pipeline;
+    stopwatch.stop();
+    LOG_INFO(&Poco::Logger::get("SerializedPlanParser"),
+             "build pipeline {} ms; create executor {} ms;",
+             t_pipeline / 1000.0,
+             t_executor / 1000.0);
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }

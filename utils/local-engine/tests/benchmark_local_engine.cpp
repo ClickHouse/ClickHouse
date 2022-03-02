@@ -19,6 +19,8 @@
 #include <cstdlib>
 #include <Common/PODArray_fwd.h>
 #include <Storages/MergeTreeTool.h>
+#include <Storages/Logger.h>
+#include <common/logger_useful.h>
 #include <Common/Stopwatch.h>
 
 #if defined(__SSE2__)
@@ -30,7 +32,6 @@ using namespace dbms;
 
 bool inside_main=true;
 DB::ContextMutablePtr global_context;
-
 // Define another benchmark
 static void BM_CHColumnToSparkRow(benchmark::State& state) {
     for (auto _: state)
@@ -534,15 +535,15 @@ static void BM_TestCreateExecute(benchmark::State& state)
         stopwatch.start();
         auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
         context->setPath("/");
-        std::cout << "create context" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _context = stopwatch.elapsedMicroseconds();
         dbms::SerializedPlanParser parser(context);
         auto query_plan = parser.parse(plan_string);
-        std::cout << "create parser" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _parser = stopwatch.elapsedMicroseconds() - _context;
         dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
-        std::cout << "create executor" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _executor = stopwatch.elapsedMicroseconds() - _parser;
         executor->execute(std::move(query_plan));
-        std::cout << "execute executor" << stopwatch.elapsedMicroseconds() << std::endl;
-        std::cout << "======================" << std::endl;
+        auto _execute = stopwatch.elapsedMicroseconds() - _executor;
+        LOG_DEBUG(&Poco::Logger::root(), "create context: {}, create parser: {}, create executor: {}, execute executor: {}", _context, _parser, _executor, _execute);
     }
 }
 
@@ -595,15 +596,15 @@ static void BM_TestCreateParquetExecute(benchmark::State& state)
         stopwatch.start();
         auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
         context->setPath("/");
-        std::cout << "create context" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _context = stopwatch.elapsedMicroseconds();
         dbms::SerializedPlanParser parser(context);
         auto query_plan = parser.parse(plan_string);
-        std::cout << "create parser" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _parser = stopwatch.elapsedMicroseconds() - _context;
         dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
-        std::cout << "create executor" << stopwatch.elapsedMicroseconds() << std::endl;
+        auto _executor = stopwatch.elapsedMicroseconds() - _parser;
         executor->execute(std::move(query_plan));
-        std::cout << "execute executor" << stopwatch.elapsedMicroseconds() << std::endl;
-        std::cout << "======================" << std::endl;
+        auto _execute = stopwatch.elapsedMicroseconds() - _executor;
+        LOG_INFO(&Poco::Logger::root(), "create context: {}, create parser: {}, create executor: {}, execute executor: {}", _context, _parser, _executor, _execute);
     }
 }
 
@@ -620,6 +621,7 @@ static void BM_TestCreateParquetExecute(benchmark::State& state)
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
 int main(int argc, char** argv) {
+    local_engine::Logger::initConsoleLogger();
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();

@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Storages/Logger.h>
 
 #include <fstream>
 #include <jni.h>
@@ -89,6 +90,7 @@ void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNativ
     dbms::SerializedPlanParser::global_context->makeGlobalContext();
     dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
     dbms::SerializedPlanParser::global_context->setPath("/");
+    local_engine::Logger::initConsoleLogger();
 }
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
