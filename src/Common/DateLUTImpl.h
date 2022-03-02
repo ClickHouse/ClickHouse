@@ -1001,8 +1001,12 @@ public:
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
+
+        if (unlikely(year > DATE_LUT_MAX_YEAR))
+            return LUTIndex(DATE_LUT_SIZE - 1);
+
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
         /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
@@ -1012,7 +1016,7 @@ public:
     /// Create DayNum from year, month, day of month.
     inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
