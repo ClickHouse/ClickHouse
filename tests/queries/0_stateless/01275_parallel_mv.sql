@@ -13,7 +13,7 @@ create materialized view testXC engine=MergeTree order by tuple() as select slee
 set parallel_view_processing=1;
 insert into testX select number from numbers(10) settings log_queries=1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select length(thread_ids) >= 8 from system.query_log where current_database = currentDatabase() and type != 'QueryStart' and query like '%insert into testX %' and Settings['parallel_view_processing'] = '1';
+select length(thread_ids) from system.query_log where current_database = currentDatabase() and type != 'QueryStart' and query like '%insert into testX %' and Settings['parallel_view_processing'] = '1';
 
 select count() from testX;
 select count() from testXA;
@@ -23,7 +23,7 @@ select count() from testXC;
 set parallel_view_processing=0;
 insert into testX select number from numbers(10) settings log_queries=1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select length(thread_ids) >= 5 from system.query_log where current_database = currentDatabase() and type != 'QueryStart' and query like '%insert into testX %' and Settings['parallel_view_processing'] = '0';
+select length(thread_ids) from system.query_log where current_database = currentDatabase() and type != 'QueryStart' and query like '%insert into testX %' and Settings['parallel_view_processing'] = '0';
 
 select count() from testX;
 select count() from testXA;
