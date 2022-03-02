@@ -61,6 +61,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
 #include <base/EnumReflection.h>
+#include <base/demangle.h>
 
 #include <random>
 
@@ -412,9 +413,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ASTPtr ast;
     const char * query_end;
 
-    /// Don't limit the size of internal queries.
-    size_t max_query_size = 0;
-    if (!internal) max_query_size = settings.max_query_size;
+    size_t max_query_size = settings.max_query_size;
+    /// Don't limit the size of internal queries or distributed subquery.
+    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        max_query_size = 0;
 
     String query_database;
     String query_table;
@@ -659,7 +661,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (context->query_trace_context.trace_id != UUID())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();

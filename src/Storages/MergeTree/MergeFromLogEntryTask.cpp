@@ -46,14 +46,10 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
-    std::optional<String> replica_to_execute_merge;
-    bool replica_to_execute_merge_picked = false;
 
     if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
-        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
-        replica_to_execute_merge_picked = true;
-
+        std::optional<String> replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         if (replica_to_execute_merge)
         {
             LOG_DEBUG(log,
@@ -84,7 +80,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
             return {false, {}};
@@ -158,22 +154,24 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
 
+
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
         {
-            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry))
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
-                if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+                LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
+                return {false, {}};
+            }
 
-                if (replica_to_execute_merge)
-                {
-                    LOG_DEBUG(log,
-                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
-                        entry.new_part_name, replica_to_execute_merge.value());
-                    return {false, {}};
-                }
+            zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
+
+            if (!zero_copy_lock)
+            {
+                LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                return {false, {}};
             }
         }
     }
@@ -189,9 +187,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        settings.memory_profiler_step,
-        settings.memory_profiler_sample_probability,
-        settings.max_untracked_memory);
+        settings);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -270,6 +266,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
         throw;
     }
+
+    if (zero_copy_lock)
+        zero_copy_lock->lock->unlock();
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */

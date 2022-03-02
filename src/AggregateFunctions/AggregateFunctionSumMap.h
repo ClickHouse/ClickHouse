@@ -226,7 +226,7 @@ public:
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
-                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                     it = merged_maps.find(DecimalField<T>(key, scale));
                 }
                 else
@@ -251,7 +251,7 @@ public:
 
                     if constexpr (is_decimal<T>)
                     {
-                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
                     }
                     else

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/defines.h>
+#include <base/sort.h>
 
 #include <vector>
 #include <utility>
@@ -10,6 +11,7 @@ namespace DB
 {
 
 /** Structure that holds closed interval with left and right.
+  * Interval left must be less than interval right.
   * Example: [1, 1] is valid interval, that contain point 1.
   */
 template <typename TIntervalStorageType>
@@ -70,6 +72,9 @@ struct IntervalTreeVoidValue
   * Search for all intervals intersecting point has complexity O(log(n) + k), k is count of intervals that intersect point.
   * If we need to only check if there are some interval intersecting point such operation has complexity O(log(n)).
   *
+  * There is invariant that interval left must be less than interval right, otherwise such interval could not contain any point.
+  * If that invariant is broken, inserting such interval in IntervalTree will return false.
+  *
   * Explanation:
   *
   * IntervalTree structure is balanced tree. Each node contains:
@@ -125,44 +130,48 @@ public:
     IntervalTree() { nodes.resize(1); }
 
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
-    void emplace(Interval interval)
+    ALWAYS_INLINE bool emplace(Interval interval)
     {
         assert(!tree_is_built);
+        if (unlikely(interval.left > interval.right))
+            return false;
+
         sorted_intervals.emplace_back(interval);
         increaseIntervalsSize();
+
+        return true;
     }
 
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
-    void emplace(Interval interval, Args &&... args)
+    ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
         assert(!tree_is_built);
+        if (unlikely(interval.left > interval.right))
+            return false;
+
         sorted_intervals.emplace_back(
             std::piecewise_construct, std::forward_as_tuple(interval), std::forward_as_tuple(std::forward<Args>(args)...));
         increaseIntervalsSize();
+
+        return true;
     }
 
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
-    void insert(Interval interval)
+    bool insert(Interval interval)
     {
-        assert(!tree_is_built);
-        sorted_intervals.emplace_back(interval);
-        increaseIntervalsSize();
+        return emplace(interval);
     }
 
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
-    void insert(Interval interval, const Value & value)
+    bool insert(Interval interval, const Value & value)
     {
-        assert(!tree_is_built);
-        sorted_intervals.emplace_back(interval, value);
-        increaseIntervalsSize();
+        return emplace(interval, value);
     }
 
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
-    void insert(Interval interval, Value && value)
+    bool insert(Interval interval, Value && value)
     {
-        assert(!tree_is_built);
-        sorted_intervals.emplace_back(interval, std::move(value));
-        increaseIntervalsSize();
+        return emplace(interval, std::move(value));
     }
 
     /// Build tree, after that intervals cannot be inserted, and only search or iteration can be performed.
@@ -282,6 +291,15 @@ public:
     const_iterator cend() const { return end(); }
 
     size_t getIntervalsSize() const { return intervals_size; }
+
+    size_t getSizeInBytes() const
+    {
+        size_t nodes_size_in_bytes = nodes.size() * sizeof(Node);
+        size_t intervals_size_in_bytes = sorted_intervals.size() * sizeof(IntervalWithValue);
+        size_t result = nodes_size_in_bytes + intervals_size_in_bytes;
+
+        return result;
+    }
 
 private:
     struct Node
@@ -472,14 +490,14 @@ private:
                 }
             }
 
-            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
+            ::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
             {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
                 return lhs_interval.left < rhs_interval.left;
             });
 
-            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
+            ::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
             {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
@@ -664,7 +682,7 @@ private:
         size_t size = points.size();
         size_t middle_element_index = size / 2;
 
-        std::nth_element(points.begin(), points.begin() + middle_element_index, points.end());
+        ::nth_element(points.begin(), points.begin() + middle_element_index, points.end());
 
         /** We should not get median as average of middle_element_index and middle_element_index - 1
           * because we want point in node to intersect some interval.

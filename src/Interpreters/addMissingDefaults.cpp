@@ -58,10 +58,10 @@ ActionsDAGPtr addMissingDefaults(
             continue;
 
         String offsets_name = Nested::extractTableName(column.name);
-        if (nested_groups.count(offsets_name))
+        const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+        if (array_type && nested_groups.count(offsets_name))
         {
-
-            DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column.type).getNestedType();
+            const auto & nested_type = array_type->getNestedType();
             ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
             const auto & constant = actions->addColumn({std::move(nested_column), nested_type, column.name});
 
@@ -83,10 +83,10 @@ ActionsDAGPtr addMissingDefaults(
     /// Computes explicitly specified values by default and materialized columns.
     if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context, true, null_as_default))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
-    else
-        /// Removes unused columns and reorders result.
-        /// The same is done in evaluateMissingDefaults if not empty dag is returned.
-        actions->removeUnusedActions(required_columns.getNames());
+
+    /// Removes unused columns and reorders result.
+    actions->removeUnusedActions(required_columns.getNames(), false);
+    actions->addMaterializingOutputActions();
 
     return actions;
 }

@@ -1174,3 +1174,57 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
             node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
         except:
             pass
+
+
+@pytest.mark.parametrize("name,dest_type", [
+    pytest.param("replicated_mt_move_if_exists", "DISK", id="replicated_disk"),
+    pytest.param("replicated_mt_move_if_exists", "VOLUME", id="replicated_volume"),
+])
+def test_ttl_move_if_exists(started_cluster, name, dest_type):
+    name = unique_table_name(name)
+
+    try:
+        query_template = """
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_mt_move_if_exists', '{node_name}')
+            ORDER BY tuple()
+            TTL d1 TO {dest_type} {if_exists} 'external'
+            SETTINGS storage_policy='{policy}'
+        """
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query(query_template.format( \
+                name=name, node_name=node1.name, dest_type=dest_type, \
+                if_exists='', policy='only_jbod_1'))
+
+        for (node, policy) in zip([node1, node2], ['only_jbod_1', 'small_jbod_with_external']):
+            node.query(query_template.format( \
+                name=name, node_name=node.name, dest_type=dest_type, \
+                if_exists='IF EXISTS', policy=policy))
+
+        data = []  # 10MB in total
+        for i in range(10):
+            data.append(("randomPrintableASCII(1024*1024)", "toDateTime({})".format(time.time() - 1)))
+
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+        node2.query("SYSTEM SYNC REPLICA {}".format(name))
+
+        time.sleep(5)
+
+        used_disks1 = get_used_disks_for_table(node1, name)
+        assert set(used_disks1) == {"jbod1"}
+
+        used_disks2 = get_used_disks_for_table(node2, name)
+        assert set(used_disks2) == {"external"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+        assert node2.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+            node2.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        except:
+            pass

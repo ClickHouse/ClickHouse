@@ -43,6 +43,7 @@ class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 struct ZeroCopyLock;
 
@@ -391,6 +392,7 @@ public:
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
         DataPartsVector & normal_parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
     std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
@@ -492,7 +494,12 @@ public:
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
+    bool renameTempPartAndAdd(
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment = nullptr,
+        Transaction * out_transaction = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -502,9 +509,13 @@ public:
 
     /// Low-level version of previous one, doesn't lock mutex
     bool renameTempPartAndReplace(
-            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
-
+        MutableDataPartPtr & part,
+        SimpleIncrement * increment,
+        Transaction * out_transaction,
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -595,6 +606,10 @@ public:
     {
         broken_part_callback(name);
     }
+
+    /// Same as above but has the ability to check all other parts
+    /// which reside on the same disk of the suspicious part.
+    void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
 
     /// TODO (alesap) Duplicate method required for compatibility.
     /// Must be removed.
@@ -861,7 +876,7 @@ public:
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &) const {}
+    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {}
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
@@ -1150,9 +1165,7 @@ private:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
-    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
-    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
-
+    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
     std::atomic<size_t> total_active_size_bytes = 0;
@@ -1186,7 +1199,7 @@ private:
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
-    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr &, const DiskPtr &) { return std::nullopt; }
+    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

@@ -1,5 +1,6 @@
 #include "HashedDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -177,15 +178,25 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
 
-    if (attributes.empty())
+    size_t keys_found = 0;
+
+    if (unlikely(attributes.empty()))
     {
+        for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+        {
+            auto requested_key = extractor.extractCurrentKey();
+            out[requested_key_index] = no_attributes_container.find(requested_key) != no_attributes_container.end();
+            keys_found += out[requested_key_index];
+            extractor.rollbackCurrentKey();
+        }
+
         query_count.fetch_add(keys_size, std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
 
     const auto & attribute = attributes.front();
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
-    size_t keys_found = 0;
 
     getAttributeContainer(0, [&](const auto & container)
     {
@@ -423,7 +434,25 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 
     Field column_value_to_insert;
 
-    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+    size_t attributes_size = attributes.size();
+
+    if (unlikely(attributes_size == 0))
+    {
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        {
+            auto key = keys_extractor.extractCurrentKey();
+
+            if constexpr (std::is_same_v<KeyType, StringRef>)
+                key = copyStringInArena(string_arena, key);
+
+            no_attributes_container.insert(key);
+            keys_extractor.rollbackCurrentKey();
+        }
+
+        return;
+    }
+
+    for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
         const IColumn & attribute_column = *block.safeGetByPosition(skip_keys_size_offset + attribute_index).column;
         auto & attribute = attributes[attribute_index];
@@ -487,7 +516,21 @@ void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
     if (unlikely(!added_rows))
         return;
 
-    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+    size_t attributes_size = attributes.size();
+
+    if (unlikely(attributes_size == 0))
+    {
+        size_t reserve_size = added_rows + no_attributes_container.size();
+
+        if constexpr (sparse)
+            no_attributes_container.resize(reserve_size);
+        else
+            no_attributes_container.reserve(reserve_size);
+
+        return;
+    }
+
+    for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
         getAttributeContainer(attribute_index, [added_rows](auto & attribute_map)
         {
@@ -570,7 +613,9 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
                 }
             }
             else
+            {
                 resize(block.rows());
+            }
 
             blockToAttributes(block);
         }
@@ -589,9 +634,10 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 {
-    bytes_allocated += attributes.size() * sizeof(attributes.front());
+    size_t attributes_size = attributes.size();
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
-    for (size_t i = 0; i < attributes.size(); ++i)
+    for (size_t i = 0; i < attributes_size; ++i)
     {
         getAttributeContainer(i, [&](const auto & container)
         {
@@ -620,6 +666,22 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
         if (attributes[i].is_nullable_set.has_value())
             bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
+    }
+
+    if (unlikely(attributes_size == 0))
+    {
+        bytes_allocated += sizeof(no_attributes_container);
+
+        if constexpr (sparse)
+        {
+            bytes_allocated += no_attributes_container.size() * (sizeof(KeyType));
+            bucket_count = no_attributes_container.bucket_count();
+        }
+        else
+        {
+            bytes_allocated += no_attributes_container.getBufferSizeInBytes();
+            bucket_count = no_attributes_container.getBufferSizeInCells();
+        }
     }
 
     bytes_allocated += string_arena.size();
@@ -657,13 +719,30 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
             }
         });
     }
+    else
+    {
+        keys.reserve(no_attributes_container.size());
+
+        for (const auto & key : no_attributes_container)
+        {
+            if constexpr (sparse)
+                keys.emplace_back(key);
+            else
+                keys.emplace_back(key.getKey());
+        }
+    }
 
     ColumnsWithTypeAndName key_columns;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    {
+        auto keys_column = getColumnFromPODArray(std::move(keys));
+        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    }
     else
+    {
         key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+    }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);

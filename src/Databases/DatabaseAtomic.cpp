@@ -80,7 +80,7 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
     fs::remove_all(getMetadataPath());
 }
@@ -140,9 +140,6 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
 
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
-
-    if (table->dropTableImmediately())
-        table->drop();
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
@@ -469,7 +466,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -482,7 +479,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -527,7 +524,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);

@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFile.h>
@@ -94,8 +95,9 @@ StorageFileLog::StorageFileLog(
 void StorageFileLog::loadMetaFiles(bool attach)
 {
     const auto & storage = getStorageID();
+    /// FIXME Why do we need separate directory? Why not to use data directory?
     root_meta_path
-        = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
+        = std::filesystem::path(getContext()->getPath()) / "stream_engines/filelog/" / DatabaseCatalog::getPathForUUID(storage.uuid);
 
     /// Attach table
     if (attach)
@@ -966,7 +968,9 @@ bool StorageFileLog::updateFileInfos()
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    return NamesAndTypesList{{"_filename", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
+    return NamesAndTypesList{
+        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_offset", std::make_shared<DataTypeUInt64>()}};
 }
 
 Names StorageFileLog::getVirtualColumnNames()

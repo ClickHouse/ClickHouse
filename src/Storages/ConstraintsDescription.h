@@ -14,7 +14,7 @@ struct ConstraintsDescription
 {
 public:
     ConstraintsDescription() { update(); }
-    ConstraintsDescription(const ASTs & constraints_);
+    explicit ConstraintsDescription(const ASTs & constraints_);
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
