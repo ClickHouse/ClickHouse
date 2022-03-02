@@ -9,8 +9,7 @@
         "name": "clickhouse/binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
-            "docker/test/codebrowser"
+            "docker/test/pvs"
         ]
     },
     "docker/test/compatibility/centos": {
@@ -65,10 +64,6 @@
     },
     "docker/test/split_build_smoke_test": {
         "name": "clickhouse/split-build-smoke-test",
-        "dependent": []
-    },
-    "docker/test/codebrowser": {
-        "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {
