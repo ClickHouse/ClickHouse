@@ -20,7 +20,7 @@ def run_command(command, wait=False):
 
 
 UPLOAD_FOLDER = './'
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'sh'}
+ALLOWED_EXTENSIONS = {'txt', 'sh'}
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -63,10 +63,8 @@ def upload_file():
 @app.route('/run', methods=['GET', 'POST'])
 def parse_request():
     data = request.data  # data is empty
-    print(data)
     run_command(data, wait=True)
     return 'Ok'
-    # need posted data here
 
 if __name__ == '__main__':
    app.run(port=5011)
