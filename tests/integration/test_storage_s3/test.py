@@ -1051,7 +1051,7 @@ def test_select_columns(started_cluster):
     instance.query(f"CREATE TABLE {name} ({structure}) ENGINE = S3(s3_conf1, format='Parquet')")
 
     limit = 10000000
-    instance.query(f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit}")
+    instance.query(f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit} SETTINGS s3_truncate_on_insert=1")
     instance.query(f"SELECT value2 FROM {name}")
 
     instance.query("SYSTEM FLUSH LOGS")
@@ -1074,5 +1074,3 @@ def test_insert_select_schema_inference(started_cluster):
 
     result = instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
     assert(int(result) == 1)
-
->>>>>>> upstream/master
