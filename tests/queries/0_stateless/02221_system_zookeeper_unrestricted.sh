@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: no-replicated-database, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

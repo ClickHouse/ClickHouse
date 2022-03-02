@@ -266,7 +266,12 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         String path_corrected = pathCorrected(path);
-        zkutil::Strings nodes = zookeeper->getChildren(path_corrected);
+
+        /// Node can be deleted concurrently. It's Ok, we don't provide any
+        /// consistency guarantees for system.zookeeper table.
+        zkutil::Strings nodes;
+        zookeeper->tryGetChildren(path_corrected, nodes);
+
         String path_part = path_corrected;
         if (path_part == "/")
             path_part.clear();
