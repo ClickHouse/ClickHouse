@@ -1,3 +1,4 @@
+#include <sys/time.h>
 #include <Coordination/Changelog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -518,6 +519,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = log_entry;
     max_log_id = index;
+    cleanEntry(50);
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -555,11 +557,16 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 }
-
+int64_t timeus()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
 void Changelog::compact(uint64_t up_to_log_index)
 {
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
-
+    auto start_time = timeus();
     bool remove_all_logs = false;
     if (up_to_log_index > max_log_id)
     {
@@ -601,12 +608,15 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    cleanEntry(1000);
 
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
+    auto end_time = timeus();
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, time: {}, logsize: {}, delet_cursor: {}",
+        up_to_log_index, min_log_id, max_log_id, end_time-start_time, logs.size(), delete_cursor);
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -634,6 +644,7 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
         (*ret)[result_pos] = entryAt(i);
         result_pos++;
     }
+    cleanEntry(10);
     return ret;
 }
 
@@ -645,6 +656,7 @@ LogEntryPtr Changelog::entryAt(uint64_t index)
         return nullptr;
 
     src = entry->second;
+    cleanEntry(10);
     return src;
 }
 
@@ -741,6 +753,12 @@ void Changelog::cleanLogThread()
                 LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
         }
     }
+}
+
+void Changelog::cleanEntry(int count)
+{
+    for (int n = 0; delete_cursor < min_log_id && n < count; ++delete_cursor, ++n)
+        logs.erase(delete_cursor);
 }
 
 }
