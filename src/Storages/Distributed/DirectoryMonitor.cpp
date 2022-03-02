@@ -219,7 +219,7 @@ namespace
         return distributed_header;
     }
 
-    /// remote_error argument is used to decide whether some errors should be
+    /// 'remote_error' argument is used to decide whether some errors should be
     /// ignored or not, in particular:
     ///
     /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
@@ -399,7 +399,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     {
         processFiles(files);
 
-        /// Update counters
+        /// Update counters.
         getFiles();
     }
 }
@@ -475,7 +475,7 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    /// Update counters
+    /// Update counters.
     getFiles();
 
     if (!quit && do_sleep)
@@ -491,8 +491,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1)
+        /// Check new format shard{shard_index}_replica{replica_index}
+        /// (shard_index and replica_index starts from 1).
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
@@ -511,7 +511,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             return shard_info.per_replica_pools[address.replica_index - 1];
         }
 
-        /// existing connections pool have a higher priority
+        /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
@@ -1152,7 +1152,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
-    /// mark file as broken if necessary
+    /// Mark file as broken if necessary.
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);

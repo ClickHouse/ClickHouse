@@ -39,7 +39,7 @@ public:
     std::shared_ptr<ASTRowPolicyNames> names;
     String new_short_name;
 
-    std::optional<RowPolicyKind> kind;
+    std::optional<bool> is_restrictive;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters; /// `nullptr` means set to NONE.
 
     std::shared_ptr<ASTRolesOrUsersSet> roles;

@@ -52,7 +52,7 @@ endif()
 option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHouse functions" ${STRIP_DSF_DEFAULT})
 
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
-    message(WARNING "Not generating debugger info for ClickHouse functions")
+    message(INFO "Not generating debugger info for ClickHouse functions")
     target_compile_options(clickhouse_functions PRIVATE "-g0")
 else()
     message(STATUS "Generating debugger info for ClickHouse functions")
