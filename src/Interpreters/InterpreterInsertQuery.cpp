@@ -295,6 +295,9 @@ BlockIO InterpreterInsertQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
+
+    /// For table functions we check access while executing
+    /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
