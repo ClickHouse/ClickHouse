@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, long
 
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache';
 INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 100000000;
