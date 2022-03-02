@@ -721,6 +721,7 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void addProgramOptions(boost::program_options::options_description & options);
 
     /// Adds program options as to set the settings from a command line.
+    /// Allows to set one setting multiple times, the last value will be used.
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)
     void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
 
