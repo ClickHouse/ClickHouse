@@ -284,12 +284,12 @@
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
     \
+    M(HashTablesPreallocatedElements, "How many elements were preallocated in hash tables for aggregation.") \
+    M(HashTablesInitedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
-    \
-    M(HashTablesPreallocatedElements, "How many elements were preallocated in hash tables.") \
-    M(HashTablesInitedAsTwoLevel, "How many hash tables were converted to two-level from the beginning.") \
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
 
 namespace ProfileEvents
 {

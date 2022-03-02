@@ -12,6 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+# tests rely on that all the rows are unique and max_threads divides table_size
 table_size=10000
 max_threads=5
 
@@ -59,7 +60,7 @@ check_preallocated_elements() {
   fi
   $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
     SELECT COUNT(*)
-      FROM system.query_log                                                               
+      FROM system.query_log
      WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
            AND ProfileEvents['HashTablesPreallocatedElements'] BETWEEN $min AND $max
   GROUP BY query_id"
@@ -70,8 +71,8 @@ check_convertion_to_two_level() {
   # rows may be distributed in any way including "everything goes to the one particular thread"
   $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
     SELECT SUM(ProfileEvents['HashTablesInitedAsTwoLevel']) BETWEEN 1 AND $max_threads
-      FROM system.query_log                                                               
-     WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String}) 
+      FROM system.query_log
+     WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
   GROUP BY query_id"
 }
 
@@ -89,8 +90,6 @@ test_one_thread_simple_group_by_with_limit
 test_one_thread_simple_group_by_with_join_and_subquery
 test_several_threads_simple_group_by_with_limit_single_level_ht
 test_several_threads_simple_group_by_with_limit_two_level_ht
-test_several_threads_simple_group_by_external_aggregation_two_level_ht
-test_several_threads_simple_group_by_in_order_aggregation
 test_several_threads_simple_group_by_with_limit_and_rollup_single_level_ht
 test_several_threads_simple_group_by_with_limit_and_rollup_two_level_ht
 test_several_threads_simple_group_by_with_limit_and_cube_single_level_ht

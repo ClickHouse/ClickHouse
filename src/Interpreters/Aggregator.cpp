@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <future>
+#include <numeric>
 #include <Poco/Util/Application.h>
 
 #include <base/sort.h>
@@ -46,40 +48,68 @@ namespace
 class HashTablesStatistics
 {
 public:
-    using Cache = DB::LRUCache<UInt64, size_t>;
+    struct Entry
+    {
+        size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
+        size_t median_size; // roughly the size we're going to preallocate on each thread
+    };
+
+    using Cache = DB::LRUCache<UInt64, Entry>;
     using CachePtr = std::shared_ptr<Cache>;
     using Params = DB::Aggregator::Params::StatsCollectingParams;
 
-    std::optional<size_t> getSizeHint(const Params & params)
+    /// Collection and use of the statistics should be enabled.
+    std::optional<Entry> getSizeHint(const Params & params)
     {
-        const auto cache = getHashTableStatsCache(params);
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
         if (const auto hint = cache->get(params.key))
         {
-            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "An entry for key={} found in cache: size_hint={}", params.key, *hint);
+            LOG_DEBUG(
+                &Poco::Logger::get("Aggregator"),
+                "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
+                params.key,
+                hint->sum_of_sizes,
+                hint->median_size);
             return *hint;
         }
         return std::nullopt;
     }
 
-    void update(size_t observed_size, const Params & params)
+    /// Collection and use of the statistics should be enabled.
+    void update(size_t sum_of_sizes, size_t median_size, const Params & params)
     {
-        const auto cache = getHashTableStatsCache(params);
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
         const auto hint = cache->get(params.key);
         // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
-        if (!hint || observed_size < *hint / 2 || *hint < observed_size)
+        if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
+            || hint->median_size < median_size)
         {
-            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "Statistics updated for key={}: new size_hint={}", params.key, observed_size);
-            cache->set(params.key, std::make_shared<size_t>(observed_size));
+            LOG_DEBUG(
+                &Poco::Logger::get("Aggregator"),
+                "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
+                params.key,
+                sum_of_sizes,
+                median_size);
+            cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
         }
     }
 
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const
     {
-        if (const auto cache = getHashTableStatsCache())
+        std::lock_guard lock(mutex);
+        if (hash_table_stats)
         {
             size_t hits = 0, misses = 0;
-            cache->getStats(hits, misses);
-            return DB::HashTablesCacheStatistics{.entries = cache->count(), .hits = hits, .misses = misses};
+            hash_table_stats->getStats(hits, misses);
+            return DB::HashTablesCacheStatistics{.entries = hash_table_stats->count(), .hits = hits, .misses = misses};
         }
         return std::nullopt;
     }
@@ -105,15 +135,8 @@ public:
     }
 
 private:
-    CachePtr getHashTableStatsCache() const
+    CachePtr getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
     {
-        std::lock_guard lock(mutex);
-        return hash_table_stats;
-    }
-
-    CachePtr getHashTableStatsCache(const Params & params)
-    {
-        std::lock_guard lock(mutex);
         if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
             hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
         return hash_table_stats;
@@ -137,7 +160,6 @@ bool worthConvertToTwoLevel(
         || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
 }
 
-void initDataVariants(
 DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedDataVariants::Type type)
 {
     using Type = DB::AggregatedDataVariants::Type;
@@ -158,17 +180,19 @@ void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
-    if (stats_collecting_params.isEnabled())
+    if (stats_collecting_params.isCollectionAndUseEnabled())
     {
         if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
         {
-            // The value of max_size_to_preallocate_for_aggregation may change between queries, so we check it right before returning it to the client.
-            auto adjusted = std::min(*hint, stats_collecting_params.max_size_to_preallocate_for_aggregation);
-            // Seems it's better to preallocate less than to preallocate too much in case when we are going to create several hash tables for each thread of aggregation.
-            if (params.group_by_two_level_threshold != 0 && params.max_threads > 1)
-                adjusted /= params.max_threads;
+            const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+            const auto lower_limit = hint->sum_of_sizes / max_threads;
+            const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
+            const auto adjusted = std::min(std::max(lower_limit, hint->median_size), upper_limit);
             if (worthConvertToTwoLevel(
-                    params.group_by_two_level_threshold, *hint, /*group_by_two_level_threshold_bytes*/ 0, /*result_size_bytes*/ 0))
+                    params.group_by_two_level_threshold,
+                    hint->sum_of_sizes,
+                    /*group_by_two_level_threshold_bytes*/ 0,
+                    /*result_size_bytes*/ 0))
                 method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
             result.init(method_chosen, adjusted);
             ProfileEvents::increment(ProfileEvents::HashTablesInitedAsTwoLevel, result.isTwoLevel());
@@ -176,6 +200,21 @@ void initDataVariantsWithSizeHint(
         }
     }
     result.init(method_chosen);
+}
+
+/// Collection and use of the statistics should be enabled.
+void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::Aggregator::Params::StatsCollectingParams & params)
+{
+    if (!params.isCollectionAndUseEnabled())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+    std::vector<size_t> sizes(data_variants.size());
+    for (size_t i = 0; i < data_variants.size(); ++i)
+        sizes[i] = data_variants[i]->size();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    std::nth_element(sizes.begin(), median_size, sizes.end());
+    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+    getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
 // The std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
@@ -236,6 +275,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+AggregatedDataVariants::~AggregatedDataVariants()
+{
+    if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
+    {
+        try
+        {
+            aggregator->destroyAllAggregateStates(*this);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
 
 std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
 {
@@ -301,59 +354,9 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
 {
 }
 
-bool Aggregator::Params::StatsCollectingParams::isEnabled() const
+bool Aggregator::Params::StatsCollectingParams::isCollectionAndUseEnabled() const
 {
     return key != 0;
-}
-
-class Aggregator::StatisticsUpdater
-{
-public:
-    explicit StatisticsUpdater(Aggregator & aggregator_) : aggregator(aggregator_), observed_size(0)
-    {
-        if (!aggregator.params.stats_collecting_params.isEnabled())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics collection should be enabled");
-    }
-
-    ~StatisticsUpdater()
-    {
-        try
-        {
-            // It is hard to track a hash table size after we start spilling on disk.
-            // But it won't happen until we reach at least one of the group by two-level thresholds.
-            const auto result = !aggregator.hasTemporaryFiles() ? observed_size.load() : aggregator.params.group_by_two_level_threshold;
-            getHashTablesStatistics().update(result, aggregator.params.stats_collecting_params);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void addToObservedHashTableSize(size_t size) { observed_size.fetch_add(size); }
-
-private:
-    Aggregator & aggregator;
-    std::atomic<size_t> observed_size;
-};
-
-AggregatedDataVariants::~AggregatedDataVariants()
-{
-    if (aggregator)
-    {
-        try
-        {
-            if (aggregator->stats_updater)
-                aggregator->stats_updater->addToObservedHashTableSize(size());
-
-            if (!aggregator->all_aggregates_has_trivial_destructor)
-                aggregator->destroyAllAggregateStates(*this);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
 }
 
 Block Aggregator::getHeader(bool final) const
@@ -559,12 +562,7 @@ Aggregator::Aggregator(const Params & params_) : params(params_)
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
-
-    if (params.stats_collecting_params.isEnabled())
-        stats_updater = std::make_unique<StatisticsUpdater>(*this);
 }
-
-Aggregator::~Aggregator() = default;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -1229,7 +1227,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariants(result, method_chosen, params);
+        initDataVariantsWithSizeHint(result, method_chosen, params);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
@@ -1591,10 +1589,6 @@ void Aggregator::convertToBlockImpl(
     {
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
-
-    if (stats_updater)
-        stats_updater->addToObservedHashTableSize(data.size());
-
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -2449,6 +2443,9 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
         throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
 
     LOG_TRACE(log, "Merging aggregated data");
+
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+        updateStatistics(data_variants, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

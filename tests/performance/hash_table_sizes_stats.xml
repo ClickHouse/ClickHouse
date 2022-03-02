@@ -14,24 +14,16 @@
     <query short="1">SELECT number FROM numbers_mt(1000000) GROUP BY number FORMAT Null</query>
     <query>SELECT number FROM numbers_mt(10000000) GROUP BY number FORMAT Null</query>
     <query>SELECT number FROM numbers_mt(50000000) GROUP BY number FORMAT Null</query>
-    <query>WITH number % 32769 AS k, toUInt64(k) AS k1, k1 + 1 AS k2 SELECT k1, k2, count() FROM numbers(100000000) GROUP BY k1, k2 FORMAT Null</query>
-    <query>WITH number % 131073 AS k, toUInt64(k) AS k1, k1 + 1 AS k2 SELECT k1, k2, count() FROM numbers(100000000) GROUP BY k1, k2 FORMAT Null</query>
     <query>WITH number % 524289 AS k, toUInt64(k) AS k1, k1 + 1 AS k2 SELECT k1, k2, count() FROM numbers(100000000) GROUP BY k1, k2 FORMAT Null</query>
     <query>SELECT number FROM numbers_mt(10000000) GROUP BY number FORMAT Null SETTINGS group_by_two_level_threshold = 1e12, group_by_two_level_threshold_bytes = 1e12</query>
     <query>SELECT number FROM numbers_mt(50000000) GROUP BY number FORMAT Null SETTINGS group_by_two_level_threshold = 1e12, group_by_two_level_threshold_bytes = 1e12</query>
 
-    <substitutions>
-        <substitution>
-           <name>size</name>
-           <values>
-               <value>10m</value>
-               <value>100m</value>
-           </values>
-        </substitution>
-    </substitutions>
-
-    <query>SELECT WatchID FROM hits_{size}_single GROUP BY WatchID FORMAT Null</query>
-    <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits_{size}_single GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
-    <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_{size}_single WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
-    <query>SELECT min(MobilePhoneModel) FROM hits_{size}_single WHERE MobilePhoneModel != '' GROUP BY intHash32(UserID) % 1000000 FORMAT Null</query>
+    <query>SELECT WatchID FROM hits_10m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT WatchID FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits_10m_single GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
+    <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits_100m_single GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
+    <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
+    <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
+    <query>SELECT min(MobilePhoneModel) FROM hits_10m_single WHERE MobilePhoneModel != '' GROUP BY intHash32(UserID) % 1000000 FORMAT Null</query>
+    <query>SELECT min(MobilePhoneModel) FROM hits_100m_single WHERE MobilePhoneModel != '' GROUP BY intHash32(UserID) % 1000000 FORMAT Null</query>
 </test>
