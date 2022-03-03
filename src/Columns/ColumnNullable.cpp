@@ -303,18 +303,22 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
         getNestedColumn().getPermutation(direction, stability, 0, null_direction_hint, res);
 
     bool reverse = direction == IColumn::PermutationSortDirection::Descending;
-    if ((null_direction_hint > 0) != reverse)
+    const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
+
+    size_t res_size = res.size();
+
+    if (!limit)
+        limit = res_size;
+    else
+        limit = std::min(res_size, limit);
+
+    if (is_nulls_last)
     {
         /// Shift all NULL values to the end.
 
         size_t read_idx = 0;
         size_t write_idx = 0;
-        size_t end_idx = res.size();
-
-        if (!limit)
-            limit = end_idx;
-        else
-            limit = std::min(end_idx, limit);
+        size_t end_idx = res_size;
 
         while (read_idx < limit && !isNullAt(res[read_idx]))
         {
@@ -323,6 +327,10 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
         }
 
         ++read_idx;
+
+        /// For stable sort we must process all NULL values
+        if (stability == IColumn::PermutationSortStability::Stable)
+            limit = res_size;
 
         /// Invariants:
         ///  write_idx < read_idx
@@ -342,6 +350,18 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
                 ++write_idx;
             }
             ++read_idx;
+        }
+
+        if (stability == IColumn::PermutationSortStability::Stable)
+        {
+            ssize_t nulls_start_index = limit - 1;
+
+            while (nulls_start_index >= 0 && isNullAt(res[nulls_start_index])) {
+                --nulls_start_index;
+            }
+
+            ++nulls_start_index;
+            ::sort(res.begin() + nulls_start_index, res.begin() + limit);
         }
     }
     else
@@ -367,6 +387,16 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
                 --write_idx;
             }
             --read_idx;
+        }
+
+        if (stability == IColumn::PermutationSortStability::Stable)
+        {
+            size_t nulls_end_index = 0;
+
+            while (nulls_end_index < limit && isNullAt(res[nulls_end_index]))
+                ++nulls_end_index;
+
+            ::sort(res.begin(), res.begin() + nulls_end_index);
         }
     }
 }

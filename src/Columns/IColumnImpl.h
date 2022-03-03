@@ -257,7 +257,7 @@ template <typename ComparatorBase>
 using ComparatorDescendingUnstableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Descending, IColumn::PermutationSortStability::Unstable>;
 
 template <typename ComparatorBase>
-using ComparatorDescendingStableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Descending, IColumn::PermutationSortStability::Unstable>;
+using ComparatorDescendingStableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Descending, IColumn::PermutationSortStability::Stable>;
 
 template <typename ComparatorBase>
 using ComparatorEqualImpl = ComparatorEqualHelperImpl<ComparatorBase>;
