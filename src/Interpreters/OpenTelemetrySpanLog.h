@@ -45,6 +45,11 @@ public:
 struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
 {
     OpenTelemetrySpanHolder(const std::string & _operation_name);
+    void addAttribute(const std::string& name, UInt64 value);
+    void addAttribute(const std::string& name, const std::string& value);
+    void addAttribute(const Exception & e);
+    void addAttribute(std::exception_ptr e);
+
     ~OpenTelemetrySpanHolder();
 };
 

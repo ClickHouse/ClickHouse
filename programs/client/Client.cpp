@@ -371,6 +371,13 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_user)
+        config().setString("user", env_user);
+    if (env_password)
+        config().setString("password", env_password);
+
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 

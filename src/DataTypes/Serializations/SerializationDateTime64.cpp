@@ -69,6 +69,9 @@ static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, con
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
             return;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            parseDateTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
+            return;
     }
 }
 

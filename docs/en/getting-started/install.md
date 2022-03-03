@@ -215,6 +215,6 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](https://clickhouse.com/tutorial.html).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](./tutorial.md).
 
 [Original article](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->
