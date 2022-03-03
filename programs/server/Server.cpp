@@ -995,6 +995,11 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
+        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        {
+            return global_context->getConfigRef();
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1013,7 +1018,11 @@ if (ThreadFuzzer::instance().isEffective())
                         port_name,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout,
+                                global_context->getSettingsRef().send_timeout,
+                                false), server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1032,7 +1041,10 @@ if (ThreadFuzzer::instance().isEffective())
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout,
+                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
