@@ -183,6 +183,6 @@ SELECT 1
 
 **恭喜，系统已经工作了!**
 
-为了继续进行实验，你可以尝试下载测试数据集或查看[教程](https://clickhouse.com/tutorial.html)。
+为了继续进行实验，你可以尝试下载测试数据集或查看[教程](./tutorial.md)。
 
 [原始文章](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->
