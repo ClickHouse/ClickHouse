@@ -72,7 +72,7 @@ public:
     struct FileMeta
     {
         String file_name;
-        UInt64 last_written_position = 0;
+        UInt64 last_writen_position = 0;
         UInt64 last_open_end = 0;
     };
 
@@ -205,7 +205,6 @@ private:
 
     void deserialize();
     static void checkOffsetIsValid(const String & full_name, UInt64 offset);
-    void removeInvalidFiles();
 };
 
 }
