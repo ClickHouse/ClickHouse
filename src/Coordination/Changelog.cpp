@@ -1,4 +1,3 @@
-#include <sys/time.h>
 #include <Coordination/Changelog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -557,16 +556,10 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 }
-int64_t timeus()
-{
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
-}
+
 void Changelog::compact(uint64_t up_to_log_index)
 {
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
-    auto start_time = timeus();
     bool remove_all_logs = false;
     if (up_to_log_index > max_log_id)
     {
@@ -608,16 +601,14 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
     last_compact_id = up_to_log_index;
     cleanEntry(1000);
 
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    auto end_time = timeus();
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, time: {}, logsize: {}, delet_cursor: {}",
-        up_to_log_index, min_log_id, max_log_id, end_time-start_time, logs.size(), delete_cursor);
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, logsize: {}, delet_cursor: {}",
+        up_to_log_index, min_log_id, max_log_id, logs.size(), delete_cursor);
 }
 
 LogEntryPtr Changelog::getLastEntry() const
