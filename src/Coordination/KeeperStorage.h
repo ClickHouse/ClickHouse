@@ -19,7 +19,6 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-//using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using ChildrenSet = my_unordered_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 

@@ -1,12 +1,8 @@
 #pragma once
 
-#include <iostream>
-#include <sys/time.h>
-//#include "Common/HashTable/HashTable.h"
 #include "Common/HashTable/robin_hood.h"
 
-template <bool IsFlat, size_t MaxLoadFactor100, typename Key, typename T, typename Hash,
-          typename KeyEqual>
+template <bool IsFlat, size_t MaxLoadFactor100, typename Key, typename T, typename Hash, typename KeyEqual>
 class IncrementalRehashTable
 {
 public:
@@ -37,6 +33,7 @@ public:
         store[0] = std::make_shared<US>();
         store[1] = std::make_shared<US>();
     }
+
     IncrementalRehashTable(const Self & rhs) noexcept
     {
         store[0] = rhs.store[0];
@@ -46,6 +43,7 @@ public:
         max_load_factor = rhs.max_load_factor;
         count = rhs.count;
     }
+
     IncrementalRehashTable & operator=(const Self & rhs) noexcept
     {
         if (&rhs == this)
@@ -58,12 +56,14 @@ public:
         count = rhs.count;
         return *this;
     }
-    //~IncrementalRehashTable() = default;
+
     bool isRehashing() const { return rehashing; }
+
     void reserve(size_t t)
     {
         store[0]->reserve(t);
     }
+
     template <bool IsConst>
     struct Iter
     {
@@ -108,12 +108,6 @@ public:
     using iterator = Iter<false>;
     using const_iterator = Iter<true>;
 
-    uint64_t timeme()
-    {
-        struct timeval tv;
-        gettimeofday(&tv, nullptr);
-        return tv.tv_sec * 1000 + tv.tv_usec / 1000;
-    }
     void moveEntry(size_t n)
     {
         while (n && cur != store[0]->end())
@@ -129,24 +123,19 @@ public:
             store[1].reset(new US());
         }
     }
-    /// only insert table 1 if rehashing
+
     std::pair<iterator,bool> insert(const value_type & t)
     {
         if (rehashing) [[unlikely]]
         {
-            auto inst_tm = timeme();
             auto res = store[1]->insert(t);
             if (res.second)
                 ++count;
             moveEntry(100);
-            auto end_tm = timeme();
-            if (end_tm - inst_tm > 300)
-                std::cout << "insert time rehashing: " << end_tm - inst_tm << std::endl;
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         if (store[0]->load_factor() > max_load_factor && count > 1000000) [[unlikely]]
         {
-            auto sttm = timeme();
             rehashing = true;
             cur = store[0]->begin();
             store[1]->reserve(store[0]->size() * 2);
@@ -154,22 +143,17 @@ public:
             if (res.second)
                 ++count;
             moveEntry(10);
-            auto endtm = timeme();
-            std::cout << "rehash use time " << endtm - sttm << std::endl;
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         else [[likely]]
         {
-            auto inst_tm = timeme();
             auto res = store[0]->insert(t);
             if (res.second)
                 ++count;
-            auto end_tm = timeme();
-            if (end_tm - inst_tm > 300)
-                std::cout << "insert time: " << end_tm - inst_tm << std::endl;
             return std::make_pair(iterator(this, res.first, 0), res.second);
         }
     }
+
     size_type erase(const Key & t)
     {
         std::size_t del = 0;
@@ -182,6 +166,7 @@ public:
         if (del) --count;
         return del ? 1 : 0;
     }
+
     iterator erase(iterator pos)
     {
         --count;
@@ -193,11 +178,13 @@ public:
         auto res = store[pos.index]->erase(pos.m_iter);
         return iterator(this, res, pos.index);
     }
+
     iterator erase(const_iterator pos)
     {
         iterator it(this, pos.m_iter, pos.index);
         return erase(it);
     }
+
     iterator erase(const_iterator first, const_iterator last)
     {
         iterator res;
@@ -207,10 +194,12 @@ public:
         }
         return res;
     }
+
     std::size_t size() const
     {
         return count;
     }
+
     bool empty() const { return count == 0; }
     iterator find(const Key & key)
     {
@@ -221,6 +210,7 @@ public:
             return iterator(this, store[1]->find(key), 1);
         return iterator(this, store[0]->end(), 0);
     }
+
     const_iterator find(const Key & key) const
     {
         auto res =  store[0]->find(key);
@@ -230,6 +220,7 @@ public:
             return const_iterator(this, store[1]->find(key), 1);
         return const_iterator(this, store[0]->end(), 0);
     }
+
     bool contains(const Key & t) const
     {
         if (store[0]->contains(t))
@@ -240,30 +231,36 @@ public:
         }
         return false;
     }
+
     const_iterator begin() const
     {
         return const_iterator(this, store[0]->begin(), 0);
     }
+
     iterator begin()
     {
         return iterator(this, store[0]->begin(), 0);
     }
+
     const_iterator end() const
     {
         if (rehashing)
             return const_iterator(this, store[1]->end(), 1);
         return const_iterator(this, store[0]->end(), 0);
     }
+
     size_t htsize()
     {
         return store[0]->size() + (rehashing ? store[1]->size() : 0);
     }
+
     void clear()
     {
         store[0]->clear();
         store[1]->clear();
         count = 0;
     }
+
     template< class... Args >
     std::pair<iterator, bool> emplace(Args&&... args)
     {
@@ -278,7 +275,6 @@ public:
 
         if (store[0]->load_factor() > max_load_factor && count > 1000000)
         {
-            auto sttm = timeme();
             rehashing = true;
             cur = store[0]->begin();
             store[1]->reserve(store[0]->size() * 2);
@@ -286,8 +282,6 @@ public:
             if (res.second)
                 ++count;
             moveEntry(10);
-            auto endtm = timeme();
-            std::cout << "rehash use time " << endtm - sttm << std::endl;
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         else
@@ -298,6 +292,7 @@ public:
             return std::make_pair(iterator(this, res.first, 0), res.second);
         }
     }
+
     bool exists(const Key & t) const
     {
         return contains(t);

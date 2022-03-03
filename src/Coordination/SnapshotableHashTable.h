@@ -1,5 +1,4 @@
 #pragma once
-#include <sys/time.h>
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -33,7 +32,6 @@ private:
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
     using Mapped = typename List::iterator;
-    //using IndexMap = HashMap<StringRef, Mapped>;
     using IndexMap = my_unordered_map<StringRef, Mapped, StringRefHash>;
 
 
@@ -129,35 +127,6 @@ public:
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-/*
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
-    {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-
-        if (!it)
-        {
-
-            ListElem elem{copyStringInArena(arena, key), value, current_version};
-            auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
-
-            it->getMapped() = itr;
-            updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
-            return std::make_pair(it, true);
-        }
-
-        return std::make_pair(it, false);
-    }
-*/
-    static int64_t metime()
-    {
-        struct timeval tv;
-        gettimeofday(&tv, nullptr);
-        return tv.tv_sec *1000 + tv.tv_usec / 1000;
-    }
     std::pair<typename IndexMap::iterator, bool> insert(const std::string & key, const V & value)
     {
         //size_t hash_value = map.hash(key);
@@ -165,61 +134,15 @@ public:
 
         if (it == map.end())
         {
-            auto st_tm = metime();
             ListElem elem{copyStringInArena(arena, key), value, current_version};
             auto itr = list.insert(list.end(), std::move(elem));
-            auto end_tm = metime();
-            if (end_tm - st_tm > 100)
-            {
-                std::cout << "list insert time: " << end_tm - st_tm << std::endl;
-            }
             auto res = map.emplace(itr->key, itr);
-            auto map_end_tm = metime();
-            if (map_end_tm - end_tm > 100)
-            {
-                std::cout << "map insert time: " << map_end_tm - end_tm << std::endl;
-            }
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
             return res;
         }
 
         return std::make_pair(it, false);
     }
-/*
-    void insertOrReplace(const std::string & key, const V & value)
-    {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
-
-        if (it == map.end())
-        {
-            ListElem elem{copyStringInArena(arena, key), value, current_version};
-            auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
-            it->getMapped() = itr;
-        }
-        else
-        {
-            auto list_itr = it->getMapped();
-            if (snapshot_mode)
-            {
-                ListElem elem{list_itr->key, value, current_version};
-                list_itr->active_in_map = false;
-                auto new_list_itr = list.insert(list.end(), std::move(elem));
-                it->getMapped() = new_list_itr;
-                snapshot_invalid_iters.push_back(list_itr);
-            }
-            else
-            {
-                list_itr->value = value;
-            }
-        }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
-    }
-    */
 
     void insertOrReplace(const std::string & key, const V & value)
     {
@@ -283,51 +206,6 @@ public:
         return map.find(key) != map.end();
     }
 
-/*
-    const_iterator updateValue(StringRef key, ValueUpdater updater)
-    {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-        assert(it != map.end());
-
-        auto list_itr = it->getMapped();
-        uint64_t old_value_size = list_itr->value.sizeInBytes();
-
-        const_iterator ret;
-
-        if (snapshot_mode)
-        {
-            /// We in snapshot mode but updating some node which is already more
-            /// fresh than snapshot distance. So it will not participate in
-            /// snapshot and we don't need to copy it.
-            if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
-            {
-                auto elem_copy = *(list_itr);
-                list_itr->active_in_map = false;
-                snapshot_invalid_iters.push_back(list_itr);
-                updater(elem_copy.value);
-                elem_copy.version = current_version;
-                auto itr = list.insert(list.end(), std::move(elem_copy));
-                it->getMapped() = itr;
-                ret = itr;
-            }
-            else
-            {
-                updater(list_itr->value);
-                ret = list_itr;
-            }
-        }
-        else
-        {
-            updater(list_itr->value);
-            ret = list_itr;
-        }
-
-        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
-        return ret;
-    }
-    */
-
     const_iterator updateValue(StringRef key, ValueUpdater updater)
     {
         auto it = map.find(key);
@@ -378,7 +256,6 @@ public:
             return map_it->second;
         return list.end();
     }
-
 
     const V & getValue(StringRef key) const
     {
