@@ -7,12 +7,13 @@
 #include <map>
 #include <unordered_map>
 
-#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -233,7 +234,7 @@ public:
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(128 + signum);
+        safeExit(128 + signum);
 }
 
 
