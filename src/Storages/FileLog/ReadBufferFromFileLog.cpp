@@ -134,7 +134,7 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         UInt64 current_position = reader.tellg();
         StorageFileLog::assertStreamGood(reader);
 
-        file_meta.last_written_position = current_position;
+        file_meta.last_writen_position = current_position;
 
         /// stream reach to end
         if (current_position == file_meta.last_open_end)
