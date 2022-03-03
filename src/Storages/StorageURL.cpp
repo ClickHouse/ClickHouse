@@ -18,6 +18,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/parseRemoteDescription.h>
+#include "IO/HTTPCommon.h"
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
 
@@ -257,6 +258,19 @@ namespace
 
                 try
                 {
+                    auto http_session = makeHTTPSession(request_uri, timeouts);
+                    auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                    request.setHost(request_uri.getHost()); // use original, not resolved host name in header
+                    request.set("Range", "bytes=0-");
+                    http_session->sendRequest(request);
+                    Poco::Net::HTTPResponse res;
+                    receiveResponse(*http_session, request, res, true);
+                    if (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes") {
+                      LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges supported");
+                    } else {
+                      LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges not supported");
+                    }
+
                     return wrapReadBufferWithCompressionMethod(
                         std::make_unique<ReadWriteBufferFromHTTP>(
                             request_uri,
