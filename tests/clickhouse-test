@@ -1078,10 +1078,14 @@ def collect_build_flags(args):
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
 
-    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1');")
+    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1')")
     for use_flag in use_flags.strip().splitlines():
         use_flag = use_flag.decode().lower()
         result.append(use_flag)
+
+    system_processor = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'SYSTEM_PROCESSOR' LIMIT 1").strip()
+    if system_processor:
+        result.append(f'cpu-{system_processor.decode().lower()}')
 
     return result
 
