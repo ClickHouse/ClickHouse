@@ -241,7 +241,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(std::shared_ptr<arrow
             column_data.emplace_back(chunk.IsNull(value_i) ? DecimalType(0) : *reinterpret_cast<const DecimalType *>(chunk.Value(value_i))); // TODO: copy column
         }
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 template <typename DecimalArray>
@@ -337,7 +337,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates);
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
-        auto nullable_column = ColumnNullable::create(std::move(nested_column.column), std::move(nullmap_column));
+        auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
         return {std::move(nullable_column), std::move(nullable_type), column_name};
     }
 
@@ -384,7 +384,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(nested_column.type.get());
-            auto map_column = ColumnMap::create(std::move(tuple_column->getColumnPtr(0)), std::move(tuple_column->getColumnPtr(1)), std::move(offsets_column));
+            auto map_column = ColumnMap::create(tuple_column->getColumnPtr(0), tuple_column->getColumnPtr(1), offsets_column);
             auto map_type = std::make_shared<DataTypeMap>(tuple_type->getElements()[0], tuple_type->getElements()[1]);
             return {std::move(map_column), std::move(map_type), column_name};
         }
@@ -393,7 +393,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
-            auto array_column = ColumnArray::create(std::move(nested_column.column), std::move(offsets_column));
+            auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
             return {std::move(array_column), std::move(array_type), column_name};
         }
@@ -458,7 +458,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column);
-            auto lc_column = ColumnLowCardinality::create(dict_values->column, std::move(indexes_column));
+            auto lc_column = ColumnLowCardinality::create(dict_values->column, indexes_column);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(dict_values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }

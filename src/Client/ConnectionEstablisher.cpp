@@ -165,7 +165,7 @@ std::variant<int, ConnectionEstablisher::TryResult> ConnectionEstablisherAsync::
     fiber = std::move(fiber).resume();
 
     if (exception)
-        std::rethrow_exception(std::move(exception));
+        std::rethrow_exception(exception);
 
     if (connection_establisher.isFinished())
     {

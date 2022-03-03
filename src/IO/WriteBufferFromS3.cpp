@@ -386,7 +386,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
             while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
             {
                 auto & task = upload_object_tasks.front();
-                auto exception = std::move(task.exception);
+                auto exception = task.exception;
                 auto tag = std::move(task.tag);
                 upload_object_tasks.pop_front();
 
@@ -413,7 +413,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
         {
             auto & task = upload_object_tasks.front();
             if (task.exception)
-                std::rethrow_exception(std::move(task.exception));
+                std::rethrow_exception(task.exception);
 
             part_tags.push_back(task.tag);
 
@@ -424,7 +424,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
         {
             bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
             if (put_object_task->exception)
-                std::rethrow_exception(std::move(put_object_task->exception));
+                std::rethrow_exception(put_object_task->exception);
         }
     }
 }
