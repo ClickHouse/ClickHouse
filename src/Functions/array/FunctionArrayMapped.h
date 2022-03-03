@@ -98,13 +98,16 @@ public:
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Function " + getName() + " needs at least one argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least one argument, passed {}", getName(), arguments.size());
 
         if (arguments.size() == 1)
-            throw Exception("Function " + getName() + " needs at least one array argument.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least one argument with data", getName());
+
+        if (arguments.size() > 2 && Impl::needOneArray())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs one argument with data", getName());
 
         size_t nested_types_count = std::is_same_v<typename Impl::data_type, DataTypeMap> ? (arguments.size() - 1) * 2 : (arguments.size() - 1);
         DataTypes nested_types(nested_types_count);
@@ -127,9 +130,10 @@ public:
 
         const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
         if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
-            throw Exception("First argument for this overload of " + getName() + " must be a function with "
-                            + toString(nested_types.size()) + " arguments. Found "
-                            + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for this overload of {} must be a function with {} arguments, found {} instead",
+                getName(), nested_types.size(), arguments[0]->getName());
 
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
@@ -138,24 +142,23 @@ public:
     {
         size_t min_args = Impl::needExpression() ? 2 : 1;
         if (arguments.size() < min_args)
-            throw Exception("Function " + getName() + " needs at least "
-                            + toString(min_args) + " argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least {} argument, passed {}",
+                            getName(), min_args, arguments.size());
 
         if ((arguments.size() == 1) && std::is_same_v<typename Impl::data_type, DataTypeArray>)
         {
-            const auto * array_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
+            const auto * data_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
 
-            if (!array_type)
+            if (!data_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
-                                + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            DataTypePtr nested_type = array_type->getNestedType();
+            DataTypePtr nested_type = data_type->getNestedType();
 
             if (Impl::needBoolean() && !WhichDataType(nested_type).isUInt8())
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
-                                + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
                 return Impl::getReturnType(nested_type, nested_type);
@@ -165,13 +168,13 @@ public:
         else
         {
             if (arguments.size() > 2 && Impl::needOneArray())
-                throw Exception("Function " + getName() + " needs one array argument.",
+                throw Exception("Function " + getName() + " needs one argument with data",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
             if (!data_type_function)
-                throw Exception("First argument for function " + getName() + " must be a function.",
+                throw Exception("First argument for function " + getName() + " must be a function",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
