@@ -981,7 +981,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
     auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(prepared_parts);
     if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(result_ptr->result)));
+        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 
     return std::get<ReadFromMergeTree::AnalysisResult>(result_ptr->result);
 }
@@ -1325,7 +1325,7 @@ bool MergeTreeDataSelectAnalysisResult::error() const
 size_t MergeTreeDataSelectAnalysisResult::marks() const
 {
     if (std::holds_alternative<std::exception_ptr>(result))
-        std::rethrow_exception(std::move(std::get<std::exception_ptr>(result)));
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
 
     const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
     if (index_stats.empty())

@@ -820,6 +820,9 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileInfos()
 {
+    if (file_infos.file_names.empty())
+        return false;
+
     if (!directory_watch)
     {
         /// For table just watch one file, we can not use directory monitor to watch it

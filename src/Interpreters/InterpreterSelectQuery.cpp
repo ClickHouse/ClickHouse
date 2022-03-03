@@ -551,7 +551,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = query_info.sets.empty() ? std::move(query_analyzer->getPreparedSets()) : std::move(query_info.sets);
+        prepared_sets = query_info.sets.empty() ? query_analyzer->getPreparedSets() : query_info.sets;
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
@@ -628,8 +628,6 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
     if (storage && !options.only_analyze)

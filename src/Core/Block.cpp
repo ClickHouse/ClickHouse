@@ -122,6 +122,11 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
     initializeIndexByName();
 }
 
+Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
+{
+    initializeIndexByName();
+}
+
 
 void Block::initializeIndexByName()
 {
