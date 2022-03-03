@@ -273,6 +273,7 @@ function run_tests
         --zookeeper
         --check-zookeeper-session
         --order random
+        --print-time
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
