@@ -26,11 +26,7 @@ namespace ErrorCodes
 QueryPipeline::QueryPipeline() = default;
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
 QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
-
-QueryPipeline::~QueryPipeline()
-{
-    cancel();
-}
+QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
 {
@@ -530,16 +526,6 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 void QueryPipeline::addStorageHolder(StoragePtr storage)
 {
     resources.storage_holders.emplace_back(std::move(storage));
-}
-
-
-void QueryPipeline::cancel()
-{
-    for (auto & proc : processors)
-    {
-        if (proc)
-            proc->cancel();
-    }
 }
 
 void QueryPipeline::reset()
