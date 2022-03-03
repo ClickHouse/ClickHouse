@@ -993,7 +993,8 @@ void WindowTransform::writeOutCurrentRow()
             {
                 /// AggregateFunction's states should be inserted into column using specific way
                 auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(result_column);
-                if (!res_col_aggregate_function) {
+                if (!res_col_aggregate_function)
+                {
                     throw Exception("State function " + a->getName() + " inserts results into non-state column ",
                                     ErrorCodes::ILLEGAL_COLUMN);
                 }
