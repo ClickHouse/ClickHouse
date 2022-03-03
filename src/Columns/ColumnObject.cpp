@@ -762,7 +762,7 @@ void ColumnObject::finalize()
     /// If all subcolumns were skipped add a dummy subcolumn,
     /// because Tuple type must have at least one element.
     if (new_subcolumns.empty())
-        new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size), is_nullable});
+        new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size, 0), is_nullable});
 
     std::swap(subcolumns, new_subcolumns);
     checkObjectHasNoAmbiguosPaths(getKeys());
