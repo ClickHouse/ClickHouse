@@ -250,6 +250,20 @@ namespace detail
         };
 
         InitializeError initialization_error = InitializeError::NONE;
+    private:
+        void setupExternalBuffer()
+        {
+            /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not (no hasPendingData() check is needed),
+            * because this branch means we are prefetching data,
+            * each nextImpl() call we can fill a different buffer.
+            */
+            impl->set(internal_buffer.begin(), internal_buffer.size());
+            assert(working_buffer.begin() != nullptr);
+            assert(!internal_buffer.empty());
+        }
 
     public:
         using NextCallback = std::function<void(size_t)>;
@@ -397,12 +411,7 @@ namespace detail
 
                 if (use_external_buffer)
                 {
-                    /**
-                    * See comment 30 lines below.
-                    */
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
+                    setupExternalBuffer();
                 }
             }
             catch (const Poco::Exception & e)
@@ -431,16 +440,7 @@ namespace detail
             {
                 if (use_external_buffer)
                 {
-                    /**
-                    * use_external_buffer -- means we read into the buffer which
-                    * was passed to us from somewhere else. We do not check whether
-                    * previously returned buffer was read or not (no hasPendingData() check is needed),
-                    * because this branch means we are prefetching data,
-                    * each nextImpl() call we can fill a different buffer.
-                    */
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
+                    setupExternalBuffer();
                 }
                 else
                 {
@@ -475,10 +475,7 @@ namespace detail
 
                         if (use_external_buffer)
                         {
-                            /// See comment 40 lines above.
-                            impl->set(internal_buffer.begin(), internal_buffer.size());
-                            assert(working_buffer.begin() != nullptr);
-                            assert(!internal_buffer.empty());
+                            setupExternalBuffer();
                         }
                     }
 
