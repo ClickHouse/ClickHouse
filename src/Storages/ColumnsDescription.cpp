@@ -117,7 +117,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         ParserColumnDeclaration column_parser(/* require type */ true);
         ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
-        if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
+        if (auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
             if (col_ast->default_expression)
             {
@@ -309,7 +309,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        ColumnDescription column = std::move(*it);
+        ColumnDescription column = *it;
         removeSubcolumns(column.name);
         it = columns.get<0>().erase(it);
 

@@ -910,6 +910,41 @@ struct ConvertImplGenericToString
     }
 };
 
+/** Conversion of time_t to UInt16, Int32, UInt32
+  */
+template <typename DataType>
+void convertFromTime(typename DataType::FieldType & x, time_t & time)
+{
+    x = time;
+}
+
+template <>
+inline void convertFromTime<DataTypeDate>(DataTypeDate::FieldType & x, time_t & time)
+{
+    if (unlikely(time < 0))
+        x = 0;
+    else if (unlikely(time > 0xFFFF))
+        x = 0xFFFF;
+    else
+        x = time;
+}
+
+template <>
+inline void convertFromTime<DataTypeDate32>(DataTypeDate32::FieldType & x, time_t & time)
+{
+    x = time;
+}
+
+template <>
+inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, time_t & time)
+{
+    if (unlikely(time < 0))
+        x = 0;
+    else if (unlikely(time > 0xFFFFFFFF))
+        x = 0xFFFFFFFF;
+    else
+        x = time;
+}
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
@@ -935,17 +970,15 @@ inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer 
     x = tmp;
 }
 
+
 // NOTE: no need of extra overload of DateTime64, since readDateTimeText64 has different signature and that case is explicitly handled in the calling code.
 template <>
 inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t time = 0;
     readDateTimeText(time, rb, *time_zone);
-    if (time < 0)
-        time = 0;
-    x = time;
+    convertFromTime<DataTypeDateTime>(x, time);
 }
-
 
 template <>
 inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
@@ -954,7 +987,6 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
     readUUIDText(tmp, rb);
     x = tmp.toUnderType();
 }
-
 
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
@@ -1182,7 +1214,7 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
+                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
@@ -1197,7 +1229,7 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
+                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
                 else
@@ -1236,14 +1268,14 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
                     time_t res;
                     parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                    vec_to[i] = res;
+                    convertFromTime<ToDataType>(vec_to[i],res);
                 }
                 else
                 {

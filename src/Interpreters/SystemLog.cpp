@@ -22,6 +22,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/setThreadName.h>
@@ -472,8 +473,13 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
     /// and recreate tables on settings changes.
-    auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-    storage_settings->loadFromQuery(*create->storage);
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+        storage_settings->loadFromQuery(*create->storage);
+    }
+
 
     return create;
 }

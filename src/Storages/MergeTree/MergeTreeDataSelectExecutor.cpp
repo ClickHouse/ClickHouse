@@ -825,7 +825,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
                 if (inserted)
-                    it->second.condition = index_helper->createIndexMergedCondtition(query_info, metadata_snapshot);
+                    it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
 
                 it->second.addIndex(index_helper);
             }

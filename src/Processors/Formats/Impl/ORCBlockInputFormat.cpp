@@ -111,7 +111,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(std::move(arrow_file), arrow::default_memory_pool());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
     if (!result.ok())
         throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
