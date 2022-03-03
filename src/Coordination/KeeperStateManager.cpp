@@ -19,7 +19,15 @@ namespace
 
 bool isLocalhost(const std::string & hostname)
 {
-    return isLoopback(DNSResolver::instance().resolveHost(hostname));
+    try
+    {
+        return isLoopback(DNSResolver::instance().resolveHost(hostname));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    return false;
 }
 
 }
