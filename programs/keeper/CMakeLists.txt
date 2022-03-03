@@ -28,3 +28,93 @@ clickhouse_embed_binaries(
     RESOURCES keeper_config.xml keeper_embedded.xml
 )
 add_dependencies(clickhouse-keeper-lib clickhouse_keeper_configs)
+
+set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/ACLMap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Changelog.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/CoordinationSettings.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/FourLetterCommand.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/InMemoryLogStore.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperConnectionStats.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperDispatcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperLogStore.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperServer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperSnapshotManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateMachine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStorage.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/pathUtils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SessionExpiryQueue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SummingStateMachine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/WriteBufferFromNuraftBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/ZooKeeperDataReader.cpp
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/SettingsFields.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/BaseSettings.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/Field.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/SettingsEnums.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/ServerUUID.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Core/UUID.cpp
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/KeeperTCPHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/TCPServer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/ProtocolServerAdapter.cpp
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CachedCompressedReadBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CheckingCompressedReadBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedReadBufferBase.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedReadBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedReadBufferFromFile.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedWriteBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecDelta.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecDoubleDelta.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecEncrypted.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecGorilla.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecLZ4.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecMultiple.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecNone.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecT64.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecZSTD.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/getCompressionCodecForFile.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/ICompressionCodec.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/LZ4_decompress_faster.cpp
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/IKeeper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/TestKeeper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperCommon.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperConstants.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperImpl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperIO.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperLock.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperNodeCache.cpp
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/BaseDaemon.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/SentryWriter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/GraphiteWriter.cpp
+
+    Keeper.cpp
+    TinyContext.cpp
+    clickhouse-keeper.cpp
+
+)
+
+add_executable(clickhouse-keeper-standalone ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
+
+target_compile_definitions (clickhouse-keeper-standalone PRIVATE -DENABLE_SENTRY=0 -DENABLE_GRPC=0)
+
+target_include_directories(clickhouse-keeper-standalone PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../src" )
+
+target_include_directories(clickhouse-keeper-standalone PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src/Core/include") # uses some includes from core
+
+target_include_directories(clickhouse-keeper-standalone PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src") # uses some includes from common
+
+target_link_libraries(clickhouse-keeper-standalone PUBLIC
+    ch_contrib::abseil_swiss_tables ch_contrib::nuraft ch_contrib::lz4 ch_contrib::zstd ch_contrib::cityhash
+    common ch_contrib::double_conversion ch_contrib::dragonbox_to_chars pcg_random ch_contrib::pdqsort
+    ch_contrib::miniselect clickhouse_common_config_no_zookeeper_log loggers_no_text_log clickhouse_common_io clickhouse_parsers
+    ${LINK_RESOURCE_LIB})
+
+add_dependencies(clickhouse-keeper-standalone clickhouse_keeper_configs)
+set_target_properties(clickhouse-keeper-standalone PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
