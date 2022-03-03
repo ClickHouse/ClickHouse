@@ -39,7 +39,9 @@ namespace
         request_for_session.request->xid = xid;
         request_for_session.request->readImpl(buffer);
 
-        readIntBinary(request_for_session.time, buffer);
+        if (!buffer.eof())
+            readIntBinary(request_for_session.time, buffer);
+
         return request_for_session;
     }
 }
