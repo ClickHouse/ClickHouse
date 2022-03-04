@@ -142,7 +142,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
 
     last_committed_idx = log_idx;
-
     return nullptr;
 }
 

@@ -34,7 +34,6 @@ private:
     using Mapped = typename List::iterator;
     using IndexMap = my_unordered_map<StringRef, Mapped, StringRefHash>;
 
-
     List list;
     IndexMap map;
     bool snapshot_mode{false};
@@ -129,7 +128,6 @@ public:
 
     std::pair<typename IndexMap::iterator, bool> insert(const std::string & key, const V & value)
     {
-        //size_t hash_value = map.hash(key);
         auto it = map.find(key);
 
         if (it == map.end())
