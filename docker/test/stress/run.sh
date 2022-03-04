@@ -292,9 +292,7 @@ then
 
     clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
 
-    stop
-    
-    rm -rf /var/lib/clickhouse/coordination
+    stop    
     
     # Start new server
     configure
