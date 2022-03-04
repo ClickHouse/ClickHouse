@@ -20,6 +20,7 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
     return {
         { "database",                   std::make_shared<DataTypeString>() },
         { "table",                      std::make_shared<DataTypeString>() },
+        { "mutation_type",              std::make_shared<DataTypeUInt8>() },
         { "mutation_id",                std::make_shared<DataTypeString>() },
         { "command",                    std::make_shared<DataTypeString>() },
         { "create_time",                std::make_shared<DataTypeDateTime>() },
@@ -129,6 +130,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
+            res_columns[col_num++]->insert(status.type);
 
             res_columns[col_num++]->insert(status.id);
             res_columns[col_num++]->insert(status.command);

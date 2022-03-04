@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
+#include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -1879,6 +1880,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
             formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
+                MutationType::Ordinary,
                 entry.znode_name,
                 buf.str(),
                 entry.create_time,

@@ -11,6 +11,16 @@
 
 namespace DB
 {
+namespace
+{
+   String getFileName(UInt64 tmp_number, bool is_temporary)
+   {
+       if (is_temporary)
+           return fmt::format("tmp_mutation_{}.txt", tmp_number);
+       else
+           return fmt::format("mutation_{}.txt", tmp_number);
+   }
+}
 
 namespace ErrorCodes
 {
@@ -45,8 +55,9 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
-    : create_time(time(nullptr))
+                                               MutationType type_, const TransactionID & tid_, const WriteSettings & settings)
+    : type(type_)
+    , create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -54,11 +65,16 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , is_temp(true)
     , tid(tid_)
 {
+    size_t typeToNum = 0;
+    if(type == MutationType::Lightweight)
+        typeToNum = 1;
+
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time) << "\n";
+        *out << "format version: 2\n"
+             << "type: " << typeToNum << "\n"
+             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
         commands.writeText(*out);
         *out << "\n";
@@ -85,7 +101,7 @@ void MergeTreeMutationEntry::commit(UInt64 block_number_)
 {
     assert(block_number_);
     block_number = block_number_;
-    String new_file_name = versionToFileName(block_number);
+    String new_file_name = getFileName(block_number, false);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
     is_temp = false;
     file_name = new_file_name;
@@ -120,7 +136,22 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name);
 
-    *buf >> "format version: 1\n";
+    //*buf >> "format version: 1\n";
+    int format_version;
+
+    *buf >> "format version: " >> format_version >> "\n";
+
+    assert(format_version <= 2);
+
+    type = MutationType::Ordinary;
+    if (format_version == 2)
+    {
+        String type_str;
+        *buf >> "type: " >> type_str >> "\n";
+
+        if (type_str == "1")
+            type = MutationType::Lightweight;
+    }
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
