@@ -555,16 +555,11 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
-    MutationCommands lightweight_commands;
-    MutationCommands ordinary_commands;
-    for (auto command: commands){
-        if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
-            lightweight_commands.emplace_back(std::move(command));
-        else
-            ordinary_commands.emplace_back(std::move(command));
-    }
-    mutate(lightweight_commands, query_context, MutationType::Lightweight);
-    mutate(ordinary_commands, query_context, MutationType::Ordinary);
+    /// we consume that there won't be any other operations mixed in UPDATEs and DELETEs
+    if (query_context->getSettingsRef().enable_lightweight_mutation && (commands.begin()->type == MutationCommand::DELETE || commands.begin()->type == MutationCommand::UPDATE))
+        mutate(commands, query_context, MutationType::Lightweight);
+    else
+        mutate(commands, query_context, MutationType::Ordinary);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, MutationType type)
@@ -1032,6 +1027,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
+        LastCommandType last_command_type = mutations_begin_it->second.type;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
@@ -1040,6 +1036,11 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
+
+            /// Only same type of mutations can be processed together
+            if (it->second.type != last_mutation_type)
+                break;
+
             for (const auto & command : it->second.commands)
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
@@ -1063,7 +1064,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                     fake_query_context->makeQueryContext();
                     fake_query_context->setCurrentQueryId("");
                     MutationsInterpreter interpreter(
-                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false);
+                            shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)
@@ -1116,12 +1117,21 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             }
 
             auto new_part_info = part->info;
-            new_part_info.mutation = last_mutation_to_apply->first;
-
-            future_part->parts.push_back(part);
-            future_part->part_info = new_part_info;
-            future_part->name = part->getNewName(new_part_info);
-            future_part->type = part->getType();
+            if (last_command_type == LastCommandType::Lightweight)
+            {
+                new_part_info.lightweight_mutation = last_mutation_to_apply->first;
+                future_part.name = part->name;
+            }
+            else
+            {
+                new_part_info.mutation = last_mutation_to_apply->first;
+                /// Ordinary parts do not need lightweight_mutation,cause tmp_file to commited_file have no deleted_row_mask.txt
+                new_part_info.lightweight_mutation = 0;
+                future_part.name = part->getNewName(new_part_info);
+            }
+            future_part.parts.push_back(part);
+            future_part.part_info = new_part_info;
+            future_part.type = part->getType();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);

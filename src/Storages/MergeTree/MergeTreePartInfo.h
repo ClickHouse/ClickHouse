@@ -22,6 +22,7 @@ struct MergeTreePartInfo
     Int64 max_block = 0;
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
+    Int64 lightweight_mutation = 0; /// If the part has been lightweight mutated, is equal to or higher than lightweight mutation version number.
 
     bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
 
@@ -55,7 +56,10 @@ struct MergeTreePartInfo
 
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
-    Int64 getDataVersion() const { return mutation ? mutation : min_block; }
+    Int64 getDataVersion() const {
+        Int64 current_mutation = lightweight_mutation > mutation ? lightweight_mutation : mutation;
+        return current_mutation ? current_mutation : min_block;
+    }
 
     /// True if contains rhs (this part is obtained by merging rhs with some other parts or mutating rhs)
     bool contains(const MergeTreePartInfo & rhs) const
@@ -85,7 +89,13 @@ struct MergeTreePartInfo
     /// Return part mutation version, if part wasn't mutated return zero
     Int64 getMutationVersion() const
     {
-        return mutation;
+        Int64 current_mutation = lightweight_mutation > mutation ? lightweight_mutation : mutation;
+        return current_mutation;
+    }
+
+    void setLightWeightMutationVersion(Int64 value)
+    {
+        lightweight_mutation = value;
     }
 
     /// True if parts do not intersect in any way.
