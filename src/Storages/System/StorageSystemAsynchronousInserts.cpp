@@ -41,10 +41,10 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
     if (!insert_queue)
         return;
 
-    auto queue = insert_queue->getQueue();
+    auto [queue, queue_lock] = insert_queue->getQueueLocked();
     for (const auto & [key, elem] : queue)
     {
-        std::lock_guard lock(elem->mutex);
+        std::lock_guard elem_lock(elem->mutex);
 
         if (!elem->data)
             continue;

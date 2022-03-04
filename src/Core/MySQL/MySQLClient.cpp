@@ -142,7 +142,7 @@ void MySQLClient::setBinlogChecksum(const String & binlog_checksum)
     replication.setChecksumSignatureLength(Poco::toUpper(binlog_checksum) == "NONE" ? 0 : 4);
 }
 
-void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str, const String & binlog_checksum)
+void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, std::unordered_set<String> replicate_tables, String gtid_str, const String & binlog_checksum)
 {
     /// Maybe CRC32 or NONE. mysqlbinlog.cc use NONE, see its below comments:
     /// Make a notice to the server that this client is checksum-aware.
@@ -165,6 +165,7 @@ void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, Stri
 
     /// Set Filter rule to replication.
     replication.setReplicateDatabase(replicate_db);
+    replication.setReplicateTables(replicate_tables);
 
     BinlogDumpGTID binlog_dump(slave_id, gtid_sets.toPayload());
     packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);
