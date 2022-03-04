@@ -373,7 +373,7 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -620,13 +620,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = data.shared;
+#endif
         new_values["MemoryCode"] = data.code;
         new_values["MemoryDataAndStack"] = data.data_and_stack;
 
@@ -653,7 +655,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
+#endif
 
+#if defined(OS_LINUX)
     if (loadavg)
     {
         try
@@ -1429,7 +1433,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.

@@ -3,6 +3,7 @@ import pytest
 from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
+from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/named_collections.xml'], with_postgres=True)
@@ -186,55 +187,65 @@ def test_non_default_scema(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=False)
+    cursor = conn.cursor()
+    database_name = 'concurrent_test'
 
-    node1.query('''
-        CREATE TABLE test_table (key UInt32, value UInt32)
-        ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword')''')
-
+    cursor.execute(f'DROP DATABASE IF EXISTS {database_name}')
+    cursor.execute(f'CREATE DATABASE {database_name}')
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True, database_name=database_name)
+    cursor = conn.cursor()
     cursor.execute('CREATE TABLE test_table (key integer, value integer)')
 
-    prev_count =  node1.count_in_log('New connection to postgres1:5432')
+    node1.query(f'''
+        CREATE TABLE test.test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+    ''')
+
+    node1.query(f'''
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    ''')
+
     def node_select(_):
         for i in range(20):
-            result = node1.query("SELECT * FROM test_table", user='default')
-    busy_pool = Pool(20)
-    p = busy_pool.map_async(node_select, range(20))
-    p.wait()
-    count =  node1.count_in_log('New connection to postgres1:5432')
-    logging.debug(f'count {count}, prev_count {prev_count}')
-    # 16 is default size for connection pool
-    assert(int(count) <= int(prev_count) + 16)
+            result = node1.query("SELECT * FROM test.test_table", user='default')
 
     def node_insert(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-
-    busy_pool = Pool(5)
-    p = busy_pool.map_async(node_insert, range(5))
-    p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000)
+        for i in range(20):
+            result = node1.query("INSERT INTO test.test_table SELECT number, number FROM numbers(1000)", user='default')
 
     def node_insert_select(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-            result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
+        for i in range(20):
+            result = node1.query("INSERT INTO test.test_table SELECT number, number FROM numbers(1000)", user='default')
+            result = node1.query("SELECT * FROM test.test_table LIMIT 100", user='default')
 
-    busy_pool = Pool(5)
-    p = busy_pool.map_async(node_insert_select, range(5))
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_select, range(30))
     p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000  * 2)
 
-    node1.query('DROP TABLE test_table;')
-    cursor.execute('DROP TABLE test_table;')
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
 
-    count =  node1.count_in_log('New connection to postgres1:5432')
-    logging.debug(f'count {count}, prev_count {prev_count}')
-    assert(int(count) <= int(prev_count) + 16)
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_insert, range(30))
+    p.wait()
+
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
+
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_insert_select, range(30))
+    p.wait()
+
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
+
+    node1.query('DROP TABLE test.test_table;')
+    node1.query('DROP TABLE test.stat;')
 
 
 def test_postgres_distributed(started_cluster):
@@ -445,6 +456,16 @@ def test_where_false(started_cluster):
     result = node1.query("SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=1")
     assert(int(result) == 1)
     cursor.execute("DROP TABLE test")
+
+
+def test_datetime64(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (ts timestamp)")
+    cursor.execute("insert into test select '1960-01-01 20:00:00';")
+
+    result = node1.query("select * from postgresql(postgres1, table='test')")
+    assert(result.strip() == '1960-01-01 20:00:00.000000')
 
 
 if __name__ == '__main__':

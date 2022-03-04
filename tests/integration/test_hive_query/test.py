@@ -107,6 +107,20 @@ def test_parquet_groupby_with_cache(started_cluster):
 2021-11-16	2
 """
     assert result == expected_result
+
+def test_parquet_groupby_by_hive_function(started_cluster):
+    logging.info('Start testing groupby ...')
+    node = started_cluster.instances['h0_0_0']
+    result = node.query("""
+    SELECT day, count(*) FROM hive('thrift://hivetest:9083', 'test', 'demo', '`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)', 'day') group by day order by day
+            """)
+    expected_result = """2021-11-01	1
+2021-11-05	2
+2021-11-11	1
+2021-11-16	2
+"""
+    assert result == expected_result
+    
 def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
     node.query("set input_format_parquet_allow_missing_columns = true")
