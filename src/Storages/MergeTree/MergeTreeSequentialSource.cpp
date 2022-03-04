@@ -10,6 +10,42 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
+static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+{
+    for (auto & column : columns)
+    {
+        if (column)
+        {
+            column = column->filter(filter, -1);
+
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+    }
+}
+
+static void filterColumns(Columns & columns, const ColumnPtr & filter)
+{
+    ConstantFilterDescription const_descr(*filter);
+    if (const_descr.always_true)
+        return;
+
+    if (const_descr.always_false)
+    {
+        for (auto & col : columns)
+            if (col)
+                col = col->cloneEmpty();
+
+        return;
+    }
+
+    FilterDescription descr(*filter);
+    filterColumns(columns, *descr.data);
+}
+
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
