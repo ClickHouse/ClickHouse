@@ -260,6 +260,8 @@ protected:
 
     std::vector<HostAndPort> hosts_and_ports{};
 
+    bool allow_repeated_settings = false;
+
     bool cancelled = false;
 };
 

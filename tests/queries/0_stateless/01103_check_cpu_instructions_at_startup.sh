@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
 # Tag no-fasttest: avoid dependency on qemu -- invonvenient when running locally
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -9,8 +9,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # If we run sanitized binary under qemu, it will try to slowly allocate 20 TiB until OOM.
 # Don't even try to do that. This test should be disabled for sanitizer builds.
 ${CLICKHOUSE_LOCAL} --query "SELECT max(value LIKE '%sanitize%') FROM system.build_options" | grep -q '1' && echo '@@SKIP@@: Sanitizer build' && exit
-
-${CLICKHOUSE_LOCAL} --query "SELECT value FROM system.build_options WHERE name = 'SYSTEM_PROCESSOR';" | grep -q 'aarch64' && echo '@@SKIP@@: aarch64 build' && exit
 
 command=$(command -v ${CLICKHOUSE_LOCAL})
 
