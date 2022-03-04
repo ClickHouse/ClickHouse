@@ -1,32 +1,33 @@
 #pragma once
 
 #include <functional>
-#include <base/types.h>
-#include <base/sleep.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
+#include <base/logger_useful.h>
+#include <base/sleep.h>
+#include <base/types.h>
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Poco/URIStreamFactory.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/config.h>
 #include <Common/config_version.h>
-#include <base/logger_useful.h>
-#include <Poco/URIStreamFactory.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event ReadBufferSeekCancelConnection;
+extern const Event ReadBufferSeekCancelConnection;
 }
 
 namespace DB
@@ -48,7 +49,7 @@ class UpdatableSessionBase
 {
 protected:
     SessionPtr session;
-    UInt64 redirects { 0 };
+    UInt64 redirects{0};
     Poco::URI initial_uri;
     ConnectionTimeouts timeouts;
     UInt64 max_redirects;
@@ -56,19 +57,12 @@ protected:
 public:
     virtual void buildNewSession(const Poco::URI & uri) = 0;
 
-    explicit UpdatableSessionBase(const Poco::URI uri,
-        const ConnectionTimeouts & timeouts_,
-        UInt64 max_redirects_)
-        : initial_uri { uri }
-        , timeouts { timeouts_ }
-        , max_redirects { max_redirects_ }
+    explicit UpdatableSessionBase(const Poco::URI uri, const ConnectionTimeouts & timeouts_, UInt64 max_redirects_)
+        : initial_uri{uri}, timeouts{timeouts_}, max_redirects{max_redirects_}
     {
     }
 
-    SessionPtr getSession()
-    {
-        return session;
-    }
+    SessionPtr getSession() { return session; }
 
     void updateSession(const Poco::URI & uri)
     {
@@ -144,10 +138,7 @@ namespace detail
             return read_range.begin || read_range.end || retry_with_range_header;
         }
 
-        size_t getOffset() const
-        {
-            return read_range.begin + offset_from_begin_pos;
-        }
+        size_t getOffset() const { return read_range.begin + offset_from_begin_pos; }
 
         std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
@@ -161,7 +152,7 @@ namespace detail
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
 
-            for (auto & http_header_entry: http_header_entries)
+            for (auto & http_header_entry : http_header_entries)
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
 
             if (withPartialContent())
@@ -171,7 +162,7 @@ namespace detail
                     range_header_value = fmt::format("bytes={}-{}", getOffset(), *read_range.end);
                 else
                     range_header_value = fmt::format("bytes={}-", getOffset());
-                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                LOG_ERROR(log, "Adding header: Range: {}", range_header_value);
                 request.set("Range", range_header_value);
             }
 
@@ -250,6 +241,7 @@ namespace detail
         };
 
         InitializeError initialization_error = InitializeError::NONE;
+
     private:
         void setupExternalBuffer()
         {
@@ -279,7 +271,7 @@ namespace detail
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
             Range read_range_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {},
+            RemoteHostFilter remote_host_filter_ = {},
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false)
@@ -289,8 +281,8 @@ namespace detail
             , session {session_}
             , out_stream_callback {out_stream_callback_}
             , credentials {credentials_}
-            , http_header_entries {http_header_entries_}
-            , remote_host_filter {remote_host_filter_}
+            , http_header_entries {std::move(http_header_entries_)}
+            , remote_host_filter {std::move(remote_host_filter_)}
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
             , read_range(read_range_)
@@ -300,18 +292,21 @@ namespace detail
         {
             if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0
                 || settings.http_retry_initial_backoff_ms >= settings.http_retry_max_backoff_ms)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid setting for http backoff, "
-                                "must be http_max_tries >= 1 (current is {}) and "
-                                "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
-                                settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid setting for http backoff, "
+                    "must be http_max_tries >= 1 (current is {}) and "
+                    "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
+                    settings.http_max_tries,
+                    settings.http_retry_initial_backoff_ms,
+                    settings.http_retry_max_backoff_ms);
 
             // Configure User-Agent if it not already set.
             const std::string user_agent = "User-Agent";
-            auto iter = std::find_if(http_header_entries.begin(), http_header_entries.end(), [&user_agent](const HTTPHeaderEntry & entry)
-            {
-                return std::get<0>(entry) == user_agent;
-            });
+            auto iter = std::find_if(
+                http_header_entries.begin(),
+                http_header_entries.end(),
+                [&user_agent](const HTTPHeaderEntry & entry) { return std::get<0>(entry) == user_agent; });
 
             if (iter == http_header_entries.end())
             {
@@ -387,9 +382,11 @@ namespace detail
                 if (read_range.begin)
                 {
                     if (!exception)
-                        exception = std::make_exception_ptr(
-                            Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                                      "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
+                        exception = std::make_exception_ptr(Exception(
+                            ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                            "Cannot read with range: [{}, {}]",
+                            read_range.begin,
+                            read_range.end ? *read_range.end : '-'));
 
                     initialization_error = InitializeError::NON_RETRIABLE_ERROR;
                     return;
@@ -433,8 +430,10 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && getOffset() == read_range.end.value())
+            if (read_range.end && getOffset() > read_range.end.value()) {
+                assert(getOffset() == read_range.end.value() + 1);
                 return false;
+            }
 
             if (impl)
             {
@@ -493,13 +492,18 @@ namespace detail
                     if (!can_retry_request)
                         throw;
 
-                    LOG_ERROR(log,
-                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
-                              "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i + 1, settings.http_max_tries,
-                              getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
-                              e.displayText(),
-                              milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+                    LOG_ERROR(
+                        log,
+                        "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
+                        "Error: {}. (Current backoff wait is {}/{} ms)",
+                        uri.toString(),
+                        i + 1,
+                        settings.http_max_tries,
+                        getOffset(),
+                        read_range.end ? toString(*read_range.end) : "unknown",
+                        e.displayText(),
+                        milliseconds_to_wait,
+                        settings.http_retry_max_backoff_ms);
 
                     retry_with_range_header = true;
                     exception = std::current_exception();
@@ -524,10 +528,7 @@ namespace detail
             return true;
         }
 
-        off_t getPosition() override
-        {
-            return getOffset() - available();
-        }
+        off_t getPosition() override { return getOffset() - available(); }
 
         off_t seek(off_t offset_, int whence) override
         {
@@ -535,12 +536,11 @@ namespace detail
                 throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             if (offset_ < 0)
-                throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+                throw Exception(
+                    "Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
             off_t current_offset = getOffset();
-            if (!working_buffer.empty()
-                && size_t(offset_) >= current_offset - working_buffer.size()
-                && offset_ < current_offset)
+            if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)
             {
                 pos = working_buffer.end() - (current_offset - offset_);
                 assert(pos >= working_buffer.begin());
@@ -562,7 +562,6 @@ namespace detail
 
             if (impl)
             {
-
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
                 impl.reset();
             }
@@ -594,10 +593,7 @@ namespace detail
             next_callback(count());
         }
 
-        const std::string & getCompressionMethod() const
-        {
-            return content_encoding;
-        }
+        const std::string & getCompressionMethod() const { return content_encoding; }
     };
 }
 
@@ -606,19 +602,46 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
     using Parent = UpdatableSessionBase<HTTPSessionPtr>;
 
 public:
-    UpdatableSession(
-        const Poco::URI uri,
-        const ConnectionTimeouts & timeouts_,
-        const UInt64 max_redirects_)
+    UpdatableSession(const Poco::URI uri, const ConnectionTimeouts & timeouts_, const UInt64 max_redirects_)
         : Parent(uri, timeouts_, max_redirects_)
     {
         session = makeHTTPSession(initial_uri, timeouts);
     }
 
-    void buildNewSession(const Poco::URI & uri) override
+    void buildNewSession(const Poco::URI & uri) override { session = makeHTTPSession(uri, timeouts); }
+};
+
+class RangeGenerator
+{
+public:
+    explicit RangeGenerator(size_t total_size_, size_t range_step_) : range_step(range_step_), total_size(total_size_) { }
+
+    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size) / range_step)); }
+
+    using Range = std::pair<size_t, size_t>;
+
+    std::optional<Range> nextRange()
     {
-        session = makeHTTPSession(uri, timeouts);
+        if (from_range >= total_size)
+        {
+            return std::nullopt;
+        }
+
+        auto to_range = from_range + range_step - 1;
+        if (to_range >= total_size)
+        {
+            to_range = total_size - 1;
+        }
+
+        Range range{from_range, to_range};
+        from_range = to_range + 1;
+        return std::move(range);
     }
+
+private:
+    size_t from_range{0};
+    size_t range_step;
+    size_t total_size;
 };
 
 class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>
@@ -626,7 +649,7 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
 
 public:
-        ReadWriteBufferFromHTTP(
+    ReadWriteBufferFromHTTP(
         Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
@@ -641,12 +664,102 @@ public:
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
-        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, credentials_, method_, out_stream_callback_, buffer_size_,
-            settings_, http_header_entries_, read_range_, remote_host_filter_,
-            delay_initialization_, use_external_buffer_, skip_not_found_url_)
+        : Parent(
+            std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
+            uri_,
+            credentials_,
+            method_,
+            out_stream_callback_,
+            buffer_size_,
+            settings_,
+            http_header_entries_,
+            read_range_,
+            remote_host_filter_,
+            delay_initialization_,
+            use_external_buffer_,
+            skip_not_found_url_)
     {
     }
+};
+
+class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory
+{
+    using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
+
+public:
+    RangedReadWriteBufferFromHTTPFactory(
+        size_t total_object_size,
+        size_t range_step,
+        Poco::URI uri_,
+        std::string method_,
+        OutStreamCallback out_stream_callback_,
+        ConnectionTimeouts timeouts_,
+        const Poco::Net::HTTPBasicCredentials & credentials_,
+        UInt64 max_redirects_ = 0,
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        ReadSettings settings_ = {},
+        ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries_ = {},
+        RemoteHostFilter remote_host_filter_ = {},
+        bool delay_initialization_ = true,
+        bool use_external_buffer_ = false,
+        bool skip_not_found_url_ = false)
+        : range_generator(total_object_size, range_step)
+        , uri(uri_)
+        , method(std::move(method_))
+        , out_stream_callback(out_stream_callback_)
+        , timeouts(std::move(timeouts_))
+        , credentials(credentials_)
+        , max_redirects(max_redirects_)
+        , buffer_size(buffer_size_)
+        , settings(std::move(settings_))
+        , http_header_entries(std::move(http_header_entries_))
+        , remote_host_filter(std::move(remote_host_filter_))
+        , delay_initialization(delay_initialization_)
+        , use_external_buffer(use_external_buffer_)
+        , skip_not_found_url(skip_not_found_url_)
+    {
+    }
+
+    ReadBufferPtr getReader() override
+    {
+        const auto next_range = range_generator.nextRange();
+        if (!next_range)
+        {
+            return nullptr;
+        }
+
+        return std::make_shared<ReadWriteBufferFromHTTP>(
+            uri,
+            method,
+            out_stream_callback,
+            timeouts,
+            credentials,
+            max_redirects,
+            buffer_size,
+            settings,
+            http_header_entries,
+            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second},
+            remote_host_filter,
+            delay_initialization,
+            use_external_buffer,
+            skip_not_found_url);
+    }
+
+private:
+    RangeGenerator range_generator;
+    Poco::URI uri;
+    std::string method;
+    OutStreamCallback out_stream_callback;
+    ConnectionTimeouts timeouts;
+    const Poco::Net::HTTPBasicCredentials & credentials;
+    UInt64 max_redirects;
+    size_t buffer_size;
+    ReadSettings settings;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries;
+    RemoteHostFilter remote_host_filter;
+    bool delay_initialization;
+    bool use_external_buffer;
+    bool skip_not_found_url;
 };
 
 class UpdatablePooledSession : public UpdatableSessionBase<PooledHTTPSessionPtr>
@@ -657,20 +770,14 @@ private:
     size_t per_endpoint_pool_size;
 
 public:
-    explicit UpdatablePooledSession(const Poco::URI uri,
-        const ConnectionTimeouts & timeouts_,
-        const UInt64 max_redirects_,
-        size_t per_endpoint_pool_size_)
-        : Parent(uri, timeouts_, max_redirects_)
-        , per_endpoint_pool_size { per_endpoint_pool_size_ }
+    explicit UpdatablePooledSession(
+        const Poco::URI uri, const ConnectionTimeouts & timeouts_, const UInt64 max_redirects_, size_t per_endpoint_pool_size_)
+        : Parent(uri, timeouts_, max_redirects_), per_endpoint_pool_size{per_endpoint_pool_size_}
     {
         session = makePooledHTTPSession(initial_uri, timeouts, per_endpoint_pool_size);
     }
 
-    void buildNewSession(const Poco::URI & uri) override
-    {
-        session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
-    }
+    void buildNewSession(const Poco::URI & uri) override { session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size); }
 };
 
 class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatablePooledSession>>
@@ -678,7 +785,8 @@ class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatablePooledSession>>;
 
 public:
-    explicit PooledReadWriteBufferFromHTTP(Poco::URI uri_,
+    explicit PooledReadWriteBufferFromHTTP(
+        Poco::URI uri_,
         const std::string & method_ = {},
         OutStreamCallback out_stream_callback_ = {},
         const ConnectionTimeouts & timeouts_ = {},
@@ -686,12 +794,13 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const UInt64 max_redirects = 0,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
-        : Parent(std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
-              uri_,
-              credentials_,
-              method_,
-              out_stream_callback_,
-              buffer_size_)
+        : Parent(
+            std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
+            uri_,
+            credentials_,
+            method_,
+            out_stream_callback_,
+            buffer_size_)
     {
     }
 };
