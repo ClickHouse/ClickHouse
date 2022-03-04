@@ -1047,6 +1047,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
+
         MutationType last_mutation_type = mutations_begin_it->second.type;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {

@@ -572,6 +572,7 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
+
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
