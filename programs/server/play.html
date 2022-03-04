@@ -87,13 +87,6 @@
             color: var(--text-color);
         }
 
-        /* Otherwise scrollbar may appear dynamically and it will alter viewport height,
-           then relative heights of elements will change suddenly, and it will break overall impression. */
-        /* html
-        {
-            overflow-x: scroll;
-        }*/
-
         div
         {
             width: 100%;
@@ -382,7 +375,7 @@
 <script type="text/javascript">
 
     /// Incremental request number. When response is received,
-    /// if it's request number does not equal to the current request number, response will be ignored.
+    /// if its request number does not equal to the current request number, response will be ignored.
     /// This is to avoid race conditions.
     let request_num = 0;
 
