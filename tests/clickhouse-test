@@ -340,6 +340,26 @@ class FailureReason(enum.Enum):
     INTERNAL_ERROR = "Test internal error: "
 
 
+class SettingsRandomizer:
+    settings = {
+        "max_insert_threads": lambda: 0 if random.random() < 0.5 else random.randint(1, 16),
+        "group_by_two_level_threshold": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 100000,
+        "group_by_two_level_threshold_bytes": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 50000000,
+        "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
+        "fsync_metadata": lambda: random.randint(0, 1),
+        "priority": lambda: int(abs(random.gauss(0, 2))),
+        "output_format_parallel_formatting": lambda: random.randint(0, 1),
+        "input_format_parallel_parsing": lambda: random.randint(0, 1),
+    }
+
+    @staticmethod
+    def get_random_settings():
+        random_settings = []
+        for setting, generator in SettingsRandomizer.settings.items():
+            random_settings.append(setting + "=" + str(generator()) + "")
+        return random_settings
+
+
 class TestResult:
     def __init__(self, case_name: str, status: TestStatus, reason: Optional[FailureReason], total_time: float, description: str):
         self.case_name: str = case_name
@@ -420,6 +440,29 @@ class TestCase:
 
         return testcase_args
 
+    def add_random_settings(self, client_options):
+        if self.tags and 'no-random-settings' in self.tags:
+            return client_options
+
+        if len(self.base_url_params) == 0:
+            os.environ['CLICKHOUSE_URL_PARAMS'] = '&'.join(self.random_settings)
+        else:
+            os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params + '&' + '&'.join(self.random_settings)
+
+        new_options = "--allow_repeated_settings --" + " --".join(self.random_settings)
+        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options + new_options + ' '
+        return client_options + new_options
+
+    def remove_random_settings_from_env(self):
+        os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params
+        os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options
+
+    def add_info_about_settings(self, description):
+        if self.tags and 'no-random-settings' in self.tags:
+            return description
+
+        return description + "\n" + "Settings used in the test: " + "--" + " --".join(self.random_settings) + "\n"
+
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case   # case file name
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
@@ -434,6 +477,10 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+
+        self.random_settings = SettingsRandomizer.get_random_settings()
+        self.base_url_params = os.environ['CLICKHOUSE_URL_PARAMS'] if 'CLICKHOUSE_URL_PARAMS' in os.environ else ''
+        self.base_client_options = os.environ['CLICKHOUSE_CLIENT_OPT'] if 'CLICKHOUSE_CLIENT_OPT' in os.environ else ''
 
     # Check if test contains tag "backward-incompatible" and we should skip it
     def check_backward_incompatible_tag(self) -> bool:
@@ -700,10 +747,13 @@ class TestCase:
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path)
+            client_options = self.add_random_settings(client_options)
             proc, stdout, stderr, total_time = self.run_single_test(server_logs_level, client_options)
 
             result = self.process_result_impl(proc, stdout, stderr, total_time)
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
+            if result.status == TestStatus.FAIL:
+                result.description = self.add_info_about_settings(result.description)
             return result
         except KeyboardInterrupt as e:
             raise e
@@ -711,17 +761,20 @@ class TestCase:
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.INTERNAL_QUERY_FAIL,
                               0.,
-                              self.get_description_from_exception_info(sys.exc_info()))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except (ConnectionRefusedError, ConnectionResetError):
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.SERVER_DIED,
                               0.,
-                              self.get_description_from_exception_info(sys.exc_info()))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except:
             return TestResult(self.name, TestStatus.UNKNOWN,
                               FailureReason.INTERNAL_ERROR,
                               0.,
                               self.get_description_from_exception_info(sys.exc_info()))
+        finally:
+            self.remove_random_settings_from_env()
+
 
 class TestSuite:
     @staticmethod
@@ -1105,10 +1158,14 @@ def collect_build_flags(args):
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
 
-    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1');")
+    use_flags = clickhouse_execute(args, "SELECT name FROM system.build_options WHERE name like 'USE_%' AND value in ('ON', '1')")
     for use_flag in use_flags.strip().splitlines():
         use_flag = use_flag.decode().lower()
         result.append(use_flag)
+
+    system_processor = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'SYSTEM_PROCESSOR' LIMIT 1").strip()
+    if system_processor:
+        result.append(f'cpu-{system_processor.decode().lower()}')
 
     return result
 

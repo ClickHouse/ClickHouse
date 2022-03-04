@@ -176,7 +176,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-            promise.set_value({bytes_read, 0});
+            promise.set_value({bytes_read, request.ignore});
             return future;
         }
     }
@@ -219,7 +219,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        return Result{ .size = bytes_read, .offset = 0 };
+        return Result{ .size = bytes_read, .offset = request.ignore };
     });
 
     auto future = task->get_future();
