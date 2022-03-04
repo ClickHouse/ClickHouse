@@ -62,6 +62,9 @@ public:
 
     MergeTreeData::DataPartPtr data_part;
 
+    bool has_lightweight;
+    String deleted_rows_bitmap;
+
 protected:
     /// Returns actual column type in part, which can differ from table metadata.
     NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;

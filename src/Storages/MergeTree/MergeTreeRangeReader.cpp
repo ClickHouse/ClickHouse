@@ -83,6 +83,12 @@ size_t MergeTreeRangeReader::DelayedStream::position() const
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
+size_t MergeTreeRangeReader::DelayedStream::positionBeforeRead() const
+{
+    size_t num_rows_before_current_mark = index_granularity->getMarkStartingRow(current_mark);
+    return num_rows_before_current_mark + current_offset;
+}
+
 size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t num_rows)
 {
     if (num_rows)
@@ -311,6 +317,7 @@ void MergeTreeRangeReader::ReadResult::clear()
     total_rows_per_granule = 0;
     filter_holder = nullptr;
     filter = nullptr;
+    deleted_mask_filter_holder = nullptr;
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
@@ -749,6 +756,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         read_result.num_rows = read_result.numReadRows();
 
+        executeDeletedRowMaskFilterColumns(read_result);
+
         if (read_result.num_rows)
         {
             /// Physical columns go first and then some virtual columns follow
@@ -805,6 +814,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         leading_begin_part_offset = stream.currentPartOffset();
         leading_end_part_offset = stream.lastPartOffset();
     }
+ 
+    bool need_collect_deleted_mask = merge_tree_reader->has_lightweight;
+    auto mask_column = ColumnUInt8::create();
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
@@ -815,7 +827,27 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             if (stream.isFinished())
             {
-                result.addRows(stream.finalize(result.columns));
+                if (need_collect_deleted_mask)
+                {
+                    size_t from_pos = stream.stream.positionBeforeRead();
+                    size_t read_rows = stream.finalize(result.columns);
+                    result.addRows(read_rows);
+
+                    /// Get deleted mask , from_pos + read_rows
+                    if (read_rows > 0)
+                    {
+                        String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
+                        for (size_t i = 0; i < bitmap.size(); i++)
+                        {
+                            if (bitmap[i] == '0')
+                                mask_column->insert(1);
+                            else
+                                mask_column->insert(0);
+                        }
+                    }
+                }
+                else
+                    result.addRows(stream.finalize(result.columns));
                 stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
                 result.addRange(ranges.front());
                 ranges.pop_front();
@@ -837,7 +869,29 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         }
     }
 
-    result.addRows(stream.finalize(result.columns));
+    if (need_collect_deleted_mask)
+    {
+        size_t from_pos = stream.stream.positionBeforeRead();
+        size_t read_rows = stream.finalize(result.columns);
+        result.addRows(read_rows);
+
+        /// Get deleted mask , from_pos + read_rows
+        if (read_rows > 0)
+        {
+            String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
+            for (size_t i = 0; i < bitmap.size(); i++)
+            {
+                if (bitmap[i] == '0')
+                    mask_column->insert(1);
+                else
+                    mask_column->insert(0);
+            }
+        }
+
+        result.deleted_mask_filter_holder = std::move(mask_column);
+    }
+    else
+        result.addRows(stream.finalize(result.columns));
 
     /// Last granule may be incomplete.
     result.adjustLastGranule();
@@ -986,6 +1040,35 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
+/// Apply deleted mask filter to columns.
+/// If there is no prewhere_info, apply directly the deleted mask filter.
+/// If prewhere_info exists, works like row_level_filter and prewhere filter.
+void MergeTreeRangeReader::executeDeletedRowMaskFilterColumns(ReadResult & result)
+{
+    if (prewhere_info || !result.deleted_mask_filter_holder)
+        return;
+
+    const ColumnUInt8 * mask_filter = typeid_cast<const ColumnUInt8 *>(result.deleted_mask_filter_holder.get());
+    filterColumns(result.columns, mask_filter->getData());
+
+    bool has_column = false;
+    for (auto & column : result.columns)
+    {
+        if (column)
+        {
+            has_column = true;
+            result.num_rows = column->size();
+            break;
+        }
+    }
+
+    /// There is only one filter column. Record the actual number.
+    if (!has_column)
+        result.num_rows = result.countBytesInResultFilter(mask_filter->getData());
+
+    result.need_filter = true;
+}
+
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result)
 {
     if (!prewhere_info)
@@ -1001,6 +1084,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     ColumnPtr filter;
     ColumnPtr row_level_filter;
+    ColumnPtr deleted_mask_filter;  /// deleted mask for lightweight mutation
     size_t prewhere_column_pos;
 
     {
@@ -1035,12 +1119,27 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
 
-        if (prewhere_info->row_level_filter)
+        if (prewhere_info->row_level_filter || result.deleted_mask_filter_holder)
         {
-            prewhere_info->row_level_filter->execute(block);
-            auto row_level_filter_pos = block.getPositionByName(prewhere_info->row_level_column_name);
-            row_level_filter = block.getByPosition(row_level_filter_pos).column;
-            block.erase(row_level_filter_pos);
+            if (prewhere_info->row_level_filter)
+            {
+                prewhere_info->row_level_filter->execute(block);
+                auto row_level_filter_pos = block.getPositionByName(prewhere_info->row_level_column_name);
+                row_level_filter = block.getByPosition(row_level_filter_pos).column;
+                block.erase(row_level_filter_pos);
+            }
+
+            if (result.deleted_mask_filter_holder)
+            {
+                /// works similar as row_level_filter
+                deleted_mask_filter = result.deleted_mask_filter_holder;
+            }
+
+            /// Combine filter and deleted_mask_filter
+            if (row_level_filter && deleted_mask_filter)
+                row_level_filter = combineFilters(std::move(row_level_filter), deleted_mask_filter);
+            else if (deleted_mask_filter)
+                row_level_filter = deleted_mask_filter;
 
             auto columns = block.getColumns();
             filterColumns(columns, row_level_filter);
@@ -1080,13 +1179,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// If there is a WHERE, we filter in there, and only optimize IO and shrink columns here
     if (!last_reader_in_chain)
-        result.optimize(merge_tree_reader->canReadIncompleteGranules(), prewhere_info->row_level_filter == nullptr);
+    {
+        bool allow_filter_columns = (prewhere_info->row_level_filter == nullptr) && (result.deleted_mask_filter_holder == nullptr);
+        result.optimize(merge_tree_reader->canReadIncompleteGranules(), allow_filter_columns);
+    }
 
     /// If we read nothing or filter gets optimized to nothing
     if (result.totalRowsPerGranule() == 0)
         result.setFilterConstFalse();
     /// If we need to filter in PREWHERE
-    else if (prewhere_info->need_filter || result.need_filter || prewhere_info->row_level_filter)
+    else if (prewhere_info->need_filter || result.need_filter || prewhere_info->row_level_filter || result.deleted_mask_filter_holder)
     {
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)

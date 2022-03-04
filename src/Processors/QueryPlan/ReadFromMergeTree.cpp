@@ -55,6 +55,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
+        .from_lightweight_mutation = context->isFromLightWeightMutation();
     };
 }
 

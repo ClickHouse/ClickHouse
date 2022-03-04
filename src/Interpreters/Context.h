@@ -360,6 +360,9 @@ private:
 
     inline static ContextPtr global_context_instance;
 
+    /// A flag, used to distinguish between internal lightweight mutation and normal query.
+    bool from_lightweight_mutation = false;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -908,6 +911,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isFromLightWeightMutation() const { return from_lightweight_mutation; }
+    void setFromLightWeightMutation(bool lightweight) { from_lightweight_mutation = lightweight; }
 
     ActionLocksManagerPtr getActionLocksManager();
 

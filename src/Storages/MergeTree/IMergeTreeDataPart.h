@@ -472,6 +472,16 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
+    /// Prefix name for deleted rows mask bitmap file
+    static inline constexpr auto DELETED_ROW_MARK_PREFIX_NAME = "deleted_row_mask_";
+
+    String getLightWeightDeletedMaskFileName() const;
+
+    /// Get the content of light weight bitmap file
+    String readLightWeightDeletedMaskFile() const;
+
+    /// There is light weight bitmap file only when part has non-zero lightweight_mutation.
+    bool hasLightWeight() const { return info.lightweight_mutation > 0; }
 
 protected:
 

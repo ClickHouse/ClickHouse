@@ -1179,20 +1179,24 @@ void IMergeTreeDataPart::appendFilesOfUUID(Strings & files)
 void IMergeTreeDataPart::loadDeleteRowMask()
 {
     String path = fs::path(getFullRelativePath());
-    Int64 lightweight_muatation = 0;
+    Int64 lightweight_mutation = 0;
     for (auto it = volume->getDisk()->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (startsWith(it->name(), "deleted_row_mask_"))
+        /// deleted_row_mask_XX.bin
+        /// TODO: The ReadBufferFromString cannot parse deleted_rows_mask correctly.
+        if (startsWith(it->name(), DELETED_ROW_MARK_PREFIX_NAME))
         {
+            LOG_DEBUG(storage.log, "name is {}", it->name());
             Int64 lightweight_version = 0;
             ReadBufferFromString file_name_buf(it->name());
-            file_name_buf >> "deleted_row_mask_" >> lightweight_version >> ".txt";
-            if (lightweight_version > lightweight_muatation)
-                lightweight_muatation = lightweight_version;
-            LOG_DEBUG(storage.log, "Loading lightweight_muatation: deleted_row_mask_{}.txt entry", lightweight_version);
+            file_name_buf >> DELETED_ROW_MARK_PREFIX_NAME >> lightweight_version >> DATA_FILE_EXTENSION;
+            if (lightweight_version > lightweight_mutation)
+                lightweight_mutation = lightweight_version;
+            /// LOG_DEBUG(storage.log, "Loading lightweight_mutation: deleted_rows_mask_{}.bin entry", lightweight_version);
         }
     }
-    info.lightweight_mutation = lightweight_muatation;
+    /// Initialize the part info's lightweight mutation version, getDataVersion() will use it.
+    info.lightweight_mutation = lightweight_mutation;
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)
@@ -2084,6 +2088,36 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
 std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::checkMetadata() const
 {
     return metadata_manager->check();
+}
+
+/// Return file name for light weight. If not exists, empty string is returned.
+/// If exists, a file name like "deleted_rows_mask_<lightweight_mutation>.bin" is returned.
+String IMergeTreeDataPart::getLightWeightDeletedMaskFileName() const
+{
+    String file_name = "";
+    if (hasLightWeight())
+        file_name = DELETED_ROW_MARK_PREFIX_NAME + std::to_string(info.lightweight_mutation) + DATA_FILE_EXTENSION;
+
+    return file_name;
+}
+
+String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
+{
+    String deleted_rows_bitmap = "";
+
+    if (hasLightWeight())
+    {
+        String file_name = DELETED_ROW_MARK_PREFIX_NAME + std::to_string(info.lightweight_mutation) + DATA_FILE_EXTENSION;
+        auto path = fs::path(getFullRelativePath()) / file_name;
+
+        if (volume->getDisk()->exists(path))
+        {
+            auto in = openForReading(volume->getDisk(), path);
+            readString(deleted_rows_bitmap, *in);
+        }
+    }
+
+    return deleted_rows_bitmap;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
