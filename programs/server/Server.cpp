@@ -1303,7 +1303,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
