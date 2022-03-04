@@ -3,9 +3,6 @@
 #include <base/sort.h>
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
-
-
 namespace DB
 {
 
