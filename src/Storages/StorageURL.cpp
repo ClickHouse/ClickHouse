@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConnectionTimeouts.h>
@@ -265,11 +266,37 @@ namespace
                     http_session->sendRequest(request);
                     Poco::Net::HTTPResponse res;
                     receiveResponse(*http_session, request, res, true);
-                    if (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes") {
+                    bool supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
+                    if (supports_ranges) {
                       LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges supported");
                     } else {
                       LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges not supported");
                     }
+
+                    //if (!supports_ranges)
+                    if (supports_ranges && res.hasContentLength())
+                    {
+                        auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+                                res.getContentLength(),
+                                10 * 1024 * 1024,
+                                request_uri,
+                                http_method,
+                                callback,
+                                timeouts,
+                                credentials,
+                                context->getSettingsRef().max_http_get_redirects,
+                                DBMS_DEFAULT_BUFFER_SIZE,
+                                read_settings,
+                                headers,
+                                context->getRemoteHostFilter(),
+                                delay_initialization,
+                                /* use_external_buffer */false,
+                                /* skip_url_not_found_error */skip_url_not_found_error);
+                        return wrapReadBufferWithCompressionMethod(
+                                std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 4),
+                            chooseCompressionMethod(request_uri.getPath(), compression_method));
+                    }
+
 
                     return wrapReadBufferWithCompressionMethod(
                         std::make_unique<ReadWriteBufferFromHTTP>(
