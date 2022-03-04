@@ -63,6 +63,7 @@ private:
     mutable MySQLClient client;
     MaterializedMySQLSettings * settings;
     String query_prefix;
+    NameSet materialized_tables_list;
 
     // USE MySQL ERROR CODE:
     // https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
