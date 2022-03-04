@@ -7,12 +7,13 @@
 #include <map>
 #include <unordered_map>
 
-#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -233,7 +234,7 @@ public:
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(128 + signum);
+        safeExit(128 + signum);
 }
 
 
@@ -1871,6 +1872,8 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
+            else if (arg == "--allow_repeated_settings"sv)
+                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }
@@ -1883,7 +1886,10 @@ void ClientBase::readArguments(
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();

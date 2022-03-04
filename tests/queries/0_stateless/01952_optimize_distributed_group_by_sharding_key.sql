@@ -2,6 +2,7 @@
 
 set optimize_skip_unused_shards=1;
 set optimize_distributed_group_by_sharding_key=1;
+set prefer_localhost_replica=1;
 
 -- { echo }
 explain select distinct k1 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- not optimized
