@@ -2141,27 +2141,30 @@ const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 
 void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
 {
-    const String & key_name = storage->getPrimaryKey();
-    const auto & key_col = block.getByName(key_name);
-    FieldVector keys;
-    keys.reserve(key_col.column->size());
-    for (size_t i = 0; i < key_col.column->size(); ++i)
+    if (!table_join->oneDisjunct()
+        || table_join->getOnlyClause().key_names_left.size() != 1
+        || table_join->getOnlyClause().key_names_right.size() != 1)
     {
-        key_col.column->get(i, keys.emplace_back());
+        throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not suppoted by direct JOIN");
     }
 
-    Chunk joined_chunk;
-    NullMap null_map(keys.size(), 0);
-    storage->getByKeys(keys.begin(), keys.end(), right_sample_block, joined_chunk, &null_map, 0);
+    const auto & key_names_left = table_join->getOnlyClause().key_names_left;
 
-    // const auto & key_names_right = table_join->getOnlyClause().key_names_right;
+    const String & key_name = key_names_left[0];
+    const auto & key_col = block.getByName(key_name);
+    if (!key_col.column)
+        return;
 
-    sample_block_with_columns_to_add = materializeBlock(right_sample_block);
+    NullMap null_map(key_col.column->size(), 0);
+    Chunk joined_chunk = storage->getByKeys(key_col, right_sample_block, &null_map);
 
-    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
-    if (table_join->forceNullableRight())
-        JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
-
+    Columns cols = joined_chunk.detachColumns();
+    for (size_t i = 0; i < cols.size(); ++i)
+    {
+        ColumnWithTypeAndName col = right_sample_block.getByPosition(i);
+        col.column = std::move(cols[i]);
+        block.insert(std::move(col));
+    }
 }
 
 

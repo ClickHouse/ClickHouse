@@ -306,7 +306,7 @@ public:
 
     bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
 
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
+    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join || right_kv_storage; }
     const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
 
     std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }

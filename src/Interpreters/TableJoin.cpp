@@ -513,6 +513,7 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
         {
             if (dag)
             {
+                /// Just debug message
                 std::vector<std::string> input_cols;
                 for (const auto & col : dag->getRequiredColumns())
                     input_cols.push_back(col.name + ": " + col.type->getName());
@@ -591,7 +592,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         catch (DB::Exception & ex)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right ({})",
                 left_key_name, ltype->second->getName(),
                 right_key_name, rtype->second->getName(),
                 ex.message());
@@ -599,7 +600,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         if (!allow_right && !common_type->equals(*rtype->second))
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't change type for right table: {}: {} -> {}.",
+                "Can't change type for right table: {}: {} -> {}",
                 right_key_name, rtype->second->getName(), common_type->getName());
         }
         left_type_map[left_key_name] = right_type_map[right_key_name] = common_type;
