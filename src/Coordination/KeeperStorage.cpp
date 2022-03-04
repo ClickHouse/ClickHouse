@@ -316,7 +316,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
         created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
-        auto [map_key, _] = container.insert(path_created, std::move(created_node));
+        auto [map_key, _] = container.insert(path_created, created_node);
+
         /// Take child path from key owned by map.
         auto child_path = getBaseName(map_key->first);
 
