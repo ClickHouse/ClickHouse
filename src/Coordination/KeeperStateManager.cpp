@@ -17,16 +17,31 @@ namespace ErrorCodes
 namespace
 {
 
-bool isLocalhost(const std::string & hostname)
+bool isLoopback(const std::string & hostname)
 {
     try
     {
-        return isLoopback(DNSResolver::instance().resolveHost(hostname));
+        return DNSResolver::instance().resolveHost(hostname).isLoopback();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    return false;
+}
+
+bool isLocalhost(const std::string & hostname)
+{
+    try
+    {
+        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     return false;
 }
 
@@ -58,8 +73,9 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
-    std::string local_hostname;
+    std::string loopback_hostname;
     std::string non_local_hostname;
+    size_t local_address_counter = 0;
     for (const auto & server_key : keys)
     {
         if (!startsWith(server_key, "server"))
@@ -79,10 +95,19 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
                             hostname, port);
         }
 
-        if (isLocalhost(hostname))
-            local_hostname = hostname;
+        if (isLoopback(hostname))
+        {
+            loopback_hostname = hostname;
+            local_address_counter++;
+        }
+        else if (isLocalhost(hostname))
+        {
+            local_address_counter++;
+        }
         else
+        {
             non_local_hostname = hostname;
+        }
 
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
@@ -123,12 +148,22 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (!local_hostname.empty() && !non_local_hostname.empty())
+    if (!loopback_hostname.empty() && !non_local_hostname.empty())
     {
         throw Exception(
             ErrorCodes::RAFT_ERROR,
-            "Mixing local and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. Different hosts can resolve it to themselves so it's not allowed.",
-            local_hostname, non_local_hostname);
+            "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
+            "Different hosts can resolve it to themselves so it's not allowed.",
+            loopback_hostname, non_local_hostname);
+    }
+
+    if (!non_local_hostname.empty() && local_address_counter > 1)
+    {
+        throw Exception(
+            ErrorCodes::RAFT_ERROR,
+            "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+            "Such configuration is not allowed because single host can vote multiple times.",
+            local_address_counter, non_local_hostname);
     }
 
     return result;
