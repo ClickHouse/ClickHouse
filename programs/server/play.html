@@ -763,13 +763,8 @@
     if (theme) {
         setColorTheme(theme);
     } else {
-        /// Obtain system-level user preference
-        let media_query_list = window.matchMedia('prefers-color-scheme: dark')
-
-        if (media_query_list.matches) {
-            /// Set without saving to localstorage
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
+        /// Use dark theme by default
+        document.documentElement.setAttribute('data-theme', 'dark');
 
         /// There is a rumor that on some computers, the theme is changing automatically on day/night.
         media_query_list.addEventListener('change', function(e) {
