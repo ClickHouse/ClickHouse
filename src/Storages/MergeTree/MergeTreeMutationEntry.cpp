@@ -27,12 +27,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
-{
-    assert(block_number_);
-    return fmt::format("mutation_{}.txt", block_number_);
-}
-
 UInt64 MergeTreeMutationEntry::tryParseFileName(const String & file_name_)
 {
     UInt64 maybe_block_number = 0;
