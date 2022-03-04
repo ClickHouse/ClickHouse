@@ -82,7 +82,7 @@ void ParallelReadBuffer::processor()
         }
 
         /// Start processing
-        readerThreadFunction(worker);
+        readerThreadFunction(std::move(worker));
     }
 }
 

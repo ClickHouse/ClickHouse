@@ -259,25 +259,34 @@ namespace
 
                 try
                 {
-                    auto http_session = makeHTTPSession(request_uri, timeouts);
-                    auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                    request.setHost(request_uri.getHost()); // use original, not resolved host name in header
-                    request.set("Range", "bytes=0-");
-                    http_session->sendRequest(request);
-                    Poco::Net::HTTPResponse res;
-                    receiveResponse(*http_session, request, res, true);
-                    bool supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
-                    if (supports_ranges) {
-                      LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges supported");
-                    } else {
-                      LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Ranges not supported");
+                    bool supports_ranges = false;
+                    std::optional<size_t> content_length;
+                    try
+                    {
+                        auto http_session = makeHTTPSession(request_uri, timeouts);
+                        auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                        request.setHost(request_uri.getHost()); // use original, not resolved host name in header
+                        // to check if Range header is supported, we need to send a request with it set
+                        request.set("Range", "bytes=0-");
+                        http_session->sendRequest(request);
+                        Poco::Net::HTTPResponse res;
+                        receiveResponse(*http_session, request, res, true);
+                        supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
+                        LOG_TRACE(&Poco::Logger::get("StorageURLSource"), fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
+
+                        if (res.hasContentLength())
+                        {
+                            content_length.emplace(res.getContentLength());
+                        }
+                    } catch (...)
+                    {
+                        LOG_TRACE(&Poco::Logger::get(__PRETTY_FUNCTION__), "HEAD request failed. HTTP Range cannot be used.");
                     }
 
-                    //if (!supports_ranges)
-                    if (supports_ranges && res.hasContentLength())
+                    if (supports_ranges && content_length)
                     {
                         auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-                                res.getContentLength(),
+                                *content_length,
                                 10 * 1024 * 1024,
                                 request_uri,
                                 http_method,
