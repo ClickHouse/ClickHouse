@@ -19,6 +19,12 @@
 #if defined(__SSE4_2__)
     #include <smmintrin.h>
     #include <nmmintrin.h>
+    #define CRC_INT _mm_crc32_u64
+#endif
+
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+    #include <arm_acle.h>
+    #define CRC_INT __crc32cd
 #endif
 
 
@@ -205,7 +211,7 @@ struct StringRefHash64
     }
 };
 
-#if defined(__SSE4_2__)
+#if defined(CRC_INT)
 
 /// Parts are taken from CityHash.
 
@@ -281,13 +287,13 @@ struct CRC32Hash
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = _mm_crc32_u64(res, word);
+            res = CRC_INT(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = _mm_crc32_u64(res, word);
+        res = CRC_INT(res, word);
 
         return res;
     }
