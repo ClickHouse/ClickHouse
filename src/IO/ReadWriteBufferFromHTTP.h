@@ -162,7 +162,7 @@ namespace detail
                     range_header_value = fmt::format("bytes={}-{}", getOffset(), *read_range.end);
                 else
                     range_header_value = fmt::format("bytes={}-", getOffset());
-                LOG_ERROR(log, "Adding header: Range: {}", range_header_value);
+                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
                 request.set("Range", range_header_value);
             }
 
@@ -430,7 +430,8 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && getOffset() > read_range.end.value()) {
+            if (read_range.end && getOffset() > read_range.end.value())
+            {
                 assert(getOffset() == read_range.end.value() + 1);
                 return false;
             }
@@ -620,6 +621,7 @@ public:
 
     using Range = std::pair<size_t, size_t>;
 
+    // return upper exclusive range of values, i.e. [from_range, to_range>
     std::optional<Range> nextRange()
     {
         if (from_range >= total_size)
@@ -627,14 +629,14 @@ public:
             return std::nullopt;
         }
 
-        auto to_range = from_range + range_step - 1;
+        auto to_range = from_range + range_step;
         if (to_range >= total_size)
         {
             to_range = total_size - 1;
         }
 
         Range range{from_range, to_range};
-        from_range = to_range + 1;
+        from_range = to_range;
         return std::move(range);
     }
 
@@ -738,7 +740,8 @@ public:
             buffer_size,
             settings,
             http_header_entries,
-            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second},
+            // HTTP Range has inclusive bounds, i.e. [from, to]
+            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
             remote_host_filter,
             delay_initialization,
             use_external_buffer,
