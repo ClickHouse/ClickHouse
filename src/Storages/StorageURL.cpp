@@ -264,7 +264,8 @@ namespace
                     try
                     {
                         auto http_session = makeHTTPSession(request_uri, timeouts);
-                        auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                        auto request = Poco::Net::HTTPRequest(
+                            Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                         request.setHost(request_uri.getHost()); // use original, not resolved host name in header
                         // to check if Range header is supported, we need to send a request with it set
                         request.set("Range", "bytes=0-");
@@ -272,13 +273,16 @@ namespace
                         Poco::Net::HTTPResponse res;
                         receiveResponse(*http_session, request, res, true);
                         supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
-                        LOG_TRACE(&Poco::Logger::get("StorageURLSource"), fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
+                        LOG_TRACE(
+                            &Poco::Logger::get("StorageURLSource"),
+                            fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
 
                         if (res.hasContentLength())
                         {
                             content_length.emplace(res.getContentLength());
                         }
-                    } catch (...)
+                    }
+                    catch (...)
                     {
                         LOG_TRACE(&Poco::Logger::get(__PRETTY_FUNCTION__), "HEAD request failed. HTTP Range cannot be used.");
                     }
@@ -286,23 +290,23 @@ namespace
                     if (supports_ranges && content_length)
                     {
                         auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-                                *content_length,
-                                10 * 1024 * 1024,
-                                request_uri,
-                                http_method,
-                                callback,
-                                timeouts,
-                                credentials,
-                                context->getSettingsRef().max_http_get_redirects,
-                                DBMS_DEFAULT_BUFFER_SIZE,
-                                read_settings,
-                                headers,
-                                context->getRemoteHostFilter(),
-                                delay_initialization,
-                                /* use_external_buffer */false,
-                                /* skip_url_not_found_error */skip_url_not_found_error);
+                            *content_length,
+                            10 * 1024 * 1024,
+                            request_uri,
+                            http_method,
+                            callback,
+                            timeouts,
+                            credentials,
+                            context->getSettingsRef().max_http_get_redirects,
+                            DBMS_DEFAULT_BUFFER_SIZE,
+                            read_settings,
+                            headers,
+                            context->getRemoteHostFilter(),
+                            delay_initialization,
+                            /* use_external_buffer */ false,
+                            /* skip_url_not_found_error */ skip_url_not_found_error);
                         return wrapReadBufferWithCompressionMethod(
-                                std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 4),
+                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 4),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));
                     }
 
