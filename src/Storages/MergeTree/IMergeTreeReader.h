@@ -62,7 +62,8 @@ public:
 
     MergeTreeData::DataPartPtr data_part;
 
-    bool has_lightweight;
+    bool needCollectDeletedMask() { return !settings.from_lightweight_mutation && has_lightweight; }
+    ColumnPtr getDeletedMask(size_t from_pos, size_t rows_read);
     String deleted_rows_bitmap;
 
 protected:
@@ -93,6 +94,8 @@ protected:
     ColumnPosition findColumnForOffsets(const String & column_name) const;
 
     friend class MergeTreeRangeReader::DelayedStream;
+
+    bool has_lightweight;
 
 private:
     /// Alter conversions, which must be applied on fly if required

@@ -51,7 +51,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     for (const auto & part : parts)
     {
         max_level = std::max(max_level, part->info.level);
-        max_mutation = std::max(max_mutation, part->info.mutation);
+        max_mutation = std::max(max_mutation, part->info.getMutationVersion()); /// Consider lightweight mutation
     }
 
     type = future_part_type;

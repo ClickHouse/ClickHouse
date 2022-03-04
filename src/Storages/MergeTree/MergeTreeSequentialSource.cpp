@@ -1,12 +1,49 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Interpreters/Context.h>
+#include <Columns/FilterDescription.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+{
+    for (auto & column : columns)
+    {
+        if (column)
+        {
+            column = column->filter(filter, -1);
+
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+    }
+}
+
+static void filterColumns(Columns & columns, const ColumnPtr & filter)
+{
+    ConstantFilterDescription const_descr(*filter);
+    if (const_descr.always_true)
+        return;
+
+    if (const_descr.always_false)
+    {
+        for (auto & col : columns)
+            if (col)
+                col = col->cloneEmpty();
+
+        return;
+    }
+
+    FilterDescription descr(*filter);
+    filterColumns(columns, *descr.data);
 }
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
@@ -88,6 +125,32 @@ try
         {
             current_row += rows_read;
             current_mark += (rows_to_read == rows_read);
+
+            if (reader->needCollectDeletedMask())
+            {
+                size_t from_pos = current_row - rows_read;
+                /// Get deleted mask for rows_read
+                ColumnPtr deleted_mask_holder = reader->getDeletedMask(from_pos, rows_read);
+
+                /// Apply deleted mask filter
+                if (deleted_mask_holder)
+                    filterColumns(columns, deleted_mask_holder);
+
+                /// Update rows_read with actual rows in columns
+                bool has_column = false;
+                for (auto & column : columns)
+                {
+                    if (column)
+                    {
+                        has_column = true;
+                        rows_read = column->size();
+                        break;
+                    }
+                }
+
+                if (!has_column || !rows_read)
+                    return {};
+            }
 
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);

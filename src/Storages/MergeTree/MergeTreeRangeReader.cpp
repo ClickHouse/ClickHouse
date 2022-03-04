@@ -814,8 +814,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         leading_begin_part_offset = stream.currentPartOffset();
         leading_end_part_offset = stream.lastPartOffset();
     }
- 
-    bool need_collect_deleted_mask = merge_tree_reader->has_lightweight;
+
+    bool need_collect_deleted_mask = merge_tree_reader->needCollectDeletedMask();
     auto mask_column = ColumnUInt8::create();
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to

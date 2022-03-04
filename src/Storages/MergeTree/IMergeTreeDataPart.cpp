@@ -1186,7 +1186,6 @@ void IMergeTreeDataPart::loadDeleteRowMask()
         /// TODO: The ReadBufferFromString cannot parse deleted_rows_mask correctly.
         if (startsWith(it->name(), DELETED_ROW_MARK_PREFIX_NAME))
         {
-            LOG_DEBUG(storage.log, "name is {}", it->name());
             Int64 lightweight_version = 0;
             ReadBufferFromString file_name_buf(it->name());
             file_name_buf >> DELETED_ROW_MARK_PREFIX_NAME >> lightweight_version >> DATA_FILE_EXTENSION;
