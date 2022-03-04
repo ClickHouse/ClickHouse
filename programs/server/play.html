@@ -542,7 +542,7 @@
 
         document.getElementById('logo-container').style.display = 'block';
     }
-    
+
     function formatReadable(number = 0, decimals = 2, units = []) {
         const k = 1000;
         const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
@@ -752,20 +752,25 @@
         svg.style.height = graph.graph().height;
     }
 
-    function setColorTheme(theme)
-    {
+    function setColorTheme(theme) {
         window.localStorage.setItem('theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
     }
 
-    /// The choice of color theme is saved in browser.
-    let theme = window.localStorage.getItem('theme');
+    /**
+     * First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage,
+     * otherwise we check OS preference
+     */
+    let theme = current_url.searchParams.get('theme');
+    if (['dark', 'light'].indexOf(theme) === -1) {
+        theme = window.localStorage.getItem('theme');
+    }
+
     if (theme) {
-        setColorTheme(theme);
+        document.documentElement.setAttribute('data-theme', theme);
     } else {
         /// Obtain system-level user preference
-        let media_query_list = window.matchMedia('prefers-color-scheme: dark')
-
+        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
         if (media_query_list.matches) {
             /// Set without saving to localstorage
             document.documentElement.setAttribute('data-theme', 'dark');
@@ -781,13 +786,11 @@
         });
     }
 
-    document.getElementById('toggle-light').onclick = function()
-    {
+    document.getElementById('toggle-light').onclick = function() {
         setColorTheme('light');
     }
 
-    document.getElementById('toggle-dark').onclick = function()
-    {
+    document.getElementById('toggle-dark').onclick = function() {
         setColorTheme('dark');
     }
 </script>
