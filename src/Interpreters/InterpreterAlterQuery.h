@@ -29,7 +29,7 @@ public:
 private:
     AccessRightsElements getRequiredAccess() const;
 
-    BlockIO executeToTable(const ASTAlterQuery & alter);
+    BlockIO executeToTable(ASTAlterQuery & alter);
 
     BlockIO executeToDatabase(const ASTAlterQuery & alter);
 

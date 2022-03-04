@@ -20,6 +20,7 @@
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/StorageDistributed.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -47,7 +48,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
-    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -62,12 +63,9 @@ BlockIO InterpreterAlterQuery::execute()
 }
 
 
-BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
+BlockIO InterpreterAlterQuery::executeToTable(ASTAlterQuery & alter)
 {
     BlockIO res;
-
-    if (!alter.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
@@ -88,6 +86,46 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+
+    ///Convert some mutation commands on distributed table into an equivalent distributed ddl on local tables.
+    if (auto dist_table = typeid_cast<StorageDistributed* >(table.get()))
+    {
+        bool need_conversion = false;
+
+        /// We only check the first command, and not check if alter table contains mixed table struct and data commands.
+        auto * command_ast = alter.command_list->children.at(0)->as<ASTAlterCommand>();
+
+        /// Currently, we support update/delete/drop partition.
+        if (auto mut_command = MutationCommand::parse(command_ast))
+        {
+            if ((mut_command->type == MutationCommand::Type::DELETE) ||
+                (mut_command->type == MutationCommand::Type::UPDATE))
+                need_conversion = true;
+        }
+        else if (auto partition_command = PartitionCommand::parse(command_ast))
+        {
+            if (partition_command->type == PartitionCommand::Type::DROP_PARTITION)
+                need_conversion = true;
+        }
+
+        if (need_conversion)
+        {
+            alter.table = std::make_shared<ASTIdentifier>(dist_table->getRemoteTableName());
+            alter.cluster = dist_table->getClusterName();
+
+            String remote_database;
+            if (!dist_table->getRemoteDatabaseName().empty())
+                remote_database = dist_table->getRemoteDatabaseName();
+            else
+                remote_database = dist_table->getCluster()->getShardsAddresses().front().front().default_database;
+
+            alter.database = std::make_shared<ASTIdentifier>(remote_database);
+        }
+    }
+
+    if (!alter.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
+
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
