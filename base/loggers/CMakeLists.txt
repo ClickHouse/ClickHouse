@@ -3,7 +3,7 @@ add_headers_and_sources(loggers .)
 
 # Standart version depends on DBMS and works with text log
 add_library(loggers ${loggers_sources} ${loggers_headers})
-target_compile_definitions (loggers PRIVATE -DWITH_TEXT_LOG)
+target_compile_definitions(loggers PUBLIC WITH_TEXT_LOG=1)
 target_link_libraries(loggers PRIVATE dbms clickhouse_common_io)
 target_include_directories(loggers PUBLIC ..)
 

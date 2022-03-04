@@ -2,6 +2,7 @@ include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 
 set(CLICKHOUSE_KEEPER_SOURCES
     Keeper.cpp
+    TinyContext.cpp
 )
 
 if (OS_LINUX)
