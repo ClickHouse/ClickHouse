@@ -443,7 +443,7 @@ public:
 
     virtual void checkTypesOfKeys(const Block &) const override
     {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+        // throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
     }
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
@@ -457,7 +457,8 @@ public:
 
     virtual const Block & getTotals() const override
     {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+        static const Block totals;
+        return totals;
     }
 
     virtual size_t getTotalRowCount() const override
@@ -477,7 +478,7 @@ public:
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+        return nullptr;
     }
 
 private:

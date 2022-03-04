@@ -59,13 +59,15 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     const String & getPrimaryKey() const override { return primary_key; }
 
-    FieldVector::const_iterator getByKeys(
-        FieldVector::const_iterator begin,
-        FieldVector::const_iterator end,
+    Chunk getByKeys(
+        const ColumnWithTypeAndName & col,
         const Block & sample_block,
-        Chunk & result,
-        PaddedPODArray<UInt8> * null_map,
-        size_t max_block_size) const override;
+        PaddedPODArray<UInt8> * null_map) const override;
+
+    Chunk getByKeysImpl(
+        const std::vector<rocksdb::Slice> & slices_keys,
+        const Block & sample_block,
+        PaddedPODArray<UInt8> * null_map) const;
 
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,

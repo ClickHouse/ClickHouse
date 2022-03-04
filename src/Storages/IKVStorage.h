@@ -16,13 +16,10 @@ public:
     virtual const String & getPrimaryKey() const = 0;
 
     /// Get data directly by keys
-    virtual FieldVector::const_iterator getByKeys(
-        FieldVector::const_iterator /* begin */,
-        FieldVector::const_iterator /* end */,
-        const Block & /* sample_block */,
-        Chunk & /* result */,
-        PaddedPODArray<UInt8> * /* null_map */,
-        size_t /* max_block_size */) const = 0;
+    virtual Chunk getByKeys(
+        const ColumnWithTypeAndName & col,
+        const Block & sample_block,
+        PaddedPODArray<UInt8> * null_map) const = 0;
 };
 
 }

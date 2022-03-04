@@ -1164,16 +1164,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
-    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
-    if (auto storage = analyzed_join->getStorageKeyValue())
-    {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "DirectKeyValueJoin");
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
-        /// TODO: (vdimir@) check that we can perform this join (keys and so on)
-        return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
-    }
-
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
+    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
 
     const ColumnsWithTypeAndName & right_columns = right_sample_block.getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
@@ -1182,6 +1174,14 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), right_convert_actions);
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
+    }
+
+    if (auto storage = analyzed_join->getStorageKeyValue())
+    {
+        Block rblock = right_sample_block;
+        joined_plan.reset();
+        /// TODO: (vdimir@) check that we can perform this join (keys and so on)
+        return std::make_shared<DirectKeyValueJoin>(analyzed_join, rblock, storage);
     }
 
     JoinPtr join = chooseJoinAlgorithm(analyzed_join, right_sample_block, getContext());
