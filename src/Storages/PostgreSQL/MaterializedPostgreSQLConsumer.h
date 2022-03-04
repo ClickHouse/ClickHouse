@@ -22,6 +22,9 @@ struct StorageInfo
 
     StorageInfo(StoragePtr storage_, const PostgreSQLTableStructure::Attributes & attributes_)
         : storage(storage_), attributes(attributes_) {}
+
+    StorageInfo(StoragePtr storage_, PostgreSQLTableStructure::Attributes && attributes_)
+        : storage(storage_), attributes(std::move(attributes_)) {}
 };
 using StorageInfos = std::unordered_map<String, StorageInfo>;
 

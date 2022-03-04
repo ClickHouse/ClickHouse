@@ -20,9 +20,9 @@ struct ArrayCompactImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & nested_type, const DataTypePtr &)
+    static DataTypePtr getReturnType(const DataTypePtr & , const DataTypePtr & array_element)
     {
-        return std::make_shared<DataTypeArray>(nested_type);
+        return std::make_shared<DataTypeArray>(array_element);
     }
 
     template <typename T>
@@ -30,14 +30,16 @@ struct ArrayCompactImpl
     {
         using ColVecType = ColumnVectorOrDecimal<T>;
 
-        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(mapped.get());
+        const ColVecType * check_values_column = checkAndGetColumn<ColVecType>(mapped.get());
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(array.getData());
 
-        if (!src_values_column)
+        if (!src_values_column || !check_values_column)
             return false;
 
         const IColumn::Offsets & src_offsets = array.getOffsets();
-        const typename ColVecType::Container & src_values = src_values_column->getData();
 
+        const auto & src_values = src_values_column->getData();
+        const auto & check_values = check_values_column->getData();
         typename ColVecType::MutablePtr res_values_column;
         if constexpr (is_decimal<T>)
             res_values_column = ColVecType::create(src_values.size(), src_values_column->getScale());
@@ -45,6 +47,7 @@ struct ArrayCompactImpl
             res_values_column = ColVecType::create(src_values.size());
 
         typename ColVecType::Container & res_values = res_values_column->getData();
+
         size_t src_offsets_size = src_offsets.size();
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
         IColumn::Offsets & res_offsets = res_offsets_column->getData();
@@ -67,7 +70,7 @@ struct ArrayCompactImpl
                 ++res_pos;
                 for (; src_pos < src_offset; ++src_pos)
                 {
-                    if (!bitEquals(src_values[src_pos], src_values[src_pos - 1]))
+                    if (!bitEquals(check_values[src_pos], check_values[src_pos - 1]))
                     {
                         res_values[res_pos] = src_values[src_pos];
                         ++res_pos;
@@ -86,8 +89,9 @@ struct ArrayCompactImpl
     {
         const IColumn::Offsets & src_offsets = array.getOffsets();
 
-        auto res_values_column = mapped->cloneEmpty();
-        res_values_column->reserve(mapped->size());
+        const auto & src_values = array.getData();
+        auto res_values_column = src_values.cloneEmpty();
+        res_values_column->reserve(src_values.size());
 
         size_t src_offsets_size = src_offsets.size();
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
@@ -104,7 +108,7 @@ struct ArrayCompactImpl
             if (src_pos < src_offset)
             {
                 /// Insert first element unconditionally.
-                res_values_column->insertFrom(*mapped, src_pos);
+                res_values_column->insertFrom(src_values, src_pos);
 
                 /// For the rest of elements, insert if the element is different from the previous.
                 ++src_pos;
@@ -113,7 +117,7 @@ struct ArrayCompactImpl
                 {
                     if (mapped->compareAt(src_pos - 1, src_pos, *mapped, 1))
                     {
-                        res_values_column->insertFrom(*mapped, src_pos);
+                        res_values_column->insertFrom(src_values, src_pos);
                         ++res_pos;
                     }
                 }
