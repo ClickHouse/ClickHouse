@@ -1921,6 +1921,19 @@ size_t MergeTreeData::clearEmptyParts()
     return cleared_count;
 }
 
+void MergeTreeData::clearOldDeletedMasks()
+{
+    auto parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (!part->hasLightWeight() || !part->isStoredOnDisk())
+            continue;
+
+        /// Remove old lightweight mutation mask bitmap
+        part->removeOldDeletedMasks();
+    }
+}
+
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();

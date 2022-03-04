@@ -483,6 +483,8 @@ public:
     /// There is light weight bitmap file only when part has non-zero lightweight_mutation.
     bool hasLightWeight() const { return info.lightweight_mutation > 0; }
 
+    void removeOldDeletedMasks() const;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk

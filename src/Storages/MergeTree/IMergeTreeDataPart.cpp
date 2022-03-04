@@ -2119,6 +2119,35 @@ String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
     return deleted_rows_bitmap;
 }
 
+void IMergeTreeDataPart::removeOldDeletedMasks() const
+{
+    String path = getFullRelativePath();
+    std::vector<std::string> files;
+    volume->getDisk()->listFiles(path, files);
+
+    String temp_mask_file_name = "tmp_";
+    temp_mask_file_name += DELETED_ROW_MARK_PREFIX_NAME;
+    for (const auto & file : files)
+    {
+        if (startsWith(file, DELETED_ROW_MARK_PREFIX_NAME))
+        {
+            Int64 lightweight_version = 0;
+            ReadBufferFromString file_name_buf(file);
+            file_name_buf >> DELETED_ROW_MARK_PREFIX_NAME >> lightweight_version >> DATA_FILE_EXTENSION;
+            if (lightweight_version < info.lightweight_mutation)
+            {
+                LOG_DEBUG(storage.log, "Remove lightweight_mutation from part {}: deleted_row_mask_{}.bin entry", name, lightweight_version);
+                volume->getDisk()->removeFileIfExists(fs::path(path) / file);
+            }
+        }
+        else if (startsWith(file, temp_mask_file_name))
+        {
+            LOG_DEBUG(storage.log, "Remove unfinished lightweight_mutation from part {}: {} entry", name, file);
+            volume->getDisk()->removeFileIfExists(fs::path(path) / file);
+        }
+    }
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Compact);

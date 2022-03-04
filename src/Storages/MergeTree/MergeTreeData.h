@@ -628,6 +628,9 @@ public:
 
     size_t clearEmptyParts();
 
+    /// Delete old deleted_row_mask_x.bin files for lightweight mutation in active part.
+    void clearOldDeletedMasks();
+
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
