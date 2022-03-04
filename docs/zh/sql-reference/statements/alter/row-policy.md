@@ -1,13 +1,13 @@
 ---
 toc_priority: 47
-toc_title: ROW POLICY
+toc_title: 行策略
 ---
 
-# ALTER ROW POLICY {#alter-row-policy-statement}
+# 操作行策略 {#alter-row-policy-statement}
 
-Changes row policy.
+修改行策略.
 
-Syntax:
+语法:
 
 ``` sql
 ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1]
