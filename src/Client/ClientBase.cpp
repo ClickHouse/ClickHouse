@@ -7,12 +7,13 @@
 #include <map>
 #include <unordered_map>
 
-#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -229,11 +230,11 @@ public:
     static bool cancelled() { return exit_on_signal.test(); }
 };
 
-/// This signal handler is set only for sigint.
+/// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(signum);
+        safeExit(128 + signum);
 }
 
 
@@ -243,22 +244,22 @@ ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
-     exit_on_signal.test_and_set();
+    exit_on_signal.test_and_set();
 
-     struct sigaction new_act;
-     memset(&new_act, 0, sizeof(new_act));
+    struct sigaction new_act;
+    memset(&new_act, 0, sizeof(new_act));
 
-     new_act.sa_handler = interruptSignalHandler;
-     new_act.sa_flags = 0;
+    new_act.sa_handler = interruptSignalHandler;
+    new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
     sigemptyset(&new_act.sa_mask);
 #else
-     if (sigemptyset(&new_act.sa_mask))
+    if (sigemptyset(&new_act.sa_mask))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 #endif
 
-     if (sigaction(SIGINT, &new_act, nullptr))
+    if (sigaction(SIGINT, &new_act, nullptr))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
@@ -702,7 +703,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    bool cancelled = false;
     QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
@@ -773,7 +773,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 /// Receive a part of the result, or progress info or an exception and process it.
 /// Returns true if one should continue receiving packets.
 /// Output of result is suppressed if query was cancelled.
-bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
+bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 {
     Packet packet = connection->receivePacket();
 
@@ -783,7 +783,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Data:
-            if (!cancelled)
+            if (!cancelled_)
                 onData(packet.block, parsed_query);
             return true;
 
@@ -796,12 +796,12 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Totals:
-            if (!cancelled)
+            if (!cancelled_)
                 onTotals(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Extremes:
-            if (!cancelled)
+            if (!cancelled_)
                 onExtremes(packet.block, parsed_query);
             return true;
 
@@ -1265,6 +1265,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 {
     resetOutput();
     have_error = false;
+    cancelled = false;
     client_exception.reset();
     server_exception.reset();
 
@@ -1392,6 +1393,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
     std::optional<Exception> & current_exception)
 {
+    if (!is_interactive && cancelled)
+        return MultiQueryProcessingStage::QUERIES_END;
+
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
@@ -1868,6 +1872,8 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
+            else if (arg == "--allow_repeated_settings"sv)
+                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }
@@ -1880,7 +1886,10 @@ void ClientBase::readArguments(
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();

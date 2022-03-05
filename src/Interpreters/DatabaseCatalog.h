@@ -98,8 +98,8 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
         const ASTPtr & query = {},
         bool create_for_global_subquery = false);
 
-    TemporaryTableHolder(TemporaryTableHolder && rhs);
-    TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
+    TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept;
+    TemporaryTableHolder & operator=(TemporaryTableHolder && rhs) noexcept;
 
     ~TemporaryTableHolder();
 
