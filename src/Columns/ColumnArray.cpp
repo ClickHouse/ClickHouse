@@ -411,6 +411,10 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
+void ColumnArray::ensureOwnership()
+{
+    getData().ensureOwnership();
+}
 
 size_t ColumnArray::byteSize() const
 {

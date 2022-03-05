@@ -363,6 +363,9 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
+    virtual void ensureOwnership() {}
+
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
 
