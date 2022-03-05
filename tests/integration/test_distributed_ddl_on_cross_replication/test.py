@@ -104,3 +104,11 @@ def test_atomic_database(started_cluster):
     node1.query("INSERT INTO replica_1.rmt VALUES (1, 'test')")
     node2.query("SYSTEM SYNC REPLICA replica_2.rmt", timeout=5)
     assert_eq_with_retry(node2, "SELECT * FROM replica_2.rmt", '1\ttest')
+
+def test_non_query_with_table_ddl(started_cluster):
+    node1.query("CREATE USER A ON CLUSTER cross_3shards_2replicas")
+
+    assert node1.query("SELECT 1", user='A') == "1\n"
+    assert node2.query("SELECT 1", user='A') == "1\n"
+
+    node2.query("DROP USER A ON CLUSTER cross_3shards_2replicas")
