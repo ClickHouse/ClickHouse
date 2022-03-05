@@ -20,11 +20,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
+    , server_display_name(server_display_name_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -63,7 +64,7 @@ void LocalConnection::updateProgress(const Progress & value)
 
 void LocalConnection::getProfileEvents(Block & block)
 {
-    ProfileEvents::getProfileEvents("local", state->profile_queue, block, last_sent_snapshots);
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, block, last_sent_snapshots);
 }
 
 void LocalConnection::sendQuery(
@@ -85,14 +86,13 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
-    query_scope_holder.reset();
-    query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
 
     state.reset();
     state.emplace();
 
     state->query_id = query_id;
     state->query = query;
+    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
@@ -483,9 +483,14 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress, bool send_profile_events)
+ServerConnectionPtr LocalConnection::createConnection(
+    const ConnectionParameters &,
+    ContextPtr current_context,
+    bool send_progress,
+    bool send_profile_events,
+    const String & server_display_name)
 {
-    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events);
+    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
 }
 
 

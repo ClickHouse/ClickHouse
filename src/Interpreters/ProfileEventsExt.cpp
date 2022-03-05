@@ -79,16 +79,14 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
 
 static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name)
 {
-    {
-        size_t i = 0;
-        columns[i++]->insertData(host_name.data(), host_name.size());
-        columns[i++]->insert(UInt64(snapshot.current_time));
-        columns[i++]->insert(UInt64{snapshot.thread_id});
-        columns[i++]->insert(Type::GAUGE);
+    size_t i = 0;
+    columns[i++]->insertData(host_name.data(), host_name.size());
+    columns[i++]->insert(UInt64(snapshot.current_time));
+    columns[i++]->insert(UInt64{snapshot.thread_id});
+    columns[i++]->insert(Type::GAUGE);
 
-        columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-        columns[i++]->insert(snapshot.memory_usage);
-    }
+    columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
+    columns[i++]->insert(snapshot.memory_usage);
 }
 
 void getProfileEvents(

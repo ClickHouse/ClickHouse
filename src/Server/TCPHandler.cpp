@@ -859,7 +859,7 @@ void TCPHandler::sendProfileEvents()
 
     Block block;
     ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
-    if (!!block.rows())
+    if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);
 

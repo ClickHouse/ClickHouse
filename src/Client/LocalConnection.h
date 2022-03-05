@@ -54,13 +54,15 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 
 
 class LocalConnection : public IServerConnection, WithContext
 {
 public:
-    explicit LocalConnection(ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false);
+    explicit LocalConnection(
+        ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false, const String & server_display_name_ = "");
 
     ~LocalConnection() override;
 
@@ -70,7 +72,8 @@ public:
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
         bool send_progress = false,
-        bool send_profile_events = false);
+        bool send_profile_events = false,
+        const String & server_display_name = "");
 
     void setDefaultDatabase(const String & database) override;
 
@@ -146,6 +149,7 @@ private:
 
     bool send_progress;
     bool send_profile_events;
+    String server_display_name;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
@@ -157,6 +161,5 @@ private:
     String current_database;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
-    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 }
