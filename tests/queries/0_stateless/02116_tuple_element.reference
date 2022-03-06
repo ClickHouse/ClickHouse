@@ -7,6 +7,8 @@ FROM t_tuple_element
 1
 SELECT `t1.a`
 FROM t_tuple_element
+t10
+1
 2
 SELECT `t2.1`
 FROM t_tuple_element
