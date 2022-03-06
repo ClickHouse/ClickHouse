@@ -108,6 +108,7 @@ void StorageFileLog::loadMetaFiles(bool attach)
         if (std::filesystem::exists(previous_path) && !metadata_path_exist)
         {
             std::filesystem::copy(previous_path, metadata_base_path, std::filesystem::copy_options::recursive);
+            std::filesystem::remove_all(previous_path);
         }
         /// Meta file may lost, log and create directory
         else if (!metadata_path_exist)
