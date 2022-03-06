@@ -14,6 +14,8 @@ EXPLAIN SYNTAX SELECT tupleElement(t1, 2) FROM t_tuple_element;
 SELECT tupleElement(t1, 'a') FROM t_tuple_element;
 EXPLAIN SYNTAX SELECT tupleElement(t1, 'a') FROM t_tuple_element;
 
+SELECT tupleElement(t1, 1) AS t10 FROM t_tuple_element FORMAT TSVWithNames;
+
 SELECT tupleElement(number, 1) FROM numbers(1); -- { serverError 43 }
 SELECT tupleElement(t1) FROM t_tuple_element; -- { serverError 42 }
 SELECT tupleElement(t1, 'b') FROM t_tuple_element; -- { serverError 47 }
