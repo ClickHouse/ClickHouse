@@ -105,6 +105,8 @@ public:
 
     String getDownloader() const;
 
+    void resetDownloader();
+
     bool isDownloader() const;
 
     bool isDownloaded() const { return is_downloaded.load(); }

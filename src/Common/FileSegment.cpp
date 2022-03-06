@@ -70,14 +70,25 @@ String FileSegment::getOrSetDownloader()
                             download_state);
 
         downloader_id = getCallerId();
-        LOG_TEST(log, "Set downloader: {}, prev state: {}", downloader_id, stateToString(download_state));
         download_state = State::DOWNLOADING;
     }
     else if (downloader_id == getCallerId())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set the same downloader for segment {} for the second time", range().toString());
 
-    LOG_TEST(log, "Returning with downloader: {} and state: {}", downloader_id, stateToString(download_state));
     return downloader_id;
+}
+
+void FileSegment::resetDownloader()
+{
+    std::lock_guard segment_lock(mutex);
+
+    if (downloader_id.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no downloader");
+
+    if (getCallerId() != downloader_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Downloader can be reset only by downloader");
+
+    downloader_id.clear();
 }
 
 String FileSegment::getDownloader() const
@@ -157,6 +168,9 @@ void FileSegment::write(const char * from, size_t size)
 FileSegment::State FileSegment::wait()
 {
     std::unique_lock segment_lock(mutex);
+
+    if (downloader_id.empty())
+        return download_state;
 
     if (download_state == State::EMPTY)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot wait on a file segment with empty state");
