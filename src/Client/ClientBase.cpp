@@ -867,7 +867,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1873,6 +1873,8 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
+            else if (arg == "--allow_repeated_settings"sv)
+                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }
@@ -1885,7 +1887,10 @@ void ClientBase::readArguments(
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
