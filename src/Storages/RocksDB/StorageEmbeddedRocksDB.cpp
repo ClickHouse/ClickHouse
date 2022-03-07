@@ -580,7 +580,7 @@ Chunk StorageEmbeddedRocksDB::getByKeysImpl(
         {
             if (null_map)
             {
-                (*null_map)[i] = 1;
+                (*null_map)[i] = 0;
                 for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
                 {
                     columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());

@@ -2151,11 +2151,11 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
     const auto & key_names_left = table_join->getOnlyClause().key_names_left;
 
     const String & key_name = key_names_left[0];
-    const auto & key_col = block.getByName(key_name);
+    const ColumnWithTypeAndName & key_col = block.getByName(key_name);
     if (!key_col.column)
         return;
 
-    NullMap null_map(key_col.column->size(), 0);
+    NullMap null_map(key_col.column->size(), 1);
     Chunk joined_chunk = storage->getByKeys(key_col, right_sample_block, &null_map);
 
     Columns cols = joined_chunk.detachColumns();
@@ -2165,6 +2165,18 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         col.column = std::move(cols[i]);
         block.insert(std::move(col));
     }
+
+    if (!isLeftOrFull(table_join->kind()))
+    {
+        MutableColumns dst_columns = block.mutateColumns();
+
+        for (auto & col : dst_columns)
+        {
+            col = IColumn::mutate(col->filter(null_map, -1));
+        }
+        block.setColumns(std::move(dst_columns));
+    }
+
 }
 
 
