@@ -53,11 +53,11 @@ void KeeperConnectionStats::updateLatency(uint64_t latency_ms)
     total_latency.fetch_add(latency_ms, std::memory_order_relaxed);
     count.fetch_add(1, std::memory_order_relaxed);
 
-    if (latency_ms < min_latency.load(std::memory_order_relaxed))
-        min_latency.store(latency_ms, std::memory_order_relaxed);
+    uint64_t prev_val = min_latency.load(std::memory_order_relaxed);
+    while (prev_val > latency_ms && !min_latency.compare_exchange_weak(prev_val, latency_ms, std::memory_order_relaxed)) {}
 
-    if (latency_ms > max_latency.load(std::memory_order_relaxed))
-        max_latency.store(latency_ms, std::memory_order_relaxed);
+    prev_val = max_latency.load(std::memory_order_relaxed);
+    while (prev_val < latency_ms && !max_latency.compare_exchange_weak(prev_val, latency_ms, std::memory_order_relaxed)) {}
 }
 
 void KeeperConnectionStats::reset()
