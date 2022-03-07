@@ -278,9 +278,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
-        (WriteBuffer & output) -> OutputFormatPtr
-        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        {
+            return output_getter(output, sample, {callback}, format_settings);
+        };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 

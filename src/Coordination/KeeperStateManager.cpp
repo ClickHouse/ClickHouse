@@ -204,6 +204,15 @@ void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t log
     log_store->init(last_commited_index, logs_to_keep);
 }
 
+void KeeperStateManager::system_exit(const int /* exit_code */)
+{
+    /// NuRaft itself calls exit() which will call atexit handlers
+    /// and this may lead to an issues in multi-threaded program.
+    ///
+    /// Override this with abort().
+    abort();
+}
+
 ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
 {
     auto entry_with_change = log_store->getLatestConfigChange();

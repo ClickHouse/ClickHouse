@@ -165,9 +165,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([=, data = std::make_shared<InsertDataPtr>(std::move(data))]
+    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(std::move(key), std::move(*data), std::move(global_context));
+        processData(key, std::move(*data), std::move(global_context));
     });
 }
 
