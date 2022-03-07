@@ -1094,6 +1094,62 @@ Result:
 └─────────────────────────────┘
 ```
 
+## arrayFold(func, arr1, …, init) {#array-fold}
+
+Returns an result of [folding](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) arrays and value `init` using function `func`.
+I.e. result of calculation `func(arr1[n], …, func(arr1[n - 1], …, func(…, func(arr1[2], …,  func(arr1[1], …, init)))))`.
+
+Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+**Arguments**
+
+-   `func` — The lambda function with `n+1` arguments (where `n` is number of input arrays), first `n` arguments are for
+    current elements of input arrays, and last argument is for current value of accumulator.
+-   `arr` — Any number of [arrays](../../sql-reference/data-types/array.md).
+-   `init` - Initial value of accumulator.
+
+**Returned value**
+
+Final value of accumulator.
+
+**Examples**
+
+The following example shows how to acquire product and sum of elements of array:
+
+``` sql
+SELECT arrayMap(x, accum -> (accum.1 * x, accum.2 + x), [1, 2, 3], (0, 1)) as res;
+```
+
+``` text
+┌─res───────┐
+│ (120, 15) │
+└───────────┘
+```
+
+The following example shows how to reverse elements of array:
+
+``` sql
+SELECT arrayFold(x, acc -> arrayPushFront(acc, x), [1,2,3,4,5], emptyArrayUInt64()) as res;
+```
+
+``` text
+┌─res─────────┐
+│ [5,4,3,2,1] │
+└─────────────┘
+```
+
+Folding may be used to access of already passed elements due to function calculation, for example:
+
+``` sql
+SELECT arrayFold(x, acc -> (x, concat(acc.2, toString(acc.1), ',')), [1,2], (0,''))
+```
+
+``` text
+┌─res────────┐
+│ (2,'0,1,') │
+└────────────┘
+```
+
 ## arrayReverse(arr)
 
 Returns an array of the same size as the original array containing the elements in reverse order.
