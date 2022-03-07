@@ -52,7 +52,7 @@ public:
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
     NamesAndTypesList getVirtuals() const override;
-    
+
     bool isColumnOriented() const override;
 
 protected:
