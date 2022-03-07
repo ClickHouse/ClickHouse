@@ -106,7 +106,7 @@ private:
      * When the first time access is finished, LocalFileHolder will start a background download process by reusing the same remotebuffer object. After the download process
      * finish, is_enable is set true.
      *
-     * So when is_enable=false, if there is anther thread trying to access the same remote file, it would fail to use the local file buffer and use the original remotebuffer 
+     * So when is_enable=false, if there is anther thread trying to access the same remote file, it would fail to use the local file buffer and use the original remotebuffer
      * instead. Avoid multi threads trying to save the same file in to disk at the same time.
      */
     bool is_enable = true;
