@@ -160,7 +160,7 @@ if __name__ == "__main__":
         pr_info.number,
         pr_info.sha,
         test_results,
-        [run_log_path] + additional_logs,
+        additional_logs,
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
