@@ -1028,7 +1028,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
-        LastCommandType last_command_type = mutations_begin_it->second.type;
+        MutationType last_mutation_type = mutations_begin_it->second.type;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
@@ -1118,21 +1118,21 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             }
 
             auto new_part_info = part->info;
-            if (last_command_type == LastCommandType::Lightweight)
+            if (last_mutation_type == MutationType::Lightweight)
             {
                 new_part_info.lightweight_mutation = last_mutation_to_apply->first;
-                future_part.name = part->name;
+                future_part->name = part->name;
             }
             else
             {
                 new_part_info.mutation = last_mutation_to_apply->first;
                 /// Ordinary parts do not need lightweight_mutation,cause tmp_file to commited_file have no deleted_row_mask.txt
                 new_part_info.lightweight_mutation = 0;
-                future_part.name = part->getNewName(new_part_info);
+                future_part->name = part->getNewName(new_part_info);
             }
-            future_part.parts.push_back(part);
-            future_part.part_info = new_part_info;
-            future_part.type = part->getType();
+            future_part->parts.push_back(part);
+            future_part->part_info = new_part_info;
+            future_part->type = part->getType();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
@@ -1231,7 +1231,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                cleared_count += clearOldDeletedMasks(false);
+                clearOldDeletedMasks();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
