@@ -178,7 +178,7 @@ public:
     {
         /// Avoid Excessive copy when block is small enough
         if (block.rows() <= max_rows)
-            return Blocks{std::move(block)};
+            return {block};
 
         const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
         Blocks split_blocks(split_block_size);
