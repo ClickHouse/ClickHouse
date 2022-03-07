@@ -52,6 +52,8 @@ public:
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
     NamesAndTypesList getVirtuals() const override;
+    
+    bool isColumnOriented() const override;
 
 protected:
     friend class StorageHiveSource;
@@ -88,7 +90,6 @@ private:
     HiveFilePtr
     createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
-    bool isColumnOriented();
     Block getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns);
 
     String hive_metastore_url;
