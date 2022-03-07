@@ -269,5 +269,13 @@ String ReadBufferFromRemoteFSGather::getInfoForLog()
     return current_buf->getInfoForLog();
 }
 
+size_t ReadBufferFromRemoteFSGather::getImplementationBufferOffset() const
+{
+    if (!current_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer not initialized");
+
+    return current_buf->getFileOffsetOfBufferEnd();
+}
+
 
 }

@@ -13,6 +13,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Common/FileCache.h>
 
 
 namespace DB
@@ -281,7 +282,16 @@ void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_p
             if (metadata.ref_count == 0)
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
+                {
                     fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
+
+                    if (cache)
+                    {
+                        auto key = cache->hash(remote_fs_object_path);
+                        cache->remove(key);
+                    }
+                }
+
                 return false;
             }
             else /// In other case decrement number of references, save metadata and delete hardlink.
@@ -441,6 +451,7 @@ void IDiskRemote::removeSharedFile(const String & path, bool delete_metadata_onl
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMetadata(path, fs_paths_keeper);
+
     if (!delete_metadata_only)
         removeFromRemoteFS(fs_paths_keeper);
 }
@@ -449,6 +460,7 @@ void IDiskRemote::removeSharedFile(const String & path, bool delete_metadata_onl
 void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+
     if (metadata_disk->exists(path))
     {
         removeMetadata(path, fs_paths_keeper);
@@ -475,6 +487,7 @@ void IDiskRemote::removeSharedRecursive(const String & path, bool delete_metadat
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMetadataRecursive(path, fs_paths_keeper);
+
     if (!delete_metadata_only)
         removeFromRemoteFS(fs_paths_keeper);
 }

@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/CurrentThread.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
@@ -184,9 +185,26 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd]
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+            ? CurrentThread::get().getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
+
+    ContextPtr query_context;
+    if (CurrentThread::isInitialized)
+        query_context = CurrentThread::get().getQueryContext();
+
+    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, running_group, query_context]
     {
+        ThreadStatus thread_status;
+
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
+
+        if (running_group)
+            thread_status.attachQuery(running_group);
+
         setThreadName("ThreadPoolRead");
+
         Stopwatch watch(CLOCK_MONOTONIC);
 
         size_t bytes_read = 0;
@@ -218,6 +236,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+
+        thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     });

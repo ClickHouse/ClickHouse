@@ -52,6 +52,8 @@ public:
 
     String getInfoForLog();
 
+    size_t getImplementationBufferOffset() const;
+
 protected:
     virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) = 0;
 

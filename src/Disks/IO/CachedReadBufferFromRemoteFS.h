@@ -31,6 +31,8 @@ public:
 
     String getInfoForLog() override;
 
+    void setReadUntilPosition(size_t position) override;
+
 private:
     void initialize(size_t offset, size_t size);
 
