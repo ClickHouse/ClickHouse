@@ -1,0 +1,18 @@
+<clickhouse>
+    <remote_servers>
+        <ast_rewrite>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </ast_rewrite>
+    </remote_servers>
+</clickhouse>
