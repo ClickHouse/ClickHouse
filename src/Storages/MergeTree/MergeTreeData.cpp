@@ -1005,6 +1005,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     size_t suspicious_broken_parts_bytes = 0;
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
+    std::atomic<bool> has_lightweight_in_part = false;
 
     std::mutex mutex;
     auto load_part = [&](const String & part_name, const DiskPtr & part_disk_ptr)
@@ -1076,6 +1077,10 @@ void MergeTreeData::loadDataPartsFromDisk(
             has_non_adaptive_parts.store(true, std::memory_order_relaxed);
         else
             has_adaptive_parts.store(true, std::memory_order_relaxed);
+
+        /// Check if there is lightweight in part
+        if (part->hasLightWeight())
+            has_lightweight_in_part.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
@@ -1150,6 +1155,7 @@ void MergeTreeData::loadDataPartsFromDisk(
             ErrorCodes::LOGICAL_ERROR);
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
+    has_lightweight_parts = has_lightweight_in_part;
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
@@ -1921,7 +1927,7 @@ size_t MergeTreeData::clearEmptyParts()
     return cleared_count;
 }
 
-void MergeTreeData::clearOldDeletedMasks()
+void MergeTreeData::clearOldDeletedMasks(bool startup)
 {
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
@@ -1929,8 +1935,11 @@ void MergeTreeData::clearOldDeletedMasks()
         if (!part->hasLightWeight() || !part->isStoredOnDisk())
             continue;
 
+        if (currently_submerging_big_parts.count(part))
+            continue;
+
         /// Remove old lightweight mutation mask bitmap
-        part->removeOldDeletedMasks();
+        part->removeOldDeletedMasks(startup);
     }
 }
 

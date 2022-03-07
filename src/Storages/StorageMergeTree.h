@@ -97,6 +97,8 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context, MutationType type);
+    bool hasLightWeight() const override;
+    bool isSupportLightweightMutate(ContextPtr query_context);
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;

@@ -120,7 +120,7 @@ void StorageMergeTree::startup()
     clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
     clearEmptyParts();
-    clearOldDeletedMasks();
+    clearOldDeletedMasks(true);
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -557,7 +557,7 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     /// we consume that there won't be any other operations mixed in UPDATEs and DELETEs
-    if (query_context->getSettingsRef().enable_lightweight_mutation && (commands.begin()->type == MutationCommand::DELETE || commands.begin()->type == MutationCommand::UPDATE))
+    if (isSupportLightweightMutate(query_context) && (commands.begin()->type == MutationCommand::DELETE || commands.begin()->type == MutationCommand::UPDATE))
         mutate(commands, query_context, MutationType::Lightweight);
     else
         mutate(commands, query_context, MutationType::Ordinary);
@@ -572,6 +572,25 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
+}
+
+bool StorageMergeTree::hasLightWeight() const
+{
+    return getHasLightWeightParts();
+}
+
+bool StorageMergeTree::isSupportLightweightMutate(ContextPtr query_context)
+{
+    const Settings & settings = query_context->getSettingsRef();
+    if (!settings.enable_lightweight_mutation)
+        return false;
+
+    MergeTreeSettingsPtr mt_settings = getSettings();
+    if (mt_settings->min_rows_for_compact_part != 0 || mt_settings->min_bytes_for_compact_part != 0
+        || mt_settings->min_rows_for_wide_part != 0 || mt_settings->min_bytes_for_wide_part != 0)
+        return false;
+
+    return true;
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
@@ -1231,7 +1250,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                clearOldDeletedMasks();
+                clearOldDeletedMasks(false);
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);

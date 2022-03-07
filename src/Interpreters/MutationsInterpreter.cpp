@@ -28,6 +28,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -286,15 +287,20 @@ MutationsInterpreter::MutationsInterpreter(
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    bool can_execute_)
+    bool can_execute_,
+    bool is_lightweight_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
+    , is_lightweight(is_lightweight_)
 {
-    mutation_ast = prepare(!can_execute);
+    if (is_lightweight)
+        mutation_ast = prepareLightweight(!can_execute);
+    else
+        mutation_ast = prepare(!can_execute);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -405,6 +411,167 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
+}
+
+ASTPtr MutationsInterpreter::prepareLightweight(bool dry_run)
+{
+    if (is_prepared)
+        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    if (commands.empty())
+        throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
+
+    const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
+    NamesAndTypesList all_columns = columns_desc.getAllPhysical();
+
+    NameSet updated_columns;
+    for (const MutationCommand & command : commands)
+    {
+        for (const auto & kv : command.column_to_update_expression)
+        {
+            updated_columns.insert(kv.first);
+        }
+    }
+
+    /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
+    /// and projections to recalculate them if dependencies are updated.
+    std::unordered_map<String, Names> column_to_affected_materialized;
+    if (!updated_columns.empty())
+    {
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+            {
+                auto query = column.default_desc.expression->clone();
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                for (const String & dependency : syntax_result->requiredSourceColumns())
+                {
+                    if (updated_columns.count(dependency))
+                        column_to_affected_materialized[dependency].push_back(column.name);
+                }
+            }
+        }
+
+        validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
+    }
+
+    /// First, break a sequence of commands into stages.
+    for (auto & command : commands)
+    {
+        if (command.type == MutationCommand::DELETE)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+
+            /// For lightweight DELETE, we shouldn't add any filter to cut rows, cause we need to reserve the row information.
+            /// Thus use where expression instead of isZeroOrNull filter.
+            /// If DELETEs are continuous, use OR connect them.
+            auto mask_predicate = getPartitionAndPredicateExpressionForMutationCommand(command);
+            stages.back().filters.push_back(mask_predicate);
+        }
+        else if (command.type == MutationCommand::UPDATE)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// In lightweight mutation stage0 is always empty
+                stages.emplace_back(context);
+
+            NameSet affected_materialized;
+
+            for (const auto & kv : command.column_to_update_expression)
+            {
+                const String & column = kv.first;
+
+                auto materialized_it = column_to_affected_materialized.find(column);
+                if (materialized_it != column_to_affected_materialized.end())
+                {
+                    for (const String & mat_column : materialized_it->second)
+                        affected_materialized.emplace(mat_column);
+                }
+
+                /// When doing UPDATE column = expression WHERE condition
+                /// we will replace column to the result of the following expression:
+                ///
+                /// CAST(if(condition, CAST(expression, type), column), type)
+                ///
+                /// Inner CAST is needed to make 'if' work when branches have no common type,
+                /// example: type is UInt64, UPDATE x = -1 or UPDATE x = x - 1.
+                ///
+                /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
+
+                const auto & type = columns_desc.getPhysical(column).type;
+                auto type_literal = std::make_shared<ASTLiteral>(type->getName());
+
+                const auto & update_expr = kv.second;
+
+                ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+
+                /// Same as lightweight DELETE, we reserve the predicate information used for update_mask.
+                stages.back().lightweight_update_filters.push_back(condition->clone());
+
+                /// And new check validateNestedArraySizes for Nested subcolumns
+                if (isArray(type) && !Nested::splitName(column).second.empty())
+                {
+                    std::shared_ptr<ASTFunction> function = nullptr;
+
+                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column, all_columns, command.column_to_update_expression);
+                    if (!nested_update_exprs)
+                    {
+                        function = makeASTFunction("validateNestedArraySizes",
+                                                   condition,
+                                                   update_expr->clone(),
+                                                   std::make_shared<ASTIdentifier>(column));
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                    else if (nested_update_exprs->size() > 1)
+                    {
+                        function = std::make_shared<ASTFunction>();
+                        function->name = "validateNestedArraySizes";
+                        function->arguments = std::make_shared<ASTExpressionList>();
+                        function->children.push_back(function->arguments);
+                        function->arguments->children.push_back(condition);
+                        for (const auto & it : *nested_update_exprs)
+                            function->arguments->children.push_back(it->clone());
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                }
+
+                auto updated_column = makeASTFunction("CAST",
+                      makeASTFunction("if",
+                        condition,
+                          makeASTFunction("CAST",
+                            update_expr->clone(),
+                              type_literal),
+                                std::make_shared<ASTIdentifier>(column)),
+                                  type_literal);
+
+                    stages.back().column_to_updated.emplace(column, updated_column);
+            }
+
+            if (!affected_materialized.empty())
+            {
+                stages.emplace_back(context);
+                for (const auto & column : columns_desc)
+                {
+                    if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    {
+                        stages.back().column_to_updated.emplace(
+                            column.name,
+                            column.default_desc.expression->clone());
+                    }
+                }
+            }
+        }
+        else
+            throw Exception("Unknown lightweight mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+    }
+
+    is_prepared = true;
+
+    return prepareInterpreterSelectQueryLightweight(stages, dry_run);
 }
 
 ASTPtr MutationsInterpreter::prepare(bool dry_run)
@@ -756,14 +923,287 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
+/// Do similar as normal prepareInterpreterSelectQuery, except that add a mask column for where predicate of each delete/update.
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQueryLightweight(std::vector<Stage> & prepared_stages, bool dry_run)
+{
+    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    /// Execute first stage as a SELECT statement.
+    /// Move preparation of select forward as we already know the select columns.
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    /// DELETEs only query just need delete_mask without real columns
+    if (prepared_stages.size() > 1)
+    {
+        /// In lightweight mutation all columns will be added to output columns.
+        for (const auto & column : all_columns)
+            prepared_stages[0].output_columns.insert(column.name);
+    }
+
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    for (const auto & column_name : prepared_stages[0].output_columns)
+        select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+
+    if (!prepared_stages[0].filters.empty())
+    {
+        ASTPtr where_expression;
+        if (prepared_stages[0].filters.size() == 1)
+            where_expression = prepared_stages[0].filters[0];
+        else
+        {
+            auto coalesced_predicates = std::make_shared<ASTFunction>();
+            coalesced_predicates->name = "or";
+            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+            coalesced_predicates->arguments->children = prepared_stages[0].filters;
+            where_expression = std::move(coalesced_predicates);
+        }
+        where_expression->setAlias(DELETE_MASK);
+
+        /// Add the extra where_expression as delete_mask column to select list.
+        select->select()->children.push_back(where_expression);
+
+        /// Add delete_mask column into all_columns to let following TreeRewriter know it to prevent syntax error.
+        NameAndTypePair mask(DELETE_MASK, std::make_shared<DataTypeUInt8>());
+        all_columns.push_back(mask);
+
+        hasLightweightDelete = true;
+
+        /// Add delete_mask column to first stage's output_columns.
+        prepared_stages[0].output_columns.insert(DELETE_MASK);
+    }
+
+    /// Don't let select list be empty.
+    if (select->select()->children.empty())
+        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+
+    /// Add output_columns from previous stage to current stage.
+    for (size_t i = 1; i < prepared_stages.size(); ++i)
+    {
+        prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
+    }
+
+    /// Now, calculate `expressions_chain` for each stage except the first.
+    /// Do it forwards to propagate information about columns required as input for a stage to the next stage.
+    /// Cause all output columns have been added into stages, so we needn't reverse the stage.
+    for (size_t i = 1 ; i < prepared_stages.size(); ++i)
+    {
+        auto & stage = prepared_stages[i];
+
+        ASTPtr all_asts = std::make_shared<ASTExpressionList>();
+
+        for (const auto & ast : stage.filters)
+            all_asts->children.push_back(ast);
+
+        for (const auto & kv : stage.column_to_updated)
+            all_asts->children.push_back(kv.second);
+
+        for (const auto kv : stage.lightweight_update_filters)
+        {
+            all_asts->children.push_back(kv);
+        }
+
+        /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
+        for (const String & column : stage.output_columns)
+            all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
+
+        /// Executing scalar subquery on that stage can lead to deadlock
+        /// e.g. ALTER referencing the same table in scalar subquery
+        bool execute_scalar_subqueries = !dry_run;
+        auto context_for_scalar_subqueries = Context::createCopy(context);
+
+        /// Scalar subqueries should apply lightweight select mode to avoid multi rows returning
+        if (execute_scalar_subqueries)
+            context_for_scalar_subqueries->setFromLightWeightMutation(false);
+
+        auto syntax_result
+            = TreeRewriter(context_for_scalar_subqueries).analyze(all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+        if (execute_scalar_subqueries && context->hasQueryContext())
+            for (const auto & it : syntax_result->getScalars())
+                context->getQueryContext()->addScalar(it.first, it.second);
+
+        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
+
+        ExpressionActionsChain & actions_chain = stage.expressions_chain;
+
+        if (!stage.filters.empty())
+        {
+            /// Use OR to combine the where_expressions of DELETEs
+            /// We can collect multiple DELETEs with one ExpressionStep.
+            ASTPtr ast_where_expression;
+            if (stage.filters.size() == 1)
+                ast_where_expression = stage.filters[0];
+            else
+            {
+                auto coalesced_predicates = std::make_shared<ASTFunction>();
+
+                coalesced_predicates->name = "or";
+                coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+                coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+                coalesced_predicates->arguments->children = stage.filters;
+                ast_where_expression = std::move(coalesced_predicates);
+            }
+
+            /// If a delete_mask already exist, combine previous delete_mask column with current where_expression using OR.
+            if (hasLightweightDelete)
+            {
+                auto pre_delete_mask = std::make_shared<ASTIdentifier>(DELETE_MASK);
+                ast_where_expression = makeASTFunction("or", ast_where_expression, pre_delete_mask);
+            }
+            else
+            {
+                /// Add delete_mask column into all_columns to let following TreeRewriter know it to prevent syntax error.
+                NameAndTypePair mask(DELETE_MASK, std::make_shared<DataTypeUInt8>());
+                all_columns.push_back(mask);
+
+                hasLightweightDelete = true;
+            }
+
+            if (!actions_chain.steps.empty())
+                actions_chain.addStep();
+            stage.analyzer->appendExpression(actions_chain, ast_where_expression, dry_run);
+
+            /// Use ExpressionStep instead of FilterStep to avoid rows cutting
+            auto & actions = actions_chain.getLastStep().actions();
+
+            auto column_name = ast_where_expression->getColumnName();
+            const auto & dag_node = actions->findInIndex(column_name);
+
+            const auto & alias = actions->addAlias(dag_node, DELETE_MASK);
+            actions->addOrReplaceInIndex(alias);
+        }
+
+        if (!stage.column_to_updated.empty())
+        {
+            /// UPDATE will add a real step with an update mask step
+            if (!actions_chain.steps.empty())
+                actions_chain.addStep();
+
+            for (const auto & kv : stage.column_to_updated)
+                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
+
+            /// Append where expression in update (update filter) to expression for lightweight mutation.
+            /// Here we assume that, each update has a where clause.
+            ASTPtr update_filter = nullptr;
+            if (!stage.lightweight_update_filters.empty())
+            {
+                update_filter = stage.lightweight_update_filters[0];
+
+                /// For scalar subquery we need to process specially
+                bool has_scalar_subquery = false;
+                if (!syntax_result->getScalars().empty())
+                    has_scalar_subquery = true;
+
+                /// If an update_mask already exist, combine previous update_mask column with current where_expression using OR.
+                if (hasLightweightUpdate)
+                {
+                    auto pre_update_mask = std::make_shared<ASTIdentifier>(UPDATE_MASK);
+                    update_filter = makeASTFunction("or", update_filter, pre_update_mask);
+                    if (has_scalar_subquery)
+                    {
+                        /// The type of subquery update mask is Nullable(UInt8), so we need to change the type in all_columns for TreeRewriter
+                        for (auto it = all_columns.begin(); it != all_columns.end(); it++)
+                        {
+                            if (it->name == UPDATE_MASK)
+                            {
+                                auto column_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                                if (!it->type->equals(*column_type))
+                                {
+                                    NameAndTypePair has_subquery_mask(UPDATE_MASK, column_type);
+                                    all_columns.erase(it);
+                                    all_columns.push_back(has_subquery_mask);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    /// Add update_mask column into all_columns to let following TreeRewriter know it to prevent syntax error.
+                    if (has_scalar_subquery)
+                    {
+                        auto column_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                        NameAndTypePair has_subquery_mask(UPDATE_MASK, column_type);
+                        all_columns.push_back(has_subquery_mask);
+                    }
+                    else
+                    {
+                        NameAndTypePair mask(UPDATE_MASK, std::make_shared<DataTypeUInt8>());
+                        all_columns.push_back(mask);
+                    }
+
+                    hasLightweightUpdate = true;
+                }
+
+                stage.analyzer->appendExpression(actions_chain, update_filter, dry_run);
+            }
+
+            auto & actions = actions_chain.getLastStep().actions();
+
+            /// Add real ExpressionStep
+            for (const auto & kv : stage.column_to_updated)
+            {
+                auto column_name = kv.second->getColumnName();
+                const auto & dag_node = actions->findInIndex(column_name);
+                const auto & alias = actions->addAlias(dag_node, kv.first);
+                actions->addOrReplaceInIndex(alias);
+            }
+
+            /// Add alias update_mask for the update filter to ExpressionStep.
+            if (update_filter)
+            {
+                auto filter_column_name = update_filter->getColumnName();
+                const auto & filter_dag_node = actions->findInIndex(filter_column_name);
+                const auto & update_mask_alias = actions->addAlias(filter_dag_node, UPDATE_MASK);
+                actions->addOrReplaceInIndex(update_mask_alias);
+            }
+        }
+
+        /// Remove all intermediate columns.
+        actions_chain.addStep();
+        actions_chain.getLastStep().required_output.clear();
+        ActionsDAG::NodeRawConstPtrs new_index;
+        for (const auto & name : stage.output_columns)
+            actions_chain.getLastStep().addRequiredOutput(name);
+        if (hasLightweightDelete)
+            actions_chain.getLastStep().addRequiredOutput(DELETE_MASK);
+        if (hasLightweightUpdate)
+            actions_chain.getLastStep().addRequiredOutput(UPDATE_MASK);
+
+        actions_chain.getLastActions();
+        actions_chain.finalize();
+
+        if (i < prepared_stages.size() - 1)
+        {
+            /// Propagate information about columns needed as input.
+            /// Here give mask columns to the next stage
+            for (auto column : actions_chain.getLastStep().getResultColumns())
+                prepared_stages[i + 1].output_columns.insert(column.name);
+        }
+
+        /// Here give _partition_id to the previous stage
+        /*for (const auto & column : actions_chain.steps.front()->getRequiredColumns())
+            prepared_stages[i - 1].output_columns.insert(column.name);*/
+    }
+
+    return select;
+}
+
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
 
+    /// Check if the part has any non applied lightweight mutation
+    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+    bool need_apply_ligthweight_mutation = false;
+    if (storage_from_merge_tree_data_part)
+        need_apply_ligthweight_mutation = storage_from_merge_tree_data_part->hasNonAppliedMask();
+
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
-        if (!prepared_stages[i].filters.empty())
+        if (!prepared_stages[i].filters.empty() || need_apply_ligthweight_mutation)
         {
             for (const auto & column : all_columns)
                 prepared_stages[i].output_columns.insert(column.name);

@@ -1183,19 +1183,31 @@ void IMergeTreeDataPart::loadDeleteRowMask()
     for (auto it = volume->getDisk()->iterateDirectory(path); it->isValid(); it->next())
     {
         /// deleted_row_mask_XX.bin
-        /// TODO: The ReadBufferFromString cannot parse deleted_rows_mask correctly.
-        if (startsWith(it->name(), DELETED_ROW_MARK_PREFIX_NAME))
+        if (startsWith(it->name(), DELETED_ROW_MARK_PREFIX_NAME) && endsWith(it->name(), DATA_FILE_EXTENSION))
         {
-            Int64 lightweight_version = 0;
-            ReadBufferFromString file_name_buf(it->name());
-            file_name_buf >> DELETED_ROW_MARK_PREFIX_NAME >> lightweight_version >> DATA_FILE_EXTENSION;
+            String file_name = it->name();
+            size_t start = strlen(DELETED_ROW_MARK_PREFIX_NAME);
+            size_t end = file_name.find(DATA_FILE_EXTENSION);
+            Int64 lightweight_version = stoi(file_name.substr(start, end));
+
             if (lightweight_version > lightweight_mutation)
                 lightweight_mutation = lightweight_version;
-            /// LOG_DEBUG(storage.log, "Loading lightweight_mutation: deleted_rows_mask_{}.bin entry", lightweight_version);
+            LOG_DEBUG(storage.log, "Loading lightweight_mutation: deleted_rows_mask_{}.bin entry", lightweight_version);
+        }
+        else if (startsWith(it->name(), "tmp_deleted_row_mask"))
+        {
+            LOG_DEBUG(storage.log, "Remove unfinished lightweight_mutation from part {}: {} entry", name, it->name());
+            volume->getDisk()->removeFile(fs::path(path) / it->name());
         }
     }
+
     /// Initialize the part info's lightweight mutation version, getDataVersion() will use it.
     info.lightweight_mutation = lightweight_mutation;
+
+    /// Initialize the file length for lightweight mask file, this will be used for normal mutation.
+    is_empty_bitmap = true;
+    if (lightweight_mutation > 0)
+        CheckIfEmptyBitmap();
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)
@@ -1661,7 +1673,7 @@ void IMergeTreeDataPart::remove() const
     }
 
 
-    if (checksums.empty())
+    if (checksums.empty() || hasLightWeight())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
@@ -2089,61 +2101,132 @@ std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::chec
     return metadata_manager->check();
 }
 
-/// Return file name for light weight. If not exists, empty string is returned.
-/// If exists, a file name like "deleted_rows_mask_<lightweight_mutation>.bin" is returned.
-String IMergeTreeDataPart::getLightWeightDeletedMaskFileName() const
+String IMergeTreeDataPart::getDeletedMaskFileName(Int64 version, bool temp) const
 {
     String file_name = "";
-    if (hasLightWeight())
-        file_name = DELETED_ROW_MARK_PREFIX_NAME + std::to_string(info.lightweight_mutation) + DATA_FILE_EXTENSION;
+    if (temp)
+        file_name += "tmp_";
+
+    file_name += DELETED_ROW_MARK_PREFIX_NAME + toString(version) + DATA_FILE_EXTENSION;
 
     return file_name;
+}
+
+void IMergeTreeDataPart::CheckIfEmptyBitmap() const
+{
+    is_empty_bitmap = true;
+    if (hasLightWeight())
+    {
+        size_t size = volume->getDisk()->getFileSize(fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.lightweight_mutation));
+        is_empty_bitmap = (size == 0);
+    }
+}
+
+void IMergeTreeDataPart::WriteOrCopyLightWeightMask(Int64 new_value, String new_bitmap) const
+{
+    auto disk = volume->getDisk();
+    String path = getFullRelativePath();
+    String new_tmp_file_name = getDeletedMaskFileName(new_value, true);
+
+    /// No change for current part, if first lightweight mutation, an empty file is added.
+    /// If not, copy the current file to new file.
+    if (new_bitmap.empty() && (!hasLightWeight() || is_empty_bitmap))
+    {
+        disk->createFile(path + new_tmp_file_name);
+        return;
+    }
+
+    if (new_bitmap.empty() && hasLightWeight())
+    {
+        String cur_file_name = getDeletedMaskFileName(info.lightweight_mutation);
+        disk->copy(path + cur_file_name, disk, path + new_tmp_file_name);
+
+        return;
+    }
+
+    /// write Non-Empty merged bitmap
+    auto out = disk->writeFile(path + new_tmp_file_name);
+    DB::writeText(new_bitmap, *out);
+
+    return;
+}
+
+void IMergeTreeDataPart::renameTempLightWeightMaskAndReplace(Int64 new_value) const
+{
+    /// Do additional checks before rename and update.
+    if (new_value < info.lightweight_mutation)
+    {
+        /// This should not happen.
+        LOG_DEBUG(storage.log, "Invalid new lightweight_mutation {} is lower than current value {}. Will be ignored.", new_value, info.lightweight_mutation);
+        return;
+    }
+
+    auto tmp_file_path = fs::path(getFullRelativePath()) / getDeletedMaskFileName(new_value, true);
+    auto new_file_path = fs::path(getFullRelativePath()) / getDeletedMaskFileName(new_value);
+
+    /// Rename temporary bitmap mask file to normal.
+    volume->getDisk()->replaceFile(tmp_file_path, new_file_path);
+
+    /// Update the info.lightweight_mutation with the new value. This should be later than rename.
+    info.setLightWeightMutationVersion(new_value);
+
+    /// Check if deleted mask file is empty or not.
+    CheckIfEmptyBitmap();
 }
 
 String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
 {
     String deleted_rows_bitmap = "";
 
-    if (hasLightWeight())
+    if (hasLightWeight() && !is_empty_bitmap)
     {
-        String file_name = DELETED_ROW_MARK_PREFIX_NAME + std::to_string(info.lightweight_mutation) + DATA_FILE_EXTENSION;
-        auto path = fs::path(getFullRelativePath()) / file_name;
+        auto path = fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.lightweight_mutation);
 
         if (volume->getDisk()->exists(path))
         {
             auto in = openForReading(volume->getDisk(), path);
             readString(deleted_rows_bitmap, *in);
         }
+        else
+        {
+            LOG_WARNING(storage.log, "Delete mask file for lightweight mutation {} doesn't exists.", info.lightweight_mutation);
+        }
     }
 
     return deleted_rows_bitmap;
 }
 
-void IMergeTreeDataPart::removeOldDeletedMasks() const
+void IMergeTreeDataPart::removeOldDeletedMasks(bool startup) const
 {
     String path = getFullRelativePath();
     std::vector<std::string> files;
     volume->getDisk()->listFiles(path, files);
 
-    String temp_mask_file_name = "tmp_";
-    temp_mask_file_name += DELETED_ROW_MARK_PREFIX_NAME;
+    String temp_mask_file_name = toString("tmp_") + DELETED_ROW_MARK_PREFIX_NAME;
     for (const auto & file : files)
     {
-        if (startsWith(file, DELETED_ROW_MARK_PREFIX_NAME))
+        if (startsWith(file, DELETED_ROW_MARK_PREFIX_NAME) && endsWith(file, DATA_FILE_EXTENSION))
         {
-            Int64 lightweight_version = 0;
-            ReadBufferFromString file_name_buf(file);
-            file_name_buf >> DELETED_ROW_MARK_PREFIX_NAME >> lightweight_version >> DATA_FILE_EXTENSION;
+            size_t start = strlen(DELETED_ROW_MARK_PREFIX_NAME);
+            size_t end = file.find(DATA_FILE_EXTENSION);
+            Int64 lightweight_version = stoi(file.substr(start, end));
             if (lightweight_version < info.lightweight_mutation)
             {
                 LOG_DEBUG(storage.log, "Remove lightweight_mutation from part {}: deleted_row_mask_{}.bin entry", name, lightweight_version);
                 volume->getDisk()->removeFileIfExists(fs::path(path) / file);
             }
         }
+
         else if (startsWith(file, temp_mask_file_name))
         {
-            LOG_DEBUG(storage.log, "Remove unfinished lightweight_mutation from part {}: {} entry", name, file);
-            volume->getDisk()->removeFileIfExists(fs::path(path) / file);
+            if (startup)
+            {
+                /// Remove tmp_deleted_row_mask_x.bin
+                LOG_DEBUG(storage.log, "Remove unfinished lightweight_mutation from part {}: {} entry", name, file);
+                volume->getDisk()->removeFileIfExists(fs::path(path) / file);
+            }
+
+            /// Leave deleted_mask file with tmp_
         }
     }
 }

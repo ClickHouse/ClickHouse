@@ -635,6 +635,9 @@ public:
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
+    /// Return true if there are lightweight parts.
+    virtual bool hasLightWeight() const { return false; }
+
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.

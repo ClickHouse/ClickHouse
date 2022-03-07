@@ -629,7 +629,7 @@ public:
     size_t clearEmptyParts();
 
     /// Delete old deleted_row_mask_x.bin files for lightweight mutation in active part.
-    void clearOldDeletedMasks();
+    void clearOldDeletedMasks(bool startup);
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -805,6 +805,10 @@ public:
             (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+    /// Return true if merge tree has parts that contain non-empty lightweight deleted mask.
+    /// Quick return for count() is not allowed when true.
+    bool getHasLightWeightParts() const { return has_lightweight_parts; }
+
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will
     /// get consistent settings.
@@ -940,6 +944,7 @@ public:
     SimpleIncrement insert_increment;
 
     bool has_non_adaptive_index_granularity_parts = false;
+    bool has_lightweight_parts = false;
 
     /// Parts that currently moving from disk/volume to another.
     /// This set have to be used with `currently_processing_in_background_mutex`.

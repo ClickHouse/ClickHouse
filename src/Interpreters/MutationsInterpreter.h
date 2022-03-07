@@ -43,7 +43,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_);
+        bool can_execute_,
+        bool is_lightweight_ = false);
 
     void validate();
 
@@ -78,12 +79,22 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    bool getLightweightDelete() { return hasLightweightDelete; }
+    bool getLightweightUpdate() { return hasLightweightUpdate; }
+
+    /// Extra column name to save delete_mask
+    static inline constexpr auto DELETE_MASK = "delete_mask";
+    /// Extra column name to save update_mask
+    static inline constexpr auto UPDATE_MASK = "update_mask";
+
 private:
     ASTPtr prepare(bool dry_run);
+    ASTPtr prepareLightweight(bool dry_run);
 
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    ASTPtr prepareInterpreterSelectQueryLightweight(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilderPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
@@ -96,6 +107,13 @@ private:
     ContextPtr context;
     bool can_execute;
     SelectQueryOptions select_limits;
+
+    /// Used to distinguish between lightweight and ordinary mutation
+    bool is_lightweight;
+    /// Record whether a DELETE exists
+    bool hasLightweightDelete = false;
+    /// Record whether an UPDATE exists
+    bool hasLightweightUpdate = false;
 
     ASTPtr mutation_ast;
 
@@ -123,6 +141,7 @@ private:
         explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
 
         ASTs filters;
+        ASTs lightweight_update_filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
 
         /// Contains columns that are changed by this stage, columns changed by

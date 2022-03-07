@@ -475,7 +475,18 @@ public:
     /// Prefix name for deleted rows mask bitmap file
     static inline constexpr auto DELETED_ROW_MARK_PREFIX_NAME = "deleted_row_mask_";
 
-    String getLightWeightDeletedMaskFileName() const;
+    /// For non-empty mask file, the part has lightweight mask, mutation should be done on all columns not some columns.
+    mutable bool is_empty_bitmap;
+    void CheckIfEmptyBitmap() const;
+
+    /// Return deleted mask file name deleted_row_mask_version.bin, if temporary is true, file name starts with tmp_.
+    String getDeletedMaskFileName(Int64 version, bool temp = false) const;
+
+    /// Write lightweight deleted mask to a temporary file. If empty, copy from old mask file with new name.
+    void WriteOrCopyLightWeightMask(Int64 new_value, String new_bitmap) const;
+
+    /// Rename temporary deleted mask file for lightweight. Set info.lightweight_mutation and also check if mask file is empty or not.
+    void renameTempLightWeightMaskAndReplace(Int64 new_value) const;
 
     /// Get the content of light weight bitmap file
     String readLightWeightDeletedMaskFile() const;
@@ -483,7 +494,10 @@ public:
     /// There is light weight bitmap file only when part has non-zero lightweight_mutation.
     bool hasLightWeight() const { return info.lightweight_mutation > 0; }
 
-    void removeOldDeletedMasks() const;
+    void removeOldDeletedMasks(bool startup) const;
+
+    /// Reads deleted row mask from deleted_row_mask_<lightweight_mutation_id>.bin
+    void loadDeleteRowMask();
 
 protected:
 
@@ -558,10 +572,6 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
- 
-    /// Reads deleted row mask from deleted_row_mask_<lightweight_mutation_id>.txt
-    void loadDeleteRowMask();
-
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 

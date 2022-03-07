@@ -55,11 +55,10 @@ IMergeTreeReader::IMergeTreeReader(
 
     /// Check if data part has light weight. has_lightweight is set to true only when the mask file is not empty.
     has_lightweight = false;
-    if (data_part->hasLightWeight())
+    if (data_part->hasLightWeight() && !data_part->is_empty_bitmap)
     {
         deleted_rows_bitmap = data_part->readLightWeightDeletedMaskFile();
-        if (!deleted_rows_bitmap.empty())
-            has_lightweight = true;
+        has_lightweight = true;
     }
 }
 
@@ -250,6 +249,6 @@ ColumnPtr IMergeTreeReader::getDeletedMask(size_t from_pos, size_t rows_read)
         else
             mask_column->insert(0);
     }
-    return std::move(mask_column);
+    return mask_column;
 }
 }
