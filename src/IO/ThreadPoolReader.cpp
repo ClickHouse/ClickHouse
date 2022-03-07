@@ -237,7 +237,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        thread_status.detachQuery();
+        if (running_group)
+            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     });
