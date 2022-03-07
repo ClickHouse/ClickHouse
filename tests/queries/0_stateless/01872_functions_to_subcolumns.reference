@@ -43,10 +43,5 @@ ALL FULL OUTER JOIN
         3 AS id,
         \'www\'
 ) AS right USING (id)
-cnt
-2
-hit
-1
-0
 0	10
 0	20
