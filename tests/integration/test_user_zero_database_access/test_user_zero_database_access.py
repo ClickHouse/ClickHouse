@@ -70,3 +70,17 @@ def test_user_zero_database_access(start_cluster):
             ["bash", "-c", "/usr/bin/clickhouse client --user 'default' --query 'DROP DATABASE test2'"], user='root')
     except Exception as ex:
         assert False, "user with full access rights can't drop database test2"
+    
+    try:
+        name = node.exec_in_container(
+            ["bash", "-c", "export CLICKHOUSE_USER=env_user_not_with_password && /usr/bin/clickhouse client --query 'SELECT currentUser()'"], user='root')
+        assert name.strip() == "env_user_not_with_password"
+    except Exception as ex:
+        assert False, "set env CLICKHOUSE_USER can not connect server"
+
+    try:
+        name = node.exec_in_container(
+            ["bash", "-c", "export CLICKHOUSE_USER=env_user_with_password && export CLICKHOUSE_PASSWORD=clickhouse && /usr/bin/clickhouse client --query 'SELECT currentUser()'"], user='root')
+        assert name.strip() == "env_user_with_password"
+    except Exception as ex:
+        assert False, "set env CLICKHOUSE_USER CLICKHOUSE_PASSWORD can not connect server"

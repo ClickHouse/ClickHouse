@@ -99,6 +99,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), "{}", exception_message);
                 storage.updateMutationEntriesErrors(future_part, false, exception_message);
                 write_part_log(ExecutionStatus::fromCurrentException());
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }
         }

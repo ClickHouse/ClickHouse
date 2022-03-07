@@ -1,7 +1,7 @@
 sudo apt-get install apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
 
-echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
+echo "deb https://packages.clickhouse.com/deb stable main/" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 

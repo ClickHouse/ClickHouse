@@ -1157,7 +1157,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     bool scheduled = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
