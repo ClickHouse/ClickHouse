@@ -1027,7 +1027,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName arguments = std::move(args);
+        ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))

@@ -206,7 +206,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     {
         column = std::move(column)->convertToFullColumnIfConst();
     }
-    input_header.setColumns(std::move(input_columns));
+    input_header.setColumns(input_columns);
 
     // Initialize window function workspaces.
     workspaces.reserve(functions.size());

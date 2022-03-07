@@ -1,3 +1,5 @@
+set max_threads = 0;
+
 drop table if exists testX;
 drop table if exists testXA;
 drop table if exists testXB;
