@@ -3,7 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
-#include <IO/ThreadPoolReader.h>
+#include <Disks/IO/ThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
 #include <Common/ProfileEvents.h>
 
