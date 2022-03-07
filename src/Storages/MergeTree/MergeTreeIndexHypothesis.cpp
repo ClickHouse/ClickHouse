@@ -84,7 +84,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
     throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR);
 }
 
-MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondtition(
+MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondition(
     const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const
 {
     return std::make_shared<MergeTreeIndexhypothesisMergedCondition>(

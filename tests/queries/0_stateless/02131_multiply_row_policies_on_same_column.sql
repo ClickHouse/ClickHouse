@@ -1,3 +1,5 @@
+SET optimize_move_to_prewhere = 1;
+
 DROP TABLE IF EXISTS 02131_multiply_row_policies_on_same_column;
 CREATE TABLE 02131_multiply_row_policies_on_same_column (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO 02131_multiply_row_policies_on_same_column VALUES (1), (2), (3), (4);
