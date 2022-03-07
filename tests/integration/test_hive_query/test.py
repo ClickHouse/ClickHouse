@@ -120,26 +120,18 @@ def test_parquet_groupby_with_cache(started_cluster):
     assert result == expected_result
 def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
-    node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
     DROP TABLE IF EXISTS default.demo_parquet;
     CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
     test_passed = False
-    expected_result = """2021-11-01	1
-2021-11-05	2
-2021-11-11	1
-2021-11-16	2
-"""
     for i in range(10):
         result = node.query("""
-    SELECT day, count(*) FROM default.demo_parquet group by day order by day
+    SELECT day, count(*) FROM default.demo_parquet group by day order by day settings input_format_parquet_allow_missing_columns = true
             """)
-        if result != expected_result:
-            time.sleep(30)
-            continue
         result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
         if result.strip() == '0':
+            logging.info("ProfileEvent_ExternalDataSourceLocalCacheReadBytes == 0")
             time.sleep(60)
             continue
         test_passed = True
