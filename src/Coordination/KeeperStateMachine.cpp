@@ -39,7 +39,12 @@ namespace
         request_for_session.request->xid = xid;
         request_for_session.request->readImpl(buffer);
 
-        readIntBinary(request_for_session.time, buffer);
+        if (!buffer.eof())
+            readIntBinary(request_for_session.time, buffer);
+        else /// backward compatibility
+            request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+
         return request_for_session;
     }
 }
