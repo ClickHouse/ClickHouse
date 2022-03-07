@@ -1,4 +1,4 @@
-#include <IO/ThreadPoolReader.h>
+#include "ThreadPoolReader.h"
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
