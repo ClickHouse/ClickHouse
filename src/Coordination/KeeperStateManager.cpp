@@ -45,12 +45,37 @@ bool isLocalhost(const std::string & hostname)
     return false;
 }
 
+std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::AbstractConfiguration & config)
+{
+    static const char * config_port_names[] = {
+        "keeper_server.tcp_port",
+        "keeper_server.tcp_port_secure",
+        "interserver_http_port",
+        "interserver_https_port",
+        "tcp_port",
+        "tcp_with_proxy_port",
+        "tcp_port_secure",
+        "mysql_port",
+        "postgresql_port",
+        "grpc_port",
+        "prometheus.port",
+    };
+
+    std::unordered_map<UInt64, std::string> ports;
+    for (const auto & config_port_name : config_port_names)
+    {
+        if (config.has(config_port_name))
+            ports[config.getUInt64(config_port_name)] = config_port_name;
+    }
+    return ports;
+}
+
 }
 
 /// this function quite long because contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
-/// 3. Raft internal port is equal to client port
+/// 3. Raft internal port is not equal to any other port for client
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
@@ -60,12 +85,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
 
-    std::unordered_set<UInt64> client_ports;
-    if (config.has(config_prefix + ".tcp_port"))
-        client_ports.insert(config.getUInt64(config_prefix + ".tcp_port"));
-
-    if (config.has(config_prefix + ".tcp_port_secure"))
-        client_ports.insert(config.getUInt64(config_prefix + ".tcp_port_secure"));
+    auto client_ports = getClientPorts(config);
 
     /// Sometimes (especially in cloud envs) users can provide incorrect
     /// configuration with duplicated raft ids or endpoints. We check them
@@ -89,10 +109,10 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
-        if (client_ports.contains(port))
+        if (client_ports.count(port) != 0)
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains hostname '{}' with port '{}' which is equal to client port on current machine",
-                            hostname, port);
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
+                            hostname, port, client_ports[port]);
         }
 
         if (isLoopback(hostname))
