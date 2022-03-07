@@ -548,7 +548,7 @@ bool StorageHive::isColumnOriented() const
     return format_name == "Parquet" || format_name == "ORC";
 }
 
-Block StorageHive::getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns)
+Block StorageHive::getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns) const
 {
     if (!isColumnOriented())
         return header_block;
