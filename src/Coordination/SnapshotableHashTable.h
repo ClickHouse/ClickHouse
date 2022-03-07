@@ -258,7 +258,7 @@ public:
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
-        assert(it);
+        assert(it != map.end());
         return it->second->value;
     }
 
