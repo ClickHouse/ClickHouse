@@ -74,7 +74,7 @@ private:
     struct Data
     {
         Poco::Crypto::X509Certificate cert;
-        Poco::Crypto::RSAKey key;
+        Poco::Crypto::EVPPKey key;
 
         Data(std::string cert_path, std::string key_path);
     };
