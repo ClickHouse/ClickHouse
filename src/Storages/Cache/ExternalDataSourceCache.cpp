@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 LocalFileHolder::LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller)
-    : file_cache_controller(std::move(cache_controller)), file_buffer(nullptr), original_readbuffer(nullptr), thread_pool(nullptr)
+    : file_cache_controller(std::move(cache_controller)), original_readbuffer(nullptr), thread_pool(nullptr)
 {
     file_buffer = file_cache_controller->value().allocFile();
     if (!file_buffer)
