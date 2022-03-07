@@ -90,7 +90,7 @@ private:
     HiveFilePtr
     createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
-    Block getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns);
+    Block getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
     String hive_metastore_url;
 
