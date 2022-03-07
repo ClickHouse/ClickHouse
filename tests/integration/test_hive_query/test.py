@@ -27,25 +27,36 @@ def started_cluster():
 def test_create_parquet_table(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
-    node.query("set input_format_parquet_allow_missing_columns = true")
-    result = node.query("""
-    DROP TABLE IF EXISTS default.demo_parquet;
-    CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+    test_passed = False
+    for i in range(10):
+        node.query("set input_format_parquet_allow_missing_columns = true")
+        result = node.query("""
+DROP TABLE IF EXISTS default.demo_parquet;
+CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
-    logging.info("create result {}".format(result))
-    time.sleep(120)
-    assert result.strip() == ''
+        logging.info("create result {}".format(result))
+        if result.strip() == '':
+           test_passed = True
+           break
+        time.sleep(60)
+    assert test_passed
 
 def test_create_orc_table(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
-    result = node.query("""
+    test_passed = False
+    for i in range(10):
+        result = node.query("""
     DROP TABLE IF EXISTS default.demo_orc;
     CREATE TABLE default.demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day)
             """)
-    logging.info("create result {}".format(result))
+        logging.info("create result {}".format(result))
+        if result.strip() == '':
+           test_passed = True
+           break
+        time.sleep(60)
     
-    assert result.strip() == ''
+    assert test_passed
 
 def test_create_text_table(started_cluster):
     logging.info('Start testing creating hive table ...')
@@ -114,22 +125,22 @@ def test_cache_read_bytes(started_cluster):
     DROP TABLE IF EXISTS default.demo_parquet;
     CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
-    result = node.query("""
-    SELECT day, count(*) FROM default.demo_parquet group by day order by day
-            """)
-    time.sleep(10)
-    result = node.query("""
-    SELECT day, count(*) FROM default.demo_parquet group by day order by day
-            """)
+    test_passed = False
     expected_result = """2021-11-01	1
 2021-11-05	2
 2021-11-11	1
 2021-11-16	2
 """
-    time.sleep(120)
-    assert result == expected_result
-    result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
-    time.sleep(10)
-    result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
-    logging.info("Read bytes from cache:{}".format(result))
-    assert result.strip() != '0'
+    for i in range(10):
+        result = node.query("""
+    SELECT day, count(*) FROM default.demo_parquet group by day order by day
+            """)
+        if result != expected_result:
+            time.sleep(30)
+            continue
+        result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
+        if result.strip() == '0':
+            time.sleep(60)
+            continue
+        test_passed = True
+    assert test_passed

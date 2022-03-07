@@ -99,6 +99,17 @@ private:
     IRemoteFileMetadataPtr file_metadata_ptr;
     std::filesystem::path local_path;
 
+    /**
+     * is_enable = true, only when the remotereadbuffer has been cached at local disk.
+     *
+     * The first time to access a remotebuffer which is not cached at local disk, we use the original remotebuffer directly and mark RemoteCacheController::is_enable = false.
+     * When the first time access is finished, LocalFileHolder will start a background download process by reusing the same remotebuffer object. After the download process
+     * finish, is_enable is set true.
+     * 
+     * So when is_enable=false, if there is anther thread trying to access the same remote file, it would fail to use the local file buffer and use the original remotebuffer 
+     * instead. Avoid multi threads trying to save the same file in to disk at the same time.
+     * 
+     */
     bool is_enable = true;
     bool valid = true;
     size_t local_cache_bytes_read_before_flush;
