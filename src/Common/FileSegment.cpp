@@ -88,6 +88,11 @@ void FileSegment::resetDownloader()
     if (getCallerId() != downloader_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Downloader can be reset only by downloader");
 
+    if (downloaded_size == range().size())
+        setDownloaded(segment_lock);
+    else
+        download_state = State::PARTIALLY_DOWNLOADED;
+
     downloader_id.clear();
 }
 
