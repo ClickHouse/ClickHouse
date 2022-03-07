@@ -114,8 +114,8 @@ MergedBlockOutputStream::Finalizer::~Finalizer()
     }
 }
 
-MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) = default;
-MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) = default;
+MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
+MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
 void MergedBlockOutputStream::finalizePart(

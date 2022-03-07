@@ -3848,7 +3848,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
     Strings part_names = backup->listFiles(data_path_in_backup);
     for (const String & part_name : part_names)
     {
-        const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
 
         if (!part_info)
             continue;
@@ -5012,7 +5012,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_options,
         /* prepared_sets_= */ query_info.sets);
     const auto & analysis_result = select.getAnalysisResult();
-    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
+    query_info.sets = select.getQueryAnalyzer()->getPreparedSets();
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
