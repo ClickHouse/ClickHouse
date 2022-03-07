@@ -155,7 +155,7 @@ void AggregatingInOrderTransform::finalizeCurrentChunk(Chunk chunk, size_t key_e
 
     block_end_reached = true;
     need_generate = true;
-    variants.without_key = nullptr;
+    variants.invalidate();
 }
 
 void AggregatingInOrderTransform::work()
@@ -235,7 +235,7 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
-        variants.without_key = nullptr;
+        variants.invalidate();
     }
 
     Block res = res_header.cloneEmpty();
