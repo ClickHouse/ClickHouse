@@ -543,7 +543,7 @@ HiveFilePtr StorageHive::createHiveFileIfNeeded(
     }
     return hive_file;
 }
-bool StorageHive::isColumnOriented()
+bool StorageHive::isColumnOriented() const
 {
     return format_name == "Parquet" || format_name == "ORC";
 }
