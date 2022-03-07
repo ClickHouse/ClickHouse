@@ -1146,7 +1146,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = disk->getDirectorySyncGuard(getFullRelativePath());
-    disk->moveFile(tmp_version_file_name, version_file_name);
+    disk->replaceFile(tmp_version_file_name, version_file_name);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
