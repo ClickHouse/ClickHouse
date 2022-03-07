@@ -272,21 +272,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
     LOG_TEST(log, "Current file segment: {}, read type: {}, current file offset: {}",
              range.toString(), toString(read_type), file_offset_of_buffer_end);
 
-    if (read_type != ReadType::CACHED)
-    {
-        // auto last_non_downloaded_offset = getLastNonDownloadedOffset();
-        // read_buffer_for_file_segment->setReadUntilPosition(last_non_downloaded_offset ? *last_non_downloaded_offset : range.right + 1); /// [..., range.right]
-        read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
-
-        auto current_segment_file_offset = read_buffer_for_file_segment->getFileOffsetOfBufferEnd();
-        auto current_segment_file_read_position = current_segment_file_offset - read_buffer_for_file_segment->available();
-
-        if (read_buffer_for_file_segment->hasPendingData()
-            && file_offset_of_buffer_end < current_segment_file_offset
-            && file_offset_of_buffer_end >= current_segment_file_read_position)
-        {
-        }
-    }
+    read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
     switch (read_type)
     {
@@ -439,6 +425,64 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
     }
 }
 
+bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
+{
+    auto & file_segment = *current_file_segment_it;
+    auto current_read_range = file_segment->range();
+    auto current_state = file_segment->state();
+
+    assert(current_read_range.left <= file_offset_of_buffer_end);
+    assert(!file_segment->isDownloader());
+
+    if (file_offset_of_buffer_end > current_read_range.right)
+    {
+        return completeFileSegmentAndGetNext();
+    }
+
+    if (read_type == ReadType::CACHED && current_state != FileSegment::State::DOWNLOADED)
+    {
+        /// If current read_type is ReadType::CACHED and file segment is not DOWNLOADED,
+        /// it means the following case, e.g. we started from CacheReadBuffer and continue with RemoteFSReadBuffer.
+        ///                      segment{k}
+        /// cache:           [______|___________
+        ///                         ^
+        ///                         download_offset
+        /// requested_range:    [__________]
+        ///                     ^
+        ///                     file_offset_of_buffer_end
+
+        auto download_offset = file_segment->getDownloadOffset();
+        if (download_offset == file_offset_of_buffer_end)
+        {
+            implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+
+            return true;
+        }
+        else if (download_offset < file_offset_of_buffer_end)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} >= {}", download_offset, file_offset_of_buffer_end);
+    }
+
+    if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+    {
+        /**
+        * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
+        * current buffer successfully called file_segment->getOrSetDownloader() and became a downloader
+        * for this file segment. However, the downloader's term has a lifespan of 1 nextImpl() call,
+        * e.g. downloader reads buffer_size byte and calls completeBatchAndResetDownloader() and some other
+        * thread can become a downloader if it calls getOrSetDownloader() faster.
+        *
+        * So downloader is committed to download only buffer_size bytes and then is not a downloader anymore,
+        * because there is no guarantee on a higher level, that current buffer will not disappear without
+        * being destructed till the end of query or without finishing the read range, which he was supposed
+        * to read by marks range given to him. Therefore, each nextImpl() call, in case of
+        * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
+        */
+        implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+    }
+
+    return true;
+}
+
 bool CachedReadBufferFromRemoteFS::nextImpl()
 {
     if (!initialized)
@@ -468,61 +512,9 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
 
     if (implementation_buffer)
     {
-        auto & file_segment = *current_file_segment_it;
-        auto current_read_range = file_segment->range();
-        auto current_state = file_segment->state();
-
-        assert(current_read_range.left <= file_offset_of_buffer_end);
-        assert(!file_segment->isDownloader());
-
-        bool new_buf = false;
-        if (file_offset_of_buffer_end > current_read_range.right)
-        {
-            new_buf = completeFileSegmentAndGetNext();
-            if (!new_buf)
-                return false;
-        }
-
-        if (!new_buf
-            && read_type == ReadType::CACHED && current_state != FileSegment::State::DOWNLOADED)
-        {
-            /// If current read_type is ReadType::CACHED and file segment is not DOWNLOADED,
-            /// it means the following case, e.g. we started from CacheReadBuffer and continue with RemoteFSReadBuffer.
-            ///                      segment{k}
-            /// cache:           [______|___________
-            ///                         ^
-            ///                         download_offset
-            /// requested_range:    [__________]
-            ///                     ^
-            ///                     file_offset_of_buffer_end
-
-            auto download_offset = file_segment->getDownloadOffset();
-            if (download_offset == file_offset_of_buffer_end)
-            {
-                implementation_buffer = getImplementationBuffer(*current_file_segment_it);
-                new_buf = true;
-            }
-            else if (download_offset < file_offset_of_buffer_end)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} >= {}", download_offset, file_offset_of_buffer_end);
-        }
-
-        if (!new_buf && read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
-        {
-            /**
-            * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
-            * current buffer successfully called file_segment->getOrSetDownloader() and became a downloader
-            * for this file segment. However, the downloader's term has a lifespan of 1 nextImpl() call,
-            * e.g. downloader reads buffer_size byte and calls completeBatchAndResetDownloader() and some other
-            * thread can become a downloader if it calls getOrSetDownloader() faster.
-            *
-            * So downloader is committed to download only buffer_size bytes and then is not a downloader anymore,
-            * because there is no guarantee on a higher level, that current buffer will not disappear without
-            * being destructed till the end of query or without finishing the read range, which he was supposed
-            * to read by marks range given to him. Therefore, each nextImpl() call, in case of
-            * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
-            */
-            implementation_buffer = getImplementationBuffer(*current_file_segment_it);
-        }
+        bool can_read_further = updateImplementationBufferIfNeeded();
+        if (!can_read_further)
+            return false;
     }
     else
     {
@@ -612,8 +604,6 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
         }
 
         file_offset_of_buffer_end += size;
-
-        // assert(read_type == ReadType::CACHED || file_offset_of_buffer_end == implementation_buffer->getFileOffsetOfBufferEnd());
     }
 
     swap(*implementation_buffer);

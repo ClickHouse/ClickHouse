@@ -44,6 +44,8 @@ private:
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 
+    bool updateImplementationBufferIfNeeded();
+
     void predownload(FileSegmentPtr & file_segment);
 
     enum class ReadType
