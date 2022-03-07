@@ -49,6 +49,7 @@ public:
 private:
 
     bool prepare();
+    bool lightweight_prepare();
 
     enum class State
     {

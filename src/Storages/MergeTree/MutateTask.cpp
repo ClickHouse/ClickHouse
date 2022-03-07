@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace MutationHelpers
@@ -609,6 +610,74 @@ void finalizeMutatedPart(
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 }
 
+void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t size)
+{
+    auto * log = &Poco::Logger::get("ligtweight_mutation");
+
+    if (!result_mask)
+        return;
+
+    const ColumnUInt8 * column;
+    if ((column = typeid_cast<const ColumnUInt8 *>(&(*mask_column))))
+    {
+        auto bitmap = &column->getData();
+        const UInt8 *begin = bitmap->data();
+
+        if (bitmap->size() != size)
+        {
+            LOG_DEBUG(log, "Cannot get mask, because the size of mask_column {} does not equal to the size of result_mask {}",
+                      bitmap->size(), size);
+            return;
+        }
+
+        for (size_t pos = 0; pos < size; pos++)
+        {
+            if (begin[pos])
+                result_mask[pos] = true;
+        }
+    }
+    else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&(*mask_column)))
+    {
+        column = typeid_cast<const ColumnUInt8 *>(&(nullable_column->getNestedColumn()));
+        auto bitmap = &column->getData();
+        const UInt8 *begin = bitmap->data();
+        const NullMap & null_map = nullable_column->getNullMapData();
+
+        if (bitmap->size() != size)
+        {
+            LOG_DEBUG(log, "Cannot get mask, because the size of mask_column {} does not equal to the size of result_mask {}",
+                      bitmap->size(), size);
+            return;
+        }
+
+        for (size_t pos = 0; pos < size; pos++)
+        {
+            if (begin[pos] && !null_map[pos])
+                result_mask[pos] = true;
+        }
+    }
+    else
+        throw Exception("Illegal type " + column->getName() + " of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+    return;
+}
+
+static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+{
+    for (auto & column : columns)
+    {
+        if (column)
+        {
+            column = column->filter(filter, -1);
+
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+    }
+}
 }
 
 struct MutationContext
@@ -623,6 +692,8 @@ struct MutationContext
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
+
+    bool is_lightweight_mutation;
 
     StorageMetadataPtr metadata_snapshot;
     MutationCommandsConstPtr commands;
@@ -1205,6 +1276,25 @@ private:
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
+            /// Skip empty and tmp mask file in source part.
+            if (ctx->source_part->hasLightWeight())
+            {
+                String tmp_mask_file_name = toString("tmp_") + IMergeTreeDataPart::DELETED_ROW_MARK_PREFIX_NAME;
+                if (startsWith(it->name(), tmp_mask_file_name))
+                    continue;
+
+                if (startsWith(it->name(), IMergeTreeDataPart::DELETED_ROW_MARK_PREFIX_NAME))
+                {
+                    /// skip all mask files if empty in source part
+                    if (ctx->source_part->is_empty_bitmap)
+                        continue;
+
+                    String save_mask_file_name = ctx->source_part->getDeletedMaskFileName(ctx->source_part->info.lightweight_mutation, false);
+                    if (it->name() != save_mask_file_name)
+                        continue;
+                }
+            }
+
             String destination = ctx->new_part_tmp_path;
             String file_name = it->name();
 
@@ -1339,6 +1429,344 @@ private:
 };
 
 
+class LightWeightMutateOnlyDeleteTask : public IExecutableTask
+{
+public:
+
+    explicit LightWeightMutateOnlyDeleteTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+
+    bool executeStep() override
+    {
+        switch (state)
+        {
+            case State::NEED_PREPARE:
+            {
+                prepare();
+
+                state = State::NEED_EXECUTE;
+                return true;
+            }
+            case State::NEED_EXECUTE:
+            {
+                execute();
+
+                state = State::NEED_FINALIZE;
+                return true;
+            }
+            case State::NEED_FINALIZE:
+            {
+                finalize();
+                return true;
+            }
+            case State::SUCCESS:
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+private:
+
+    void prepare()
+    {
+        QueryPipelineBuilder builder;
+        builder.init(std::move(ctx->mutating_pipeline));
+
+        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+    }
+
+    void execute()
+    {
+        Block cur_block;
+        size_t current_bitmap_pos = 0;
+
+        /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
+        String old_bitmap = "";
+        if (ctx->source_part->hasLightWeight() && !ctx->source_part->is_empty_bitmap)
+            old_bitmap = ctx->source_part->readLightWeightDeletedMaskFile();
+
+        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
+        {
+            size_t block_rows = cur_block.rows();
+
+            /// If delete_mask is true, means this row should be deleted and record in bitmap
+            bool delete_mask[block_rows];
+            memset(delete_mask, false, sizeof(delete_mask));
+
+            /// Get delete_mask
+            if (ctx->interpreter->getLightweightDelete())
+            {
+                auto col_pos = cur_block.getPositionByName(MutationsInterpreter::DELETE_MASK);
+                MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, delete_mask, block_rows);
+            }
+
+            String current_block_bitmap = "";
+            /// Get the corresponding deleted mask for current block from latest bitmap
+            if (!old_bitmap.empty())
+            {
+                current_block_bitmap = old_bitmap.substr(current_bitmap_pos, block_rows);
+                current_bitmap_pos += block_rows;
+            }
+
+            for (size_t pos = 0; pos < block_rows; pos++)
+            {
+                if (!current_block_bitmap.empty() && current_block_bitmap[pos] == '1')
+                    bitmap_collector += "1";
+                else if (delete_mask[pos])
+                    bitmap_collector += "1";
+                else
+                    bitmap_collector += "0";
+            }
+        }
+    }
+
+    void finalize()
+    {
+        /// We use a new file name to record the lightweight mutation id
+        ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, bitmap_collector);
+        ctx->mutating_executor.reset();
+        ctx->mutating_pipeline.reset();
+        ctx->new_data_part = {};
+    }
+
+    enum class State
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE,
+        NEED_FINALIZE,
+
+        SUCCESS
+    };
+
+    State state{State::NEED_PREPARE};
+
+    MutationContextPtr ctx;
+
+    String bitmap_collector;
+};
+
+class LightWeightMutateMixedTask : public IExecutableTask
+{
+public:
+
+    explicit LightWeightMutateMixedTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+
+    bool executeStep() override
+    {
+        switch (state)
+        {
+            case State::NEED_PREPARE:
+            {
+                prepare();
+
+                state = State::NEED_EXECUTE;
+                return true;
+            }
+            case State::NEED_EXECUTE:
+            {
+                execute();
+
+                state = State::NEED_FINALIZE;
+                return true;
+            }
+            case State::NEED_FINALIZE:
+            {
+                finalize();
+
+                state = State::SUCCESS;
+                return true;
+            }
+            case State::SUCCESS:
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+private:
+
+    void prepare()
+    {
+        ctx->disk->createDirectories(ctx->new_part_tmp_path);
+
+        /// Keep the same compression_codec as source part.
+        ctx->compression_codec = ctx->source_part->default_codec;
+
+        auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
+
+        if (!ctx->mutating_pipeline.initialized())
+            throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+
+        QueryPipelineBuilder builder;
+        builder.init(std::move(ctx->mutating_pipeline));
+
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        {
+            builder.addTransform(
+                std::make_shared<ExpressionTransform>(builder.getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot)));
+
+            builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
+        }
+
+        ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+
+        ctx->out = std::make_shared<MergedBlockOutputStream>(
+            ctx->new_data_part,
+            ctx->metadata_snapshot,
+            ctx->new_data_part->getColumns(),
+            skip_part_indices,
+            ctx->compression_codec);
+
+        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+    }
+
+    void execute()
+    {
+        /// Start of calculating the new deleted mask bitmap and insert any updated rows to the temp part.
+        Block cur_block;
+        size_t current_bitmap_pos = 0;
+
+        /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
+        String old_bitmap = "";
+        if (ctx->source_part->hasLightWeight() && !ctx->source_part->is_empty_bitmap)
+            old_bitmap = ctx->source_part->readLightWeightDeletedMaskFile();
+
+        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
+        {
+            size_t block_rows = cur_block.rows();
+
+            /// If delete_mask is true, means this row should be deleted and record in bitmap
+            bool delete_mask[block_rows];
+
+            /// If update_mask is true, means this row should be deleted and INSERT an updated row
+            bool update_mask[block_rows];
+
+            memset(delete_mask, false, sizeof(delete_mask));
+            memset(update_mask, false, sizeof(update_mask));
+
+            /// Get delete_mask
+            if (ctx->interpreter->getLightweightDelete())
+            {
+                auto col_pos = cur_block.getPositionByName(MutationsInterpreter::DELETE_MASK);
+                MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, delete_mask, block_rows);
+
+                cur_block.erase(col_pos);
+            }
+
+            /// Get update_mask
+            if (ctx->interpreter->getLightweightUpdate())
+            {
+                auto col_pos = cur_block.getPositionByName(MutationsInterpreter::UPDATE_MASK);
+                MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, update_mask, block_rows);
+
+                cur_block.erase(col_pos);
+            }
+
+            String current_block_bitmap = "";
+            /// Get the corresponding deleted mask for current block from latest bitmap
+            if (!old_bitmap.empty())
+            {
+                current_block_bitmap = old_bitmap.substr(current_bitmap_pos, block_rows);
+                current_bitmap_pos += block_rows;
+            }
+
+            auto mask_column = ColumnUInt8::create();
+            /// Skip to do filter when mask_column are all 0.
+            bool need_insert = false;
+
+            /// Merge update mask and delete mask into the final bitmap
+            /// Create mask column to filter rows that have been deleted and remain unchanged, prepare columns for new part
+            for (size_t pos = 0; pos < block_rows; pos++)
+            {
+                if (!current_block_bitmap.empty() && current_block_bitmap[pos] == '1')
+                {
+                    bitmap_collector += "1";
+                    mask_column->insert(0);
+                }
+                else if (delete_mask[pos])
+                {
+                    bitmap_collector += "1";
+                    mask_column->insert(0);
+                }
+                else if (update_mask[pos])
+                {
+                    ///update
+                    mask_column->insert(1);
+                    bitmap_collector += "1";
+                    if (!need_insert)
+                        need_insert = true;
+                }
+                else
+                {
+                    mask_column->insert(0);
+                    bitmap_collector += "0";
+                }
+            }
+
+            if (!need_insert)
+                continue;
+
+            /// Use filter to get rows to INSERT
+            auto res_columns = cur_block.getColumns();
+            MutationHelpers::filterColumns(res_columns, mask_column->getData());
+
+            if (res_columns.empty())
+                continue;
+
+            cur_block.setColumns(res_columns);
+
+            //// update min_max index after filter.
+            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+
+            ctx->out->write(cur_block);
+
+            (*ctx->mutate_entry)->rows_written += cur_block.rows();
+            (*ctx->mutate_entry)->bytes_written_uncompressed += cur_block.bytes();
+        }
+    }
+
+    void finalize()
+    {
+        /// We use a new file name to record the lightweight mutation id
+        ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, bitmap_collector);
+
+        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->mutating_executor.reset();
+        ctx->mutating_pipeline.reset();
+
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync);
+        ctx->out.reset();
+    }
+
+    enum class State
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE,
+        NEED_FINALIZE,
+
+        SUCCESS
+    };
+
+    State state{State::NEED_PREPARE};
+
+    MutationContextPtr ctx;
+
+    String bitmap_collector;
+};
+
+
 MutateTask::MutateTask(
     FutureMergedMutatedPartPtr future_part_,
     StorageMetadataPtr metadata_snapshot_,
@@ -1367,6 +1795,10 @@ MutateTask::MutateTask(
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
+
+    ctx->is_lightweight_mutation = false;
+    if (future_part_->part_info.lightweight_mutation)
+        ctx->is_lightweight_mutation = true;
 }
 
 
@@ -1377,7 +1809,12 @@ bool MutateTask::execute()
     {
         case State::NEED_PREPARE:
         {
-            if (!prepare())
+            if (ctx->is_lightweight_mutation)
+            {
+                if (!lightweight_prepare())
+                    return false;
+            }
+            else if (!prepare())
                 return false;
 
             state = State::NEED_EXECUTE;
@@ -1527,10 +1964,112 @@ bool MutateTask::prepare()
     return true;
 }
 
+<<<<<<< HEAD
 const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
 
+=======
+bool MutateTask::lightweight_prepare()
+{
+    MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
 
+    if (ctx->future_part->parts.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "
+                                                   "This is a bug.", toString(ctx->future_part->parts.size()));
+>>>>>>> Merge lightweight mutation to new MutateTask
+
+    ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
+    ctx->source_part = ctx->future_part->parts[0];
+    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(ctx->source_part);
+
+    auto context_for_reading = Context::createCopy(ctx->context);
+    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_for_reading->setSetting("max_threads", 1);
+    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
+    context_for_reading->setSetting("force_index_by_date", false);
+    context_for_reading->setSetting("force_primary_key", false);
+
+    for (const auto & command : *ctx->commands)
+    {
+        if (command.partition == nullptr || ctx->future_part->parts[0]->info.partition_id == ctx->data->getPartitionIDFromQuery(
+                command.partition, context_for_reading))
+        {
+            auto command_without_partition = command;
+            command_without_partition.partition = nullptr;
+            ctx->commands_for_part.emplace_back(command_without_partition);
+        }
+
+    }
+
+    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+            storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
+    {
+        LOG_TRACE(ctx->log, "Part {} doesn't change up to lightweight mutation version {}", ctx->source_part->name, ctx->future_part->part_info.lightweight_mutation);
+        /// Write an empty temporary mask file or copy previous lightweight mask file to new file.
+        ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, "");
+        promise.set_value({});
+        return false;
+    }
+    else
+    {
+        LOG_TRACE(ctx->log, "Mutating part {} to lightweight mutation version {}", ctx->source_part->name, ctx->future_part->part_info.lightweight_mutation);
+    }
+
+    MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
+
+    ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
+
+    if (!ctx->for_interpreter.empty())
+    {
+        ctx->interpreter = std::make_unique<MutationsInterpreter>(
+                storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+        ctx->mutating_pipeline = ctx->interpreter->execute();
+        ctx->updated_header = ctx->interpreter->getUpdatedHeader();
+        ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
+    }
+
+    if (ctx->interpreter->getLightweightUpdate() == 0)
+    {
+        task = std::make_unique<LightWeightMutateOnlyDeleteTask>(ctx);
+        promise.set_value({});
+        return true;
+    }
+
+    /// Lightweight mutation with update do similar to mutateAllPartColumns(), the new inserted rows are put in a temp part.
+    ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    ctx->new_data_part = ctx->data->createPart(
+            ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, ctx->single_disk_volume, "tmp_mut_" + ctx->future_part->name);
+
+    ctx->new_data_part->uuid = ctx->future_part->uuid;
+    ctx->new_data_part->is_temp = true;
+    ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
+
+    /// It shouldn't be changed by mutation.
+    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+
+    auto [new_columns, new_infos] = MergeTreeDataMergerMutator::getColumnsForNewDataPart(
+            ctx->source_part, ctx->updated_header, ctx->storage_columns,
+            ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
+
+    ctx->new_data_part->setColumns(new_columns);
+    ctx->new_data_part->setSerializationInfos(new_infos);
+    ctx->new_data_part->partition.assign(ctx->source_part->partition);
+
+    ctx->disk = ctx->new_data_part->volume->getDisk();
+    ctx->new_part_tmp_path = ctx->new_data_part->getFullRelativePath();
+
+    /// Don't change granularity type while mutating subset of columns
+    ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())
+                                                                              : getNonAdaptiveMrkExtension();
+
+    const auto data_settings = ctx->data->getSettings();
+    ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
+    ctx->execute_ttl_type = ExecuteTTLType::NONE;
+
+    task = std::make_unique<LightWeightMutateMixedTask>(ctx);
+
+    return true;
+}
 }

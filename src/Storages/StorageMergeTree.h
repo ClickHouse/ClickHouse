@@ -124,6 +124,7 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    UInt64 getIncrement() { return increment.get(); }
 private:
 
     /// Mutex and condvar for synchronous mutations wait

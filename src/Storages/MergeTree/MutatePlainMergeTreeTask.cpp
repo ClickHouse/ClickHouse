@@ -83,8 +83,34 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
 
-                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
+                /// Only lightweight mutations have value lightweight_mutation bigger than 0
+                /// If commands are Ordinary, the value of lightweight_mutation is 0.
+                future_part = merge_mutate_entry->future_part;
+                if (future_part->part_info.lightweight_mutation)
+                {
+                    /// Only lightweight update commands can add new part.
+                    if (new_part)
+                    {
+                        /// For the new part, the minblock and maxblock is similar as really inserted part, however
+                        /// the mutation is not 0, but is assigned to lightweight_mutation. This allows unfinished mutations to mutate it.
+                        new_part->info.mutation = new_part->info.lightweight_mutation;
+                        new_part->info.lightweight_mutation = 0;
+                        new_part->info.min_block = new_part->info.max_block = storage.getIncrement();
+                        new_part->name = new_part->getNewName(new_part->info);
+
+                        storage.renameTempPartAndAdd(new_part);
+                    }
+
+                    /// Fresh lightweight mutationID means finished
+                    const auto & source_part = future_part->parts[0];
+                    source_part->renameTempLightWeightMaskAndReplace(future_part->part_info.lightweight_mutation);
+
+                    if (!source_part->is_empty_bitmap)
+                        storage.has_lightweight_parts = true;
+                }
+                else
+                    /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
+                    storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
 
