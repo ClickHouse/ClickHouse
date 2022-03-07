@@ -143,4 +143,5 @@ def test_cache_read_bytes(started_cluster):
             time.sleep(60)
             continue
         test_passed = True
+        break
     assert test_passed
