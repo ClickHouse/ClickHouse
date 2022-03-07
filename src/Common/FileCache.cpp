@@ -429,6 +429,40 @@ bool LRUFileCache::tryReserve(
     return true;
 }
 
+void LRUFileCache::remove(const Key & key)
+{
+    std::lock_guard cache_lock(mutex);
+
+    auto it = files.find(key);
+    if (it == files.end())
+        return;
+
+    auto & offsets = it->second;
+
+    std::vector<FileSegmentCell *> to_remove;
+    to_remove.reserve(offsets.size());
+
+    for (auto & [offset, cell] : offsets)
+        to_remove.push_back(&cell);
+
+    for (auto & cell : to_remove)
+    {
+        auto file_segment = cell->file_segment;
+        if (file_segment)
+        {
+            std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+        }
+    }
+
+    auto key_path = getPathInLocalCache(key);
+
+    files.erase(key);
+
+    if (fs::exists(key_path))
+        fs::remove(key_path);
+}
+
 void LRUFileCache::remove(
     Key key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)

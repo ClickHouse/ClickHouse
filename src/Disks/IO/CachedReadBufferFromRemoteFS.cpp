@@ -604,17 +604,16 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
             }
         }
 
-        /// Local filesystem does not support bounded reads.
-        if (read_type == ReadType::CACHED && std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
+        if (std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
         {
             size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
             size = std::min(size, remaining_size_to_read);
-            implementation_buffer->buffer().resize(size);
+            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
         }
 
         file_offset_of_buffer_end += size;
 
-        assert(read_type == ReadType::CACHED || file_offset_of_buffer_end == implementation_buffer->getFileOffsetOfBufferEnd());
+        // assert(read_type == ReadType::CACHED || file_offset_of_buffer_end == implementation_buffer->getFileOffsetOfBufferEnd());
     }
 
     swap(*implementation_buffer);
@@ -669,6 +668,11 @@ size_t CachedReadBufferFromRemoteFS::getTotalSizeToRead()
                         file_offset_of_buffer_end, read_until_position);
 
     return read_until_position - file_offset_of_buffer_end;
+}
+
+void CachedReadBufferFromRemoteFS::setReadUntilPosition(size_t)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
 }
 
 off_t CachedReadBufferFromRemoteFS::getPosition()

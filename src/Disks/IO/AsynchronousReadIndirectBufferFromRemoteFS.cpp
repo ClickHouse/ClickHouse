@@ -87,8 +87,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
             return false;
 
         if (file_offset_of_buffer_end > *read_until_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, *read_until_position);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}, info: {})",
+                            file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
     }
     else if (must_read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -136,8 +136,11 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
     if (prefetch_future.valid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
-    read_until_position = position;
-    impl->setReadUntilPosition(*read_until_position);
+    if (position > read_until_position)
+    {
+        read_until_position = position;
+        impl->setReadUntilPosition(*read_until_position);
+    }
 }
 
 
@@ -171,7 +174,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
 
             /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset < size && size > 0);
+            assert(offset < size);
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -188,7 +191,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset < size || size == 0);
+        assert(offset < size);
 
         if (size)
         {
@@ -198,6 +201,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
 
     prefetch_future = {};
     return size;

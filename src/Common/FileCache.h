@@ -41,6 +41,8 @@ public:
     /// Restore cache from local filesystem.
     virtual void initialize() = 0;
 
+    virtual void remove(const Key & key) = 0;
+
     static bool shouldBypassCache();
 
     /// Cache capacity in bytes.
@@ -114,6 +116,8 @@ public:
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 
     void initialize() override;
+
+    void remove(const Key & key) override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
