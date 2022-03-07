@@ -27,6 +27,14 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 {% include 'install/deb.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing deb-packages</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
 You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/stable).
@@ -52,6 +60,14 @@ First, you need to add the official repository:
 {% include 'install/rpm.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing rpm-packages</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
+
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
 
 Then run these commands to install packages:
@@ -72,6 +88,14 @@ After that downloaded archives should be unpacked and installed with installatio
 ``` bash
 {% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing tgz archives</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 

@@ -27,6 +27,14 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 {% include 'install/deb.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing deb-packages</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。
 
 你也可以从这里手动下载安装包：[下载](https://packages.clickhouse.com/deb/pool/stable)。
@@ -47,6 +55,14 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 ``` bash
 {% include 'install/rpm.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing rpm-packages</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
 
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。`prestable`有时也可用。
 
@@ -69,6 +85,14 @@ sudo yum install clickhouse-server clickhouse-client
 ``` bash
 {% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing tgz archives</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 对于生产环境，建议使用最新的`stable`版本。你可以在GitHub页面https://github.com/ClickHouse/ClickHouse/tags找到它，它以后缀`-stable`标志。
 

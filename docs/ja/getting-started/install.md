@@ -28,6 +28,14 @@ Debian や Ubuntu 用にコンパイル済みの公式パッケージ `deb` を�
 {% include 'install/deb.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing deb-packages</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
 最新版を使いたい場合は、`stable`を`testing`に置き換えてください。（テスト環境ではこれを推奨します）
 
 同様に、[こちら](https://packages.clickhouse.com/deb/pool/stable)からパッケージをダウンロードして、手動でインストールすることもできます。
@@ -49,6 +57,14 @@ CentOS、RedHat、その他すべてのrpmベースのLinuxディストリビュ
 {% include 'install/rpm.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing rpm-packages</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
+
 最新版を使いたい場合は `stable` を `testing` に置き換えてください。(テスト環境ではこれが推奨されています)。`prestable` もしばしば同様に利用できます。
 
 そして、以下のコマンドを実行してパッケージをインストールします:
@@ -68,6 +84,14 @@ sudo yum install clickhouse-server clickhouse-client
 ``` bash
 {% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing tgz archives</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 本番環境では、最新の `stable` バージョンを使うことをお勧めします。GitHub のページ https://github.com/ClickHouse/ClickHouse/tags で 接尾辞 `-stable` となっているバージョン番号として確認できます。
 

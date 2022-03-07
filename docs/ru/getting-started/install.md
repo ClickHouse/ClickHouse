@@ -27,6 +27,14 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 {% include 'install/deb.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Устаревший способ установки deb-пакетов</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
 Чтобы использовать различные [версии ClickHouse](../faq/operations/production.md) в зависимости от ваших потребностей, вы можете заменить `stable` на `lts` или `testing`.
 
 Также вы можете вручную скачать и установить пакеты из [репозитория](https://packages.clickhouse.com/deb/pool/stable).
@@ -52,6 +60,14 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 {% include 'install/rpm.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Устаревший способ установки rpm-пакетов</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
+
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
 
 Для, собственно, установки пакетов необходимо выполнить следующие команды:
@@ -72,6 +88,14 @@ sudo yum install clickhouse-server clickhouse-client
 ``` bash
 {% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Устаревший способ установки из архивов tgz</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 Для production окружений рекомендуется использовать последнюю `stable`-версию. Её номер также можно найти на github с на вкладке https://github.com/ClickHouse/ClickHouse/tags c постфиксом `-stable`.
 
