@@ -143,6 +143,28 @@ namespace
         return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
     }
 
+    static bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
+    {
+        auto message_type = message_descriptor.well_known_type();
+        return (message_type >= google::protobuf::Descriptor::WELLKNOWNTYPE_DOUBLEVALUE)
+            && (message_type <= google::protobuf::Descriptor::WELLKNOWNTYPE_BOOLVALUE);
+    }
+
+    static bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
+    {
+
+        auto * message_descriptor = field_descriptor.message_type();
+        if (message_descriptor == nullptr) {
+            return false;
+        }
+        return isGoogleWrapperMessage(*message_descriptor);
+    }
+
+    static const std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
+    {
+        assert(isGoogleWrapper(field_descriptor));
+        return field_descriptor.message_type()->field(0)->name();
+    }
 
     WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
 
@@ -1783,6 +1805,15 @@ namespace
             column_nullable.insertDefault();
         }
 
+        void insertNestedDefaults(size_t row_num)
+        {
+            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            if (row_num < column_nullable.size())
+                return;
+            column_nullable.getNestedColumn().insertDefault();
+            column_nullable.getNullMapData().push_back(0);
+        }
+
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerNullable ->\n";
@@ -2280,7 +2311,19 @@ namespace
                         if (info.field_read)
                             info.field_read = false;
                         else
-                            info.field_serializer->insertDefaults(row_num);
+                        {
+                            auto * message_descriptor = info.field_descriptor->containing_type();
+                            bool is_google_wrapper_value = message_descriptor != nullptr && isGoogleWrapperMessage(*message_descriptor);
+                            if (is_google_wrapper_value && mutable_columns[info.column_indices[0]].get()->isNullable())
+                            {
+                                auto * nullable_ser = reinterpret_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
+                                nullable_ser->insertNestedDefaults(row_num);
+                            }
+                            else
+                            {
+                                info.field_serializer->insertDefaults(row_num);
+                            }
+                        }
                     }
                 }
                 catch (...)
@@ -2834,9 +2877,10 @@ namespace
             for (int i : collections::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
-                if (columnNameEqualsToFieldName(column_name, field_descriptor))
+                if (columnNameEqualsToFieldName(column_name, field_descriptor) || isGoogleWrapperMessage(message_descriptor))
                 {
-                    out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, std::string_view{});
+                    std::string_view suffix = isGoogleWrapperField(field_descriptor) ? googleWrapperColumnName(field_descriptor) : "";
+                    out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, suffix);
                     break;
                 }
             }
