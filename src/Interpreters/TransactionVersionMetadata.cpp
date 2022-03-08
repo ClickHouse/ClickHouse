@@ -306,6 +306,15 @@ void VersionMetadata::writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool inter
     }
 }
 
+void VersionMetadata::writeRemovalTID(WriteBuffer & buf, bool clear) const
+{
+    writeCString("\n" REMOVAL_TID_STR, buf);
+    if (clear)
+        TransactionID::write(Tx::EmptyTID, buf);
+    else
+        TransactionID::write(removal_tid, buf);
+}
+
 void VersionMetadata::write(WriteBuffer & buf) const
 {
     writeCString("version: 1", buf);
@@ -317,8 +326,7 @@ void VersionMetadata::write(WriteBuffer & buf) const
     {
         assert(!removal_tid.isEmpty());
         assert(removal_tid.getHash() == removal_tid_lock);
-        writeCString("\n" REMOVAL_TID_STR, buf);
-        TransactionID::write(removal_tid, buf);
+        writeRemovalTID(buf);
         writeCSN(buf, REMOVAL, /* internal */ true);
     }
 }
@@ -358,7 +366,7 @@ void VersionMetadata::read(ReadBuffer & buf)
         }
         else if (name == REMOVAL_TID_STR)
         {
-            assert(removal_tid.isEmpty() && removal_tid_lock == 0);
+            /// NOTE Metadata file may actually contain multiple creation TIDs, we need the last one.
             removal_tid = TransactionID::read(buf);
             removal_tid_lock = removal_tid.getHash();
         }

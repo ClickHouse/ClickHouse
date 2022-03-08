@@ -82,7 +82,6 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 
     storages.insert(storage);
     creating_parts.push_back(new_part);
-    //new_part->storeVersionMetadata();
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
@@ -95,7 +94,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 
     storages.insert(storage);
     removing_parts.push_back(part_to_remove);
-    part_to_remove->storeVersionMetadata();
+    part_to_remove->appendRemovalTIDToVersionMetadata();
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
@@ -156,8 +155,11 @@ bool MergeTreeTransaction::rollback() noexcept
     for (const auto & part : creating_parts)
         part->version.creation_csn.store(Tx::RolledBackCSN);
 
-    for (const auto & part : removing_parts)    /// TODO update metadata file
+    for (const auto & part : removing_parts)
+    {
+        part->appendRemovalTIDToVersionMetadata(/* clear */ true);
         part->version.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+    }
 
     /// FIXME const_cast
     for (const auto & part : creating_parts)

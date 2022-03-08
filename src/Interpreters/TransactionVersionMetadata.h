@@ -54,6 +54,7 @@ struct VersionMetadata
 
     enum WhichCSN { CREATION, REMOVAL };
     void writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool internal = false) const;
+    void writeRemovalTID(WriteBuffer & buf, bool clear = false) const;
 
     String toString(bool one_line = true) const;
 

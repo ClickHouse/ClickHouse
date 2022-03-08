@@ -1135,7 +1135,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
     {
         /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
         /// so we create empty file at first (expecting that createFile throws if file already exists)
-        /// and the overwrite it.
+        /// and then overwrite it.
         disk->createFile(tmp_version_file_name);
         auto out = disk->writeFile(tmp_version_file_name, 256, WriteMode::Rewrite);
         version.write(*out);
@@ -1168,6 +1168,34 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
     version.writeCSN(*out, which_csn);
     out->finalize();
+}
+
+void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
+{
+    assert(!version.creation_tid.isEmpty());
+    assert(version.removal_csn == 0);
+    assert(!version.removal_tid.isEmpty());
+    assert(isStoredOnDisk());
+
+    if (version.creation_tid.isPrehistoric() && !clear)
+    {
+        /// Metadata file probably does not exist, because it was not written on part creation, because it was created without a transaction.
+        /// Let's create it (if needed). Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
+        storeVersionMetadata();
+        return;
+    }
+
+    LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+
+    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    DiskPtr disk = volume->getDisk();
+    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
+    version.writeRemovalTID(*out, clear);
+    out->finalize();
+
+    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metedata
+    if (!clear)
+        out->sync();
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
@@ -1264,11 +1292,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         ReadBufferFromString str_buf{content};
         VersionMetadata file;
         file.read(str_buf);
-        //FIXME
         bool valid_creation_tid = version.creation_tid == file.creation_tid;
-        bool valid_removal_tid = version.removal_tid == file.removal_tid || (version.removal_tid.isEmpty() && TransactionLog::getCSN(file.removal_tid) == Tx::UnknownCSN) || version.removal_tid == Tx::PrehistoricTID;
+        bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
         bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
-        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::RolledBackCSN || version.removal_csn == Tx::PrehistoricCSN;
+        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
         if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version metadata file");
         return true;
