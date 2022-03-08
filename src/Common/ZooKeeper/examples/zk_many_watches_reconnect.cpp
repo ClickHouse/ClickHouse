@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
 
         DB::ConfigProcessor processor(argv[1], false, true);
         auto config = processor.loadConfig().configuration;
-        zkutil::ZooKeeper zk(*config, "zookeeper", nullptr);
+        zkutil::ZooKeeper zk(*config, config->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
         zkutil::EventPtr watch = std::make_shared<Poco::Event>();
 
         /// NOTE: setting watches in multiple threads because doing it in a single thread is too slow.

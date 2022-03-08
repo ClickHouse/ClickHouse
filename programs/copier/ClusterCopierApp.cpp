@@ -197,7 +197,7 @@ void ClusterCopierApp::mainImpl()
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
 
-    if (config().has("zookeeper") || config().has("keeper"))
+    if (config().has("zookeeper") && config().has("keeper"))
         throw Exception("Both zookeeper and keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     copier->init();
