@@ -30,7 +30,7 @@ inline std::string xmlNodeAsString(Poco::XML::Node* &pNode)
     Poco::XML::XMLString result = "<" + node_name ;
 
     auto *attributes = pNode->attributes();
-    for(auto i = 0; i<attributes->length();i++)
+    for (auto i = 0; i<attributes->length();i++)
     {
         auto *item = attributes->item(i);
         auto name = item->nodeName();
@@ -47,14 +47,16 @@ inline std::string xmlNodeAsString(Poco::XML::Node* &pNode)
     attributes->release();
 
     auto *list = pNode->childNodes();
-    for(auto i = 0; i<list->length();i++)
+    for (auto i = 0; i<list->length();i++)
     {
         auto *item = list->item(i);
         auto type = item->nodeType();
-        if(type == Poco::XML::Node::ELEMENT_NODE)
+        if (type == Poco::XML::Node::ELEMENT_NODE)
         {
             result += xmlNodeAsString(item);
-        } else if (type == Poco::XML::Node::TEXT_NODE) {
+        }
+        else if (type == Poco::XML::Node::TEXT_NODE)
+        {
             result += item->innerText();
         }
 
