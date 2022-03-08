@@ -139,10 +139,13 @@ if __name__ == "__main__":
     check_name = sys.argv[1]
     kill_timeout = int(sys.argv[2])
 
+    validate_bugix_check = len(sys.argv) >= 4 and sys.argv[3] == "--validate-bugfix"
     flaky_check = 'flaky' in check_name.lower()
+
+    run_changed_tests = flaky_check or validate_bugix_check
     gh = Github(get_best_robot_token())
 
-    pr_info = PRInfo(need_changed_files=flaky_check)
+    pr_info = PRInfo(need_changed_files=run_changed_tests)
 
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
@@ -162,7 +165,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     tests_to_run = []
-    if flaky_check:
+    if run_changed_tests:
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
@@ -170,7 +173,8 @@ if __name__ == "__main__":
             sys.exit(0)
 
     image_name = get_image_name(check_name)
-    docker_image = get_image_with_version(reports_path, image_name)
+    image_ver = 0 if validate_bugix_check else None
+    docker_image = get_image_with_version(reports_path, image_name, version=image_ver)
 
     repo_tests_path = os.path.join(repo_path, "tests")
 
