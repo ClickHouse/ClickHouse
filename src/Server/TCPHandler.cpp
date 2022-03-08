@@ -31,7 +31,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -853,163 +852,15 @@ void TCPHandler::sendExtremes(const Block & extremes)
     }
 }
 
-
-namespace
-{
-    using namespace ProfileEvents;
-
-    constexpr size_t NAME_COLUMN_INDEX  = 4;
-    constexpr size_t VALUE_COLUMN_INDEX = 5;
-
-    struct ProfileEventsSnapshot
-    {
-        UInt64 thread_id;
-        ProfileEvents::CountersIncrement counters;
-        Int64 memory_usage;
-        time_t current_time;
-    };
-
-    /*
-     * Add records about provided non-zero ProfileEvents::Counters.
-     */
-    void dumpProfileEvents(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        size_t rows = 0;
-        auto & name_column = columns[NAME_COLUMN_INDEX];
-        auto & value_column = columns[VALUE_COLUMN_INDEX];
-        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
-        {
-            Int64 value = snapshot.counters[event];
-
-            if (value == 0)
-                continue;
-
-            const char * desc = ProfileEvents::getName(event);
-            name_column->insertData(desc, strlen(desc));
-            value_column->insert(value);
-            rows++;
-        }
-
-        // Fill the rest of the columns with data
-        for (size_t row = 0; row < rows; ++row)
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
-        }
-    }
-
-    void dumpMemoryTracker(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::GAUGE);
-
-            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-            columns[i++]->insert(snapshot.memory_usage);
-        }
-    }
-}
-
-
 void TCPHandler::sendProfileEvents()
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
-    NamesAndTypesList column_names_and_types = {
-        { "host_name",    std::make_shared<DataTypeString>()   },
-        { "current_time", std::make_shared<DataTypeDateTime>() },
-        { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         ProfileEvents::TypeEnum              },
-        { "name",         std::make_shared<DataTypeString>()   },
-        { "value",        std::make_shared<DataTypeInt64>()   },
-    };
-
-    ColumnsWithTypeAndName temp_columns;
-    for (auto const & name_and_type : column_names_and_types)
-        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-    Block block(std::move(temp_columns));
-
-    MutableColumns columns = block.mutateColumns();
-    auto thread_group = CurrentThread::getGroup();
-    auto const current_thread_id = CurrentThread::get().thread_id;
-    std::vector<ProfileEventsSnapshot> snapshots;
-    ThreadIdToCountersSnapshot new_snapshots;
-    ProfileEventsSnapshot group_snapshot;
+    Block block;
+    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
+    if (block.rows() != 0)
     {
-        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
-        snapshots.reserve(stats.size());
-
-        for (auto & stat : stats)
-        {
-            auto const thread_id = stat.thread_id;
-            if (thread_id == current_thread_id)
-                continue;
-            auto current_time = time(nullptr);
-            auto previous_snapshot = last_sent_snapshots.find(thread_id);
-            auto increment =
-                previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(stat.counters, previous_snapshot->second)
-                : CountersIncrement(stat.counters);
-            snapshots.push_back(ProfileEventsSnapshot{
-                thread_id,
-                std::move(increment),
-                stat.memory_usage,
-                current_time
-            });
-            new_snapshots[thread_id] = std::move(stat.counters);
-        }
-
-        group_snapshot.thread_id    = 0;
-        group_snapshot.current_time = time(nullptr);
-        group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot    = last_sent_snapshots.find(0);
-        group_snapshot.counters     =
-            prev_group_snapshot != last_sent_snapshots.end()
-            ? CountersIncrement(group_counters, prev_group_snapshot->second)
-            : CountersIncrement(group_counters);
-        new_snapshots[0]            = std::move(group_counters);
-    }
-    last_sent_snapshots = std::move(new_snapshots);
-
-    for (auto & snapshot : snapshots)
-    {
-        dumpProfileEvents(snapshot, columns, server_display_name);
-        dumpMemoryTracker(snapshot, columns, server_display_name);
-    }
-    dumpProfileEvents(group_snapshot, columns, server_display_name);
-    dumpMemoryTracker(group_snapshot, columns, server_display_name);
-
-    MutableColumns logs_columns;
-    Block curr_block;
-    size_t rows = 0;
-
-    for (; state.profile_queue->tryPop(curr_block); ++rows)
-    {
-        auto curr_columns = curr_block.getColumns();
-        for (size_t j = 0; j < curr_columns.size(); ++j)
-            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
-    }
-
-    bool empty = columns[0]->empty();
-    if (!empty)
-    {
-        block.setColumns(std::move(columns));
-
         initProfileEventsBlockOutput(block);
 
         writeVarUInt(Protocol::Server::ProfileEvents, *out);

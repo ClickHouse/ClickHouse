@@ -288,7 +288,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size /*, std::move(schedule) */);
+        buf_size, std::move(schedule));
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
