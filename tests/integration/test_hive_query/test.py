@@ -44,10 +44,11 @@ CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32
 def test_create_parquet_table_1(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
-    node.query("set input_format_parquet_allow_missing_columns = true")
-    result = node.query("""
-    DROP TABLE IF EXISTS default.demo_parquet_parts;
-    CREATE TABLE default.demo_parquet_parts (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String), `hour` String) ENGINE = Hive('thrift://hivetest:9083', 'test', 'parquet_demo') PARTITION BY(day, hour);
+    for i in range(10):
+        node.query("set input_format_parquet_allow_missing_columns = true")
+        result = node.query("""
+DROP TABLE IF EXISTS default.demo_parquet_parts;
+CREATE TABLE default.demo_parquet_parts (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String), `hour` String) ENGINE = Hive('thrift://hivetest:9083', 'test', 'parquet_demo') PARTITION BY(day, hour);
             """)
         logging.info("create result {}".format(result))
         if result.strip() == '':
