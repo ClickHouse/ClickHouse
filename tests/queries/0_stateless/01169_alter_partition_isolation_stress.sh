@@ -70,6 +70,7 @@ function thread_partition_dst_to_src()
         fi
         $CLICKHOUSE_CLIENT --multiquery --query "
         SYSTEM STOP MERGES dst;
+        ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
         BEGIN TRANSACTION;
         INSERT INTO dst VALUES ($i, 4);
         INSERT INTO src SELECT * FROM dst;

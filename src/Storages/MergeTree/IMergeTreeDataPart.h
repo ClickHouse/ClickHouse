@@ -444,6 +444,9 @@ public:
     /// Appends the corresponding CSN to file on disk (without fsync)
     void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
 
+    /// Appends removal TID to file on disk (with fsync)
+    void appendRemovalTIDToVersionMetadata(bool clear = false) const;
+
     /// Loads transactional metadata from disk
     void loadVersionMetadata() const;
 
