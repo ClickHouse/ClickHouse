@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS order_by_desc;
 
 CREATE TABLE order_by_desc (u UInt32, s String)

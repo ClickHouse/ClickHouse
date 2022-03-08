@@ -7,12 +7,13 @@
 #include <map>
 #include <unordered_map>
 
-#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -120,8 +121,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (!dst)
     {
-        dst = src;
-        return;
+        dst = src.cloneEmpty();
     }
 
     assertBlocksHaveEqualStructure(src, dst, "ProfileEvents");
@@ -142,7 +142,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
     const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
-    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    // const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
     const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
     const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
 
@@ -150,12 +150,11 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     {
         StringRef name;
         StringRef host_name;
-        UInt64 thread_id;
 
         bool operator<(const Id & rhs) const
         {
-            return std::tie(name, host_name, thread_id)
-                 < std::tie(rhs.name, rhs.host_name, rhs.thread_id);
+            return std::tie(name, host_name)
+                 < std::tie(rhs.name, rhs.host_name);
         }
     };
     std::map<Id, UInt64> rows_by_name;
@@ -164,7 +163,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             src_column_name.getDataAt(src_row),
             src_column_host_name.getDataAt(src_row),
-            src_array_thread_id[src_row],
         };
         rows_by_name[id] = src_row;
     }
@@ -175,7 +173,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             dst_column_name.getDataAt(dst_row),
             dst_column_host_name.getDataAt(dst_row),
-            dst_array_thread_id[dst_row],
         };
 
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
@@ -206,7 +203,18 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
+    /// Filter out snapshots
+    std::set<size_t> thread_id_filter_mask;
+    for (size_t i = 0; i < dst_array_thread_id.size(); ++i)
+    {
+        if (dst_array_thread_id[i] != 0)
+        {
+            thread_id_filter_mask.emplace(i);
+        }
+    }
+
     dst.setColumns(std::move(mutable_columns));
+    dst.erase(thread_id_filter_mask);
 }
 
 
@@ -222,11 +230,11 @@ public:
     static bool cancelled() { return exit_on_signal.test(); }
 };
 
-/// This signal handler is set only for sigint.
+/// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(signum);
+        safeExit(128 + signum);
 }
 
 
@@ -236,22 +244,22 @@ ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
-     exit_on_signal.test_and_set();
+    exit_on_signal.test_and_set();
 
-     struct sigaction new_act;
-     memset(&new_act, 0, sizeof(new_act));
+    struct sigaction new_act;
+    memset(&new_act, 0, sizeof(new_act));
 
-     new_act.sa_handler = interruptSignalHandler;
-     new_act.sa_flags = 0;
+    new_act.sa_handler = interruptSignalHandler;
+    new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
     sigemptyset(&new_act.sa_mask);
 #else
-     if (sigemptyset(&new_act.sa_mask))
+    if (sigemptyset(&new_act.sa_mask))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 #endif
 
-     if (sigaction(SIGINT, &new_act, nullptr))
+    if (sigaction(SIGINT, &new_act, nullptr))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
@@ -695,7 +703,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    bool cancelled = false;
     QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
@@ -766,7 +773,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 /// Receive a part of the result, or progress info or an exception and process it.
 /// Returns true if one should continue receiving packets.
 /// Output of result is suppressed if query was cancelled.
-bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
+bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 {
     Packet packet = connection->receivePacket();
 
@@ -776,7 +783,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Data:
-            if (!cancelled)
+            if (!cancelled_)
                 onData(packet.block, parsed_query);
             return true;
 
@@ -789,12 +796,12 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return true;
 
         case Protocol::Server::Totals:
-            if (!cancelled)
+            if (!cancelled_)
                 onTotals(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Extremes:
-            if (!cancelled)
+            if (!cancelled_)
                 onExtremes(packet.block, parsed_query);
             return true;
 
@@ -860,7 +867,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1258,6 +1265,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 {
     resetOutput();
     have_error = false;
+    cancelled = false;
     client_exception.reset();
     server_exception.reset();
 
@@ -1385,6 +1393,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
     std::optional<Exception> & current_exception)
 {
+    if (!is_interactive && cancelled)
+        return MultiQueryProcessingStage::QUERIES_END;
+
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
@@ -1721,7 +1732,12 @@ void ClientBase::showClientVersion()
 }
 
 
-void ClientBase::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments)
+void ClientBase::readArguments(
+    int argc,
+    char ** argv,
+    Arguments & common_arguments,
+    std::vector<Arguments> & external_tables_arguments,
+    std::vector<Arguments> & hosts_and_ports_arguments)
 {
     /** We allow different groups of arguments:
         * - common arguments;
@@ -1732,6 +1748,10 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         */
 
     bool in_external_group = false;
+
+    std::string prev_host_arg;
+    std::string prev_port_arg;
+
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         const char * arg = argv[arg_num];
@@ -1792,15 +1812,84 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
             }
+            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
+            {
+                std::string host_arg;
+                /// --host host
+                if (arg == "--host"sv || arg == "-h"sv)
+                {
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    host_arg = "--host=";
+                    host_arg.append(arg);
+                }
+                else
+                    host_arg = arg;
+
+                /// --port port1 --host host1
+                if (!prev_port_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
+                    prev_port_arg.clear();
+                }
+                else
+                {
+                    /// --host host1 --host host2
+                    if (!prev_host_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_host_arg});
+
+                    prev_host_arg = host_arg;
+                }
+            }
+            else if (startsWith(arg, "--port"))
+            {
+                std::string port_arg = arg;
+                /// --port port
+                if (arg == "--port"sv)
+                {
+                    port_arg.push_back('=');
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    port_arg.append(arg);
+                }
+
+                /// --host host1 --port port1
+                if (!prev_host_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
+                    prev_host_arg.clear();
+                }
+                else
+                {
+                    /// --port port1 --port port2
+                    if (!prev_port_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_port_arg});
+
+                    prev_port_arg = port_arg;
+                }
+            }
+            else if (arg == "--allow_repeated_settings"sv)
+                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }
     }
+    if (!prev_host_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_host_arg});
+    if (!prev_port_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_port_arg});
 }
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
@@ -1838,8 +1927,9 @@ void ClientBase::init(int argc, char ** argv)
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
+    std::vector<Arguments> hosts_and_ports_arguments;
 
-    readArguments(argc, argv, common_arguments, external_tables_arguments);
+    readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     po::variables_map options;
     OptionsDescription options_description;
@@ -1929,7 +2019,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Output of help message.
     if (options.count("help")
-        || (options.count("host") && options["host"].as<std::vector<HostPort>>()[0].host == "elp")) /// If user writes -help instead of --help.
+        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
         exit(0);
@@ -1992,7 +2082,7 @@ void ClientBase::init(int argc, char ** argv)
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
-    processOptions(options_description, options, external_tables_arguments);
+    processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
 

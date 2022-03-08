@@ -79,10 +79,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     for (const String & removed_file : remove_files)
     {
         if (checksums.files.count(removed_file))
-        {
-            data_part->volume->getDisk()->removeFile(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
-        }
     }
 
     /// Remove columns from columns array
