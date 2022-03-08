@@ -592,7 +592,9 @@ if (ThreadFuzzer::instance().isEffective())
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
-    bool has_zookeeper = config().has("zookeeper");
+    if (config().has("zookeeper") && config().has("keeper"))
+        throw Exception("Both zookeeper and keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+    bool has_zookeeper = config().has("zookeeper") || config().has("keeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -955,7 +957,7 @@ if (ThreadFuzzer::instance().isEffective())
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper"))
+                if (config->has("zookeeper") || config->has("keeper"))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
