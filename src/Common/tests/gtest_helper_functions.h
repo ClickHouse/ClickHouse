@@ -23,7 +23,7 @@ inline std::string resolvePath(const std::string &relPath)
     throw std::runtime_error("File not found!");
 }
 
-inline std::string xmlNodeAsString(Poco::XML::Node* &pNode,const std::string &tab)
+inline std::string xmlNodeAsString(Poco::XML::Node* &pNode)
 {
     const auto& node_name = pNode->nodeName();
 
@@ -38,7 +38,12 @@ inline std::string xmlNodeAsString(Poco::XML::Node* &pNode,const std::string &ta
         result += (" " + name + "=\"" + text + "\"");
     }
 
-    result += ">\n";
+    result += ">";
+    if (pNode->hasChildNodes() && pNode->firstChild()->nodeType() != Poco::XML::Node::TEXT_NODE)
+    {
+        result += "\n";
+    }
+
     attributes->release();
 
     auto *list = pNode->childNodes();
@@ -48,13 +53,13 @@ inline std::string xmlNodeAsString(Poco::XML::Node* &pNode,const std::string &ta
         auto type = item->nodeType();
         if(type == Poco::XML::Node::ELEMENT_NODE)
         {
-            auto name = item->nodeName();
-            auto text = item->innerText();
-            result += (tab + "<" + name + ">" + text + "</"+ name + ">\n");
+            result += xmlNodeAsString(item);
+        } else if (type == Poco::XML::Node::TEXT_NODE) {
+            result += item->innerText();
         }
 
     }
     list->release();
-    result += ("</"+ node_name + ">");
+    result += ("</"+ node_name + ">\n");
     return Poco::XML::fromXMLString(result);
 }
