@@ -43,7 +43,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 | BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
 | FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
-| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
+| DATE                             | [Date32](../../sql-reference/data-types/date32.md)               |
 | DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 

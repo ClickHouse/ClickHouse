@@ -235,6 +235,7 @@ int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
 # string_values = ["'ClickHouse'", 'NULL']
 string_values = ["'ClickHouse'"]
+date_values=["'1925-01-01'", "'2283-11-11'"]
 
 
 decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
@@ -273,6 +274,8 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
                              pytest.param("common_types", "TINYINT UNSIGNED", "Nullable(UInt8)", uint8_values, "", id="common_types_19"),
 
                              pytest.param("common_types", "VARCHAR(10)", "Nullable(String)", string_values, "", id="common_types_20"),
+
+                             pytest.param("common_types", "DATE", "Nullable(Date32)", date_values, "", id="common_types_21"),
 
 
                              pytest.param("decimal_default", "decimal NOT NULL", "Decimal(10, 0)", decimal_values,
