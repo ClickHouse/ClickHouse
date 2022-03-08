@@ -615,7 +615,10 @@ public:
 class RangeGenerator
 {
 public:
-    explicit RangeGenerator(size_t total_size_, size_t range_step_) : range_step(range_step_), total_size(total_size_) { }
+    explicit RangeGenerator(size_t total_size_, size_t range_step_, size_t range_start = 0)
+        : from_range(range_start), range_step(range_step_), total_size(total_size_)
+    {
+    }
 
     size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size) / range_step)); }
 
@@ -632,7 +635,7 @@ public:
         auto to_range = from_range + range_step;
         if (to_range >= total_size)
         {
-            to_range = total_size - 1;
+            to_range = total_size;
         }
 
         Range range{from_range, to_range};
@@ -641,7 +644,7 @@ public:
     }
 
 private:
-    size_t from_range{0};
+    size_t from_range;
     size_t range_step;
     size_t total_size;
 };
@@ -690,8 +693,8 @@ class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBuff
 
 public:
     RangedReadWriteBufferFromHTTPFactory(
-        size_t total_object_size,
-        size_t range_step,
+        size_t total_object_size_,
+        size_t range_step_,
         Poco::URI uri_,
         std::string method_,
         OutStreamCallback out_stream_callback_,
@@ -705,7 +708,9 @@ public:
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
-        : range_generator(total_object_size, range_step)
+        : range_generator(total_object_size_, range_step_)
+        , total_object_size(total_object_size_)
+        , range_step(range_step_)
         , uri(uri_)
         , method(std::move(method_))
         , out_stream_callback(out_stream_callback_)
@@ -722,34 +727,51 @@ public:
     {
     }
 
-    ReadBufferPtr getReader() override
+    using Range = ParallelReadBuffer::Range;
+    using ReaderWithRange = ParallelReadBuffer::ReaderWithRange;
+    std::optional<ReaderWithRange> getReader() override
     {
         const auto next_range = range_generator.nextRange();
         if (!next_range)
         {
-            return nullptr;
+            return std::nullopt;
         }
 
-        return std::make_shared<ReadWriteBufferFromHTTP>(
-            uri,
-            method,
-            out_stream_callback,
-            timeouts,
-            credentials,
-            max_redirects,
-            buffer_size,
-            settings,
-            http_header_entries,
-            // HTTP Range has inclusive bounds, i.e. [from, to]
-            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
-            remote_host_filter,
-            delay_initialization,
-            use_external_buffer,
-            skip_not_found_url);
+        return std::pair{
+            std::make_shared<ReadWriteBufferFromHTTP>(
+                uri,
+                method,
+                out_stream_callback,
+                timeouts,
+                credentials,
+                max_redirects,
+                buffer_size,
+                settings,
+                http_header_entries,
+                // HTTP Range has inclusive bounds, i.e. [from, to]
+                ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
+                remote_host_filter,
+                delay_initialization,
+                use_external_buffer,
+                skip_not_found_url),
+            Range{next_range->first, next_range->second}};
+    }
+
+    off_t seek(off_t off, [[maybe_unused]] int whence) override
+    {
+        range_generator = RangeGenerator{total_object_size, range_step, static_cast<size_t>(off)};
+        return off;
+    }
+
+    std::optional<size_t> getTotalSize() override
+    {
+        return total_object_size;
     }
 
 private:
     RangeGenerator range_generator;
+    size_t total_object_size;
+    size_t range_step;
     Poco::URI uri;
     std::string method;
     OutStreamCallback out_stream_callback;

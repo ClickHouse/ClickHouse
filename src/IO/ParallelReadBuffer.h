@@ -1,7 +1,8 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBuffer.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Common/ThreadPool.h>
 
 namespace DB
@@ -19,42 +20,51 @@ namespace DB
  *
  * Number of working readers limited by max_working_readers.
  */
-class ParallelReadBuffer : public ReadBuffer
+class ParallelReadBuffer : public SeekableReadBufferWithSize
 {
 private:
-
     /// Blocks until data occurred in the first reader or this reader indicate finishing
     /// Finished readers removed from queue and data from next readers processed
     bool nextImpl() override;
 
+    void initializeWorkers();
+
 public:
+    struct Range
+    {
+        size_t from;
+        size_t to;
+    };
+
+    using ReaderWithRange = std::pair<ReadBufferPtr, Range>;
 
     class ReadBufferFactory
     {
     public:
-        virtual ReadBufferPtr getReader() = 0;
+        virtual std::optional<ReaderWithRange> getReader() = 0;
         virtual ~ReadBufferFactory() = default;
+        virtual off_t seek(off_t off, int whence) = 0;
+        virtual std::optional<size_t> getTotalSize() = 0;
     };
 
     explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers);
 
-    ~ParallelReadBuffer() override
-    {
-        finishAndWait();
-    }
+    ~ParallelReadBuffer() override { finishAndWait(); }
+
+    off_t seek(off_t off, int whence) override;
+    std::optional<size_t> getTotalSize() override;
+    off_t getPosition() override;
 
 private:
-
     /// Reader in progress with a list of read segments
     struct ReadWorker
     {
-        explicit ReadWorker(ReadBufferPtr reader_)
-            : reader(reader_)
-        {}
+        explicit ReadWorker(ReadBufferPtr reader_, const Range & range_) : reader(reader_), range(range_) { }
 
         ReadBufferPtr reader;
         std::deque<Memory<>> segments;
         bool finished{false};
+        Range range;
     };
 
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
@@ -101,8 +111,10 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    bool all_completed{false};
-};
+    off_t current_position{0};
 
+    bool all_completed{false};
+    bool all_created{false};
+};
 
 }

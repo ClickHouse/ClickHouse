@@ -1,4 +1,6 @@
 #include <IO/ParallelReadBuffer.h>
+#include <base/logger_useful.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -6,18 +8,103 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
+
 }
 
 ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers)
-    : ReadBuffer(nullptr, 0)
-    , pool(max_working_readers)
-    , reader_factory(std::move(reader_factory_))
+    : SeekableReadBufferWithSize(nullptr, 0), pool(max_working_readers), reader_factory(std::move(reader_factory_))
 {
-    /// Create required number of processors.
-    /// Processor start working after constructor exits.
     std::lock_guard<std::mutex> lock(mutex);
-    for (size_t i = 0; i < max_working_readers; ++i)
+    initializeWorkers();
+}
+
+void ParallelReadBuffer::initializeWorkers()
+{
+    for (size_t i = 0; i < pool.getMaxThreads(); ++i)
         pool.scheduleOrThrow([this] { processor(); });
+}
+
+off_t ParallelReadBuffer::seek(off_t offset, int whence)
+{
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    if (offset < 0)
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+    if (!working_buffer.empty() && size_t(offset) >= current_position - working_buffer.size() && offset < current_position)
+    {
+        pos = working_buffer.end() - (current_position - offset);
+        assert(pos >= working_buffer.begin());
+        assert(pos <= working_buffer.end());
+
+        return offset;
+    }
+
+
+    const auto offset_is_in_range
+        = [&](const auto & range) { return static_cast<size_t>(offset) >= range.from && static_cast<size_t>(offset) < range.to; };
+
+    std::unique_lock lock{mutex};
+    while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
+    {
+        read_workers.pop_front();
+    }
+
+    if (!read_workers.empty())
+    {
+        auto & front_worker = read_workers.front();
+        auto & segments = front_worker->segments;
+        current_position = front_worker->range.from;
+        while (true)
+        {
+            next_condvar.wait(lock, [&] { return !segments.empty(); });
+
+            if (static_cast<size_t>(offset) < current_position + segments.front().size())
+            {
+                segment = std::move(segments.front());
+                segments.pop_front();
+                working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
+                current_position += segment.size();
+                front_worker->range.from += segment.size();
+                pos = working_buffer.end() - (current_position - offset);
+                return offset;
+            }
+
+            current_position += segments.front().size();
+            front_worker->range.from += segments.front().size();
+            segments.pop_front();
+        }
+    }
+
+    lock.unlock();
+    finishAndWait();
+    lock.lock();
+
+    reader_factory->seek(offset, whence);
+    all_created = false;
+    all_completed = false;
+    lock.unlock();
+
+    current_position = offset;
+    resetWorkingBuffer();
+
+    emergency_stop = false;
+    initializeWorkers();
+    return offset;
+}
+
+std::optional<size_t> ParallelReadBuffer::getTotalSize()
+{
+    std::lock_guard lock{mutex};
+    return reader_factory->getTotalSize();
+}
+
+off_t ParallelReadBuffer::getPosition()
+{
+    return current_position - available();
 }
 
 bool ParallelReadBuffer::nextImpl()
@@ -27,12 +114,14 @@ bool ParallelReadBuffer::nextImpl()
 
     while (true)
     {
-        std::unique_lock<std::mutex> lock(mutex);
-        next_condvar.wait(lock, [this]()
-        {
-            /// Check if no more readers left or current reader can be processed
-            return emergency_stop || read_workers.empty() || currentWorkerReady();
-        });
+        std::unique_lock lock(mutex);
+        next_condvar.wait(
+            lock,
+            [this]()
+            {
+                /// Check if no more readers left or current reader can be processed
+                return emergency_stop || (all_created && read_workers.empty()) || currentWorkerReady();
+            });
 
         if (emergency_stop)
         {
@@ -47,38 +136,44 @@ bool ParallelReadBuffer::nextImpl()
             read_workers.pop_front();
 
         /// All readers processed, stop
-        if (read_workers.empty())
+        if (read_workers.empty() && all_created)
         {
             all_completed = true;
             return false;
         }
 
+        auto & front_worker = read_workers.front();
         /// Read data from first segment of the first reader
-        if (!read_workers.front()->segments.empty())
+        if (!front_worker->segments.empty())
         {
-            segment = std::move(read_workers.front()->segments.front());
-            read_workers.front()->segments.pop_front();
+            segment = std::move(front_worker->segments.front());
+            front_worker->range.from += segment.size();
+            front_worker->segments.pop_front();
             break;
         }
     }
     working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
+    current_position += working_buffer.size();
     return true;
 }
 
 void ParallelReadBuffer::processor()
 {
-    while (true)
+    while (!emergency_stop)
     {
         ReadWorkerPtr worker;
         {
             /// Create new read worker and put in into end of queue
             /// reader_factory is not thread safe, so we call getReader under lock
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             auto reader = reader_factory->getReader();
-            if (reader == nullptr)
+            if (!reader)
+            {
+                all_created = true;
                 break;
+            }
 
-            worker = read_workers.emplace_back(std::make_shared<ReadWorker>(reader));
+            worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader->first), reader->second));
         }
 
         /// Start processing
@@ -94,7 +189,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
         {
             if (!read_worker->reader->next())
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard lock(mutex);
                 read_worker->finished = true;
                 next_condvar.notify_all();
                 break;
@@ -108,7 +203,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
             memcpy(new_segment.data(), buffer.begin(), buffer.size());
             {
                 /// New data ready to be read
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard lock(mutex);
                 read_worker->segments.emplace_back(std::move(new_segment));
                 next_condvar.notify_all();
             }
@@ -122,7 +217,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
 void ParallelReadBuffer::onBackgroundException()
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
