@@ -12,6 +12,10 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+}
 
 static void setupLogging(const std::string & log_level)
 {
@@ -32,8 +36,14 @@ static std::string extractFromConfig(
     if (has_zk_includes && process_zk_includes)
     {
         DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
-        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
-                *bootstrap_configuration, "zookeeper", nullptr);
+
+        if (bootstrap_configuration->has("zookeeper") && bootstrap_configuration->has("keeper"))
+            throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both zookeeper and keeper are specified");
+
+        zkutil::ZooKeeperPtr zookeeper;
+        zookeeper = std::make_shared<zkutil::ZooKeeper>(
+            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
+
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }

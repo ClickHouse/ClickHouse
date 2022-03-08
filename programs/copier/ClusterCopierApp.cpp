@@ -12,6 +12,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+}
+
 /// ClusterCopierApp
 
 void ClusterCopierApp::initialize(Poco::Util::Application & self)
@@ -191,6 +196,9 @@ void ClusterCopierApp::mainImpl()
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
+
+    if (config().has("zookeeper") || config().has("keeper"))
+        throw Exception("Both zookeeper and keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
