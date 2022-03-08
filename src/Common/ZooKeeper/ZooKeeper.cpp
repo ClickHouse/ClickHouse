@@ -175,14 +175,32 @@ ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int3
 
 struct ZooKeeperArgs
 {
+public:
     ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
     {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_name, keys);
-
         session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
         operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
         implementation = "zookeeper";
+
+        if (endsWith(config_name, "keeper_server.raft_configuration"))
+            initFromSectionKeeperServer(config, config_name);
+        else
+            initFromSectionKeeper(config, config_name);
+
+        if (!chroot.empty())
+        {
+            if (chroot.front() != '/')
+                throw KeeperException(std::string("Root path in config file should start with '/', but got ") + chroot, Coordination::Error::ZBADARGUMENTS);
+            if (chroot.back() == '/')
+                chroot.pop_back();
+        }
+    }
+
+private:
+    void initFromSectionKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_name, keys);
         for (const auto & key : keys)
         {
             if (startsWith(key, "node"))
@@ -216,16 +234,38 @@ struct ZooKeeperArgs
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
         }
+    }
 
-        if (!chroot.empty())
+    void initFromSectionKeeperServer(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_name, keys);
+        
+        bool secure = false;
+        for (const auto & key : keys)
         {
-            if (chroot.front() != '/')
-                throw KeeperException(std::string("Root path in config file should start with '/', but got ") + chroot, Coordination::Error::ZBADARGUMENTS);
-            if (chroot.back() == '/')
-                chroot.pop_back();
+            if (key == "server")
+            {
+                hosts.push_back(
+                        // (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "") +
+                        config.getString(config_name + "." + key + ".hostname") + ":"
+                        + config.getString(config_name + "." + key + ".port", "9234")
+                );
+            }
+            else if (key == "secure")
+            {
+                secure = config.getBool(config_name + "." + key, false);
+            }
+        }
+        
+        if (secure && !hosts.empty())
+        {
+            for (auto & host : hosts)
+                host = "secure://" + host;
         }
     }
 
+public:
     Strings hosts;
     std::string identity;
     int session_timeout_ms;
