@@ -491,22 +491,22 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
     if (current_file_segment_it == file_segments_holder->file_segments.end())
         return false;
 
-    // SCOPE_EXIT({
-    //     if (current_file_segment_it == file_segments_holder->file_segments.end())
-    //         return;
+    SCOPE_EXIT({
+        if (current_file_segment_it == file_segments_holder->file_segments.end())
+            return;
 
-    //     auto & file_segment = *current_file_segment_it;
+        auto & file_segment = *current_file_segment_it;
 
-    //     bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    //     if (download_current_segment)
-    //     {
-    //         bool file_segment_already_completed = !file_segment->isDownloader();
-    //         if (!file_segment_already_completed)
-    //             file_segment->completeBatchAndResetDownloader();
-    //     }
+        bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
+        if (download_current_segment)
+        {
+            bool file_segment_already_completed = !file_segment->isDownloader();
+            if (!file_segment_already_completed)
+                file_segment->completeBatchAndResetDownloader();
+        }
 
-    //     assert(!file_segment->isDownloader());
-    // });
+        assert(!file_segment->isDownloader());
+    });
 
     bytes_to_predownload = 0;
 

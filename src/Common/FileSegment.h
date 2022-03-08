@@ -125,8 +125,9 @@ private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
     void complete();
-    void completeImpl();
+    void completeImpl(bool allow_non_strict_checking = false);
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
+    static String getCallerIdImpl(bool allow_non_strict_checking = false);
 
     const Range segment_range;
 
@@ -164,7 +165,18 @@ struct FileSegmentsHolder : private boost::noncopyable
         /// remain only uncompleted file segments.
 
         for (auto & segment : file_segments)
+        {
             segment->complete();
+
+            // try
+            // {
+            //     segment->complete();
+            // }
+            // catch (...)
+            // {
+            //     tryLogCurrentException(__PRETTY_FUNCTION__);
+            // }
+        }
     }
 
     FileSegments file_segments{};
