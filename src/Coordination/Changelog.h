@@ -123,7 +123,7 @@ public:
 
     uint64_t size() const
     {
-        return logs.size() - (last_compact_id - delete_cursor);
+        return logs.size() - (is_lag_compact ? (last_compact_id - delete_cursor) : 0);
     }
 
     /// Fsync log to disk
