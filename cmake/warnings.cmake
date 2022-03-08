@@ -145,11 +145,14 @@ elseif (COMPILER_GCC)
     # Warn about anything that depends on the “size of” a function type or of void
     add_cxx_compile_options(-Wpointer-arith)
     # Warn if anything is declared more than once in the same scope
-    add_cxx_compile_options(-Wredundant-decls)
+    # add_cxx_compile_options(-Wredundant-decls)
     # Member initialization reordering
     add_cxx_compile_options(-Wreorder)
     # Obvious
-    add_cxx_compile_options(-Wshadow)
+    # add_cxx_compile_options(-Wshadow)
+
+    add_cxx_compile_options(-Wno-redundant-move)
+
     # Warn if left shifting a negative value
     add_cxx_compile_options(-Wshift-negative-value)
     # Warn about a definition of an unsized deallocation function

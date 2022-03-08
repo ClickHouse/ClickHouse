@@ -500,6 +500,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
                 return std::make_shared<DataTypeUUID>();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {%x} is not supported", object_ext.type());
         }
+        default:
+            return nullptr;
     }
 }
 
