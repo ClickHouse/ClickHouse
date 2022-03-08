@@ -115,12 +115,12 @@ public:
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
-        , sample_block(sample_block_)
-        , to_read_block(sample_block)
+        , sample_block(std::move(sample_block_))
         , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
     {
+        to_read_block = sample_block;
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
         {
@@ -206,12 +206,16 @@ public:
 
                 /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
+                auto names = source_info->partition_name_types.getNames();
+                auto fields = source_info->hive_files[current_idx]->getPartitionValues();
                 for (size_t i = 0; i < types.size(); ++i)
                 {
-                    if (!sample_block.has(source_info->partition_name_types.getNames()[i]))
+                    // Only add the required partition columns. partition columns are not read from readbuffer
+                    // the column must be in sample_block, otherwise sample_block.getPositionByName(names[i]) will throw an exception
+                    if (!sample_block.has(names[i]))
                         continue;
-                    auto column = types[i]->createColumnConst(num_rows, source_info->hive_files[current_idx]->getPartitionValues()[i]);
-                    auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
+                    auto column = types[i]->createColumnConst(num_rows, fields[i]);
+                    auto previous_idx = sample_block.getPositionByName(names[i]);
                     columns.insert(columns.begin() + previous_idx, column);
                 }
 
@@ -548,28 +552,28 @@ bool StorageHive::isColumnOriented() const
     return format_name == "Parquet" || format_name == "ORC";
 }
 
-Block StorageHive::getActualColumnsToRead(Block sample_block, const Block & header_block, const NameSet & partition_columns) const
+void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const
 {
     if (!isColumnOriented())
-        return header_block;
-    Block result_block = sample_block;
+        sample_block = header_block;
+    UInt32 erased_columns = 0;
     for (const auto & column : partition_columns)
     {
-        sample_block.erase(column);
+        if (sample_block.has(column))
+            erased_columns++;
     }
-    if (!sample_block.columns())
+    if (erased_columns == sample_block.columns())
     {
         for (size_t i = 0; i < header_block.columns(); ++i)
         {
             const auto & col = header_block.getByPosition(i);
             if (!partition_columns.count(col.name))
             {
-                result_block.insert(col);
+                sample_block.insert(col);
                 break;
             }
         }
     }
-    return result_block;
 }
 Pipe StorageHive::read(
     const Names & column_names,
@@ -646,7 +650,7 @@ Pipe StorageHive::read(
             sources_info->need_file_column = true;
     }
 
-    sample_block = getActualColumnsToRead(sample_block, header_block, NameSet{partition_names.begin(), partition_names.end()});
+    getActualColumnsToRead(sample_block, header_block, NameSet{partition_names.begin(), partition_names.end()});
 
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
