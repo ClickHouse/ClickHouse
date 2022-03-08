@@ -16,7 +16,6 @@ namespace ErrorCodes
 ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers)
     : SeekableReadBufferWithSize(nullptr, 0), pool(max_working_readers), reader_factory(std::move(reader_factory_))
 {
-    std::lock_guard<std::mutex> lock(mutex);
     initializeWorkers();
 }
 
@@ -81,12 +80,11 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
     lock.unlock();
     finishAndWait();
-    lock.lock();
 
     reader_factory->seek(offset, whence);
     all_created = false;
     all_completed = false;
-    lock.unlock();
+    read_workers.clear();
 
     current_position = offset;
     resetWorkingBuffer();
@@ -170,6 +168,7 @@ void ParallelReadBuffer::processor()
             if (!reader)
             {
                 all_created = true;
+                next_condvar.notify_all();
                 break;
             }
 
