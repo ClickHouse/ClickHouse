@@ -3,13 +3,9 @@
 #if USE_YAML_CPP
 #include "YAMLParser.h"
 
-#include <string>
-#include <cstring>
 #include <vector>
 
 #include <Poco/DOM/Document.h>
-#include <Poco/DOM/DOMParser.h>
-#include <Poco/DOM/DOMWriter.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/AutoPtr.h>
@@ -18,8 +14,6 @@
 #include <Common/Exception.h>
 
 #include <yaml-cpp/yaml.h>
-
-#include <base/logger_useful.h>
 
 using namespace Poco::XML;
 
