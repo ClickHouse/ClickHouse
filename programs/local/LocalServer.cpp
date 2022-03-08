@@ -411,7 +411,8 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
+    connection = LocalConnection::createConnection(
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -775,7 +776,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());

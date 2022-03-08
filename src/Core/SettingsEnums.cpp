@@ -64,7 +64,8 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
-     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
+     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
+     {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,

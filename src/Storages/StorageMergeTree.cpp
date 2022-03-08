@@ -745,9 +745,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
     {
         while (true)
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
+                future_part, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
@@ -1057,7 +1056,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     bool scheduled = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(

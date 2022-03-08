@@ -53,6 +53,7 @@ StorageFileLog::StorageFileLog(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     const String & path_,
+    const String & metadata_base_path_,
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
@@ -61,6 +62,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
     , path(path_)
+    , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
     , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
@@ -94,17 +96,24 @@ StorageFileLog::StorageFileLog(
 
 void StorageFileLog::loadMetaFiles(bool attach)
 {
-    const auto & storage = getStorageID();
-    root_meta_path
-        = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
-
     /// Attach table
     if (attach)
     {
-        /// Meta file may lost, log and create directory
-        if (!std::filesystem::exists(root_meta_path))
+        const auto & storage = getStorageID();
+
+        auto metadata_path_exist = std::filesystem::exists(metadata_base_path);
+        auto previous_path = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
+
+        /// For compatibility with the previous path version.
+        if (std::filesystem::exists(previous_path) && !metadata_path_exist)
         {
-            /// Create root_meta_path directory when store meta data
+            std::filesystem::copy(previous_path, metadata_base_path, std::filesystem::copy_options::recursive);
+            std::filesystem::remove_all(previous_path);
+        }
+        /// Meta file may lost, log and create directory
+        else if (!metadata_path_exist)
+        {
+            /// Create metadata_base_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
         }
         /// Load all meta info to file_infos;
@@ -113,14 +122,14 @@ void StorageFileLog::loadMetaFiles(bool attach)
     /// Create table, just create meta data directory
     else
     {
-        if (std::filesystem::exists(root_meta_path))
+        if (std::filesystem::exists(metadata_base_path))
         {
             throw Exception(
                 ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
                 "Metadata files already exist by path: {}, remove them manually if it is intended",
-                root_meta_path);
+                metadata_base_path);
         }
-        /// We do not create the root_meta_path directory at creation time, create it at the moment of serializing
+        /// We do not create the metadata_base_path directory at creation time, create it at the moment of serializing
         /// meta files, such that can avoid unnecessarily create this directory if create table failed.
     }
 }
@@ -211,9 +220,9 @@ void StorageFileLog::loadFiles()
 
 void StorageFileLog::serialize() const
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
     {
-        std::filesystem::create_directories(root_meta_path);
+        std::filesystem::create_directories(metadata_base_path);
     }
     for (const auto & [inode, meta] : file_infos.meta_by_inode)
     {
@@ -235,9 +244,9 @@ void StorageFileLog::serialize() const
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
     {
-        std::filesystem::create_directories(root_meta_path);
+        std::filesystem::create_directories(metadata_base_path);
     }
     auto full_name = getFullMetaPath(file_meta.file_name);
     if (!std::filesystem::exists(full_name))
@@ -256,11 +265,11 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
         return;
     /// In case of single file (not a watched directory),
     /// iterated directory always has one file inside.
-    for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
+    for (const auto & dir_entry : std::filesystem::directory_iterator{metadata_base_path})
     {
         if (!dir_entry.is_regular_file())
         {
@@ -268,7 +277,7 @@ void StorageFileLog::deserialize()
                 ErrorCodes::BAD_FILE_TYPE,
                 "The file {} under {} is not a regular file when deserializing meta files",
                 dir_entry.path().c_str(),
-                root_meta_path);
+                metadata_base_path);
         }
 
         ReadBufferFromFile in(dir_entry.path().c_str());
@@ -372,8 +381,8 @@ void StorageFileLog::drop()
 {
     try
     {
-        if (std::filesystem::exists(root_meta_path))
-            std::filesystem::remove_all(root_meta_path);
+        if (std::filesystem::exists(metadata_base_path))
+            std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -801,6 +810,7 @@ void registerStorageFileLog(StorageFactory & factory)
             args.getContext(),
             args.columns,
             path,
+            args.relative_data_path,
             format,
             std::move(filelog_settings),
             args.comment,
@@ -817,6 +827,9 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileInfos()
 {
+    if (file_infos.file_names.empty())
+        return false;
+
     if (!directory_watch)
     {
         /// For table just watch one file, we can not use directory monitor to watch it
