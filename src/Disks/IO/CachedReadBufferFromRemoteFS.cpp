@@ -2,7 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/hex.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 
