@@ -16,12 +16,12 @@ SELECT uniq(SearchPhrase), count() AS c FROM test.hits_s3 WHERE SearchPhrase != 
 SELECT uniq(SearchPhrase), uniq(UserID) AS u FROM test.hits_s3 WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
 SELECT SearchEngineID, uniq(SearchPhrase), count() AS c FROM test.hits_s3 WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
 SELECT UserID, count() FROM test.hits_s3 GROUP BY UserID ORDER BY count() DESC LIMIT 10;
-SELECT UserID, uniq(SearchPhrase) as m, count() FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m DESC LIMIT 10;
-SELECT UserID, uniq(SearchPhrase) as m, count() FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m LIMIT 10;
+SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c DESC LIMIT 10;
+SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c LIMIT 10;
 SELECT UserID, toMinute(EventTime) AS m, uniq(SearchPhrase), count() FROM test.hits_s3 GROUP BY UserID, m, SearchPhrase ORDER BY UserID, m DESC LIMIT 10;
 SELECT UserID FROM test.hits_s3 WHERE UserID = 12345678901234567890;
 SELECT count() FROM test.hits_s3 WHERE URL LIKE '%metrika%';
-SELECT uniq(SearchPhrase), max(URL), count() AS c FROM test.hits_s3 WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+SELECT uniq(SearchPhrase) as u, max(URL) as m, count() AS c FROM test.hits_s3 WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u, m, c DESC LIMIT 10;
 SELECT uniq(SearchPhrase), max(URL), max(Title), count() AS c, uniq(UserID) FROM test.hits_s3 WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
 SELECT * FROM test.hits_s3 WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10 format Null;
 SELECT SearchPhrase FROM test.hits_s3 WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10 FORMAT Null;
