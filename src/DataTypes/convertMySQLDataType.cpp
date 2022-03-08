@@ -6,7 +6,7 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
-#include "DataTypeDate.h"
+#include "DataTypeDate32.h"
 #include "DataTypeDateTime.h"
 #include "DataTypeDateTime64.h"
 #include "DataTypeEnum.h"
@@ -73,7 +73,7 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     else if (type_name == "double")
         res = std::make_shared<DataTypeFloat64>();
     else if (type_name == "date")
-        res = std::make_shared<DataTypeDate>();
+        res = std::make_shared<DataTypeDate32>();
     else if (type_name == "binary")
         res = std::make_shared<DataTypeFixedString>(length);
     else if (type_name == "datetime" || type_name == "timestamp")
