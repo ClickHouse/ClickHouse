@@ -168,6 +168,7 @@ private:
     uint64_t max_log_id = 0;
     uint64_t delete_cursor = 0;
     uint64_t last_compact_id = 0;
+    bool is_lag_compact = false;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
     ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};

@@ -602,6 +602,7 @@ void Changelog::compact(uint64_t up_to_log_index)
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
     last_compact_id = up_to_log_index;
+    is_lag_compact = true;
     cleanEntry(1000);
 
     if (need_rotate)
@@ -749,11 +750,16 @@ void Changelog::cleanLogThread()
 
 void Changelog::cleanEntry(int count)
 {
+    if (!is_lag_compact)
+        return;
     for (int n = 0; delete_cursor <= last_compact_id && n < count; ++delete_cursor, ++n)
     {
         logs.erase(delete_cursor);
         if (delete_cursor == last_compact_id)
+        {
+            is_lag_compact = false;
             break;
+        }
     }
 }
 
