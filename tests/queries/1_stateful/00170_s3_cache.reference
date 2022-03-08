@@ -127,27 +127,27 @@ SELECT UserID, count() FROM test.hits_s3 GROUP BY UserID ORDER BY count() DESC L
 8032089779962875762	8149
 1839265440135330496	7816
 5548175707459682622	7806
-SELECT UserID, uniq(SearchPhrase) as m, count() FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m DESC LIMIT 10;
+SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c DESC LIMIT 10;
 2961521519262	1	56
+87878526839192	1	414
+87878526839192	1	15
+87878526839192	1	6
 87878526839192	1	6
 87878526839192	1	5
-87878526839192	1	3
-87878526839192	1	15
-87878526839192	1	2
-87878526839192	1	4
-87878526839192	1	1
-87878526839192	1	1
 87878526839192	1	5
-SELECT UserID, uniq(SearchPhrase) as m, count() FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m LIMIT 10;
+87878526839192	1	5
+87878526839192	1	4
+87878526839192	1	3
+SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c LIMIT 10;
 2961521519262	1	56
-87878526839192	1	6
-87878526839192	1	5
-87878526839192	1	3
-87878526839192	1	15
+87878526839192	1	1
+87878526839192	1	1
+87878526839192	1	1
 87878526839192	1	2
+87878526839192	1	3
 87878526839192	1	4
-87878526839192	1	1
-87878526839192	1	1
+87878526839192	1	5
+87878526839192	1	5
 87878526839192	1	5
 SELECT UserID, toMinute(EventTime) AS m, uniq(SearchPhrase), count() FROM test.hits_s3 GROUP BY UserID, m, SearchPhrase ORDER BY UserID, m DESC LIMIT 10;
 2961521519262	54	1	1
@@ -163,17 +163,17 @@ SELECT UserID, toMinute(EventTime) AS m, uniq(SearchPhrase), count() FROM test.h
 SELECT UserID FROM test.hits_s3 WHERE UserID = 12345678901234567890;
 SELECT count() FROM test.hits_s3 WHERE URL LIKE '%metrika%';
 2348
-SELECT uniq(SearchPhrase), max(URL), count() AS c FROM test.hits_s3 WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
-1	http://korer.ru/categories.ru%2Fevliliday.az/sob.ru/ok_ads_mg.html?pid=30&metrika.com/ssochm/prochaykov0SQDP7o1ZyXi1pMD/GBO1KXiJFOzGaw%3D6120&p=4&pos=30&qdsريكي مصرى جامد.html#bc2f5&keyno=0&l10n=ru&butto.lt/techer	5
-1	http://korer.ru/Session/teams/82345/?i=783&rpt=storiya/701020&lr=1082-suprofession_id=19067250/488/819657/n4p/1472723,0.00002523-lev-new.mcko.ru/toyota_car=0&available_key=0&extrase=LAW;dst=0&metrikaz_11017-fw-13635_36.php?idPoblast/arent[0]=300&targetimg%2FYusecec7dca011917 годи смотреть онлайн&clid=1&hit=7207][32327-серьги беременная фото	4
+SELECT uniq(SearchPhrase) as u, max(URL) as m, count() AS c FROM test.hits_s3 WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u, m, c DESC LIMIT 10;
 1	goal://delive/812metrika.com/kizi-bulochkomna	4
-1	http://korer.ru/categories.ru%2Fekonomi%2Fpolitics?album_phones-hektoruntu-es-on-bilgilis-so-skladimir.nu/publishDateFrom=yandex.ru/DOWNLOAD FILE FROMINC=127&ct=advmakeup.ru/video/search?rdrnd=6427100&metrikatullari&is_setti74.ru/index	4
-1	http://tv.yandsearch-tattivatehometrikat/kvarticle/209000000d4fbcdn	3
-1	http://korer.ru/categories.ru%2Fekonomy.html#/battle-ru9.html&language=43&p=78&metrikansii/houses-s-Dneprice_doma_dachi?p=2&text=моя страты фенечестве бесплатно с айфолл авизентарник	3
-1	http://metrika-mototehnologodam	2
-1	http://korer.ru/categories.ru%2Fekonomik-etti_v250000284.1406-echo.msk.vsauna%2FBalan-kurtka-onuruna-metrika.ru/sign%3D286737&hid=91395134/n4p/24715e29fa1a1C8AbsrUXI	2
-1	http://korer.ru/categories.ru%2Fevent=&durMin=&search=1&metrika.ru/yandex.ru/inworldofwarplaycasti_i_dach_greedit/video/tarifinis-Access_to_poshu-many_id%3D0%26adurlugu	2
-1	http://avito.ru/yandex.ru/commetrikan-stat/simpleSortivnye	2
+1	goal://delive/812metrika.com/kizi-bulochkomna	2
+1	goal://delive/812metrika.com/kizi-bulochkomna	2
+1	goal://delive/812metrika.com/kizi-bulochkomna	2
+1	goal://mail.yandex.ru/yrs/ekonometrika/kermosure-batakte	2
+1	http:%2F%2F%2F2014/03/18/cid=54&metrika.com	1
+1	http:%2F%2Ffiles&order=0&metrikancy-podar	1
+1	http:%2F%2Fiteme.metrika	1
+1	http:%2F%2Fproduct/shop.rbc.ru/rostometrikatuvali-k-pensadabuga/nauka_30_m_610_730641%2F01%2Fannovsk/dom-drugie_zhalujsta-s-social	1
+1	http:%2F%2Fwww.kirovanny/donnel_mart]=creative=0&metrika.ru/socialog	1
 SELECT uniq(SearchPhrase), max(URL), max(Title), count() AS c, uniq(UserID) FROM test.hits_s3 WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
 1	http://korer.ru/categories.ru/?vkb	Яндекс: нашлось 184 тыс изображений програница 27 тыс. ответов в России -	1245	1
 1	http://korer.ru/categories.ru/?vkb	Яндекс.Картинках, поиск на AVITO.ru • Знакомства вакансии на дом электриса	710	1
