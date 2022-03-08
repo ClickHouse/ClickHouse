@@ -8,6 +8,7 @@ from typing import Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
+from env_helper import RUNNER_TEMP
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
@@ -19,7 +20,7 @@ def getenv(name: str, default: str = None):
     raise KeyError(f"Necessary {name} environment is not set")
 
 
-TEMP_PATH = getenv("TEMP_PATH", ".")
+TEMP_PATH = os.path.join(RUNNER_TEMP, "push_to_artifactory")
 # One of the following ENVs is necessary
 JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
@@ -45,11 +46,11 @@ class Packages:
             for name, arch in self.packages
         )
 
-        self.tgz = tuple("{}-{}.tgz".format(name, version) for name, _ in self.packages)
+        self.tgz = tuple(f"{name}-{version}.tgz" for name, _ in self.packages)
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:
-            raise ValueError("{} not in {}".format(deb_pkg, self.deb))
+            raise ValueError(f"{deb_pkg} not in {self.deb}")
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
     @staticmethod

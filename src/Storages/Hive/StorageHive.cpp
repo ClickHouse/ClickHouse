@@ -290,14 +290,22 @@ StorageHive::StorageHive(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
     setInMemoryMetadata(storage_metadata);
+}
+
+void StorageHive::lazyInitialize()
+{
+    std::lock_guard lock{init_mutex};
+    if (has_initialized)
+        return;
+
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
-    auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
+    auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
-    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
-    table_schema = hive_table_metadata->getTable()->sd.cols;
+    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
+    table_schema = hive_table_metadata->sd.cols;
 
-    FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->getTable()->sd.inputFormat);
+    FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
     switch (hdfs_file_format)
     {
         case FileFormat::TEXT:
@@ -335,6 +343,7 @@ StorageHive::StorageHive(
     }
 
     initMinMaxIndexExpression();
+    has_initialized = true;
 }
 
 void StorageHive::initMinMaxIndexExpression()
@@ -556,6 +565,8 @@ Pipe StorageHive::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    lazyInitialize();
+
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
