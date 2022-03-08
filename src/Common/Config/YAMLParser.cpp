@@ -68,7 +68,7 @@ void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_elemen
         case YAML::NodeType::Sequence:
         {
             for (const auto & child_node : node)
-                if (parent_xml_element.hasChildNodes())
+                if (parent_xml_element.hasChildNodes() && !child_node.IsMap())
                 {
                     /// We want to process sequences like that:
                     /// seq:
