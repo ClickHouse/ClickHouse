@@ -103,8 +103,8 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-protected:
     bool processQueryText(const String & text);
+
     virtual void readArguments(
         int argc,
         char ** argv,
@@ -220,6 +220,7 @@ protected:
 
     ProgressIndication progress_indication;
     bool need_render_progress = true;
+    bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
 
@@ -260,6 +261,8 @@ protected:
     };
 
     std::vector<HostAndPort> hosts_and_ports{};
+
+    bool allow_repeated_settings = false;
 
     bool cancelled = false;
 };
