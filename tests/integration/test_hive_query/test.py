@@ -121,7 +121,7 @@ def test_parquet_groupby_with_cache(started_cluster):
 def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
-    CREATE TABLE IF NOT EXSISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+    CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
     test_passed = False
     for i in range(10):
@@ -131,7 +131,7 @@ def test_cache_read_bytes(started_cluster):
         result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
         if result.strip() == '0':
             logging.info("ProfileEvent_ExternalDataSourceLocalCacheReadBytes == 0")
-            time.sleep(60)
+            time.sleep(10)
             continue
         test_passed = True
         break
