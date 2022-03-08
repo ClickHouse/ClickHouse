@@ -51,8 +51,21 @@ size_t FileSegment::getDownloadOffset() const
 
 String FileSegment::getCallerId()
 {
-    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().size == 0)
+    return getCallerIdImpl(false);
+}
+
+String FileSegment::getCallerIdImpl(bool allow_non_strict_checking)
+{
+    if (IFileCache::shouldBypassCache())
+    {
+        /// getCallerId() can be called from completeImpl(), which can be called from complete().
+        /// complete() is called from destructor of CachedReadBufferFromRemoteFS when there is no query id anymore.
+        /// Allow non strict checking only for internal usage.
+        if (allow_non_strict_checking)
+            return "None";
+
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cannot use cache without query id");
+    }
 
     return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
 }
@@ -321,7 +334,7 @@ void FileSegment::complete()
     cv.notify_all();
 }
 
-void FileSegment::completeImpl()
+void FileSegment::completeImpl(bool allow_non_strict_checking)
 {
     /// cache lock is always taken before segment lock.
     std::lock_guard cache_lock(cache->mutex);
@@ -361,7 +374,7 @@ void FileSegment::completeImpl()
         }
     }
 
-    if (downloader_id == getCallerId())
+    if (!downloader_id.empty() && downloader_id == getCallerIdImpl(allow_non_strict_checking))
     {
         LOG_TEST(log, "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
         downloader_id.clear();
