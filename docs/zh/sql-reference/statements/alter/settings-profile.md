@@ -1,13 +1,13 @@
 ---
 toc_priority: 48
-toc_title: SETTINGS PROFILE
+toc_title: 配置文件设置
 ---
 
-## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+## 更改配置文件设置 {#alter-settings-profile-statement}
 
-Changes settings profiles.
+更改配置文件设置。
 
-Syntax:
+语法:
 
 ``` sql
 ALTER SETTINGS PROFILE [IF EXISTS] TO name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
