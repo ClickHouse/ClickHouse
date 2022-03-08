@@ -373,6 +373,13 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_user)
+        config().setString("user", env_user);
+    if (env_password)
+        config().setString("password", env_password);
+
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
@@ -1121,7 +1128,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))
@@ -1279,8 +1291,6 @@ void Client::readArguments(
         else
         {
             in_external_group = false;
-            if (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv || arg == "--structure"sv || arg == "--types"sv)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
             /// Parameter arg after underline.
             if (startsWith(arg, "--param_"))
@@ -1366,6 +1376,8 @@ void Client::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
+            else if (arg == "--allow_repeated_settings"sv)
+                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }

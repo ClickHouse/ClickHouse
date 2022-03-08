@@ -6,12 +6,13 @@
 #include <map>
 #include <unordered_map>
 
-#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -232,7 +233,7 @@ public:
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        _exit(128 + signum);
+        safeExit(128 + signum);
 }
 
 
@@ -865,7 +866,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1732,7 +1733,10 @@ void ClientBase::showClientVersion()
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    cmd_settings.addProgramOptions(options_description.main_description.value());
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
