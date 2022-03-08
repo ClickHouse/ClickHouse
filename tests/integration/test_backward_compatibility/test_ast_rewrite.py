@@ -62,11 +62,19 @@ def test_backward_compatability(start_cluster):
         INSERT INTO default.table (`reportTime`, `appId`, `platform`, `firstIFrameTs`) VALUES (2, 2, 2, 2);
     """)
 
-    run_query("""
+    nodes[1].query("""
         SELECT
             toStartOfMinute(toDateTime(reportTime)) AS rtime,
-            sumIf(multiIf((firstIFrameTs > 0) AND (firstIFrameTs <= 100), 1, 0), (appId = 60) AND (firstIFrameTs > 0)) AS _in1000ms,
-            sumIf(1, (appId = 60) AND (firstIFrameTs > 0)) AS total_secondout
-        FROM default.table_all
+            sumIf(1, (appId = 60) AND (firstIFrameTs > 0))
+        FROM remote('node{1,2}', default, table)
+        GROUP BY rtime
+        SETTINGS optimize_rewrite_sum_if_to_count_if = 1
+    """)
+
+    nodes[0].query("""
+        SELECT
+            toStartOfMinute(toDateTime(reportTime)) AS rtime,
+            sumIf(1, (appId = 60) AND (firstIFrameTs > 0))
+        FROM remote('node{1,2}', default, table)
         GROUP BY rtime
     """)
