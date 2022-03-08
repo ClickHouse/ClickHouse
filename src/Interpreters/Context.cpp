@@ -1847,8 +1847,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper
-            = std::make_shared<zkutil::ZooKeeper>(config, config.has("zookeeper") ? "zookeeper" : "keeper", getZooKeeperLog());
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(
+            config,
+            config.has("zookeeper")    ? "zookeeper"
+                : config.has("keeper") ? "keeper"
+                                       : "keeper_server",
+            getZooKeeperLog());
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
@@ -1883,7 +1887,8 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
     try
     {
         /// If our server is part of main Keeper cluster
-        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper") || checkZooKeeperConfigIsLocal(getConfigRef(), "keeper"))
+        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper") || checkZooKeeperConfigIsLocal(getConfigRef(), "keeper")
+            || (!getConfigRef().has("zookeeper") && !getConfigRef().has("keeper") && getConfigRef().has("keeper_server")))
         {
             LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
             getZooKeeper();
@@ -2059,7 +2064,13 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, config->has("zookeeper") ? "zookeeper" : "keeper", shared->zookeeper, getZooKeeperLog());
+    reloadZooKeeperIfChangedImpl(
+        config,
+        config->has("zookeeper")    ? "zookeeper"
+            : config->has("keeper") ? "keeper"
+                                    : "keeper_server",
+        shared->zookeeper,
+        getZooKeeperLog());
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -2083,7 +2094,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
 bool Context::hasZooKeeper() const
 {
-    return getConfigRef().has("zookeeper") || getConfigRef().has("keeper");
+    return getConfigRef().has("zookeeper") || getConfigRef().has("keeper") || getConfigRef().has("keeper_server");
 }
 
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
