@@ -63,11 +63,12 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
             if (static_cast<size_t>(offset) < current_position + segments.front().size())
             {
+                arena.free(segment->data(), segment->size());
                 segment = std::move(segments.front());
                 segments.pop_front();
-                working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
-                current_position += segment.size();
-                front_worker->range.from += segment.size();
+                working_buffer = internal_buffer = Buffer(segment->data(), segment->data() + segment->size());
+                current_position += segment->size();
+                front_worker->range.from += segment->size();
                 pos = working_buffer.end() - (current_position - offset);
                 return offset;
             }
@@ -144,13 +145,17 @@ bool ParallelReadBuffer::nextImpl()
         /// Read data from first segment of the first reader
         if (!front_worker->segments.empty())
         {
+            if (segment)
+            {
+                arena.free(segment->data(), segment->size());
+            }
             segment = std::move(front_worker->segments.front());
-            front_worker->range.from += segment.size();
+            front_worker->range.from += segment->size();
             front_worker->segments.pop_front();
             break;
         }
     }
-    working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
+    working_buffer = internal_buffer = Buffer(segment->data(), segment->data() + segment->size());
     current_position += working_buffer.size();
     return true;
 }
@@ -198,7 +203,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
                 break;
 
             Buffer buffer = read_worker->reader->buffer();
-            Memory<> new_segment(buffer.size());
+            std::span new_segment(arena.alloc(buffer.size()), buffer.size());
             memcpy(new_segment.data(), buffer.begin(), buffer.size());
             {
                 /// New data ready to be read
