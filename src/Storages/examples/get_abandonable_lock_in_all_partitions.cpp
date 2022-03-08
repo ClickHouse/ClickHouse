@@ -26,7 +26,7 @@ try
     auto config = processor.loadConfig().configuration;
     String root_path = argv[2];
 
-    zkutil::ZooKeeper zk(*config, "zookeeper", nullptr);
+    zkutil::ZooKeeper zk(*config, config->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
 
     String temp_path = root_path + "/temp";
     String blocks_path = root_path + "/block_numbers";
