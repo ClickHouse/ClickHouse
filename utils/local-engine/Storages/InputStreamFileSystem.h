@@ -1,6 +1,6 @@
 #pragma once
 
-#include "duckdb.hpp"
+#include <External/duckdb.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

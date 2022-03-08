@@ -1,5 +1,5 @@
 #pragma once
-#include "CustomStorageMergeTree.h"
+#include <Storages/CustomStorageMergeTree.h>
 
 namespace local_engine
 {

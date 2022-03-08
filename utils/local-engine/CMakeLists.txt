@@ -5,14 +5,17 @@ include(FindJava)
 include(UseJava)
 include(FindJNI)
 
-set(JNI_NATIVE_SOURCES local_engine_jni.cpp)
-set(LOCALENGINE_SHARED_LIB local_engine_jni)
+#set(JNI_NATIVE_SOURCES local_engine_jni.cpp)
+set(LOCALENGINE_SHARED_LIB ch)
 
 add_subdirectory(proto)
 
 add_headers_and_sources(builder Builder)
 add_headers_and_sources(parser Parser)
 add_headers_and_sources(storages Storages)
+add_headers_and_sources(common Common)
+add_headers_and_sources(external External)
+
 include_directories(
         ${JNI_INCLUDE_DIRS}
         ${CMAKE_CURRENT_BINARY_DIR}/proto
@@ -23,11 +26,16 @@ include_directories(
 )
 
 add_library(${LOCALENGINE_SHARED_LIB} SHARED
-        ${JNI_NATIVE_SOURCES}
         ${builder_sources}
         ${parser_sources}
         ${storages_sources}
+        ${common_sources}
+        ${external_sources}
+        local_engine_jni.cpp
         )
+
+
+target_compile_options(${LOCALENGINE_SHARED_LIB} PUBLIC -fPIC)
 
 target_link_libraries(${LOCALENGINE_SHARED_LIB} PUBLIC
         clickhouse_aggregate_functions
@@ -40,10 +48,12 @@ target_link_libraries(${LOCALENGINE_SHARED_LIB} PUBLIC
         substrait
         loggers
         )
-target_compile_options(unwind PRIVATE -fPIC)
-target_compile_options(cxxabi PRIVATE -fPIC)
+if (USE_LIBCXX)
+    target_compile_options(unwind PRIVATE -fPIC)
+    target_compile_options(cxxabi PRIVATE -fPIC)
+    target_compile_options(cxx PRIVATE -fPIC)
+endif()
 target_compile_options(ssl PRIVATE -fPIC)
-target_compile_options(cxx PRIVATE -fPIC)
 target_compile_options(crypto PRIVATE -fPIC)
 target_compile_options(libpq PRIVATE -fPIC)
 target_compile_options(libpqxx PRIVATE -fPIC)

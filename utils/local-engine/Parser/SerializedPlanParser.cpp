@@ -23,7 +23,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <sys/stat.h>
 #include <Poco/URI.h>
-#include <Storages/MergeTreeTool.h>
+#include <Common/MergeTreeTool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/StorageMergeTreeFactory.h>

@@ -5,8 +5,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Columns/ColumnVector.h>
 
-#include "parquet-amalgamation.hpp"
-#include "duckdb.hpp"
+#include <External/parquet-amalgamation.hpp>
+#include <External/duckdb.hpp>
 #include "InputStreamFileSystem.h"
 
 using namespace DB;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <substrait/plan.pb.h>
-#include <Storages/MergeTreeTool.h>
+#include <Common/MergeTreeTool.h>
 
 
 namespace dbms

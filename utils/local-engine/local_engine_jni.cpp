@@ -1,51 +1,25 @@
-#include <iostream>
 #include <string>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Processors/Formats/Impl/CSVRowInputFormat.h>
-#include <Processors/Formats/Impl/CSVRowOutputFormat.h>
-#include <Processors/Sinks/NullSink.h>
-#include "include/com_intel_oap_row_RowIterator.h"
-#include "include/com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper.h"
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/registerFunctions.h>
-#include <IO/ReadBuffer.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
-#include <Parser/SerializedPlanParser.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Storages/Logger.h>
-
-#include <fstream>
 #include <jni.h>
-#include <Processors/Pipe.h>
 #include "jni_common.h"
-
-using namespace DB;
-
+#include <Parser/SerializedPlanParser.h>
 
 
-void registerAllFunctions()
-{
-    registerFunctions();
-    registerAggregateFunctions();
-}
+
+
 
 bool inside_main = true;
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern void registerAllFunctions();
+extern void init();
+extern char * createExecutor(std::string plan_string);
+
+namespace dbms
+{
+    class LocalExecutor;
+}
 
 static jclass spark_row_info_class;
 static jmethodID spark_row_info_constructor;
@@ -84,13 +58,7 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
 
 void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
 {
-    registerAllFunctions();
-    dbms::SerializedPlanParser::shared_context = SharedContextHolder(Context::createShared());
-    dbms::SerializedPlanParser::global_context = Context::createGlobal(dbms::SerializedPlanParser::shared_context.get());
-    dbms::SerializedPlanParser::global_context->makeGlobalContext();
-    dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
-    dbms::SerializedPlanParser::global_context->setPath("/");
-    local_engine::Logger::initConsoleLogger();
+    init();
 }
 
 jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(JNIEnv * env, jobject obj, jbyteArray plan)
@@ -99,11 +67,7 @@ jlong Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKe
     jbyte * plan_address = env->GetByteArrayElements(plan, nullptr);
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
-    auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-    dbms::SerializedPlanParser parser(context);
-    auto query_plan = parser.parse(plan_string);
-    dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
-    executor->execute(std::move(query_plan));
+    auto * executor = createExecutor( plan_string);
     return reinterpret_cast<jlong>(executor);
 }
 

@@ -18,8 +18,8 @@
 #include <Interpreters/Context.h>
 #include <cstdlib>
 #include <Common/PODArray_fwd.h>
-#include <Storages/MergeTreeTool.h>
-#include <Storages/Logger.h>
+#include <Common/MergeTreeTool.h>
+#include <Common/Logger.h>
 #include <common/logger_useful.h>
 #include <Common/Stopwatch.h>
 
@@ -266,7 +266,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "test-intel/", 1, 12, std::move(schema)).build();
+                        .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
@@ -546,71 +546,8 @@ static void BM_TestCreateExecute(benchmark::State& state)
         LOG_DEBUG(&Poco::Logger::root(), "create context: {}, create parser: {}, create executor: {}, execute executor: {}", _context, _parser, _executor, _execute);
     }
 }
-
-static void BM_TestCreateParquetExecute(benchmark::State& state)
-{
-    dbms::SerializedSchemaBuilder schema_builder;
-    auto schema = schema_builder
-                      .column("l_discount", "FP64")
-                      .column("l_extendedprice", "FP64")
-                      .column("l_quantity", "FP64")
-                      .column("l_shipdate_new", "Date")
-                      .build();
-    dbms::SerializedPlanBuilder plan_builder;
-    auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
-    auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
-    auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
-    auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
-    auto plan = plan_builder.registerSupportedFunctions()
-                    .aggregate({}, {measure1, measure2, measure3})
-                    .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
-                    .filter(dbms::scalarFunction(dbms::AND, {
-                                                                dbms::scalarFunction(AND, {
-                                                                                              dbms::scalarFunction(AND, {
-                                                                                                                            dbms::scalarFunction(AND, {
-                                                                                                                                                          dbms::scalarFunction(AND, {
-                                                                                                                                                                                        dbms::scalarFunction(AND, {
-                                                                                                                                                                                                                      dbms::scalarFunction(AND, {
-                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(3)}),
-                                                                                                                                                                                                                                                    scalarFunction(IS_NOT_NULL, {selection(0)})
-                                                                                                                                                                                                                                                }),
-                                                                                                                                                                                                                      scalarFunction(IS_NOT_NULL, {selection(2)})
-                                                                                                                                                                                                                  }),
-                                                                                                                                                                                        dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
-                                                                                                                                                                                    }),
-                                                                                                                                                          scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
-                                                                                                                                                      }),
-                                                                                                                            scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
-                                                                                                                        }),
-                                                                                              scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
-                                                                                          }),
-                                                                scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
-                                                            }))
-                    .readMergeTree("default", "test", "home/saber/Documents/data/mergetree", 1, 4, std::move(schema)).build();
-    std::string plan_string = plan->SerializeAsString();
-    dbms::SerializedPlanParser::global_context = global_context;
-    dbms::SerializedPlanParser::global_context->setConfig(dbms::SerializedPlanParser::config);
-    for (auto _: state)
-    {
-        Stopwatch stopwatch;
-        stopwatch.start();
-        auto context = Context::createCopy(dbms::SerializedPlanParser::global_context);
-        context->setPath("/");
-        auto _context = stopwatch.elapsedMicroseconds();
-        dbms::SerializedPlanParser parser(context);
-        auto query_plan = parser.parse(plan_string);
-        auto _parser = stopwatch.elapsedMicroseconds() - _context;
-        dbms::LocalExecutor * executor = new dbms::LocalExecutor(parser.query_context);
-        auto _executor = stopwatch.elapsedMicroseconds() - _parser;
-        executor->execute(std::move(query_plan));
-        auto _execute = stopwatch.elapsedMicroseconds() - _executor;
-        LOG_INFO(&Poco::Logger::root(), "create context: {}, create parser: {}, create executor: {}, execute executor: {}", _context, _parser, _executor, _execute);
-    }
-}
-
-
 //BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-//BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(1);
+BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
@@ -619,12 +556,13 @@ static void BM_TestCreateParquetExecute(benchmark::State& state)
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
+//BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
 int main(int argc, char** argv) {
     local_engine::Logger::initConsoleLogger();
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
+    global_context->setConfig(dbms::SerializedPlanParser::config);
     dbms::SerializedPlanParser::initFunctionEnv();
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
