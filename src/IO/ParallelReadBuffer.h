@@ -3,7 +3,10 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
+#include "Common/ArenaWithFreeLists.h"
 #include <Common/ThreadPool.h>
+
+#include <span>
 
 namespace DB
 {
@@ -62,7 +65,7 @@ private:
         explicit ReadWorker(ReadBufferPtr reader_, const Range & range_) : reader(reader_), range(range_) { }
 
         ReadBufferPtr reader;
-        std::deque<Memory<>> segments;
+        std::deque<std::span<char>> segments;
         bool finished{false};
         Range range;
     };
@@ -90,7 +93,8 @@ private:
     void onBackgroundException();
     void finishAndWait();
 
-    Memory<> segment;
+    ArenaWithFreeLists arena;
+    std::optional<std::span<char>> segment;
 
     ThreadPool pool;
 
