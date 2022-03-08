@@ -1220,6 +1220,7 @@ def materialized_database_settings_materialized_mysql_tables_list(clickhouse_nod
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
+
 def materialized_database_mysql_date_type_to_date32(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database")
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
@@ -1241,5 +1242,4 @@ def materialized_database_mysql_date_type_to_date32(clickhouse_node, mysql_node,
 
     check_query(clickhouse_node, "SELECT b from test_database.a order by a FORMAT TSV", "1970-01-01\n1925-03-16\n1971-02-16\n2101-05-16\n1925-04-16\n2022-02-16\n" + 
     "2283-11-11\n")
-
 
