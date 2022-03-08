@@ -17,7 +17,7 @@ class DockerImage:
     def __str__(self):
         return f"{self.name}:{self.version}"
 
-def get_images_with_versions(reports_path, required_image, pull=True):
+def get_images_with_versions(reports_path, required_image, pull=True, version=None):
     images_path = None
     for root, _, files in os.walk(reports_path):
         for f in files:
@@ -43,6 +43,8 @@ def get_images_with_versions(reports_path, required_image, pull=True):
         docker_image = DockerImage(image_name)
         if image_name in images:
             docker_image.version = images[image_name]
+        if version is not None:
+            docker_image.version = str(version)
         docker_images.append(docker_image)
 
     if pull:
@@ -60,5 +62,5 @@ def get_images_with_versions(reports_path, required_image, pull=True):
 
     return docker_images
 
-def get_image_with_version(reports_path, image, pull=True):
-    return get_images_with_versions(reports_path, [image], pull)[0]
+def get_image_with_version(reports_path, image, pull=True, version=None):
+    return get_images_with_versions(reports_path, [image], pull, version=version)[0]
