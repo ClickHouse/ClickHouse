@@ -23,11 +23,11 @@ TEST(Common, YamlParserProcessKeysList)
 {
     auto *file_pointer = getTempFileWithContents(R"YAML(
 operator:
-  access_management: "1"
-  networks:
-    - ip: "10.1.6.168"
-    - ip: "::1"
-    - ip: "127.0.0.1"
+    access_management: "1"
+    networks:
+      - ip: "10.1.6.168"
+      - ip: "::1"
+      - ip: "127.0.0.1"
 )YAML");
 
     Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(file_pointer);
