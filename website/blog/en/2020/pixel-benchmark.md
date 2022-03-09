@@ -2,7 +2,7 @@
 title: 'Running ClickHouse on an Android phone'
 image: 'https://blog-images.clickhouse.com/en/2020/pixel-benchmark/main.jpg'
 date: '2020-07-16'
-author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
+author: 'Alexander Kuzmenkov'
 tags: ['Android', 'benchmark', 'experiment']
 ---
 

@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/getResource.h>
 #include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -105,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -443,7 +444,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }
@@ -662,6 +663,10 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             if (new_path.starts_with(main_config_path))
                 new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+            /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
+            /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
+            new_path = fs::path(new_path).replace_extension(".xml").string();
 
             if (preprocessed_dir.empty())
             {

@@ -22,8 +22,12 @@ SUSPICIOUS_PATTERNS = [
     "release",
 ]
 
+# Number of retries for API calls.
 MAX_RETRY = 5
-MAX_WORKFLOW_RERUN = 7
+
+# Number of times a check can re-run as a whole.
+# It is needed, because we are using AWS "spot" instances, that are terminated very frequently.
+MAX_WORKFLOW_RERUN = 20
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
@@ -110,7 +114,8 @@ TRUSTED_CONTRIBUTORS = {
         "s-mx",  # Maxim Sabyanin, former employee, present contributor
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
-        "ucasfl",  # Amos Bird's friend
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",
         "YiuRULE",

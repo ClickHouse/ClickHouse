@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/ArenaUtils.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -13,7 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
-#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -146,7 +147,7 @@ ColumnPtr FlatDictionary::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (attribute.is_nullable_set)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -294,7 +295,36 @@ void FlatDictionary::blockToAttributes(const Block & block)
     size_t keys_size = keys_extractor.getKeysSize();
 
     static constexpr size_t key_offset = 1;
-    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+
+    size_t attributes_size = attributes.size();
+
+    if (unlikely(attributes_size == 0))
+    {
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            auto key = keys_extractor.extractCurrentKey();
+
+            if (unlikely(key >= configuration.max_array_size))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "{}: identifier should be less than {}",
+                    getFullName(),
+                    toString(configuration.max_array_size));
+
+            if (key >= loaded_keys.size())
+            {
+                const size_t elements_count = key + 1;
+                loaded_keys.resize(elements_count, false);
+            }
+
+            loaded_keys[key] = true;
+
+            keys_extractor.rollbackCurrentKey();
+        }
+
+        return;
+    }
+
+    for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
         const IColumn & attribute_column = *block.safeGetByPosition(attribute_index + key_offset).column;
         Attribute & attribute = attributes[attribute_index];
@@ -494,21 +524,6 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
     }
 }
 
-template <typename T>
-void FlatDictionary::setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value)
-{
-    auto & array = std::get<ContainerType<T>>(attribute.container);
-    array[key] = value;
-    loaded_keys[key] = true;
-}
-
-template <>
-void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, UInt64 key, const String & value)
-{
-    auto arena_value = copyStringInArena(string_arena, value);
-    setAttributeValueImpl(attribute, key, arena_value);
-}
-
 void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, const Field & value)
 {
     auto type_call = [&](const auto & dictionary_attribute_type)
@@ -526,7 +541,20 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        setAttributeValueImpl<AttributeType>(attribute, key, value.get<AttributeType>());
+        auto & attribute_value = value.get<AttributeType>();
+
+        auto & container = std::get<ContainerType<ValueType>>(attribute.container);
+        loaded_keys[key] = true;
+
+        if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto arena_value = copyStringInArena(string_arena, attribute_value);
+            container[key] = arena_value;
+        }
+        else
+        {
+            container[key] = attribute_value;
+        }
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -544,7 +572,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
             keys.push_back(key_index);
 
     auto keys_column = getColumnFromPODArray(std::move(keys));
-    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(keys_column, std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);

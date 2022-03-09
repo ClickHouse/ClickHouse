@@ -72,11 +72,6 @@ else()
 
   if(WITH_ZSTD)
     add_definitions(-DZSTD)
-    include_directories(${ZSTD_INCLUDE_DIR})
-    include_directories("${ZSTD_INCLUDE_DIR}/common")
-    include_directories("${ZSTD_INCLUDE_DIR}/dictBuilder")
-    include_directories("${ZSTD_INCLUDE_DIR}/deprecated")
-
     list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
   endif()
 endif()
@@ -132,11 +127,6 @@ endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DOS_MACOSX)
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES arm)
-    add_definitions(-DIOS_CROSS_COMPILE -DROCKSDB_LITE)
-    # no debug info for IOS, that will make our library big
-    add_definitions(-DNDEBUG)
-  endif()
 elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-DOS_LINUX)
 elseif(CMAKE_SYSTEM_NAME MATCHES "SunOS")

@@ -8,8 +8,9 @@
 #include <Coordination/SnapshotableHashTable.h>
 #include <IO/WriteBufferFromString.h>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
+
+#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = std::unordered_set<std::string>;
+using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -28,6 +29,7 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
+
     struct Node
     {
         String data;
@@ -64,6 +66,7 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
+        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
     };
 
@@ -151,16 +154,17 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
 
     void finalize();
 
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode()
+    void enableSnapshotMode(size_t up_to_version)
     {
-        container.enableSnapshotMode();
+        container.enableSnapshotMode(up_to_version);
+
     }
 
     /// Turn off snapshot mode.
@@ -202,6 +206,12 @@ public:
     {
         return container.getApproximateDataSize();
     }
+
+    uint64_t getArenaDataSize() const
+    {
+        return container.keyArenaSize();
+    }
+
 
     uint64_t getTotalWatchesCount() const;
 

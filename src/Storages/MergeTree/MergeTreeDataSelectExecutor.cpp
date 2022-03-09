@@ -1,5 +1,4 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <base/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -823,7 +822,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
                 if (inserted)
-                    it->second.condition = index_helper->createIndexMergedCondtition(query_info, metadata_snapshot);
+                    it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
 
                 it->second.addIndex(index_helper);
             }
@@ -988,9 +987,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
-                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachQueryIfNotDetached(););
                     if (thread_group)
-                        CurrentThread::attachTo(thread_group);
+                        CurrentThread::attachToIfDetached(thread_group);
 
                     process_part(part_index);
                 });
@@ -1528,10 +1526,19 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t final_mark = part->index_granularity.hasFinalMark();
     size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
     MergeTreeIndexReader reader(
         index_helper, part,
         index_marks_count,
-        ranges,
+        index_ranges,
         mark_cache,
         uncompressed_cache,
         reader_settings);
@@ -1542,11 +1549,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
-    for (const auto & range : ranges)
+    for (size_t i = 0; i < ranges.size(); ++i)
     {
-        MarkRange index_range(
-                range.begin / index_granularity,
-                (range.end + index_granularity - 1) / index_granularity);
+        const MarkRange & index_range = index_ranges[i];
 
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
@@ -1559,8 +1564,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 granule = reader.read();
 
             MarkRange data_range(
-                    std::max(range.begin, index_mark * index_granularity),
-                    std::min(range.end, (index_mark + 1) * index_granularity));
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
@@ -1746,8 +1751,6 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     PartFilterCounters & counters,
     Poco::Logger * log)
 {
-    const Settings & settings = query_context->getSettings();
-
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
@@ -1802,14 +1805,11 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_granules_after_partition_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil)
+            if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))
             {
-                if (settings.experimental_query_deduplication_send_all_part_uuids || pinned_part_uuids->contains(part->uuid))
-                {
-                    auto result = temp_part_uuids.insert(part->uuid);
-                    if (!result.second)
-                        throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
-                }
+                auto result = temp_part_uuids.insert(part->uuid);
+                if (!result.second)
+                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
             }
 
             selected_parts.push_back(part_or_projection);
