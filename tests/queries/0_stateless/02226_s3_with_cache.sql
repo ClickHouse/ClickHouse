@@ -40,7 +40,5 @@ LIMIT 1;
 SET remote_filesystem_read_method='threadpool';
 
 SELECT * FROM test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
-SELECT * FROM test ORDER BY value LIMIT 10 FORMAT Null;
-SELECT * FROM test WHERE value LIKE '%dba%' ORDER BY value LIMIT 10 FORMAT Null;
 
 DROP TABLE test;
