@@ -1,3 +1,7 @@
+# During cross-compilation in our CI we have to use llvm-tblgen and other building tools
+# tools to be build for host architecture and everything else for target architecture (e.g. AArch64)
+# Possible workaround is to use llvm-tblgen from some package...
+# But lets just enable LLVM for native builds
 if (CMAKE_CROSSCOMPILING OR SANITIZE STREQUAL "undefined")
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
