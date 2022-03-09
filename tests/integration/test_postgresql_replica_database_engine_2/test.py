@@ -399,7 +399,7 @@ def test_table_override(started_cluster):
     create_postgres_table(cursor, table_name, template=postgres_table_template_5);
     instance.query(f"create table {table_name}(key Int32, value UUID) engine = PostgreSQL (postgres1, table={table_name})")
     instance.query(f"insert into {table_name} select number, generateUUIDv4() from numbers(10)")
-    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID))"
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID) PARTITION BY key)"
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
         settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
@@ -407,7 +407,7 @@ def test_table_override(started_cluster):
     assert_nested_table_is_created(instance, table_name, materialized_database)
     result = instance.query(f"show create table {materialized_database}.{table_name}")
     print(result)
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nORDER BY tuple(key)"
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
     assert(result.strip() == expected)
     time.sleep(5)
     query = f"select * from {materialized_database}.{table_name} order by key"
