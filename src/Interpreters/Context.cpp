@@ -3035,7 +3035,7 @@ void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */)
 
 void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
 {
-    merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false);
+    merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false, this);
     setCurrentTransaction(std::move(txn));
 }
 

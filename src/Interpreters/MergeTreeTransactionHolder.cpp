@@ -1,30 +1,34 @@
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
-MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactionPtr & txn_, bool autocommit_ = false)
+MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactionPtr & txn_, bool autocommit_ = false, const Context * owned_by_session_context_)
     : txn(txn_)
     , autocommit(autocommit_)
+    , owned_by_session_context(owned_by_session_context_)
 {
     assert(!txn || txn->getState() == MergeTreeTransaction::RUNNING);
+    assert(!owned_by_session_context || owned_by_session_context == owned_by_session_context->getSessionContext().get());
 }
 
 MergeTreeTransactionHolder::MergeTreeTransactionHolder(MergeTreeTransactionHolder && rhs) noexcept
-    : txn(std::move(rhs.txn))
-    , autocommit(rhs.autocommit)
 {
-    rhs.txn = {};
+    *this = std::move(rhs);
 }
 
 MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(MergeTreeTransactionHolder && rhs) noexcept
 {
     onDestroy();
-    txn = std::move(rhs.txn);
-    rhs.txn = {};
-    autocommit = rhs.autocommit;
+    txn = nullptr;
+    autocommit = false;
+    owned_by_session_context = nullptr;
+    std::swap(txn, rhs.txn);
+    std::swap(autocommit, rhs.autocommit);
+    std::swap(owned_by_session_context, rhs.owned_by_session_context);
     return *this;
 }
 
@@ -56,14 +60,19 @@ void MergeTreeTransactionHolder::onDestroy() noexcept
     TransactionLog::instance().rollbackTransaction(txn);
 }
 
-MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactionHolder &)
+MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactionHolder & rhs)
 {
-    txn = nullptr;
+    *this = rhs;
 }
 
-MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(const MergeTreeTransactionHolder &)  // NOLINT
+MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(const MergeTreeTransactionHolder & rhs)  // NOLINT
 {
-    assert(txn == nullptr);
+    if (rhs.txn && !rhs.owned_by_session_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Tried to copy non-empty MergeTreeTransactionHolder that is not owned by session context. It's a bug");
+    assert(!txn);
+    assert(!autocommit);
+    assert(!owned_by_session_context);
     return *this;
 }
 

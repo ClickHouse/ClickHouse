@@ -32,7 +32,7 @@ public:
     MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id);
 
     void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part);
-    void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove);
+    void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context);
 
     void addMutation(const StoragePtr & table, const String & mutation_id);
 
@@ -59,7 +59,6 @@ private:
 
     std::atomic<CSN> csn;
 
-    /// FIXME it's ugly
     std::list<Snapshot>::iterator snapshot_in_use_it;
 
     std::vector<std::pair<StoragePtr, String>> mutations;

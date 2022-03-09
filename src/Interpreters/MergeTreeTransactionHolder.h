@@ -4,6 +4,8 @@
 namespace DB
 {
 
+class Context;
+
 class MergeTreeTransaction;
 /// TODO maybe replace with raw pointer? It should not be shared, only MergeTreeTransactionHolder can own a transaction object
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
@@ -12,7 +14,7 @@ class MergeTreeTransactionHolder
 {
 public:
     MergeTreeTransactionHolder() = default;
-    MergeTreeTransactionHolder(const MergeTreeTransactionPtr & txn_, bool autocommit_);
+    MergeTreeTransactionHolder(const MergeTreeTransactionPtr & txn_, bool autocommit_, const Context * owned_by_session_context_ = nullptr);
     MergeTreeTransactionHolder(MergeTreeTransactionHolder && rhs) noexcept;
     MergeTreeTransactionHolder & operator=(MergeTreeTransactionHolder && rhs) noexcept;
     ~MergeTreeTransactionHolder();
@@ -30,6 +32,7 @@ private:
 
     MergeTreeTransactionPtr txn;
     bool autocommit = false;
+    const Context * owned_by_session_context = nullptr;
 };
 
 }

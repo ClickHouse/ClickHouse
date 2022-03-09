@@ -78,7 +78,6 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
         if (tid == Tx::PrehistoricTID && expected_max_lock_value == Tx::PrehistoricTID.getHash())
         {
             /// Don't need to lock part for queries without transaction
-            //FIXME Transactions: why is it possible?
             LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
             return true;
         }
