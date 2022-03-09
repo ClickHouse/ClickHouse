@@ -267,7 +267,7 @@ public:
       */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 };
@@ -452,7 +452,7 @@ public:
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
