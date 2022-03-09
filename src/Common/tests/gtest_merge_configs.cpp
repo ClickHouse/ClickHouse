@@ -24,8 +24,8 @@ TEST(Config, MergeConfigsOneSided)
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field1: "1"
-  field2: "2"
+  field1 : "1"
+  field2 : "2"
 )YAML";
         writeString(data, out);
     }
@@ -36,7 +36,7 @@ clickhouse:
         WriteBufferFromFile out(system_tables_file->path());
         std::string data = R"YAML(
 clickhouse:
-  text_log:
+  text_log :
     database: system
     table: text_log
     partition_by:
@@ -80,9 +80,9 @@ TEST(Config, MergeConfigsTwoSided)
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field1: "1"
-  field2: "2"
-  text_log:
+  field1 : "1"
+  field2 : "2"
+  text_log :
     database: system
     table: text_log
     partition_by: "toYYYYMMDD(Something)"
@@ -99,9 +99,9 @@ clickhouse:
         WriteBufferFromFile out(system_tables_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field3: "3"
-  field4: "4"
-  text_log:
+  field3 : "3"
+  field4 : "4"
+  text_log :
     database: system
     table: text_log
     partition_by:
