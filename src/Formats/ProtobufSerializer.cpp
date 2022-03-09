@@ -153,7 +153,7 @@ namespace
     bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
     {
 
-        auto * message_descriptor = field_descriptor.message_type();
+        const auto * message_descriptor = field_descriptor.message_type();
         if (message_descriptor == nullptr)
         {
             return false;
@@ -161,7 +161,7 @@ namespace
         return isGoogleWrapperMessage(*message_descriptor);
     }
 
-    const std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
+    std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
     {
         assert(isGoogleWrapperField(field_descriptor));
         return field_descriptor.message_type()->field(0)->name();
