@@ -529,7 +529,7 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
         if (enable_lowering_column_name)
             boost::to_lower(column_name);
-        name_to_column_ptr[column_name] = arrow_column;
+        name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
     arrowColumnsToCHChunk(res, name_to_column_ptr);
