@@ -30,15 +30,12 @@ private:
 
     void initializeWorkers();
 
-    class Segment
+    class Segment : private boost::noncopyable
     {
     public:
         Segment(size_t size_, SynchronizedArenaWithFreeLists * arena_) : arena(arena_), m_data(arena->alloc(size_)), m_size(size_) { }
 
         Segment() = default;
-
-        Segment(const Segment &) = delete;
-        Segment & operator=(const Segment &) = delete;
 
         Segment(Segment && other) noexcept : arena(other.arena)
         {
@@ -131,6 +128,8 @@ private:
     {
         return !read_workers.empty() && read_workers.front()->finished && read_workers.front()->segments.empty();
     }
+
+    [[noreturn]] void handleEmergencyStop();
 
     /// Create new readers in a loop and process it with readerThreadFunction.
     void processor();

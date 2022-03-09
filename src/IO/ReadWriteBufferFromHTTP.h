@@ -620,7 +620,7 @@ public:
     {
     }
 
-    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size) / range_step)); }
+    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size - from_range) / range_step)); }
 
     using Range = std::pair<size_t, size_t>;
 
