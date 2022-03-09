@@ -36,7 +36,7 @@ public:
         ContextPtr /* query_context */,
         const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return false;
+        return true;
     }
 
 
@@ -94,6 +94,9 @@ private:
     String hive_database;
     String hive_table;
 
+    std::mutex init_mutex;
+    bool has_initialized = false;
+
     /// Hive table meta
     std::vector<Apache::Hadoop::Hive::FieldSchema> table_schema;
     Names text_input_field_names; /// Defines schema of hive file, only used when text input format is TEXT
@@ -116,6 +119,8 @@ private:
     std::shared_ptr<HiveSettings> storage_settings;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
+
+    void lazyInitialize();
 };
 }
 

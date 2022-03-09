@@ -164,7 +164,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
