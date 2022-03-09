@@ -1,4 +1,5 @@
 #include "ArrowColumnToCHColumn.h"
+#include <boost/algorithm/string/case_conv.hpp>
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -511,19 +513,22 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema,
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_)
-    : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_)
+    const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_, bool enable_lowering_column_name_)
+    : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_),
+      enable_lowering_column_name(enable_lowering_column_name_)
 {
 }
 
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
-    for (const auto & column_name : table->ColumnNames())
+    for (auto column_name : table->ColumnNames())
     {
         std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
         if (!arrow_column)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
+        if (enable_lowering_column_name)
+            boost::to_lower(column_name);
         name_to_column_ptr[column_name] = arrow_column;
     }
 
@@ -532,6 +537,9 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
 
 void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
+    if (name_to_column_ptr.empty())
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
+
     Columns columns_list;
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.rows());

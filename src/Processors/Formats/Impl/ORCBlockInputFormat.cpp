@@ -1,4 +1,5 @@
 #include "ORCBlockInputFormat.h"
+#include <boost/algorithm/string/case_conv.hpp>
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
@@ -130,7 +131,7 @@ void ORCBlockInputFormat::prepareReader()
         return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns);
+        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns, format_settings.enable_lowering_column_name);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -145,7 +146,10 @@ void ORCBlockInputFormat::prepareReader()
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        const auto & name = schema->field(i)->name();
+        auto name = schema->field(i)->name();
+        if (format_settings.enable_lowering_column_name)
+            boost::to_lower(name);
+
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             column_names.push_back(name);
