@@ -456,7 +456,7 @@ from
                         select
                             number,
                             number % 3 as k
-                        from numbers(10)
+                        from numbers(3)
                     )
                 group by k
             )
