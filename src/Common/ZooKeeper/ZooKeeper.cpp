@@ -182,7 +182,7 @@ public:
         operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
         implementation = "zookeeper";
 
-        if (endsWith(config_name, "keeper_server.raft_configuration"))
+        if (endsWith(config_name, "keeper_server"))
             initFromSectionKeeperServer(config, config_name);
         else
             initFromSectionKeeper(config, config_name);
@@ -238,30 +238,48 @@ private:
 
     void initFromSectionKeeperServer(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
     {
-        Poco::Util::AbstractConfiguration::Keys keys;
+          Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_name, keys);
-        
+
         bool secure = false;
+        String tcp_port;
+        String tcp_port_secure;
         for (const auto & key : keys)
         {
-            if (key == "server")
+            if (key == "tcp_port_secure")
+            {
+                secure = true;
+                tcp_port_secure = config.getString(config_name + "." + key);
+            }
+            else if (key == "tcp_port")
+            {
+                tcp_port = config.getString(config_name + "." + key);
+            }
+            else if (key == "coordination_settings")
+            {
+                if (config.has(config_name + "." + key + ".operation_timeout_ms"))
+                    operation_timeout_ms = config.getInt(config_name + "." + key + ".operation_timeout_ms");
+                if (config.has(config_name + "." + key + ".session_timeout_ms"))
+                    session_timeout_ms = config.getInt(config_name + "." + key + ".session_timeout_ms");
+            }
+
+            /// TODO: consider digest
+        }
+
+        if (secure && tcp_port_secure.empty())
+            throw KeeperException("No tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
+        if (!secure && tcp_port.empty())
+            throw KeeperException("No tcp_port in config file", Coordination::Error::ZBADARGUMENTS);
+
+        config.keys(config_name + ".raft_configuration", keys);
+        for (const auto & key : keys)
+        {
+            if (startsWith(key, "server"))
             {
                 hosts.push_back(
-                        // (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "") +
-                        config.getString(config_name + "." + key + ".hostname") + ":"
-                        + config.getString(config_name + "." + key + ".port", "9234")
-                );
+                    (secure ? "secure://" : "") + config.getString(config_name + ".raft_configuration." + key + ".hostname") + ":"
+                    + (secure ? tcp_port_secure : tcp_port));
             }
-            else if (key == "secure")
-            {
-                secure = config.getBool(config_name + "." + key, false);
-            }
-        }
-        
-        if (secure && !hosts.empty())
-        {
-            for (auto & host : hosts)
-                host = "secure://" + host;
         }
     }
 
