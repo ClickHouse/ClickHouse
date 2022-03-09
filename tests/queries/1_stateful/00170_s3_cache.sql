@@ -18,7 +18,7 @@ SELECT SearchEngineID, uniq(SearchPhrase), count() AS c FROM test.hits_s3 WHERE 
 SELECT UserID, count() FROM test.hits_s3 GROUP BY UserID ORDER BY count() DESC LIMIT 10;
 SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c DESC LIMIT 10;
 SELECT UserID, uniq(SearchPhrase) as m, count() as c FROM test.hits_s3 GROUP BY UserID, SearchPhrase ORDER BY UserID, m, c LIMIT 10;
-SELECT UserID, toMinute(EventTime) AS m, uniq(SearchPhrase) as u, count() as c FROM test.hits_s3 GROUP BY UserID, m, SearchPhrase ORDER BY UserID, u, m, c DESC LIMIT 10;
+SELECT UserID, toMinute(EventTime) AS m, uniq(SearchPhrase) as u, count() as c FROM test.hits_s3 GROUP BY UserID, m, SearchPhrase ORDER BY UserID DESC LIMIT 10 FORMAT Null;
 SELECT UserID FROM test.hits_s3 WHERE UserID = 12345678901234567890;
 SELECT count() FROM test.hits_s3 WHERE URL LIKE '%metrika%';
 SELECT uniq(SearchPhrase) as u, max(URL) as m, count() AS c FROM test.hits_s3 WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u, m, c DESC LIMIT 10;
