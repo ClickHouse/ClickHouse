@@ -33,7 +33,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (offset < 0)
         throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
-    if (!working_buffer.empty() && size_t(offset) >= current_position - working_buffer.size() && offset < current_position)
+    if (!working_buffer.empty() && static_cast<size_t>(offset) >= current_position - working_buffer.size() && offset < current_position)
     {
         pos = working_buffer.end() - (current_position - offset);
         assert(pos >= working_buffer.begin());
@@ -47,10 +47,15 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
         = [&](const auto & range) { return static_cast<size_t>(offset) >= range.from && static_cast<size_t>(offset) < range.to; };
 
     std::unique_lock lock{mutex};
+    bool worker_removed = false;
     while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
     {
         read_workers.pop_front();
+        worker_removed = true;
     }
+
+    if (worker_removed)
+        reader_condvar.notify_all();
 
     if (!read_workers.empty())
     {
@@ -61,21 +66,17 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
         {
             next_condvar.wait(lock, [&] { return !segments.empty(); });
 
-            if (static_cast<size_t>(offset) < current_position + segments.front().size())
+            auto next_segment = front_worker->nextSegment();
+            if (static_cast<size_t>(offset) < current_position + next_segment.size())
             {
-                arena.free(segment->data(), segment->size());
-                segment = std::move(segments.front());
-                segments.pop_front();
-                working_buffer = internal_buffer = Buffer(segment->data(), segment->data() + segment->size());
-                current_position += segment->size();
-                front_worker->range.from += segment->size();
+                current_segment = std::move(next_segment);
+                working_buffer = internal_buffer = Buffer(current_segment.data(), current_segment.data() + current_segment.size());
+                current_position += current_segment.size();
                 pos = working_buffer.end() - (current_position - offset);
                 return offset;
             }
 
-            current_position += segments.front().size();
-            front_worker->range.from += segments.front().size();
-            segments.pop_front();
+            current_position += next_segment.size();
         }
     }
 
@@ -130,9 +131,16 @@ bool ParallelReadBuffer::nextImpl()
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Emergency stop");
         }
 
+        bool worker_removed = false;
         /// Remove completed units
         while (!read_workers.empty() && currentWorkerCompleted())
+        {
             read_workers.pop_front();
+            worker_removed = true;
+        }
+
+        if (worker_removed)
+            reader_condvar.notify_all();
 
         /// All readers processed, stop
         if (read_workers.empty() && all_created)
@@ -145,17 +153,11 @@ bool ParallelReadBuffer::nextImpl()
         /// Read data from first segment of the first reader
         if (!front_worker->segments.empty())
         {
-            if (segment)
-            {
-                arena.free(segment->data(), segment->size());
-            }
-            segment = std::move(front_worker->segments.front());
-            front_worker->range.from += segment->size();
-            front_worker->segments.pop_front();
+            current_segment = front_worker->nextSegment();
             break;
         }
     }
-    working_buffer = internal_buffer = Buffer(segment->data(), segment->data() + segment->size());
+    working_buffer = internal_buffer = Buffer(current_segment.data(), current_segment.data() + current_segment.size());
     current_position += working_buffer.size();
     return true;
 }
@@ -168,7 +170,8 @@ void ParallelReadBuffer::processor()
         {
             /// Create new read worker and put in into end of queue
             /// reader_factory is not thread safe, so we call getReader under lock
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
+            reader_condvar.wait(lock, [this] { return read_workers.size() < pool.getMaxThreads(); });
             auto reader = reader_factory->getReader();
             if (!reader)
             {
@@ -203,7 +206,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
                 break;
 
             Buffer buffer = read_worker->reader->buffer();
-            std::span new_segment(arena.alloc(buffer.size()), buffer.size());
+            Segment new_segment(buffer.size(), &arena);
             memcpy(new_segment.data(), buffer.begin(), buffer.size());
             {
                 /// New data ready to be read

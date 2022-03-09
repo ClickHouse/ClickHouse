@@ -6,8 +6,6 @@
 #include "Common/ArenaWithFreeLists.h"
 #include <Common/ThreadPool.h>
 
-#include <span>
-
 namespace DB
 {
 
@@ -31,6 +29,47 @@ private:
     bool nextImpl() override;
 
     void initializeWorkers();
+
+    class Segment
+    {
+    public:
+        Segment(size_t size_, SynchronizedArenaWithFreeLists * arena_) : arena(arena_), m_data(arena->alloc(size_)), m_size(size_) { }
+
+        Segment() = default;
+
+        Segment(const Segment &) = delete;
+        Segment & operator=(const Segment &) = delete;
+
+        Segment(Segment && other) noexcept : arena(other.arena)
+        {
+            std::swap(m_data, other.m_data);
+            std::swap(m_size, other.m_size);
+        }
+
+        Segment & operator=(Segment && other) noexcept
+        {
+            arena = other.arena;
+            std::swap(m_data, other.m_data);
+            std::swap(m_size, other.m_size);
+            return *this;
+        }
+
+        ~Segment()
+        {
+            if (m_data)
+            {
+                arena->free(m_data, m_size);
+            }
+        }
+
+        auto data() const noexcept { return m_data; }
+        auto size() const noexcept { return m_size; }
+
+    private:
+        SynchronizedArenaWithFreeLists * arena{nullptr};
+        char * m_data{nullptr};
+        size_t m_size{0};
+    };
 
 public:
     struct Range
@@ -64,8 +103,17 @@ private:
     {
         explicit ReadWorker(ReadBufferPtr reader_, const Range & range_) : reader(reader_), range(range_) { }
 
+        Segment nextSegment()
+        {
+            assert(!segments.empty());
+            auto next_segment = std::move(segments.front());
+            segments.pop_front();
+            range.from += next_segment.size();
+            return next_segment;
+        }
+
         ReadBufferPtr reader;
-        std::deque<std::span<char>> segments;
+        std::deque<Segment> segments;
         bool finished{false};
         Range range;
     };
@@ -93,8 +141,9 @@ private:
     void onBackgroundException();
     void finishAndWait();
 
-    ArenaWithFreeLists arena;
-    std::optional<std::span<char>> segment;
+    SynchronizedArenaWithFreeLists arena;
+
+    Segment current_segment;
 
     ThreadPool pool;
 
@@ -107,6 +156,7 @@ private:
      * deque and data from next reader will be consumed to user.
      */
     std::deque<ReadWorkerPtr> read_workers;
+    std::condition_variable reader_condvar;
 
     std::mutex mutex;
     /// Triggered when new data available

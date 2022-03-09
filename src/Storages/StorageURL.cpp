@@ -306,7 +306,7 @@ namespace
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error);
                         return wrapReadBufferWithCompressionMethod(
-                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 4),
+                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 8),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));
                     }
 
