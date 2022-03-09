@@ -186,6 +186,9 @@ public:
     /// used without any locks.
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
+    /// Sometimes columns for insert and select queries are different. Let storage override it.
+    virtual StorageMetadataPtr getInMemoryMetadataPtrForInsert() const { return getInMemoryMetadataPtr(); }
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

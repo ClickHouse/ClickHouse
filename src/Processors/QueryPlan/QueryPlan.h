@@ -104,6 +104,8 @@ public:
 
     using Nodes = std::list<Node>;
 
+    const Node * getLastStep() const { return root; }
+
 private:
     Nodes nodes;
     Node * root = nullptr;

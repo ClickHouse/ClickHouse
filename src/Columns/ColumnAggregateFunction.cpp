@@ -83,7 +83,7 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t ver
 
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
-    if (!func->hasTrivialDestructor() && !src)
+    if (!func->hasTrivialDestructor() && !src && destroy_states)
         for (auto * val : data)
             func->destroy(val);
 }
@@ -700,6 +700,11 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 
         return cloned_col;
     }
+}
+
+void ColumnAggregateFunction::disableStateDestruction()
+{
+    destroy_states = false;
 }
 
 }

@@ -133,8 +133,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     create->replace_table = false;
     create->create_or_replace = false;
 
-    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create->isView())
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary.
+    /// AggregatingMemory requires SELECT query to start up.
+    if (!create->isView() && !(create->storage && create->storage->engine && create->storage->engine->name == "AggregatingMemory"))
         create->select = nullptr;
 
     create->format = nullptr;

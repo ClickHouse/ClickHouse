@@ -132,4 +132,22 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     return result;
 }
 
+SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForAggr(const ASTPtr & select)
+{
+    ASTPtr new_inner_query;
+
+    if (!isSingleSelect(select, new_inner_query))
+        throw Exception("UNION is not supported for aggregation", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    auto & select_query = new_inner_query->as<ASTSelectQuery &>();
+    checkAllowedQueries(select_query);
+
+    SelectQueryDescription result;
+    result.select_query = select->as<ASTSelectWithUnionQuery &>().clone();
+    result.inner_query = new_inner_query->clone();
+
+    return result;
+}
+
+
 }

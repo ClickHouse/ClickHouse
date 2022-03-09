@@ -2,11 +2,13 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/Common/AccessFlags.h>
@@ -65,7 +67,8 @@ StorageMaterializedView::StorageMaterializedView(
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (!columns_.empty())
+        storage_metadata.setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -79,6 +82,8 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    bool is_aggregating_memory = query.storage && query.storage->engine && query.storage->engine->name == "AggregatingMemory";
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
     storage_metadata.setSelectQuery(select);
@@ -113,9 +118,22 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
-        manual_create_query->set(manual_create_query->columns_list, new_columns_list);
+        if (is_aggregating_memory)
+        {
+            /// AggregatingMemory requires SELECT to know how to do aggregation.
+            manual_create_query->set(manual_create_query->select, query.select->clone());
+
+            Block header = InterpreterSelectQuery(select.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
+            new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(header.getNamesAndTypesList()));
+            manual_create_query->set(manual_create_query->columns_list, new_columns_list);
+        }
+        else
+        {
+            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+            manual_create_query->set(manual_create_query->columns_list, new_columns_list);
+        }
+
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
@@ -123,6 +141,39 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.execute();
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
+    }
+
+    if (has_inner_table && is_aggregating_memory)
+    {
+        /// This is a special case for AggregatingMemory.
+        /// AS SELECT is a part of .inner table, for MATERIALIZED VIEW it should be empty.
+        if (has_inner_table)
+        {
+            select.inner_query = nullptr;
+            select.select_query = nullptr;
+
+            storage_metadata.setSelectQuery(select);
+            setInMemoryMetadata(storage_metadata);
+        }
+    }
+
+    if (!attach_)
+    {
+        auto storage = DatabaseCatalog::instance().tryGetTable(target_table_id, local_context);
+        if (storage && storage->getName() == "AggregatingMemory")
+        {
+            /// That's not very good hack.
+            /// Columns which are read from MV should be the same columns we read from AggregatingMemory.
+            /// We can calculate it in creation time, but not during attach, because storage may be not loaded.
+            /// So, it's better to get columns structure from AST in this case.
+            ///
+            /// Here we replace CREATE AST so that MV table structure will be correct next time at attach.
+            auto columns = storage->getInMemoryMetadataPtr()->getColumns();
+            storage_metadata.setColumns(columns);
+            setInMemoryMetadata(storage_metadata);
+            ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
+            query.columns_list->setOrReplace(query.columns_list->columns, new_columns);
+        }
     }
 
     if (!select.select_table_id.empty())

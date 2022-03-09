@@ -1,5 +1,7 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/ISource.h>
+#include <Processors/IProcessor.h>
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -83,6 +85,101 @@ struct ManyAggregatedData
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
+
+/// Worker which merges buckets for two-level aggregation.
+/// Atomically increments bucket counter and returns merged result.
+class ConvertingAggregatedToChunksSource : public ISource
+{
+public:
+    static constexpr UInt32 NUM_BUCKETS = 256;
+
+    struct SharedData
+    {
+        std::atomic<UInt32> next_bucket_to_merge = 0;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
+        std::atomic<bool> is_cancelled = false;
+
+        SharedData()
+        {
+            for (auto & flag : is_bucket_processed)
+                flag = false;
+        }
+    };
+
+    using SharedDataPtr = std::shared_ptr<SharedData>;
+
+    ConvertingAggregatedToChunksSource(
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        Arena * arena_);
+
+    String getName() const override { return "ConvertingAggregatedToChunksSource"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    Arena * arena;
+};
+
+/// Generates chunks with aggregated data.
+/// In single level case, aggregates data itself.
+/// In two-level case, creates `ConvertingAggregatedToChunksSource` workers:
+///
+/// ConvertingAggregatedToChunksSource ->
+/// ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform -> AggregatingTransform
+/// ConvertingAggregatedToChunksSource ->
+///
+/// Result chunks guaranteed to be sorted by bucket number.
+class ConvertingAggregatedToChunksTransform : public IProcessor
+{
+public:
+    ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_);
+
+    String getName() const override { return "ConvertingAggregatedToChunksTransform"; }
+
+    void work() override;
+
+    Processors expandPipeline() override;
+
+    IProcessor::Status prepare() override;
+
+private:
+    IProcessor::Status preparePushToOutput();
+
+    /// Read all sources and try to push current bucket.
+    IProcessor::Status prepareTwoLevel();
+
+    void setCurrentChunk(Chunk chunk);
+
+    void initialize();
+
+    void mergeSingleLevel();
+
+    void createSources();
+
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    ConvertingAggregatedToChunksSource::SharedDataPtr shared_data;
+
+    size_t num_threads;
+
+    bool is_initialized = false;
+    bool has_input = false;
+    bool finished = false;
+
+    Chunk current_chunk;
+
+    UInt32 current_bucket_num = 0;
+    static constexpr Int32 NUM_BUCKETS = 256;
+    std::array<Chunk, NUM_BUCKETS> chunks;
+
+    Processors processors;
+};
 
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
   * Columns with aggregate functions adds to the end of the block.

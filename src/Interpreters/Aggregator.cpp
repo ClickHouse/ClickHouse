@@ -1321,8 +1321,10 @@ void Aggregator::convertToBlockImpl(
     {
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
+
     /// In order to release memory early.
-    data.clearAndShrink();
+    if (!params.keep_state_after_read)
+        data.clearAndShrink();
 }
 
 
@@ -1369,25 +1371,28 @@ inline void Aggregator::insertAggregatesIntoColumns(
         exception = std::current_exception();
     }
 
-    /** Destroy states that are no longer needed. This loop does not throw.
-        *
-        * Don't destroy states for "-State" aggregate functions,
-        *  because the ownership of this state is transferred to ColumnAggregateFunction
-        *  and ColumnAggregateFunction will take care.
-        *
-        * But it's only for states that has been transferred to ColumnAggregateFunction
-        *  before exception has been thrown;
-        */
-    for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+    if (!params.keep_state_after_read)
     {
-        /// If ownership was not transferred to ColumnAggregateFunction.
-        if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
-            aggregate_functions[destroy_i]->destroy(
-                mapped + offsets_of_aggregate_states[destroy_i]);
-    }
+        /** Destroy states that are no longer needed. This loop does not throw.
+            *
+            * Don't destroy states for "-State" aggregate functions,
+            *  because the ownership of this state is transferred to ColumnAggregateFunction
+            *  and ColumnAggregateFunction will take care.
+            *
+            * But it's only for states that has been transferred to ColumnAggregateFunction
+            *  before exception has been thrown;
+            */
+        for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+        {
+            /// If ownership was not transferred to ColumnAggregateFunction.
+            if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
+                aggregate_functions[destroy_i]->destroy(
+                    mapped + offsets_of_aggregate_states[destroy_i]);
+        }
 
-    /// Mark the cell as destroyed so it will not be destroyed in destructor.
-    mapped = nullptr;
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
+    }
 
     if (exception)
         std::rethrow_exception(exception);
@@ -1539,7 +1544,8 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
 
-        mapped = nullptr;
+        if (!params.keep_state_after_read)
+            mapped = nullptr;
     });
 }
 
@@ -1573,6 +1579,9 @@ Block Aggregator::prepareBlockAndFill(
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+
+            if (params.keep_state_after_read)
+                column_aggregate_func.disableStateDestruction();
 
             for (auto & pool : data_variants.aggregates_pools)
                 column_aggregate_func.addArena(pool);
@@ -1706,7 +1715,9 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
             {
                 for (size_t i = 0; i < params.aggregates_size; ++i)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
-                data = nullptr;
+
+                if (!params.keep_state_after_read)
+                    data = nullptr;
             }
             else
             {
@@ -1725,10 +1736,137 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     if (is_overflows)
         block.info.is_overflows = true;
 
-    if (final)
+    if (final && !params.keep_state_after_read)
         destroyWithoutKey(data_variants);
 
     return block;
+}
+
+template <typename Method, typename Table>
+void Aggregator::convertToBlockImplByFilterKeys(
+    Method &,
+    Table & data,
+    MutableColumns & mutable_keys,
+    MutableColumns & final_aggregate_columns,
+    Arena * arena,
+    const ColumnRawPtrs & filter_keys) const
+{
+    if (data.empty())
+        return;
+
+    if (mutable_keys.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
+    std::vector<IColumn *> key_columns;
+    key_columns.reserve(mutable_keys.size());
+    for (auto & column : mutable_keys)
+        key_columns.push_back(column.get());
+
+    typename Method::State state(filter_keys, key_sizes, aggregation_state_cache);
+
+    Arena temp_arena;
+    for (size_t row = 0; row < filter_keys[0]->size(); ++row)
+    {
+        auto result = state.findKey(data, row, temp_arena);
+        if (!result.isFound())
+            continue;
+
+        for (size_t key = 0; key < key_columns.size(); ++key)
+            key_columns[key]->insertFrom(*filter_keys[key], row);
+
+        insertAggregatesIntoColumns(result.getMapped(), final_aggregate_columns, arena);
+    }
+}
+
+template <typename Method>
+Block Aggregator::convertOneBucketToBlockByFilterKeys(
+    AggregatedDataVariants & data_variants,
+    Method & method,
+    Arena * arena,
+    size_t bucket,
+    const ColumnRawPtrs & filter_keys) const
+{
+    return prepareBlockAndFill(data_variants, true, method.data.impls[bucket].size(),
+        [bucket, &method, arena, filter_keys, this] (
+            MutableColumns & key_columns,
+            AggregateColumnsData &,
+            MutableColumns & final_aggregate_columns,
+            bool)
+        {
+            convertToBlockImplByFilterKeys(method, method.data.impls[bucket],
+                key_columns, final_aggregate_columns, arena, filter_keys);
+        });
+}
+
+Block Aggregator::readBlockByFilterKeys(
+    ManyAggregatedDataVariantsPtr data,
+    const ColumnRawPtrs & filter_keys) const
+{
+    AggregatedDataVariantsPtr & first = data->at(0);
+
+    if (first->isTwoLevel())
+    {
+        Arena arena;
+        Block block;
+
+        auto & merged_data = *(*data)[0];
+        auto method = merged_data.type;
+
+        // TODO find bucket by key, to eliminate iteration?
+        for (size_t bucket = 0; bucket < 256; ++bucket)
+        {
+            if (false) {} // NOLINT
+        #define M(NAME) \
+            else if (method == AggregatedDataVariants::Type::NAME) \
+            { \
+                mergeBucketImpl<decltype(merged_data.NAME)::element_type>(*data, bucket, &arena); \
+                block = convertOneBucketToBlockByFilterKeys(merged_data, *merged_data.NAME, &arena, bucket, filter_keys); \
+            }
+
+            APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+        #undef M
+
+            // TODO this works only for single key, fix
+            if (block.rows())
+                return block;
+        }
+
+        return {};
+    }
+
+#define M(NAME) \
+            else if (first->type == AggregatedDataVariants::Type::NAME) \
+                mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+    else
+        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+    // prepareBlockAndFillSingleLevel
+    AggregatedDataVariants & data_variants = *first;
+
+    size_t rows = data_variants.sizeWithoutOverflowRow();
+
+    auto filler = [&data_variants, this, filter_keys](
+        MutableColumns & key_columns,
+        AggregateColumnsData &,
+        MutableColumns & final_aggregate_columns,
+        bool)
+    {
+    #define M(NAME) \
+        else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+            convertToBlockImplByFilterKeys(*data_variants.NAME, data_variants.NAME->data, \
+                key_columns, final_aggregate_columns, data_variants.aggregates_pool, filter_keys);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+    #undef M
+        else
+            throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+    };
+
+    return prepareBlockAndFill(data_variants, true, rows, filler);
 }
 
 Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
@@ -1880,7 +2018,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// data_variants will not destroy the states of aggregate functions in the destructor.
         /// Now ColumnAggregateFunction owns the states.
@@ -2626,7 +2764,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         block = prepareBlockAndFillSingleLevel(result, final);
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// Pass ownership of aggregate function states from result to ColumnAggregateFunction objects in the resulting block.
         result.aggregator = nullptr;

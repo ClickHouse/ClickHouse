@@ -652,8 +652,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        bool is_aggregating_memory = create.storage && create.storage->engine && create.storage->engine->name == "AggregatingMemory";
+        if (!is_aggregating_memory)
+        {
+            Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+            properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        }
     }
     else if (create.as_table_function)
     {
@@ -1346,6 +1350,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
+    /// AggregatingMemory accepts AS SELECT query on creation, but does not require to fill table.
+    /// TODO figure out a better hack?
+    if (create.storage && create.storage->engine && create.storage->engine->name == "AggregatingMemory")
+    {
+        return {};
+    }
+
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
         && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
