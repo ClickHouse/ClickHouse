@@ -94,6 +94,7 @@ bool MutatePlainMergeTreeTask::executeStep()
             {
                 storage.updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
                 write_part_log(ExecutionStatus::fromCurrentException());
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }
         }

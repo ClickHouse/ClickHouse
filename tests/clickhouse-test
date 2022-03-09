@@ -451,7 +451,7 @@ class TestCase:
         else:
             os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params + '&' + '&'.join(self.random_settings)
 
-        new_options = "--allow_repeated_settings --" + " --".join(self.random_settings)
+        new_options = " --allow_repeated_settings --" + " --".join(self.random_settings)
         os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options + new_options + ' '
         return client_options + new_options
 
