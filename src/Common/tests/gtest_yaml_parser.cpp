@@ -14,11 +14,23 @@
 
 using namespace DB;
 
-TEST(Common, YamlParserProcessKeysList)
+TEST(Common, YamlParserInvalidFile)
 {
     ASSERT_THROW(YAMLParser::parse("some-non-existing-file.yaml"), Exception);
+}
 
-    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(resolvePath("src/Common/tests/gtest_yaml_test_config_keys_list.yaml"));
+TEST(Common, YamlParserProcessKeysList)
+{
+    auto *file_pointer = getTempFileWithContents(R"YAML(
+operator:
+  access_management: "1"
+  networks:
+    - ip: "10.1.6.168"
+    - ip: "::1"
+    - ip: "127.0.0.1"
+)YAML");
+
+    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(file_pointer);
     auto *p_node = xml->getNodeByPath("/clickhouse");
     EXPECT_EQ(xmlNodeAsString(p_node), R"CONFIG(<clickhouse>
 <operator>
@@ -32,13 +44,24 @@ TEST(Common, YamlParserProcessKeysList)
 </clickhouse>
 )CONFIG");
 
+    std::remove(file_pointer);
+
 }
 
 TEST(Common, YamlParserProcessValuesList)
 {
-    ASSERT_THROW(YAMLParser::parse("some-non-existing-file.yaml"), Exception);
+    auto *file_pointer = getTempFileWithContents(R"YAML(
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+)YAML");
 
-    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(resolvePath("src/Common/tests/gtest_yaml_test_config_values_list.yaml"));
+    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(file_pointer);
     auto *p_node = xml->getNodeByPath("/clickhouse");
     EXPECT_EQ(xmlNodeAsString(p_node), R"CONFIG(<clickhouse>
 <rules>
@@ -51,6 +74,8 @@ TEST(Common, YamlParserProcessValuesList)
 </rules>
 </clickhouse>
 )CONFIG");
+
+    std::remove(file_pointer);
 
 }
 #endif

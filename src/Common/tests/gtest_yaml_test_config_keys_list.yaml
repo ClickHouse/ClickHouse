@@ -1,6 +1,0 @@
-operator:
-  access_management: "1"
-  networks:
-  - ip: "10.1.6.168"
-  - ip: "::1"
-  - ip: "127.0.0.1"

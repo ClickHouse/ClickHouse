@@ -1,26 +1,18 @@
 #pragma once
 
-#include <boost/filesystem.hpp>
-
 #include "Poco/DOM/Document.h"
 #include "Poco/DOM/NodeList.h"
 #include "Poco/DOM/NamedNodeMap.h"
 
 
-inline std::string resolvePath(const std::string &relPath)
+inline char *getTempFileWithContents(const char *fileContents)
 {
-    namespace fs = boost::filesystem;
-    auto base_dir = fs::current_path();
-    while (base_dir.has_parent_path())
-    {
-        auto combine_path = base_dir / relPath;
-        if (fs::exists(combine_path))
-        {
-            return combine_path.string();
-        }
-        base_dir = base_dir.parent_path();
-    }
-    throw std::runtime_error("File not found!");
+    auto *file_pointer = std::tmpnam (nullptr);
+    auto *file_stream = std::fopen(file_pointer, "w+");
+    std::fputs(fileContents, file_stream);
+    std::fclose(file_stream);
+
+    return file_pointer;
 }
 
 inline std::string xmlNodeAsString(Poco::XML::Node* &pNode)
