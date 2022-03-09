@@ -2028,6 +2028,9 @@ bool MutateTask::lightweight_prepare()
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
+    /// lightweight mutation dont not need to apply deleted mask, in order to keep logic row number for rows.
+    context_for_reading->setFromLightWeightMutation(true);
+
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
