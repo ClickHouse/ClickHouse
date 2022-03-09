@@ -31,6 +31,7 @@ void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 
 #if USE_HIVE
 void registerTableFunctionHive(TableFunctionFactory & factory);
+void registerTableFunctionHiveCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);

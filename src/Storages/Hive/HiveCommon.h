@@ -12,6 +12,7 @@
 #include <base/types.h>
 #include <Common/LRUCache.h>
 #include <Common/PoolBase.h>
+#include <IO/Marshallable.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 
@@ -41,7 +42,7 @@ class HiveMetastoreClient : public WithContext
 {
 public:
 
-    struct FileInfo
+    struct FileInfo : public Marshallable
     {
         String path;
         UInt64 last_modify_time; /// In ms
@@ -50,9 +51,28 @@ public:
         explicit FileInfo() = default;
         FileInfo & operator = (const FileInfo &) = default;
         FileInfo(const FileInfo &) = default;
+        ~FileInfo() override = default;
         FileInfo(const String & path_, UInt64 last_modify_time_, size_t size_)
             : path(path_), last_modify_time(last_modify_time_), size(size_)
         {
+        }
+
+        void marshal(MarshallablePack & p) const override
+        {
+            p << path << last_modify_time << size;
+        }
+
+        void unmarshal(MarshallableUnPack & p) override
+        {
+            p >> path >> last_modify_time >> size;
+        }
+
+        MarshallableTraceBuffer & trace(MarshallableTraceBuffer & buf) const override
+        {
+            buf << "path=" << path << ","
+                << "last_modify_time=" << last_modify_time << ","
+                << "size=" << size;
+            return buf;
         }
     };
 

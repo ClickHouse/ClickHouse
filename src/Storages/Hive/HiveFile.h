@@ -96,7 +96,10 @@ public:
         }
         throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
     }
-
+    /**
+     * @brief transform file format representation from hive metastore to inner representation
+     */
+    static String hiveMetaStoreFileFormattoHiveFileFormat(const String & format_class);
     IHiveFile(
         const FieldVector & values_,
         const String & namenode_url_,
@@ -268,6 +271,31 @@ protected:
     std::shared_ptr<parquet::ParquetFileReader> reader;
     std::map<String, size_t> parquet_column_positions;
 };
+
+/**
+ * @brief Create a Hive File object
+ *
+ * @param format_name : file format name. base on it to create different file object
+ * @param fields
+ * @param namenode_url : hdfs url
+ * @param path : path on hdfs
+ * @param ts : last modified timestamp
+ * @param size : file size
+ * @param index_names_and_types
+ * @param hive_settings
+ * @param context
+ * @return HiveFilePtr
+ */
+HiveFilePtr createHiveFile(
+    const String & format_name,
+    const FieldVector & fields,
+    const String & namenode_url,
+    const String & path,
+    UInt64 ts,
+    size_t size,
+    const NamesAndTypesList & index_names_and_types,
+    const std::shared_ptr<HiveSettings> & hive_settings,
+    ContextPtr context);
 }
 
 

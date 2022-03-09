@@ -1,0 +1,34 @@
+
+<clickhouse>
+    <remote_servers>
+    <cluster_simple>
+        <shard>
+            <replica>
+                <host>h0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>h0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>h0_1_0</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster_simple>
+
+    </remote_servers>
+    <local_cache_for_remote_fs>
+        <enable>true</enable>
+        <root_dir>/tmp/clickhouse_local_cache</root_dir>
+        <limit_size>207374182400</limit_size>
+        <bytes_read_befor_flush>1048576</bytes_read_befor_flush>
+    </local_cache_for_remote_fs>
+    
+    <hdfs>
+	    <libhdfs3_conf>/etc/clickhouse-server/extra_conf.d/hdfs-site.xml</libhdfs3_conf>
+    </hdfs>
+</clickhouse>
