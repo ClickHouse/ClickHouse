@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DATA_FILE=$CUR_DIR/data_orc/test.orc
+DATA_FILE=$CUR_DIR/data_orc/test_$CLICKHOUSE_TEST_UNIQUE_NAME.orc
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS orc_load"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE orc_load (int Int32, smallint Int8, bigint Int64, float Float32, double Float64, date Date, y String, datetime64 DateTime64(3)) ENGINE = Memory"
