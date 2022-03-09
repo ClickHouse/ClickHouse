@@ -43,11 +43,13 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 | BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
 | FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
-| DATE                             | [Date32](../../sql-reference/data-types/date32.md)               |
+| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
 All other MySQL data types are converted into [String](../../sql-reference/data-types/string.md).
+
+Because of the ClickHouse date type has a different range from the MySQL date range,If the MySQL date type is out of the range of ClickHouse date, you can use the setting mysql_datatypes_support_level to modify the mapping from the MySQL date type to the Clickhouse date type: date2Date32 (convert MySQL's date type to ClickHouse Date32) or date2String(convert MySQL's date type to ClickHouse String,this is usually used when your mysql data is less than 1925) or default(convert MySQL's date type to ClickHouse Date).
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
