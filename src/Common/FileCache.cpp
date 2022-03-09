@@ -65,6 +65,12 @@ bool IFileCache::shouldBypassCache()
         || CurrentThread::getQueryId().size == 0;
 }
 
+void IFileCache::assertInitialized() const
+{
+    if (!is_initialized)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
+}
+
 LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_, size_t max_file_segment_size_)
     : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
     , log(&Poco::Logger::get("LRUFileCache"))
@@ -229,6 +235,8 @@ FileSegments LRUFileCache::splitRangeIntoEmptyCells(
 
 FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size)
 {
+    assertInitialized();
+
     FileSegment::Range range(offset, offset + size - 1);
 
     std::lock_guard cache_lock(mutex);
@@ -431,6 +439,8 @@ bool LRUFileCache::tryReserve(
 
 void LRUFileCache::remove(const Key & key)
 {
+    assertInitialized();
+
     std::lock_guard cache_lock(mutex);
 
     auto it = files.find(key);

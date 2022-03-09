@@ -108,7 +108,6 @@ ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(
 
     auto result = nextImpl();
 
-    LOG_TEST(log, "Current path: {}, returning with size: {}, offset: {}", current_path, working_buffer.size(), BufferBase::offset());
     if (result)
         return {working_buffer.size(), BufferBase::offset()};
 
