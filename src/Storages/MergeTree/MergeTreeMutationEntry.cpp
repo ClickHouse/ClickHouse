@@ -53,11 +53,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
     , tid(tid_)
-    , csn(Tx::UnknownCSN)
 {
     try
     {
-        /// TODO Transactions: write (and read) tid
         auto out = disk->writeFile(path_prefix + file_name);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
@@ -131,7 +129,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     *buf >> "\n";
 
     assertEOF(*buf);
-    csn = Tx::PrehistoricCSN;
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()

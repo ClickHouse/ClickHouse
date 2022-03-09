@@ -544,6 +544,9 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     mutable State state{State::Temporary};
+
+    /// This ugly flag is needed for debug assertions only
+    mutable bool part_is_probably_removed_from_disk = false;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

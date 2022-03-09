@@ -140,6 +140,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
             tid_to_csn.emplace(entry.first, entry.second);
         last_loaded_entry = last_entry;
         latest_snapshot = loaded.back().second;
+        local_tid_counter = Tx::MaxReservedLocalTID;
     };
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
@@ -268,7 +269,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
     txn->beforeCommit();
 
     CSN new_csn;
-    /// TODO Transactions: reset local_tid_counter
     if (txn->isReadOnly())
     {
         LOG_TEST(log, "Closing readonly transaction {}", txn->tid);

@@ -36,7 +36,6 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 
     /// Now we know actual part name and can write it to system log table.
     tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
-
     new_part->assertHasVersionMetadata(txn);
     if (txn)
         txn->addNewPart(storage, new_part);
@@ -44,31 +43,37 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
 {
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     TransactionInfoContext context{storage->getStorageID(), part_to_remove->name};
-    part_to_remove->version.lockMaxTID(tid, context);
     if (txn)
-        txn->removeOldPart(storage, part_to_remove);
+        txn->removeOldPart(storage, part_to_remove, context);
+    else
+        part_to_remove->version.lockMaxTID(Tx::PrehistoricTID, context);
 }
 
 void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-
     TransactionInfoContext context{storage->getStorageID(), new_part->name};
     tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, context);
+    context.covering_part = std::move(context.part_name);
     new_part->assertHasVersionMetadata(txn);
 
     if (txn)
-        txn->addNewPart(storage, new_part);
-
-    context.covering_part = std::move(context.part_name);
-    for (const auto & covered : covered_parts)
     {
-        context.part_name = covered->name;
-        covered->version.lockMaxTID(tid, context);
-        if (txn)
-            txn->removeOldPart(storage, covered);
+        txn->addNewPart(storage, new_part);
+        for (const auto & covered : covered_parts)
+        {
+            context.part_name = covered->name;
+            txn->removeOldPart(storage, covered, context);
+        }
+    }
+    else
+    {
+        for (const auto & covered : covered_parts)
+        {
+            context.part_name = covered->name;
+            covered->version.lockMaxTID(tid, context);
+        }
     }
 }
 
@@ -84,16 +89,20 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     creating_parts.push_back(new_part);
 }
 
-void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
+void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context)
 {
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");//FIXME
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
     else if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 
-    storages.insert(storage);
-    removing_parts.push_back(part_to_remove);
+    {
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        part_to_remove->version.lockMaxTID(tid, context);
+        storages.insert(storage);
+        removing_parts.push_back(part_to_remove);
+    }
     part_to_remove->appendRemovalTIDToVersionMetadata();
 }
 
@@ -161,7 +170,6 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-    /// FIXME const_cast
     for (const auto & part : creating_parts)
         const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(nullptr, {part}, true);
 

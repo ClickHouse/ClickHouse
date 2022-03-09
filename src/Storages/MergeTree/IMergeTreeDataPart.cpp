@@ -1279,6 +1279,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (!isStoredOnDisk())
         return false;
 
+    if (part_is_probably_removed_from_disk)
+        return true;
+
     DiskPtr disk = volume->getDisk();
     if (!disk->exists(getFullRelativePath()))
         return true;
@@ -1404,6 +1407,8 @@ std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 void IMergeTreeDataPart::remove() const
 {
     assert(assertHasValidVersionMetadata());
+    part_is_probably_removed_from_disk = true;
+
     std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
     if (!keep_shared_data.has_value())
         return;
