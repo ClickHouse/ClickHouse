@@ -198,8 +198,10 @@ class ClickHouseNode(Node):
             self.command(f"kill -TERM {pid}", exitcode=0, steps=False)
 
         with And("checking pid does not exist"):
-            for attempt in retries(timeout=100, delay=1):
+            for attempt in retries(timeout=100, delay=3):
                 with attempt:
+                    if attempt.number > 0 and attempt.number % 20 == 0:
+                        self.command(f"kill -KILL {pid}", exitcode=0, steps=False)
                     if self.command(f"ps {pid}", steps=False, no_checks=True).exitcode != 1:
                         fail("pid still alive")
 
