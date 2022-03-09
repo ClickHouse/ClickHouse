@@ -3,7 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include "Common/ArenaWithFreeLists.h"
+#include <Common/ArenaWithFreeLists.h>
 #include <Common/ThreadPool.h>
 
 namespace DB
@@ -86,7 +86,7 @@ public:
         virtual std::optional<size_t> getTotalSize() = 0;
     };
 
-    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers);
+    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool, size_t max_working_readers);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -144,7 +144,11 @@ private:
 
     Segment current_segment;
 
-    ThreadPool pool;
+    ThreadPool * pool;
+    size_t max_working_readers;
+    size_t active_working_reader{0};
+    // Triggered when all reader workers are done
+    std::condition_variable readers_done;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
 
@@ -155,6 +159,7 @@ private:
      * deque and data from next reader will be consumed to user.
      */
     std::deque<ReadWorkerPtr> read_workers;
+    // Triggered when a reader worker was removed
     std::condition_variable reader_condvar;
 
     std::mutex mutex;

@@ -13,16 +13,19 @@ namespace ErrorCodes
 
 }
 
-ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers)
-    : SeekableReadBufferWithSize(nullptr, 0), pool(max_working_readers), reader_factory(std::move(reader_factory_))
+ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool_, size_t max_working_readers_)
+    : SeekableReadBufferWithSize(nullptr, 0)
+    , pool(pool_)
+    , max_working_readers(max_working_readers_)
+    , reader_factory(std::move(reader_factory_))
 {
     initializeWorkers();
 }
 
 void ParallelReadBuffer::initializeWorkers()
 {
-    for (size_t i = 0; i < pool.getMaxThreads(); ++i)
-        pool.scheduleOrThrow([this] { processor(); });
+    for (size_t i = 0; i < max_working_readers; ++i)
+        pool->scheduleOrThrow([this] { processor(); });
 }
 
 off_t ParallelReadBuffer::seek(off_t offset, int whence)
@@ -170,6 +173,11 @@ bool ParallelReadBuffer::nextImpl()
 
 void ParallelReadBuffer::processor()
 {
+    {
+        std::lock_guard lock{mutex};
+        ++active_working_reader;
+    }
+
     while (!emergency_stop)
     {
         ReadWorkerPtr worker;
@@ -177,7 +185,7 @@ void ParallelReadBuffer::processor()
             /// Create new read worker and put in into end of queue
             /// reader_factory is not thread safe, so we call getReader under lock
             std::unique_lock lock(mutex);
-            reader_condvar.wait(lock, [this] { return emergency_stop || read_workers.size() < pool.getMaxThreads(); });
+            reader_condvar.wait(lock, [this] { return emergency_stop || read_workers.size() < max_working_readers; });
 
             if (emergency_stop)
                 break;
@@ -195,6 +203,15 @@ void ParallelReadBuffer::processor()
 
         /// Start processing
         readerThreadFunction(std::move(worker));
+    }
+
+    {
+        std::lock_guard lock{mutex};
+        --active_working_reader;
+        if (active_working_reader == 0)
+        {
+            readers_done.notify_all();
+        }
     }
 }
 
@@ -240,20 +257,16 @@ void ParallelReadBuffer::onBackgroundException()
         background_exception = std::current_exception();
     }
     emergency_stop = true;
+    next_condvar.notify_all();
 }
 
 void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
     reader_condvar.notify_all();
-    try
-    {
-        pool.wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::unique_lock lock{mutex};
+    readers_done.wait(lock, [&] { return active_working_reader == 0; });
 }
 
 }

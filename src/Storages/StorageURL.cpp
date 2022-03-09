@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <IO/IOThreadPool.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -289,6 +290,12 @@ namespace
 
                     if (supports_ranges && content_length)
                     {
+                        [[maybe_unused]] static auto initialized = std::invoke(
+                            []
+                            {
+                                IOThreadPool::initialize(100, 4, 10000);
+                                return true;
+                            });
                         auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
                             *content_length,
                             10 * 1024 * 1024,
@@ -306,7 +313,7 @@ namespace
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error);
                         return wrapReadBufferWithCompressionMethod(
-                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), 8),
+                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), &IOThreadPool::get(), 4),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));
                     }
 
