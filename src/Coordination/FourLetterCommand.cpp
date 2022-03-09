@@ -202,7 +202,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t 
 
 String MonitorCommand::run()
 {
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     if (!keeper_info.has_leader)
@@ -288,7 +288,7 @@ String ServerStatCommand::run()
         writeText('\n', buf);
     };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -314,7 +314,7 @@ String StatCommand::run()
 
     auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
 
-    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
