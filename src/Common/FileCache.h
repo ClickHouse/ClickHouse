@@ -100,6 +100,8 @@ protected:
         const Key & key, size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock) = 0;
+
+    void assertInitialized() const;
 };
 
 using FileCachePtr = std::shared_ptr<IFileCache>;

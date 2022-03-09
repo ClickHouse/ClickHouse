@@ -103,6 +103,7 @@ TEST(LRUFileCache, get)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     auto cache = DB::LRUFileCache(cache_base_path, 30, 5);
+    cache.initialize();
     auto key = cache.hash("key1");
 
     {
@@ -473,6 +474,7 @@ TEST(LRUFileCache, get)
 
         auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
         cache2.initialize();
+
         ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
@@ -490,6 +492,8 @@ TEST(LRUFileCache, get)
         /// Test max file segment size
 
         auto cache2 = DB::LRUFileCache(caches_dir / "cache2", 30, 5, /* max_file_segment_size */10);
+        cache2.initialize();
+
         auto holder1 = cache2.getOrSet(key, 0, 25); /// Get [0, 24]
         auto segments1 = fromHolder(holder1);
 

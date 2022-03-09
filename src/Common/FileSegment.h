@@ -128,6 +128,7 @@ private:
     void completeImpl(bool allow_non_strict_checking = false);
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     static String getCallerIdImpl(bool allow_non_strict_checking = false);
+    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
 
@@ -166,16 +167,18 @@ struct FileSegmentsHolder : private boost::noncopyable
 
         for (auto & segment : file_segments)
         {
-            segment->complete();
-
-            // try
-            // {
-            //     segment->complete();
-            // }
-            // catch (...)
-            // {
-            //     tryLogCurrentException(__PRETTY_FUNCTION__);
-            // }
+            try
+            {
+                segment->complete();
+            }
+            catch (...)
+            {
+#ifndef NDEBUG
+                throw;
+#else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+#endif
+            }
         }
     }
 

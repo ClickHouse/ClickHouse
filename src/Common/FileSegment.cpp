@@ -60,7 +60,10 @@ String FileSegment::getCallerIdImpl(bool allow_non_strict_checking)
     {
         /// getCallerId() can be called from completeImpl(), which can be called from complete().
         /// complete() is called from destructor of CachedReadBufferFromRemoteFS when there is no query id anymore.
-        /// Allow non strict checking only for internal usage.
+        /// Allow non strict checking in this case. This works correctly as if getCallerIdImpl() is called from destructor,
+        /// then we know that caller is not a downloader, because downloader is reset each nextImpl() call either
+        /// manually or via SCOPE_EXIT.
+
         if (allow_non_strict_checking)
             return "None";
 
@@ -86,7 +89,8 @@ String FileSegment::getOrSetDownloader()
         download_state = State::DOWNLOADING;
     }
     else if (downloader_id == getCallerId())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set the same downloader for segment {} for the second time", range().toString());
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                        "Attempt to set the same downloader for segment {} for the second time", range().toString());
 
     return downloader_id;
 }
@@ -96,11 +100,16 @@ void FileSegment::resetDownloader()
     std::lock_guard segment_lock(mutex);
 
     if (downloader_id.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no downloader");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "There is no downloader");
 
     if (getCallerId() != downloader_id)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Downloader can be reset only by downloader");
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Downloader can be reset only by downloader");
 
+    resetDownloaderImpl(segment_lock);
+}
+
+void FileSegment::resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock)
+{
     if (downloaded_size == range().size())
         setDownloaded(segment_lock);
     else
@@ -267,14 +276,8 @@ void FileSegment::completeBatchAndResetDownloader()
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File segment can be completed only by downloader");
     }
 
-    if (downloaded_size == range().size())
-    {
-        setDownloaded(segment_lock);
-    }
-    else
-        download_state = State::PARTIALLY_DOWNLOADED;
+    resetDownloaderImpl(segment_lock);
 
-    downloader_id.clear();
     LOG_TEST(log, "Complete batch. Current downloaded size: {}", downloaded_size);
 
     cv.notify_all();
