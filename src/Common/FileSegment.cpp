@@ -79,11 +79,11 @@ String FileSegment::getOrSetDownloader()
 
     if (downloader_id.empty())
     {
+        assert(download_state != State::DOWNLOADING);
+
         if (download_state != State::EMPTY
             && download_state != State::PARTIALLY_DOWNLOADED)
-            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Can set downloader only for file segment with state EMPTY or PARTIALLY_DOWNLOADED, but got: {}",
-                            download_state);
+            return "None";
 
         downloader_id = getCallerId();
         download_state = State::DOWNLOADING;
