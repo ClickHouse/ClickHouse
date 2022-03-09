@@ -14,7 +14,7 @@ class WriteBuffer;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
-class BinaryRowOutputFormat: public IRowOutputFormat
+class BinaryRowOutputFormat final: public IRowOutputFormat
 {
 public:
     BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_);

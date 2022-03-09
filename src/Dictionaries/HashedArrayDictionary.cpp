@@ -1,5 +1,6 @@
 #include "HashedArrayDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -157,12 +158,6 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::hasKeys(const Colum
 
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
-
-    if (attributes.empty())
-    {
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        return result;
-    }
 
     size_t keys_found = 0;
 
@@ -583,7 +578,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }

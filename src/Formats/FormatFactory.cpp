@@ -13,6 +13,8 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -127,6 +129,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -275,9 +278,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
-        (WriteBuffer & output) -> OutputFormatPtr
-        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        {
+            return output_getter(output, sample, {callback}, format_settings);
+        };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 
@@ -394,6 +398,27 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
+void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker)
+{
+    auto & target = dict[name].append_support_checker;
+    if (target)
+        throw Exception("FormatFactory: Suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(append_support_checker);
+}
+
+void FormatFactory::markFormatHasNoAppendSupport(const String & name)
+{
+    registerAppendSupportChecker(name, [](const FormatSettings &){ return false; });
+}
+
+bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    auto & append_support_checker = dict[name].append_support_checker;
+    /// By default we consider that format supports append
+    return !append_support_checker || append_support_checker(format_settings);
+}
+
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
     auto & target = dict[name].output_creator;
@@ -410,6 +435,9 @@ void FormatFactory::registerFileExtension(const String & extension, const String
 
 String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
 {
+    if (file_name == "stdin")
+        return getFormatFromFileDescriptor(STDIN_FILENO);
+
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
     {
@@ -436,6 +464,25 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
         return "";
     }
     return it->second;
+}
+
+String FormatFactory::getFormatFromFileDescriptor(int fd)
+{
+#ifdef OS_LINUX
+    char buf[32] = {'\0'};
+    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    char file_path[PATH_MAX] = {'\0'};
+    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#elif defined(__APPLE__)
+    char file_path[PATH_MAX] = {'\0'};
+    if (fcntl(fd, F_GETPATH, file_path) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#else
+    return "";
+#endif
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)

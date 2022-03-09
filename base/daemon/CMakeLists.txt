@@ -6,7 +6,7 @@ add_library (daemon
 
 target_include_directories (daemon PUBLIC ..)
 
-if (OS_DARWIN AND NOT MAKE_STATIC_LIBRARIES)
+if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
     target_link_libraries (daemon PUBLIC -Wl,-undefined,dynamic_lookup)
 endif()
 

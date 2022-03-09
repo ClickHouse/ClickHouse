@@ -29,6 +29,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/logger_useful.h>
+#include <base/sort.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
@@ -239,7 +240,7 @@ public:
             WriteBufferFromString wb(serialized_keys[rows_processed]);
             key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
-            slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
+            slices_keys[rows_processed] = serialized_keys[rows_processed];
 
             ++it;
             ++rows_processed;
@@ -457,7 +458,7 @@ Pipe StorageEmbeddedRocksDB::read(
         if (keys->empty())
             return {};
 
-        std::sort(keys->begin(), keys->end());
+        ::sort(keys->begin(), keys->end());
         keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
 
         Pipes pipes;

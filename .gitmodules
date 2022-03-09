@@ -38,7 +38,7 @@
 	url = https://github.com/ClickHouse-Extras/mariadb-connector-c.git
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/ClickHouse-Extras/jemalloc.git
+	url = https://github.com/jemalloc/jemalloc.git
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
@@ -217,6 +217,9 @@
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
+[submodule "contrib/cld2"]
+	path = contrib/cld2
+	url = https://github.com/ClickHouse-Extras/cld2.git
 [submodule "contrib/libstemmer_c"]
 	path = contrib/libstemmer_c
 	url = https://github.com/ClickHouse-Extras/libstemmer_c.git
@@ -247,9 +250,15 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
+[submodule "contrib/nlp-data"]
+	path = contrib/nlp-data
+	url = https://github.com/ClickHouse-Extras/nlp-data.git
 [submodule "contrib/hive-metastore"]
 	path = contrib/hive-metastore
 	url = https://github.com/ClickHouse-Extras/hive-metastore
 [submodule "contrib/azure"]
 	path = contrib/azure
 	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git
+[submodule "contrib/minizip-ng"]
+	path = contrib/minizip-ng
+	url = https://github.com/zlib-ng/minizip-ng

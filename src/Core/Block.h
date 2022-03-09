@@ -37,6 +37,7 @@ public:
     Block() = default;
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_);
+    Block(ColumnsWithTypeAndName && data_);
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);
@@ -202,5 +203,7 @@ ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column
 /// Converts columns-constants to full columns ("materializes" them).
 Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
+
+Block concatenateBlocks(const std::vector<Block> & blocks);
 
 }

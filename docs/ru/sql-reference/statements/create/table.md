@@ -14,8 +14,8 @@ toc_title: "Таблица"
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -107,6 +107,13 @@ SELECT x, toTypeName(x) FROM t1;
 Материализованное выражение. Такой столбец не может быть указан при INSERT, то есть, он всегда вычисляется.
 При INSERT без указания списка столбцов, такие столбцы не рассматриваются.
 Также этот столбец не подставляется при использовании звёздочки в запросе SELECT. Это необходимо, чтобы сохранить инвариант, что дамп, полученный путём `SELECT *`, можно вставить обратно в таблицу INSERT-ом без указания списка столбцов.
+
+### EPHEMERAL {#ephemeral}
+
+`EPHEMERAL expr`
+
+Эфемерное выражение. Такой столбец не хранится в таблице и не может быть получен в запросе SELECT, но на него можно ссылаться в выражениях по умолчанию запроса CREATE.
+INSERT без списка столбцов игнорирует этот столбец, таким образом сохраняется инвариант - т.е. дамп, полученный путём `SELECT *`, можно вставить обратно в таблицу INSERT-ом без указания списка столбцов.
 
 ### ALIAS {#alias}
 
@@ -244,6 +251,46 @@ CREATE TABLE codec_example
     slow_values Float32 CODEC(Gorilla)
 )
 ENGINE = MergeTree()
+```
+
+### Кодеки шифрования {#create-query-encryption-codecs}
+
+Эти кодеки не сжимают данные, вместо этого они зашифровывают данные на диске. Воспользоваться кодеками можно, только когда ключ шифрования задан параметрами [шифрования](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption). Обратите внимание: ставить кодеки шифрования имеет смысл в самый конец цепочки кодеков, потому что зашифрованные данные, как правило, нельзя сжать релевантным образом.
+
+Кодеки шифрования:
+
+-   `CODEC('AES-128-GCM-SIV')` — Зашифровывает данные с помощью AES-128 в режиме [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV. 
+-   `CODEC('AES-256-GCM-SIV')` — Зашифровывает данные с помощью AES-256 в режиме GCM-SIV. 
+
+Эти кодеки используют фиксированный одноразовый ключ шифрования. Таким образом, это детерминированное шифрование. Оно совместимо с поддерживающими дедупликацию движками, в частности, [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md). Однако у шифрования имеется недостаток: если дважды зашифровать один и тот же блок данных, текст на выходе получится одинаковым, и злоумышленник, у которого есть доступ к диску, заметит эту эквивалентность (при этом доступа к содержимому он не получит).
+
+!!! attention "Внимание"
+    Большинство движков, включая семейство `MergeTree`, создают на диске индексные файлы, не применяя кодеки. А значит, в том случае, если зашифрованный столбец индексирован, на диске отобразится незашифрованный текст.
+
+!!! attention "Внимание"
+    Если вы выполняете запрос SELECT с упоминанием конкретного значения в зашифрованном столбце (например, при использовании секции WHERE), это значение может появиться в [system.query_log](../../../operations/system-tables/query_log.md). Рекомендуем отключить логирование.
+
+**Пример**
+
+```sql
+CREATE TABLE mytable 
+(
+    x String Codec(AES_128_GCM_SIV)
+) 
+ENGINE = MergeTree ORDER BY x;
+```
+
+!!!note "Замечание"
+    Если необходимо применить сжатие, это нужно явно прописать в запросе. Без этого будет выполнено только шифрование данных.
+
+**Пример**
+
+```sql
+CREATE TABLE mytable 
+(
+    x String Codec(Delta, LZ4, AES_128_GCM_SIV)
+) 
+ENGINE = MergeTree ORDER BY x;
 ```
 
 ## Временные таблицы {#temporary-tables}

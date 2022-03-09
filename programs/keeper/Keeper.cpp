@@ -13,6 +13,7 @@
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
 #include <base/scope_guard.h>
+#include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
@@ -33,11 +34,6 @@
 
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
-
-#if defined(OS_LINUX)
-#    include <unistd.h>
-#    include <sys/syscall.h>
-#endif
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -125,18 +121,6 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
         throw;
     }
     return socket_address;
-}
-
-[[noreturn]] void forceShutdown()
-{
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
 }
 
 std::string getUserName(uid_t user_id)
@@ -324,13 +308,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            LOG_WARNING(log, message);
+            LOG_WARNING(log, fmt::runtime(message));
         }
     }
 
     DB::ServerUUID::load(path + "/uuid", log);
-
-    const Settings & settings = global_context->getSettingsRef();
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -377,8 +359,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
                 listen_host,
                 port_name,
@@ -393,8 +375,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
@@ -476,7 +458,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         if (current_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
-            forceShutdown();
+            safeExit(0);
         }
     });
 
