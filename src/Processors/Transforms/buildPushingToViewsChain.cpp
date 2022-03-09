@@ -279,22 +279,30 @@ Chain buildPushingToViewsChain(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtrForInsert();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
             target_name = inner_table_id.getFullTableName();
 
-            /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
+            Names names;
+            if (query)
+            {
+                /// Get list of columns we get from select query.
+                names = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
+                    .getSampleBlock().getNames();
+            }
+            else
+            {
+                names = inner_metadata_snapshot->getColumns().getAllPhysical().getNames();
+            }
 
             /// Insert only columns returned by select.
             Names insert_columns;
             const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
+            for (const auto & name : names)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
-                    insert_columns.emplace_back(column.name);
+                if (inner_table_columns.hasPhysical(name))
+                    insert_columns.emplace_back(name);
             }
 
             InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);

@@ -1,13 +1,4 @@
-#include <cassert>
 #include <Common/Exception.h>
-
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -16,21 +7,33 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
+
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 
 #include <IO/WriteHelpers.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 
 
 namespace DB
@@ -192,7 +195,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         /// TODO: fix this check.
         /// This block may have more columns then needed in case of MV.
         metadata_snapshot->check(block, true);
@@ -203,28 +206,35 @@ public:
         StoragePtr block_storage
             = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
 
-        // auto local_context = Context::createCopy(context);
-        // local_context->addViewSource(
-        // StorageValues::create(getStorageID(), source_columns, Block(), getVirtuals()));
-
         InterpreterSelectQuery select(query, context, block_storage, nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
-        auto select_result = select.execute();
+        auto builder = select.buildQueryPipeline();
 
-        BlockInputStreamPtr in;
-        in = std::make_shared<MaterializingBlockInputStream>(select_result.getInputStream());
-        in = std::make_shared<SquashingBlockInputStream>(
-            in, context->getSettingsRef().min_insert_block_size_rows, context->getSettingsRef().min_insert_block_size_bytes);
+        builder = select.buildQueryPipeline();
 
-        in->readPrefix();
+        builder.addSimpleTransform([&](const Block & current_header)
+        {
+            return std::make_shared<MaterializingTransform>(current_header);
+        });
 
+        builder.addSimpleTransform([&](const Block & current_header)
+        {
+            return std::make_shared<SquashingChunksTransform>(
+                current_header,
+                context->getSettingsRef().min_insert_block_size_rows,
+                context->getSettingsRef().min_insert_block_size_bytes);
+        });
+
+        auto header = builder.getHeader();
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        PullingPipelineExecutor executor(pipeline);
+
+        Block result_block;
         bool no_more_keys = false;
-        while (Block result_block = in->read())
+        while (executor.pull(result_block))
         {
             std::unique_lock lock(storage.rwlock);
-            storage.aggregator_transform_params->aggregator.mergeBlock(result_block, variants, no_more_keys);
+            storage.aggregator_transform_params->aggregator.mergeOnBlock(result_block, variants, no_more_keys);
         }
-
-        in->readSuffix();
     }
 
 private:
@@ -432,8 +442,9 @@ void StorageAggregatingMemory::initState(ContextPtr context)
     if (aggregator_transform_params->params.keys_size == 0 && !aggregator_transform_params->params.empty_result_for_aggregation_by_empty_set)
     {
         auto sink = std::make_shared<AggregatingMemorySink>(*this, src_metadata_snapshot, context);
-        PushingToSinkBlockOutputStream os(std::move(sink));
-        os.write(src_metadata_snapshot->getSampleBlock());
+        QueryPipeline pipeline(std::move(std::move(sink)));
+        PushingPipelineExecutor executor(pipeline);
+        executor.push(src_metadata_snapshot->getSampleBlock());
     }
 }
 
@@ -481,9 +492,7 @@ Pipe StorageAggregatingMemory::read(
     StoragePtr mergable_storage = StorageSource::create(getStorageID(), src_metadata_snapshot->getColumns(), source, std::move(lock));
 
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, context, mergable_storage);
-    BlockIO select_result = select.execute();
-
-    return QueryPipeline::getPipe(std::move(select_result.pipeline));
+    return QueryPipelineBuilder::getPipe(select.buildQueryPipeline());
 }
 
 SinkToStoragePtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)

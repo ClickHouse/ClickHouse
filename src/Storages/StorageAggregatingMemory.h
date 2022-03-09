@@ -5,15 +5,14 @@
 #include <mutex>
 #include <shared_mutex>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 namespace DB
 {

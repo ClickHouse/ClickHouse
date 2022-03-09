@@ -511,6 +511,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         return std::make_shared<MaterializingTransform>(current_header);
     });
+
     builder.addSimpleTransform([&](const Block & current_header)
     {
         return std::make_shared<SquashingChunksTransform>(
