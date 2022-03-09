@@ -19,10 +19,6 @@ AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
 
-SELECT * FROM test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
-SELECT * FROM test ORDER BY value LIMIT 10 FORMAT Null;
-SELECT * FROM test WHERE value LIKE '%dba%' ORDER BY value LIMIT 10 FORMAT Null;
-
 SET remote_filesystem_read_method='read';
 
 SELECT 2, * FROM test LIMIT 10 FORMAT Null;
@@ -38,5 +34,9 @@ AND type = 'QueryFinish'
 AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
+
+SELECT * FROM test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
+SELECT * FROM test ORDER BY value LIMIT 10 FORMAT Null;
+SELECT * FROM test WHERE value LIKE '%dba%' ORDER BY value LIMIT 10 FORMAT Null;
 
 DROP TABLE test NO DELAY;
