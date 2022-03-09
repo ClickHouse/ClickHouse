@@ -19,6 +19,7 @@ TEST(Config, MergeConfigsOneSided)
     fs::create_directories(fs::path("/tmp/"));
 
     auto config_file = std::make_unique<File>("/tmp/config.yml");
+    SCOPE_EXIT({ config_file->remove(); });
 
     {
         WriteBufferFromFile out(config_file->path());
@@ -31,6 +32,7 @@ clickhouse:
     }
 
     auto system_tables_file = std::make_unique<File>("/tmp/config.d/system_tables.yml");
+    SCOPE_EXIT({ system_tables_file->remove(); });
 
     {
         WriteBufferFromFile out(system_tables_file->path());
@@ -75,6 +77,7 @@ TEST(Config, MergeConfigsTwoSided)
     fs::create_directories(fs::path("/tmp/"));
 
     auto config_file = std::make_unique<File>("/tmp/config.yml");
+    SCOPE_EXIT({ config_file->remove(); });
 
     {
         WriteBufferFromFile out(config_file->path());
@@ -94,6 +97,7 @@ clickhouse:
     }
 
     auto system_tables_file = std::make_unique<File>("/tmp/config.d/system_tables.yml");
+    SCOPE_EXIT({ system_tables_file->remove(); });
 
     {
         WriteBufferFromFile out(system_tables_file->path());
