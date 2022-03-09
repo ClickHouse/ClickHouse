@@ -24,8 +24,8 @@ TEST(Config, MergeConfigsOneSided)
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field1 : "1"
-  field2 : "2"
+    field1: "1"
+    field2: "2"
 )YAML";
         writeString(data, out);
     }
@@ -36,16 +36,16 @@ clickhouse:
         WriteBufferFromFile out(system_tables_file->path());
         std::string data = R"YAML(
 clickhouse:
-  text_log :
-    database: system
-    table: text_log
-    partition_by:
-      "@remove": "1"
-    engine:
-      - "@replace" : "1"
-      - "ENGINE MergeTree"
-    flush_interval_milliseconds: 7500
-    level: debug
+    text_log:
+        database: system
+        table: text_log
+        partition_by:
+            "@remove": "1"
+        engine:
+            - "@replace" : "1"
+            - "ENGINE MergeTree"
+        flush_interval_milliseconds: 7500
+        level: debug
 )YAML";
         writeString(data, out);
     }
@@ -80,15 +80,15 @@ TEST(Config, MergeConfigsTwoSided)
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field1 : "1"
-  field2 : "2"
-  text_log :
-    database: system
-    table: text_log
-    partition_by: "toYYYYMMDD(Something)"
-    engine: "ENGINE Memory"
-    flush_interval_milliseconds: 7500
-    level: debug
+    field1 : "1"
+    field2 : "2"
+    text_log :
+        database: system
+        table: text_log
+        partition_by: "toYYYYMMDD(Something)"
+        engine: "ENGINE Memory"
+        flush_interval_milliseconds: 7500
+        level: debug
 )YAML";
         writeString(data, out);
     }
@@ -99,18 +99,18 @@ clickhouse:
         WriteBufferFromFile out(system_tables_file->path());
         std::string data = R"YAML(
 clickhouse:
-  field3 : "3"
-  field4 : "4"
-  text_log :
-    database: system
-    table: text_log
-    partition_by:
-      "@remove": "1"
-    engine:
-      - "@replace" : "1"
-      - "ENGINE MergeTree"
-    flush_interval_milliseconds: 7500
-    level: debug
+    field3 : "3"
+    field4 : "4"
+    text_log :
+        database: system
+        table: text_log
+        partition_by:
+            "@remove": "1"
+        engine:
+            - "@replace" : "1"
+            - "ENGINE MergeTree"
+        flush_interval_milliseconds: 7500
+        level: debug
 )YAML";
         writeString(data, out);
     }
