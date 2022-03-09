@@ -64,7 +64,10 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
         current_position = front_worker->range.from;
         while (true)
         {
-            next_condvar.wait(lock, [&] { return !segments.empty(); });
+            next_condvar.wait(lock, [&] { return emergency_stop || !segments.empty(); });
+
+            if (emergency_stop)
+                handleEmergencyStop();
 
             auto next_segment = front_worker->nextSegment();
             if (static_cast<size_t>(offset) < current_position + next_segment.size())
@@ -107,6 +110,14 @@ off_t ParallelReadBuffer::getPosition()
     return current_position - available();
 }
 
+void ParallelReadBuffer::handleEmergencyStop()
+{
+    if (background_exception)
+        std::rethrow_exception(background_exception);
+    else
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Emergency stop");
+}
+
 bool ParallelReadBuffer::nextImpl()
 {
     if (all_completed)
@@ -124,12 +135,7 @@ bool ParallelReadBuffer::nextImpl()
             });
 
         if (emergency_stop)
-        {
-            if (background_exception)
-                std::rethrow_exception(background_exception);
-            else
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Emergency stop");
-        }
+            handleEmergencyStop();
 
         bool worker_removed = false;
         /// Remove completed units
@@ -171,7 +177,11 @@ void ParallelReadBuffer::processor()
             /// Create new read worker and put in into end of queue
             /// reader_factory is not thread safe, so we call getReader under lock
             std::unique_lock lock(mutex);
-            reader_condvar.wait(lock, [this] { return read_workers.size() < pool.getMaxThreads(); });
+            reader_condvar.wait(lock, [this] { return emergency_stop || read_workers.size() < pool.getMaxThreads(); });
+
+            if (emergency_stop)
+                break;
+
             auto reader = reader_factory->getReader();
             if (!reader)
             {
@@ -235,6 +245,7 @@ void ParallelReadBuffer::onBackgroundException()
 void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
+    reader_condvar.notify_all();
     try
     {
         pool.wait();
