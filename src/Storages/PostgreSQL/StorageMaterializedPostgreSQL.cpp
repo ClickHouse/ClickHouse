@@ -382,8 +382,6 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
-    if (table_override)
-        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -501,6 +499,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
 
     create_table_query->set(create_table_query->storage, storage);
+
+    if (table_override)
+        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     /// Add columns _sign and _version, so that they can be accessed from nested ReplacingMergeTree table if needed.
     ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});
