@@ -45,8 +45,6 @@ private:
 
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
-    std::vector<String> column_names;
-
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
 
