@@ -1534,7 +1534,7 @@ private:
         ctx->source_part->WriteOrCopyLightWeightMask(ctx->future_part->part_info.lightweight_mutation, bitmap_collector);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
-        ctx->new_data_part = {};
+        ctx->new_data_part = nullptr;
     }
 
     enum class State
@@ -1827,7 +1827,8 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
-            promise.set_value(ctx->new_data_part);
+            if (ctx->new_data_part)
+                promise.set_value(ctx->new_data_part);
             return false;
         }
     }
@@ -2026,7 +2027,7 @@ bool MutateTask::lightweight_prepare()
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-                storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+                storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true, true);
         ctx->mutating_pipeline = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
@@ -2073,5 +2074,10 @@ bool MutateTask::lightweight_prepare()
     task = std::make_unique<LightWeightMutateMixedTask>(ctx);
 
     return true;
+}
+
+bool MutateTask::hasNewPart()
+{
+    return ctx->new_data_part != nullptr;
 }
 }

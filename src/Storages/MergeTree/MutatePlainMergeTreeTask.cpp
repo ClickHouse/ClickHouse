@@ -81,7 +81,10 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
-                new_part = mutate_task->getFuture().get();
+                if (mutate_task->hasNewPart())
+                    new_part = mutate_task->getFuture().get();
+                else
+                    new_part = nullptr;
 
                 /// Only lightweight mutations have value lightweight_mutation bigger than 0
                 /// If commands are Ordinary, the value of lightweight_mutation is 0.
