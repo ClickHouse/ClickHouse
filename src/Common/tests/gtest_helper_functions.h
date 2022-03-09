@@ -1,21 +1,37 @@
 #pragma once
 
+#include <filesystem>
+
+#include <Common/filesystemHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Poco/AutoPtr.h>
 #include "Poco/DOM/Document.h"
 #include "Poco/DOM/NodeList.h"
 #include "Poco/DOM/NamedNodeMap.h"
 
+const std::string tmp_path = "/tmp/";
 
-inline char *getTempFileWithContents(const char *fileContents)
+inline std::unique_ptr<Poco::File> getFileWithContents(const char *fileName, const char *fileContents)
 {
-    auto *file_pointer = std::tmpnam (nullptr);
-    auto *file_stream = std::fopen(file_pointer, "w+");
-    std::fputs(fileContents, file_stream);
-    std::fclose(file_stream);
+    using namespace DB;
+    namespace fs = std::filesystem;
+    using File = Poco::File;
 
-    return file_pointer;
+
+    fs::create_directories(fs::path(tmp_path));
+    auto config_file = std::make_unique<File>(tmp_path + fileName);
+
+    {
+        WriteBufferFromFile out(config_file->path());
+        writeString(fileContents, out);
+    }
+
+    return config_file;
 }
 
-inline std::string xmlNodeAsString(Poco::XML::Node* &pNode)
+inline std::string xmlNodeAsString(Poco::XML::Node *pNode)
 {
     const auto& node_name = pNode->nodeName();
 

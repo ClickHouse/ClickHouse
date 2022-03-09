@@ -21,7 +21,7 @@ TEST(Common, YamlParserInvalidFile)
 
 TEST(Common, YamlParserProcessKeysList)
 {
-    auto *file_pointer = getTempFileWithContents(R"YAML(
+    auto yaml_file = getFileWithContents("keys-list.yaml", R"YAML(
 operator:
     access_management: "1"
     networks:
@@ -29,8 +29,9 @@ operator:
       - ip: "::1"
       - ip: "127.0.0.1"
 )YAML");
+    SCOPE_EXIT({ yaml_file->remove(); });
 
-    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(file_pointer);
+    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(yaml_file->path());
     auto *p_node = xml->getNodeByPath("/clickhouse");
     EXPECT_EQ(xmlNodeAsString(p_node), R"CONFIG(<clickhouse>
 <operator>
@@ -44,13 +45,11 @@ operator:
 </clickhouse>
 )CONFIG");
 
-    std::remove(file_pointer);
-
 }
 
 TEST(Common, YamlParserProcessValuesList)
 {
-    auto *file_pointer = getTempFileWithContents(R"YAML(
+    auto yaml_file = getFileWithContents("values-list.yaml", R"YAML(
 rules:
   - apiGroups: [""]
     resources:
@@ -60,8 +59,9 @@ rules:
       - endpoints
       - pods
 )YAML");
+    SCOPE_EXIT({ yaml_file->remove(); });
 
-    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(file_pointer);
+    Poco::AutoPtr<Poco::XML::Document> xml = YAMLParser::parse(yaml_file->path());
     auto *p_node = xml->getNodeByPath("/clickhouse");
     EXPECT_EQ(xmlNodeAsString(p_node), R"CONFIG(<clickhouse>
 <rules>
@@ -74,8 +74,6 @@ rules:
 </rules>
 </clickhouse>
 )CONFIG");
-
-    std::remove(file_pointer);
 
 }
 #endif
