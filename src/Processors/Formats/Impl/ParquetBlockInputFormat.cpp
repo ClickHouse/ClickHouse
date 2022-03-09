@@ -14,8 +14,6 @@
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
 
-
-
 namespace DB
 {
 
