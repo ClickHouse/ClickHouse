@@ -139,7 +139,7 @@ static bool allWhitespace(const std::string & s)
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
-static void removeNodesWithAttributesRecursively(Node * root)
+static void deleteAttributesRecursive(Node * root)
 {
     const NodeListPtr children = root->childNodes();
     std::vector<Node *> children_to_delete;
@@ -151,13 +151,14 @@ static void removeNodesWithAttributesRecursively(Node * root)
         if (child->nodeType() == Node::ELEMENT_NODE)
         {
             Element & child_element = dynamic_cast<Element &>(*child);
-            bool remove = child_element.hasAttribute("remove");
-            bool replace = child_element.hasAttribute("replace");
 
-            if (remove || replace)
+            if (child_element.hasAttribute("replace"))
+                child_element.removeAttribute("replace");
+
+            if (child_element.hasAttribute("remove"))
                 children_to_delete.push_back(child);
             else
-                removeNodesWithAttributesRecursively(child);
+                deleteAttributesRecursive(child);
         }
     }
 
@@ -231,7 +232,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             /// Since we didn't find a pair to this node in default config, we will paste it as is.
             /// But it may have some child nodes which have attributes like "replace" or "remove".
             /// They are useless in preprocessed configuration.
-            removeNodesWithAttributesRecursively(with_node);
+            deleteAttributesRecursive(with_node);
             NodePtr new_node = config->importNode(with_node, true);
             config_root->appendChild(new_node);
         }
