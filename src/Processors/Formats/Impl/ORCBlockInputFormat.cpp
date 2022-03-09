@@ -152,7 +152,7 @@ void ORCBlockInputFormat::prepareReader()
 
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
-            column_names.push_back(name);
+            column_names.push_back(std::move(name));
             for (int j = 0; j != indexes_count; ++j)
                 include_indices.push_back(index + j);
         }
