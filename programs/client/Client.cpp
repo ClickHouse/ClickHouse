@@ -371,6 +371,13 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_user)
+        config().setString("user", env_user);
+    if (env_password)
+        config().setString("password", env_password);
+
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
@@ -1119,7 +1126,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))

@@ -51,7 +51,7 @@ public:
     KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 
-    KeeperConnectionStats getConnectionStats() const;
+    KeeperConnectionStats & getConnectionStats();
     void dumpStats(WriteBufferFromOwnString & buf, bool brief);
     void resetStats();
 
@@ -100,7 +100,6 @@ private:
 
     LastOpMultiVersion last_op;
 
-    mutable std::mutex conn_stats_mutex;
     KeeperConnectionStats conn_stats;
 
 };
