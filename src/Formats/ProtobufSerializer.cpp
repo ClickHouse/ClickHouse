@@ -143,24 +143,25 @@ namespace
         return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
     }
 
-    static bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
+    bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
     {
         auto message_type = message_descriptor.well_known_type();
         return (message_type >= google::protobuf::Descriptor::WELLKNOWNTYPE_DOUBLEVALUE)
             && (message_type <= google::protobuf::Descriptor::WELLKNOWNTYPE_BOOLVALUE);
     }
 
-    static bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
+    bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
     {
 
         auto * message_descriptor = field_descriptor.message_type();
-        if (message_descriptor == nullptr) {
+        if (message_descriptor == nullptr)
+        {
             return false;
         }
         return isGoogleWrapperMessage(*message_descriptor);
     }
 
-    static const std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
+    const std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
     {
         assert(isGoogleWrapper(field_descriptor));
         return field_descriptor.message_type()->field(0)->name();
