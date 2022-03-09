@@ -38,8 +38,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat
     {
-        Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort  /// Use sophisticated rules to parse whatever possible.
+        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort,   /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
