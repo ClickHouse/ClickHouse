@@ -7,7 +7,7 @@ toc_title: Configuration Files
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
-All XML files should have the same root element, usually `<clickhouse>`. As for YAML, `clickhouse:` should not be present, the parser will insert it automatically.
+All XML files should have the same root element, usually `<yandex>`. As for YAML, `yandex:` should not be present, the parser will insert it automatically.
 
 ## Override {#override}
 
@@ -21,13 +21,13 @@ Some settings specified in the main configuration file can be overridden in othe
 You can also declare attributes as coming from environment variables by using `from_env="VARIABLE_NAME"`:
 
 ```xml
-<clickhouse>
+<yandex>
     <macros>
         <replica from_env="REPLICA" />
         <layer from_env="LAYER" />
         <shard from_env="SHARD" />
     </macros>
-</clickhouse>
+</yandex>
 ```
 
 ## Substitution {#substitution}
@@ -39,7 +39,7 @@ If you want to replace an entire element with a substitution use `include` as el
 XML substitution example:
 
 ```xml
-<clickhouse>
+<yandex>
     <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
@@ -48,7 +48,7 @@ XML substitution example:
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
-</clickhouse>
+</yandex>
 ```
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
@@ -72,7 +72,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<clickhouse>
+<yandex>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -83,7 +83,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</clickhouse>
+</yandex>
 ```
 
 ## YAML examples {#example}
