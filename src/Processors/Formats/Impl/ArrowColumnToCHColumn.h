@@ -25,7 +25,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         bool import_nested_,
-        bool allow_missing_columns_);
+        bool allow_missing_columns_,
+        bool enable_lowering_column_name_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
@@ -42,6 +43,7 @@ private:
     bool import_nested;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
+    bool enable_lowering_column_name;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

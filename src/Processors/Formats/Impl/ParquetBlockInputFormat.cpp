@@ -1,4 +1,5 @@
 #include "ParquetBlockInputFormat.h"
+#include <boost/algorithm/string/case_conv.hpp>
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
@@ -13,7 +14,6 @@
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
 
-#include <base/logger_useful.h>
 
 
 namespace DB
@@ -132,7 +132,7 @@ void ParquetBlockInputFormat::prepareReader()
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns, format_settings.enable_lowering_column_name);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -146,7 +146,10 @@ void ParquetBlockInputFormat::prepareReader()
         /// nested elements, so we should recursively
         /// count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        const auto & name = schema->field(i)->name();
+        auto name = schema->field(i)->name();
+        if (format_settings.enable_lowering_column_name)
+            boost::to_lower(name);
+
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
