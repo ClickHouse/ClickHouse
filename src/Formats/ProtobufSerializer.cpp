@@ -163,7 +163,7 @@ namespace
 
     const std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
     {
-        assert(isGoogleWrapper(field_descriptor));
+        assert(isGoogleWrapperField(field_descriptor));
         return field_descriptor.message_type()->field(0)->name();
     }
 
