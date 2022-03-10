@@ -1,1 +1,2 @@
-SELECT 1;
+-- Tags: no-fasttest
+SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH';
