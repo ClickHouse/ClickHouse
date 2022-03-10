@@ -78,7 +78,7 @@ class PRInfo:
             else:
                 github_event = PRInfo.default_event.copy()
         self.event = github_event
-        self.changed_files = set([])
+        self.changed_files = set()
         self.body = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
@@ -209,6 +209,7 @@ class PRInfo:
         else:
             diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
+        print("Fetched info about %d changed files", len(self.changed_files))
 
     def get_dict(self):
         return {

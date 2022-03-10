@@ -50,12 +50,6 @@ def get_image_name(check_name):
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
 
-def invert_status(status):
-    if status == 'success':
-        return 'error'
-    return 'success'
-
-
 def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
     additional_options = ['--hung-check']
     additional_options.append('--print-time')
@@ -155,6 +149,10 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_changed_files=run_changed_tests)
 
+    if validate_bugix_check and 'pr-bugfix' not in pr_info.labels:
+        logging.info("Skipping %s (no pr-bugfix)", check_name)
+        sys.exit(0)
+
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
         run_by_hash_total = int(os.getenv('RUN_BY_HASH_TOTAL'))
@@ -223,9 +221,7 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
     state, description, test_results, additional_logs = process_results(result_path, server_log_path)
-    state = override_status(state, check_name)
-    if validate_bugix_check:
-        state = invert_status(state)
+    state = override_status(state, check_name, validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

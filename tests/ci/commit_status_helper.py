@@ -7,9 +7,15 @@ from ci_config import CI_CONFIG
 RETRY = 5
 
 
-def override_status(status, check_name):
-    if CI_CONFIG["tests_config"][check_name].get("force_tests", False):
+def override_status(status, check_name, invert=False):
+    if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
         return "success"
+
+    if invert:
+        if status == 'success':
+            return 'error'
+        return 'success'
+
     return status
 
 
