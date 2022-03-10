@@ -1,3 +1,5 @@
+#pragma once 
+
 #include <Common/LRUCache.h>
 
 namespace DB
@@ -21,11 +23,12 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
     using Base = LRUCache<Key, Mapped, HashFunction, WeightFunction>;
+    using Base::mutex;
 
     SLRUCache(size_t max_protected_size_, size_t max_size_)
-        : max_protected_size(std::max(static_cast<size_t>(1), max_protected_size_))
+        : Base(0)
+        , max_protected_size(std::max(static_cast<size_t>(1), max_protected_size_))
         , max_size(std::max(max_protected_size + 1, max_size_))
-        , Base(max_size)
         {}
 
     void remove(const Key & key)
@@ -51,6 +54,11 @@ public:
     {
         std::lock_guard lock(mutex);
         return cells.size();
+    }
+
+    size_t maxSize() const
+    {
+        return max_size;
     }
 
     size_t maxProtectedSize() const
@@ -94,10 +102,12 @@ private:
     SLRUQueue probationary_queue;
     SLRUQueue protected_queue;
 
-    size_t current_size = 0;
     size_t current_protected_size = 0;
-    const size_t max_size;
+    size_t current_size = 0;
     const size_t max_protected_size;
+    const size_t max_size;
+    
+    WeightFunction weight_function;
 
     MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
@@ -169,12 +179,12 @@ private:
         removeOverflow(probationary_queue, max_size, current_size);
     }
 
-    void removeOverflow(SLRUQueue & queue, const size_t max_size, size_t & current_size)
+    void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = queue.size();
 
-        while (current_size > max_size && queue_size > 1)
+        while (current_weight_size > max_weight_size && queue_size > 1)
         {
             const Key & key = queue.front();
 
@@ -185,9 +195,9 @@ private:
                 abort();
             }
 
-            const auto & cell = it->second;
+            auto & cell = it->second;
 
-            current_size -= cell.size;
+            current_weight_size -= cell.size;
 
             if (cell.is_protected)
             {
@@ -213,6 +223,9 @@ private:
         }
     }
 
+    
+    /// Override this method if you want to track how much weight was lost in removeOverflow method.
+    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override {}
 };
 
 
