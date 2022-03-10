@@ -1124,7 +1124,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
 
     std::optional<String> content_type_override;
     if (server.config().has(config_prefix + ".handler.content_type"))
