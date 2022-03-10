@@ -39,7 +39,7 @@ public:
     {
     }
 
-    virtual ~ReadBufferFromFileDescriptor()
+    virtual ~ReadBufferFromFileDescriptor() override
     {
     }
 
@@ -84,7 +84,7 @@ public:
     {
         use_pread = true;
     }
-    virtual ~ReadBufferFromFileDescriptorPRead()
+    virtual ~ReadBufferFromFileDescriptorPRead() override
     {
     }
 };
