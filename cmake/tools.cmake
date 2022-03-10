@@ -170,6 +170,8 @@ else ()
     message (FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
+# Readelf (FIXME copypaste)
+
 if (COMPILER_GCC)
     find_program (READELF_PATH NAMES "llvm-readelf" "llvm-readelf-13" "llvm-readelf-12" "llvm-readelf-11" "readelf")
 else ()
