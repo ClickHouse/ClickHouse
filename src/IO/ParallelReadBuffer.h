@@ -28,8 +28,6 @@ private:
     /// Finished readers removed from queue and data from next readers processed
     bool nextImpl() override;
 
-    void initializeWorkers();
-
     class Segment : private boost::noncopyable
     {
     public:
@@ -131,8 +129,8 @@ private:
 
     [[noreturn]] void handleEmergencyStop();
 
-    /// Create new readers in a loop and process it with readerThreadFunction.
-    void processor();
+    void addReaders(std::unique_lock<std::mutex> & buffer_lock);
+    bool addReaderToPool(std::unique_lock<std::mutex> & buffer_lock);
 
     /// Process read_worker, read data and save into internal segments queue
     void readerThreadFunction(ReadWorkerPtr read_worker);

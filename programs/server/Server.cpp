@@ -45,6 +45,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -554,6 +555,7 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+    IOThreadPool::initialize(100, 0, 10000);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
