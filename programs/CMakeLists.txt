@@ -2,6 +2,8 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
+include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
+
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
@@ -455,7 +457,9 @@ else ()
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
     endif ()
 
-    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    if (NOT BUILD_STRIPPED_BINARIES_PREFIX)
+        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    endif()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
@@ -466,7 +470,13 @@ else ()
     if (USE_BINARY_HASH)
         add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
     endif()
-endif ()
+
+    if (BUILD_STRIPPED_BINARIES_PREFIX)
+        clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_STRIPPED_BINARIES_PREFIX} BINARY_PATH clickhouse)
+    endif()
+endif()
+
+
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

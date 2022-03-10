@@ -36,4 +36,6 @@ clickhouse_embed_binaries(
     TARGET clickhouse_server_configs
     RESOURCES config.xml users.xml embedded.xml play.html
 )
+
+
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)
