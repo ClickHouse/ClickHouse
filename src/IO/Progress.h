@@ -111,9 +111,9 @@ struct Progress
 
     ProgressValues fetchAndResetPiecewiseAtomically();
 
-    Progress & operator=(Progress && other);
+    Progress & operator=(Progress && other) noexcept;
 
-    Progress(Progress && other)
+    Progress(Progress && other) noexcept
     {
         *this = std::move(other);
     }
