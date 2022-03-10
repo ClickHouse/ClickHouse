@@ -12,9 +12,10 @@ from helpers.argparser import argparser
 def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse regression.
     """
-    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "stress": stress}
+    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path, "clickhouse_version": clickhouse_version, "stress": stress}
 
     self.context.stress = stress
+    self.context.clickhouse_version = clickhouse_version
 
     with Pool(8) as pool:
         try:
