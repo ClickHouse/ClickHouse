@@ -39,7 +39,7 @@ public:
     {
     }
 
-    virutal ~ReadBufferFromFileDescriptor()
+    virtual ~ReadBufferFromFileDescriptor()
     {
     }
 
