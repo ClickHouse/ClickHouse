@@ -23,7 +23,7 @@ TEST(Config, MergeConfigsOneSided)
     SCOPE_EXIT({ fs::remove_all(path); });
 
     auto config_file = std::make_unique<File>(path / "config.yaml");
-    
+
     {
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
