@@ -14,9 +14,10 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
+from download_previous_release import download_previous_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
-from commit_status_helper import post_commit_status
+from commit_status_helper import post_commit_status, override_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
@@ -112,6 +113,7 @@ if __name__ == "__main__":
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
+    validate_bugix_check = len(sys.argv) >= 3 and sys.argv[2] == "--validate-bugfix"
 
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
@@ -126,7 +128,11 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     is_flaky_check = 'flaky' in check_name
-    pr_info = PRInfo(need_changed_files=is_flaky_check)
+    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check)
+
+    if validate_bugix_check and 'pr-bugfix' not in pr_info.labels:
+        logging.info("Skipping %s (no pr-bugfix)", check_name)
+        sys.exit(0)
 
     gh = Github(get_best_robot_token())
 
@@ -149,7 +155,10 @@ if __name__ == "__main__":
     if not os.path.exists(build_path):
         os.makedirs(build_path)
 
-    download_all_deb_packages(check_name, reports_path, build_path)
+    if not validate_bugix_check:
+        download_all_deb_packages(check_name, reports_path, build_path)
+    else:
+        download_previous_release(build_path)
 
     my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 
@@ -172,6 +181,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     state, description, test_results, additional_logs = process_results(result_path)
+    state = override_status(state, check_name, validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

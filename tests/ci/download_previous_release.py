@@ -7,10 +7,11 @@
 #                                                                         #
 ###########################################################################
 
-import requests
 import re
 import os
 import logging
+
+import requests
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 
@@ -86,7 +87,7 @@ def download_packet(url, out_path):
     """
 
     response = requests.get(url)
-    logging.info(f'Downloading {url}')
+    logging.info('Downloading %s', url)
     if response.ok:
         open(out_path, 'wb').write(response.content)
 
@@ -94,7 +95,7 @@ def download_packets(release, dest_path=PACKETS_DIR):
     if not os.path.exists(dest_path):
         os.makedirs(dest_path)
 
-    logging.info(f'Will download {release}')
+    logging.info('Will download %s', release)
 
     download_packet(
         CLICKHOUSE_COMMON_STATIC_DOWNLOAD_URL.format(version=release.version, type=release.type),
@@ -123,6 +124,7 @@ def download_previous_release(dest_path):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     server_version = Version(input())
     previous_release = get_previous_release(server_version)
     download_packets(previous_release)
