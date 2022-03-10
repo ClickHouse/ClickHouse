@@ -4,6 +4,8 @@
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <boost/container/flat_set.hpp>
+#include <Access/UsersConfigAccessStorage.h>
+
 #include <memory>
 
 
@@ -47,7 +49,7 @@ class AccessControl : public MultipleAccessStorage
 public:
     AccessControl();
     ~AccessControl() override;
-    //bool allow_plaintext_and_no_password;
+
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
@@ -144,8 +146,9 @@ public:
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
-    void setAuthTypeSetting(const bool allow_plaintext_and_no_password);
-    bool getAuthTypeSetting() const ;
+    static void setAuthTypeSetting(const bool allow_plaintext_password, const bool allow_no_password){ UsersConfigAccessStorage::setAuthTypeSetting(allow_plaintext_password, allow_no_password);}
+    static bool isPlaintextPasswordAllowed() {return UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD;}
+    static bool isNoPasswordAllowed()  {return UsersConfigAccessStorage::ALLOW_NO_PASSWORD;}
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 

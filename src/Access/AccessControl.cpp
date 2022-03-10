@@ -156,7 +156,7 @@ void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & use
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
         {
-            users_config_storage->setConfig(users_config_);//,allow_plaintext_and_no_password);
+            users_config_storage->setConfig(users_config_);
             return;
         }
     }
@@ -172,8 +172,7 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
-   // auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function,allow_plaintext_and_no_password);
-    new_storage->setConfig(users_config_);//, allow_plaintext_and_no_password);
+    new_storage->setConfig(users_config_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
         String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -211,20 +210,11 @@ void AccessControl::addUsersConfigStorage(
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
-void AccessControl::setAuthTypeSetting(const bool allow_plaintext_and_no_password)
-{
-    UsersConfigAccessStorage::setAuthTypeSetting(allow_plaintext_and_no_password);
-}
-
-bool AccessControl::getAuthTypeSetting() const
-{
-    return UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD;
-}
 
 void AccessControl::reloadUsersConfigs()
 {
     auto storages = getStoragesPtr();
-    for (const auto & storage : *storages)  
+    for (const auto & storage : *storages)
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
             users_config_storage->reload();
@@ -417,7 +407,7 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
 {
     try
     {
-        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators);
+        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators,UsersConfigAccessStorage::ALLOW_NO_PASSWORD, UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD);
     }
     catch (...)
     {

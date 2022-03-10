@@ -74,9 +74,6 @@ namespace
         if (num_password_fields < 1)
             throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-        if ((has_password_plaintext || has_no_password) && !UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD)
-            throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD or NO_PASSWORD. Please configure User with authtype SHA256_PASSWORD_HASH, SHA256_PASSWORD, DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_and_no_password in server configuration to configure user with plaintext and no password Auth_Type"
-                            " Though it is not recommended to use plaintext_password and No_password for user authentication.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         if (has_password_plaintext)
         {
             user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
@@ -240,6 +237,10 @@ namespace
         {
             try
             {
+                String user_config = "users." + user_name;
+                if ((config.has(user_config + ".password") && !UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD) || (config.has(user_config + ".no_password") && !UsersConfigAccessStorage::ALLOW_NO_PASSWORD))
+                    throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD or NO_PASSWORD. Please configure User with authtype SHA256_PASSWORD_HASH, SHA256_PASSWORD, DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_and_no_password in server configuration to configure user with plaintext and no password Auth_Type"
+                            " Though it is not recommended to use plaintext_password and No_password for user authentication.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 users.push_back(parseUser(config, user_name));
             }
             catch (Exception & e)
@@ -512,7 +513,9 @@ namespace
     }
 }
 
-bool UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD=true;
+bool UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD=true;
+bool UsersConfigAccessStorage::ALLOW_NO_PASSWORD=true;
+
 UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
     : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
 {

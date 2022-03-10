@@ -148,8 +148,8 @@ public:
 
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
-    std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const;
+    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password=true, bool allow_plaintext_password=true) const;
+    std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
@@ -161,10 +161,9 @@ protected:
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
-    virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const;
+    virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
-
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
@@ -172,7 +171,7 @@ protected:
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
     [[noreturn]] void throwIDCollisionCannotInsert(
-        const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const;
+    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const;
     [[noreturn]] void throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const;
     [[noreturn]] void throwReadonlyCannotInsert(AccessEntityType type, const String & name) const;
@@ -180,7 +179,8 @@ protected:
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
-
+    static bool isAuthenticationTypeAllowed(const User & user, bool allow_no_password, bool allow_plaintext_password) ;
+    [[noreturn]] static void throwAuthenticationTypeNotAllowed();
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
     using Notifications = std::vector<Notification>;
     static void notify(const Notifications & notifications);
