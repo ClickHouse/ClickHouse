@@ -281,7 +281,7 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-
+        context_->getRemoteHostFilter().checkHostAndPort(configuration.addresses[0].first, toString(configuration.addresses[0].second));
         if (engine_args.size() >= 6)
             configuration.replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
