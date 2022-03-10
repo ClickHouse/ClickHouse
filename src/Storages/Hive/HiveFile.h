@@ -274,17 +274,7 @@ protected:
 
 /**
  * @brief Create a Hive File object
- *
- * @param format_name : file format name. base on it to create different file object
- * @param fields
- * @param namenode_url : hdfs url
- * @param path : path on hdfs
- * @param ts : last modified timestamp
- * @param size : file size
- * @param index_names_and_types
- * @param hive_settings
- * @param context
- * @return HiveFilePtr
+ * Different HiveFile Object is created base on format_name
  */
 HiveFilePtr createHiveFile(
     const String & format_name,

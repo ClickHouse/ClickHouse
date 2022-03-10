@@ -40,7 +40,7 @@ private:
         const HDFSFSPtr & fs_,
         ContextPtr context_);
 
-    ASTPtr extractKeyExpressionList(const ASTPtr & node);
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     HiveFilePtr createHiveFileIfNeeded(
         const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_, SelectQueryInfo & query_info_, ContextPtr context_);
