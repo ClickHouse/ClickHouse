@@ -1,7 +1,3 @@
-# add_custom_command(TARGET clickhouse POST_BUILD COMMAND
-# ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash
-# clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
-
 macro(clickhouse_strip_binary)
    set(oneValueArgs TARGET DESTINATION_DIR BINARY_PATH)
 
