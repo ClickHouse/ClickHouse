@@ -2313,7 +2313,7 @@ namespace
                             info.field_read = false;
                         else
                         {
-                            auto * message_descriptor = info.field_descriptor->containing_type();
+                            const auto * message_descriptor = info.field_descriptor->containing_type();
                             bool is_google_wrapper_value = message_descriptor != nullptr && isGoogleWrapperMessage(*message_descriptor);
                             if (is_google_wrapper_value && mutable_columns[info.column_indices[0]].get()->isNullable())
                             {
