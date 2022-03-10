@@ -320,10 +320,21 @@ namespace detail
             }
             catch (...)
             {
-                if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
+                auto http_status = response.getStatus();
+
+                if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
                     && http_skip_not_found_url)
                 {
                     initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
+                }
+                else if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST
+                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
+                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
+                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN
+                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED)
+                {
+                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    exception = std::current_exception();
                 }
                 else
                 {
