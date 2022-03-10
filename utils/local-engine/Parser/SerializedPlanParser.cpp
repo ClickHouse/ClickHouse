@@ -54,9 +54,10 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     auto header = parseNameStruct(rel.base_schema());
     auto names_and_types_list = header.getNamesAndTypesList();
     auto storageFactory = local_engine::StorageMergeTreeFactory::instance();
-    auto metadata = storageFactory.getMetadata(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [names_and_types_list, this]()->local_engine::StorageInMemoryMetadataPtr {
-        return local_engine::buildMetaData(names_and_types_list, this->context);
-    });
+//    auto metadata = storageFactory.getMetadata(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [names_and_types_list, this]()->local_engine::StorageInMemoryMetadataPtr {
+//        return local_engine::buildMetaData(names_and_types_list, this->context);
+//    });
+    auto metadata = local_engine::buildMetaData(names_and_types_list, this->context);
     auto t_metadata = watch.elapsedMicroseconds();
     query_context.metadata = metadata;
     auto storage = storageFactory.getStorage(DB::StorageID(merge_tree_table.database, merge_tree_table.table), [merge_tree_table, metadata]() -> local_engine::CustomStorageMergeTreePtr {
@@ -81,6 +82,11 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseMergeTreeTable(const substrait
     MergeTreeData::DataPartsVector selected_parts;
     std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
                  [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block < max_block;});
+    if (selected_parts.empty())
+    {
+        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "part {} not found.", min_block);
+        throw std::exception();
+    }
     auto query = query_context.custom_storage_merge_tree->reader.readFromParts(selected_parts,
                                                         names_and_types_list.getNames(),
                                                         query_context.metadata,

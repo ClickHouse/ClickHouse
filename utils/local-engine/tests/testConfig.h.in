@@ -1,1 +1,4 @@
 #define TEST_DATA(file) "file://@TEST_DATA_DIR@"#file
+#define PARQUET_DATA(file) "file://@PARQUET_DATA_DIR@"#file
+#define MERGETREE_DATA(file) "@MERGETREE_DATA_DIR@"#file
+

@@ -73,7 +73,6 @@ static void BM_CHColumnToSparkRow(benchmark::State& state) {
 static void BM_MergeTreeRead(benchmark::State& state) {
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
     ColumnsDescription columns_description;
-    global_context->setPath("/home/kyligence/Documents/clickhouse_conf/data/");
     auto int64_type = std::make_shared<DB::DataTypeInt64>();
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
@@ -89,7 +88,7 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                           "test-intel/",
+                                                           "tpch-mergetree/lineorder/",
                                                            *metadata,
                                                            false,
                                                            global_context,
@@ -103,7 +102,7 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         auto query_info = local_engine::buildQueryInfo(names_and_types_list);
         auto data_parts = custom_merge_tree.getDataPartsVector();
         int min_block = 0;
-        int max_block = state.range(0);
+        int max_block = state.range(10);
         MergeTreeData::DataPartsVector selected_parts;
         std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
                        [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
@@ -227,8 +226,7 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
     dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
     for (auto _: state)
     {
-//        state.PauseTiming();
-        global_context->setPath("/home/kyligence/Documents/clickhouse_conf/data/");
+        state.PauseTiming();
         dbms::SerializedSchemaBuilder schema_builder;
         auto schema = schema_builder
                           .column("l_discount", "FP64")
@@ -266,19 +264,16 @@ static void BM_MERGE_TREE_TPCH_Q6(benchmark::State& state) {
                                                                                               }),
                                                                     scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
-                        .readMergeTree("default", "test", "usr/code/data/test-mergetree", 1, 12, std::move(schema)).build();
+                        .readMergeTree("default", "test", "tpch-mergetree/lineorder/", 1, 12, std::move(schema)).build();
 
         auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
-//        state.ResumeTiming();
+        state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
-        int rows = 0;
         while (local_executor.hasNext())
         {
             local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
-            rows += spark_row_info->getNumRows();
         }
-//        std::cout << rows <<std::endl;
     }
 }
 
@@ -547,12 +542,12 @@ static void BM_TestCreateExecute(benchmark::State& state)
     }
 }
 //BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-//BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
+BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
@@ -563,6 +558,8 @@ int main(int argc, char** argv) {
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setConfig(dbms::SerializedPlanParser::config);
+    auto path = MERGETREE_DATA(/);
+    global_context->setPath(path);
     dbms::SerializedPlanParser::initFunctionEnv();
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
