@@ -12,7 +12,7 @@ void registerFunctionToLastDayOfMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToLastDayOfMonth>();
 
-    /// MysQL compatibility alias.
+    /// MySQL compatibility alias.
     factory.registerFunction<FunctionToLastDayOfMonth>("LAST_DAY", FunctionFactory::CaseInsensitive);
 }
 
