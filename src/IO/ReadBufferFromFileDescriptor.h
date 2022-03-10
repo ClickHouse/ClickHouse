@@ -38,7 +38,7 @@ public:
         , fd(fd_)
     {
     }
-    
+
     virutal ~ReadBufferFromFileDescriptor()
     {
     }
