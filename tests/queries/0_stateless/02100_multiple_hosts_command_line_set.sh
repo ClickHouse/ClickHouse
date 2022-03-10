@@ -32,6 +32,14 @@ error="$(${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}" --port "${not_alive_po
 echo "${error}" | grep -Fc "Code: 210"
 echo "${error}" | grep -Fc "${CLICKHOUSE_HOST}:${not_alive_port}"
 
+error="$(${CLICKHOUSE_CLIENT} --host "${not_alive_host}" --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:9000"
+
+error="$(${CLICKHOUSE_CLIENT} --secure --host "${not_alive_host}" --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:9440"
+
 ${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}" --port "${not_alive_port}" --host "${CLICKHOUSE_HOST}" --query "SELECT 1";
 ${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --port "${not_alive_port}" --query "SELECT 1";
 
@@ -67,6 +75,39 @@ EOF
 error="$(${CLICKHOUSE_CLIENT} --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
 echo "${error}" | grep -Fc "DB::NetException"
 echo "${error}" | grep -Fc "${not_alive_host}:${not_alive_port}"
+
+error="$(${CLICKHOUSE_CLIENT} --secure --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:${not_alive_port}"
+
+error="$(${CLICKHOUSE_CLIENT} --host localhost --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "localhost:${not_alive_port}"
+
+error="$(${CLICKHOUSE_CLIENT} --secure --host localhost --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "localhost:${not_alive_port}"
+
+rm -f ${CUSTOM_CONFIG}
+
+echo '=== Values form config 2'
+
+cat << EOF > ${CUSTOM_CONFIG}
+<config>
+  <host>${not_alive_host}</host>
+</config>
+EOF
+
+error="$(${CLICKHOUSE_CLIENT} --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:9000"
+
+error="$(${CLICKHOUSE_CLIENT} --secure --config ${CUSTOM_CONFIG} --query "SELECT 1" 2>&1 > /dev/null)"
+echo "${error}" | grep -Fc "DB::NetException"
+echo "${error}" | grep -Fc "${not_alive_host}:9440"
+
+${CLICKHOUSE_CLIENT} --host "${CLICKHOUSE_HOST}" --config ${CUSTOM_CONFIG} --query "SELECT 1"
+
 rm -f ${CUSTOM_CONFIG}
 
 echo '==='
