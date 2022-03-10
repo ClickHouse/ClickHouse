@@ -425,7 +425,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
-
+        context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
