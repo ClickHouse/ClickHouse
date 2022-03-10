@@ -198,6 +198,9 @@ if __name__ == "__main__":
     run_log_path = os.path.join(result_path, "runlog.log")
 
     additional_envs = get_additional_envs(check_name, run_by_hash_num, run_by_hash_total)
+    if validate_bugix_check:
+        additional_envs.append('GLOBAL_TAGS=no-random-settings')
+
     run_command = get_run_command(packages_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
