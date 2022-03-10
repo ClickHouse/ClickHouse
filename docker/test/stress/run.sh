@@ -120,7 +120,7 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 240 ]
+        if [ "$counter" -gt ${1:-240} ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
@@ -296,7 +296,7 @@ then
     
     # Start new server
     configure
-    start
+    start 500
     clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/backward_compatibility_check_results.tsv \
         || echo -e 'Server failed to start\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
 
