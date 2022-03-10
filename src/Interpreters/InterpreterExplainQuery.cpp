@@ -277,6 +277,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
                 dumpAST(*ast.getExplainedQuery(), buf);
+            std::cout << "buf:" << buf.str() << std::endl;
             break;
         }
         case ASTExplainQuery::AnalyzedSyntax:
@@ -349,6 +350,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
                     else
                         printPipeline(processors, buf);
+                    std::cout << "buf:" << buf.str() << std::endl;
                 }
                 else
                 {

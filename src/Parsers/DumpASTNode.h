@@ -96,7 +96,7 @@ public:
             return;
 
         if (root)
-            (*ostr) << "digraph " << (label ? String(label) : "") << "{\n\trankdir=\"UD\";\n";
+            (*ostr) << "digraph " << (label ? String(label) : "") << "{\n    rankdir=\"UD\";\n";
 
         printNode();
     }
@@ -124,7 +124,7 @@ private:
 
     void printNode() const
     {
-        (*ostr) << "\t" << getNodeId(ast) << "[label=\"";
+        (*ostr) << "    " << getNodeId(ast) << "[label=\"";
         (*ostr) << getASTId();
 
         String alias = ast.tryGetAlias();
@@ -141,7 +141,7 @@ private:
 
     void printEdge(const IAST & parent, const IAST & child) const
     {
-        (*ostr) << "\t" << getNodeId(parent) << " -> " << getNodeId(child) << ";\n";
+        (*ostr) << "    " << getNodeId(parent) << " -> " << getNodeId(child) << ";\n";
     }
 };
 
