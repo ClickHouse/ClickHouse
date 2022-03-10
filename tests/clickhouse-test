@@ -464,6 +464,9 @@ class TestCase:
         self.case: str = case   # case file name
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
 
+        for tag in os.getenv("GLOBAL_TAGS", "").split(","):
+            self.tags.add(tag.strip())
+
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
