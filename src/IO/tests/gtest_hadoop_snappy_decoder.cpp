@@ -2,7 +2,6 @@
 #include <IO/HadoopSnappyReadBuffer.h>
 #include <gtest/gtest.h>
 
-#include <IO/HadoopSnappyReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
