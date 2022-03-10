@@ -89,7 +89,7 @@ public:
 
     auto & getFileInfos() { return file_infos; }
 
-    String getFullMetaPath(const String & file_name) const { return std::filesystem::path(root_meta_path) / file_name; }
+    String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
     NamesAndTypesList getVirtuals() const override;
@@ -131,6 +131,7 @@ protected:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         const String & path_,
+        const String & metadata_base_path_,
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
@@ -145,7 +146,7 @@ private:
     /// If path argument of the table is a regular file, it equals to user_files_path
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
-    String root_meta_path;
+    String metadata_base_path;
 
     FileInfos file_infos;
 

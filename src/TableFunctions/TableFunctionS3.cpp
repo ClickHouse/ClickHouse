@@ -168,6 +168,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     ColumnsDescription columns;
     if (s3_configuration->structure != "auto")
         columns = parseColumnsListFromString(s3_configuration->structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
 
     StoragePtr storage = StorageS3::create(
         s3_uri,
