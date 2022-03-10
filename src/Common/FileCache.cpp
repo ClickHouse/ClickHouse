@@ -457,6 +457,9 @@ void LRUFileCache::remove(const Key & key)
 
     for (auto & cell : to_remove)
     {
+        if (!cell->releasable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove file from cache because someone reads from it. File segment info: {}", cell->file_segment->getInfoForLog());
+
         auto file_segment = cell->file_segment;
         if (file_segment)
         {
