@@ -211,7 +211,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::REMOVE_SAMPLE_BY;
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
+    else if (command_ast->type == ASTAlterCommand::ADD_INDEX || command_ast->type == ASTAlterCommand::STD_CREATE_INDEX)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
@@ -274,7 +274,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX || command_ast->type == ASTAlterCommand::STD_DROP_INDEX)
     {
         AlterCommand command;
         command.ast = command_ast->clone();

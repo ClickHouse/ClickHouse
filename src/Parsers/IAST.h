@@ -184,6 +184,7 @@ public:
         bool hilite = false;
         bool one_line;
         bool always_quote_identifiers = false;
+        bool is_translate = false; //convert current standard SQL to clickhouse dialect.
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         // Newline or whitespace.
