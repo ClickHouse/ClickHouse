@@ -55,7 +55,7 @@
 
         $('pre').each(function(_, element) {
            $(element).prepend(
-               '<img src="/images/mkdocs/copy.svg" alt="Copy" title="Copy" class="code-copy btn float-right m-0 p-0" />'
+               '<img src="/docs/images/mkdocs/copy.svg" alt="Copy" title="Copy" class="code-copy btn float-right m-0 p-0" />'
            );
         });
 
