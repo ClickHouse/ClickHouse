@@ -49,6 +49,13 @@ def get_image_name(check_name):
     else:
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
+
+def invert_status(status):
+    if status == 'success':
+        return 'error'
+    return 'success'
+
+
 def get_run_command(builds_path, repo_tests_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
     additional_options = ['--hung-check']
     additional_options.append('--print-time')
@@ -217,6 +224,8 @@ if __name__ == "__main__":
 
     state, description, test_results, additional_logs = process_results(result_path, server_log_path)
     state = override_status(state, check_name)
+    if validate_bugix_check:
+        state = invert_status(state)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

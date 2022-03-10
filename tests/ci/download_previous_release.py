@@ -10,6 +10,7 @@
 import requests
 import re
 import os
+import logging
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 
@@ -49,7 +50,7 @@ class ReleaseInfo:
 
 def find_previous_release(server_version, releases):
     releases.sort(key=lambda x: x.version, reverse=True)
-    print(releases)
+
     if server_version is None:
         return True, releases[0]
 
@@ -85,13 +86,15 @@ def download_packet(url, out_path):
     """
 
     response = requests.get(url)
-    print(url)
+    logging.info(f'Downloading {url}')
     if response.ok:
         open(out_path, 'wb').write(response.content)
 
 def download_packets(release, dest_path=PACKETS_DIR):
     if not os.path.exists(dest_path):
         os.makedirs(dest_path)
+
+    logging.info(f'Will download {release}')
 
     download_packet(
         CLICKHOUSE_COMMON_STATIC_DOWNLOAD_URL.format(version=release.version, type=release.type),
