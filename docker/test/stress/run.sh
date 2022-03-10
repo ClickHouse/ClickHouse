@@ -309,6 +309,7 @@ then
 
     # Error messages (we should ignore some errors)
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+               -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
                -e "DDLWorker: Cannot parse DDL task query" \
                -e "RaftInstance: failed to accept a rpc connection due to error 125" \
