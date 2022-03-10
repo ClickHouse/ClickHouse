@@ -285,7 +285,10 @@ include(cmake/cpu_features.cmake)
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
 # Reproducible builds
-if (NOT DEFINED ENV{CLION_IDE})
+# If turned `ON`, remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE().
+option(ENABLE_BUILD_PATH_MAPPING "Enable remap file source paths in debug info, predefined preprocessor macros and __builtin_FILE()" ON)
+
+if (ENABLE_BUILD_PATH_MAPPING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
     set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 endif()
