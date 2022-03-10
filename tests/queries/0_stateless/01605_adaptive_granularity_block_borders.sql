@@ -1,3 +1,5 @@
+SET use_uncompressed_cache = 0;
+
 DROP TABLE IF EXISTS adaptive_table;
 
 --- If granularity of consequent blocks differs a lot, then adaptive
