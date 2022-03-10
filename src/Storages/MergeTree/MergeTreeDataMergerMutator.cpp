@@ -797,10 +797,4 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
 }
 
 
-bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
-{
-    std::lock_guard lock(tmp_parts_lock);
-    return tmp_parts.contains(basename);
-}
-
 }

@@ -126,13 +126,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (ctx->disk->exists(local_new_part_tmp_path))
         throw Exception("Directory " + fullPath(ctx->disk, local_new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    {
-        std::lock_guard lock(global_ctx->mutator->tmp_parts_lock);
-        global_ctx->mutator->tmp_parts.emplace(local_tmp_part_basename);
-    }
+    global_ctx->data->temporary_parts.add(local_tmp_part_basename);
     SCOPE_EXIT(
-        std::lock_guard lock(global_ctx->mutator->tmp_parts_lock);
-        global_ctx->mutator->tmp_parts.erase(local_tmp_part_basename);
+        global_ctx->data->temporary_parts.remove(local_tmp_part_basename);
     );
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
