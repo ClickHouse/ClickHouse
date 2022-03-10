@@ -622,7 +622,7 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataP
 StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
     const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const
 {
-    /// If query doesn't use columns of type Object don't deduce
+    /// If query doesn't use columns of type Object, don't deduce
     /// concrete types for them, because it required extra round trip.
     auto snapshot_data = std::make_unique<SnapshotData>();
     if (!requiresObjectColumns(metadata_snapshot->getColumns(), query))

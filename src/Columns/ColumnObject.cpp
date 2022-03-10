@@ -27,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Recreates scolumn with default scalar values and keeps sizes of arrays.
+/// Recreates column with default scalar values and keeps sizes of arrays.
 ColumnPtr recreateColumnWithDefaultValues(
     const ColumnPtr & column, const DataTypePtr & scalar_type, size_t num_dimensions)
 {
