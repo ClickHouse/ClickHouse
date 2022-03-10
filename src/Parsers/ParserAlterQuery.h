@@ -30,6 +30,9 @@ namespace DB
   *     [MATERIALIZE INDEX [IF EXISTS] index_name [IN PARTITION partition]]
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
+  *
+  * CREATE INDEX [IF NOT EXISTS] name ON [db].name (expression) TYPE type GRANULARITY value
+  * DROP INDEX [IF EXISTS] name on [db].name
   */
 
 class ParserAlterQuery : public IParserBase
@@ -48,9 +51,10 @@ protected:
 
 public:
     ASTAlterQuery::AlterObjectType alter_object;
+    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : alter_object(alter_object_) {}
+    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE, ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
+            : alter_object(alter_object_), command_type(command_type_) {}
 };
 
 
@@ -62,10 +66,22 @@ protected:
 
 public:
     ASTAlterQuery::AlterObjectType alter_object;
+    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : alter_object(alter_object_) {}
+    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE, ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
+            : alter_object(alter_object_), command_type(command_type_) {}
 };
 
+
+/** Part of CREATE INDEX expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
+class ParserCreateIndexDeclaration : public IParserBase
+{
+public:
+    ParserCreateIndexDeclaration() {}
+
+protected:
+    const char * getName() const override { return "index declaration in create index"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 }

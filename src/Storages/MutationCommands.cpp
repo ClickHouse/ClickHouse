@@ -103,7 +103,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
 
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
+    else if (parse_alter_commands && (command->type == ASTAlterCommand::DROP_INDEX || command->type == ASTAlterCommand::STD_DROP_INDEX))
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -160,7 +160,7 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast() const
 void MutationCommands::writeText(WriteBuffer & out) const
 {
     WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true, /* is_translate = */ true);
     writeEscapedString(commands_buf.str(), out);
 }
 
