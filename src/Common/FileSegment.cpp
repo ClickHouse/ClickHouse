@@ -180,6 +180,8 @@ void FileSegment::write(const char * from, size_t size)
     {
         std::lock_guard segment_lock(mutex);
 
+        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLog());
+
         download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
         cache_writer->finalize();
