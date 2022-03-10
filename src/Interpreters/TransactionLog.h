@@ -75,6 +75,9 @@ public:
 
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
 
+    using TransactionsList = std::unordered_map<TIDHash, MergeTreeTransactionPtr>;
+    TransactionsList getTransactionsList() const;
+
 private:
     void loadLogFromZooKeeper();
     void runUpdatingThread();
@@ -100,7 +103,7 @@ private:
     std::unordered_map<TIDHash, CSN> tid_to_csn;
 
     mutable std::mutex running_list_mutex;
-    std::unordered_map<TIDHash, MergeTreeTransactionPtr> running_list;
+    TransactionsList running_list;
     std::list<Snapshot> snapshots_in_use;
 
     String zookeeper_path;

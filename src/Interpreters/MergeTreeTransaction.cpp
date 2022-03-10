@@ -30,6 +30,15 @@ MergeTreeTransaction::State MergeTreeTransaction::getState() const
     return COMMITTED;
 }
 
+void MergeTreeTransaction::checkIsNotCancelled() const
+{
+    CSN c = csn.load();
+    if (c == Tx::RolledBackCSN)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+    else if (c != Tx::UnknownCSN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
+}
+
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
@@ -79,58 +88,61 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part)
 {
-    CSN c = csn.load();
-    if (c == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    else if (c != Tx::UnknownCSN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
-
+    std::lock_guard lock{mutex};
+    checkIsNotCancelled();
     storages.insert(storage);
     creating_parts.push_back(new_part);
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context)
 {
-    CSN c = csn.load();
-    if (c == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    else if (c != Tx::UnknownCSN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
-
     {
+        std::lock_guard lock{mutex};
+        checkIsNotCancelled();
+
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         part_to_remove->version.lockMaxTID(tid, context);
         storages.insert(storage);
         removing_parts.push_back(part_to_remove);
     }
+
     part_to_remove->appendRemovalTIDToVersionMetadata();
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
 {
+    std::lock_guard lock{mutex};
+    checkIsNotCancelled();
     storages.insert(table);
     mutations.emplace_back(table, mutation_id);
 }
 
 bool MergeTreeTransaction::isReadOnly() const
 {
+    std::lock_guard lock{mutex};
     assert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
 
 void MergeTreeTransaction::beforeCommit()
 {
-    for (const auto & table_and_mutation : mutations)
-        table_and_mutation.first->waitForMutation(table_and_mutation.second);
-
     CSN expected = Tx::UnknownCSN;
     bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
-    if (can_commit)
-        return;
+    if (!can_commit)
+    {
+        if (expected == Tx::RolledBackCSN)
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
+    }
 
-    if (expected == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
+    RunningMutationsList mutations_to_wait;
+    {
+        std::lock_guard lock{mutex};
+        mutations_to_wait = mutations;
+    }
+
+    for (const auto & table_and_mutation : mutations_to_wait)
+        table_and_mutation.first->waitForMutation(table_and_mutation.second);
 }
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
@@ -194,6 +206,8 @@ String MergeTreeTransaction::dumpDescription() const
         res += ", readonly";
         return res;
     }
+
+    std::lock_guard lock{mutex};
 
     res += fmt::format(", affects {} tables:", storages.size());
 
