@@ -485,6 +485,9 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
 
 bool CachedReadBufferFromRemoteFS::nextImpl()
 {
+    if (IFileCache::shouldBypassCache())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Using cache when not allowed");
+
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
 
@@ -500,9 +503,16 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
         bool download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
         if (download_current_segment)
         {
-            bool file_segment_already_completed = !file_segment->isDownloader();
-            if (!file_segment_already_completed)
-                file_segment->completeBatchAndResetDownloader();
+            try
+            {
+                bool file_segment_already_completed = !file_segment->isDownloader();
+                if (!file_segment_already_completed)
+                    file_segment->completeBatchAndResetDownloader();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         assert(!file_segment->isDownloader());
