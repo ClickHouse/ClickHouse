@@ -80,7 +80,14 @@ tx_async 12                                           "commit" >/dev/null
 tx_wait 11
 tx_wait 12
 
-tx 13 "begin transaction"
-tx 13 "select 10, n, _part from mt order by n"
+tx 13                                           "begin transaction"
+tid_to_kill=$(tx 13 "select transactionID()" | grep -Po "\(.*")
+$CLICKHOUSE_CLIENT -q "select count(), any(is_readonly), any(state) from system.transactions where tid=$tid_to_kill"
+tx_async 13                                      "alter table mt update n = 0 where 1" >/dev/null
+$CLICKHOUSE_CLIENT -q "kill transaction where tid=$tid_to_kill format Null"
+tx_sync 13                                            "rollback"
+
+tx 14 "begin transaction"
+tx 14 "select 10, n, _part from mt order by n"
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table mt"

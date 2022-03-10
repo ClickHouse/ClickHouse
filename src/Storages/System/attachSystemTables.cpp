@@ -68,6 +68,7 @@
 #include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
+#include <Storages/System/StorageSystemTransactions.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -162,6 +163,9 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
+
+    if (context->getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0) == 42)
+        attach<StorageSystemTransactions>(context, system_database, "transactions");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

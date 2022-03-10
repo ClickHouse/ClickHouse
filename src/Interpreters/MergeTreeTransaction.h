@@ -2,6 +2,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <boost/noncopyable.hpp>
 #include <Storages/IStorage_fwd.h>
+#include <Common/Stopwatch.h>
 
 #include <list>
 #include <unordered_set>
@@ -46,10 +47,16 @@ public:
 
     String dumpDescription() const;
 
+    Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
+
 private:
     void beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
     bool rollback() noexcept;
+    void checkIsNotCancelled() const;
+
+    mutable std::mutex mutex;
+    Stopwatch elapsed;
 
     Snapshot snapshot;
 
@@ -61,7 +68,8 @@ private:
 
     std::list<Snapshot>::iterator snapshot_in_use_it;
 
-    std::vector<std::pair<StoragePtr, String>> mutations;
+    using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
+    RunningMutationsList mutations;
 };
 
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;

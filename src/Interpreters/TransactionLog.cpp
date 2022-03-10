@@ -372,4 +372,10 @@ Snapshot TransactionLog::getOldestSnapshot() const
     return snapshots_in_use.front();
 }
 
+TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
+{
+    std::lock_guard lock{running_list_mutex};
+    return running_list;
+}
+
 }
