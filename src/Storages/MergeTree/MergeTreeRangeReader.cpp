@@ -707,7 +707,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                     {
                         auto old_columns = block_before_prewhere.getColumns();
                         filterColumns(old_columns, read_result.getFilterOriginal()->getData());
-                        block_before_prewhere.setColumns(std::move(old_columns));
+                        block_before_prewhere.setColumns(old_columns);
                     }
 
                     for (auto & column : block_before_prewhere)
