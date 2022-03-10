@@ -628,7 +628,8 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     frame_nested.need_parens = false;
     frame_nested.expression_list_always_start_on_new_line = true;
 
-    if ((command_type == ASTAlterCommand::Type::STD_CREATE_INDEX) || (command_type == ASTAlterCommand::Type::STD_DROP_INDEX)){
+    if ((command_type == ASTAlterCommand::Type::STD_CREATE_INDEX) || (command_type == ASTAlterCommand::Type::STD_DROP_INDEX))
+    {
         frame_nested.expression_list_always_start_on_new_line = false;
         settings.ostr << " ";
     }

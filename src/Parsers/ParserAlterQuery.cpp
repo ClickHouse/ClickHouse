@@ -839,7 +839,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object);
+    ParserAlterCommand p_command(alter_object, command_type);
 
     do
     {
@@ -973,7 +973,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->cluster = cluster_str;
     }
 
-    ParserAlterCommandList p_command_list(alter_object_type);
+    ParserAlterCommandList p_command_list(alter_object_type, query->command_type);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
         return false;
