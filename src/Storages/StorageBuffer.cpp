@@ -1000,7 +1000,8 @@ void StorageBuffer::reschedule()
 
     size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
     size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
-    flush_handle->scheduleAfter(std::min(min, max) * 1000);
+    size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
+    flush_handle->scheduleAfter(std::min({min, max, flush}) * 1000);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const

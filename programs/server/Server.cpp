@@ -22,6 +22,8 @@
 #include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/safeExit.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -31,7 +33,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -95,8 +96,6 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
-#    include <unistd.h>
-#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -504,19 +503,6 @@ void checkForUsersNotInMainConfig(
             users_config_path, config_path);
     }
 }
-
-[[noreturn]] void forceShutdown()
-{
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
-}
-
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
@@ -1317,7 +1303,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
@@ -1527,7 +1513,7 @@ if (ThreadFuzzer::instance().isEffective())
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                forceShutdown();
+                safeExit(0);
             }
         });
 
