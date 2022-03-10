@@ -1918,20 +1918,16 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     else if (interpreter_subquery)
     {
         /// Subquery.
-        /// If we need less number of columns that subquery have - update the interpreter.
-        if (required_columns.size() < source_header.columns())
-        {
-            ASTPtr subquery = extractTableExpression(query, 0);
-            if (!subquery)
-                throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
+        ASTPtr subquery = extractTableExpression(query, 0);
+        if (!subquery)
+            throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
-            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(context),
-                options.copy().subquery().noModify(), required_columns);
+        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+            subquery, getSubqueryContext(context),
+            options.copy().subquery().noModify(), required_columns);
 
-            if (query_analyzer->hasAggregation())
-                interpreter_subquery->ignoreWithTotals();
-        }
+        if (query_analyzer->hasAggregation())
+            interpreter_subquery->ignoreWithTotals();
 
         interpreter_subquery->buildQueryPlan(query_plan);
         query_plan.addInterpreterContext(context);
