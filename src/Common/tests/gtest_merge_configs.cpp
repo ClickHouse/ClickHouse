@@ -16,11 +16,14 @@ TEST(Config, MergeConfigsOneSided)
     namespace fs = std::filesystem;
     using File = Poco::File;
 
-    fs::create_directories(fs::path("/tmp/"));
+    auto path = fs::path("/tmp/test_merge_configs/");
 
-    auto config_file = std::make_unique<File>("/tmp/config.yml");
-    SCOPE_EXIT({ config_file->remove(); });
+    fs::create_directories(path);
+    fs::create_directories(path / "config.d");
+    SCOPE_EXIT({ fs::remove_all(path); });
 
+    auto config_file = std::make_unique<File>(path / "config.yaml");
+    
     {
         WriteBufferFromFile out(config_file->path());
         std::string data = R"YAML(
@@ -31,8 +34,7 @@ clickhouse:
         writeString(data, out);
     }
 
-    auto system_tables_file = std::make_unique<File>("/tmp/config.d/system_tables.yml");
-    SCOPE_EXIT({ system_tables_file->remove(); });
+    auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
 
     {
         WriteBufferFromFile out(system_tables_file->path());
@@ -74,10 +76,13 @@ TEST(Config, MergeConfigsTwoSided)
     namespace fs = std::filesystem;
     using File = Poco::File;
 
-    fs::create_directories(fs::path("/tmp/"));
+    auto path = fs::path("/tmp/test_merge_configs/");
 
-    auto config_file = std::make_unique<File>("/tmp/config.yml");
-    SCOPE_EXIT({ config_file->remove(); });
+    fs::create_directories(path);
+    fs::create_directories(path / "config.d");
+    SCOPE_EXIT({ fs::remove_all(path); });
+
+    auto config_file = std::make_unique<File>(path / "config.yaml");
 
     {
         WriteBufferFromFile out(config_file->path());
@@ -96,8 +101,7 @@ clickhouse:
         writeString(data, out);
     }
 
-    auto system_tables_file = std::make_unique<File>("/tmp/config.d/system_tables.yml");
-    SCOPE_EXIT({ system_tables_file->remove(); });
+    auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
 
     {
         WriteBufferFromFile out(system_tables_file->path());
