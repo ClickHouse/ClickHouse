@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 -- { echo }
 
 -- just something basic
