@@ -95,116 +95,50 @@ namespace DB
             return getReturnType();
         }
 
-        static bool castType(const IDataType * type, auto && f)
-        {
-            using ValidTypes = TypeList<
-                DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
-                DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
-
-            return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
-        }
-
-        template <typename F>
-        static bool castTypes(const IDataType * first, const IDataType * second, const IDataType * third, const IDataType * fourth, F && f)
-        {
-            return castType(first, [&](const auto & first_)
-            {
-                return castType(second, [&](const auto & second_)
-                {
-                    return castType(third, [&](const auto & third_)
-                    {
-                        return castType(fourth, [&](const auto & fourth_)
-                        {
-                            return f(first_, second_, third_, fourth_);
-                        });
-                    });
-                });
-            });
-        }
 
         static void nan(MutableColumnPtr & to)
         {
+            const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
             Tuple tuple({nan, nan, nan, nan});
             to->insert(tuple);
         }
 
-        template <typename A, typename B, typename C, typename D, bool const_a, bool const_b, bool const_c, bool const_d>
-        static ColumnPtr calculate(const ColumnsWithTypeAndName & arguments, const A * col_sx, const B * col_sy, const C * col_tx, const D * col_ty, const size_t input_rows_count)
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
-            #define FILL_NAN const Float64 nan = std::numeric_limits<Float64>::quiet_NaN(); \
-                                                 data_z_statistic.emplace_back(nan); \
-                                                 data_p_value.emplace_back(nan); \
-                                                 data_ci_lower.emplace_back(nan); \
-                                                 data_ci_upper.emplace_back(nan);
+            auto non_const_arguments = arguments;
+            for (auto & argument : non_const_arguments)
+                argument.column = argument.column->convertToFullColumnIfConst();
 
-            UInt64 successes_x;
-            UInt64 successes_y;
-            UInt64 trials_x;
-            UInt64 trials_y;
+            MutableColumnPtr to{getReturnType()->createColumn()};
+            to->reserve(input_rows_count);
 
-            auto res_z_statistic = ColumnFloat64::create();
-            auto & data_z_statistic = res_z_statistic->getData();
-            data_z_statistic.reserve(input_rows_count);
-
-            auto res_p_value = ColumnFloat64::create();
-            auto & data_p_value = res_p_value->getData();
-            data_p_value.reserve(input_rows_count);
-
-            auto res_ci_lower = ColumnFloat64::create();
-            auto & data_ci_lower = res_ci_lower->getData();
-            data_ci_lower.reserve(input_rows_count);
-
-            auto res_ci_upper = ColumnFloat64::create();
-            auto & data_ci_upper = res_ci_upper->getData();
-            data_ci_upper.reserve(input_rows_count);
-
-            const ColumnPtr & col_confidence_level = arguments[4].column;
-            Float64 confidence_level = col_confidence_level->getFloat64(0);
-            if (!std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
-            {
-                FILL_NAN
-                return ColumnTuple::create(Columns{std::move(res_z_statistic), std::move(res_p_value), std::move(res_ci_lower), std::move(res_ci_upper)});
-            }
-
-            const ColumnPtr & col_usevar = arguments[5].column;
-            String usevar = col_usevar->getDataAt(0).toString();
-
-            boost::math::normal_distribution<> nd(0.0, 1.0);
+            if (!isString(arguments[5].type))
+                throw Exception{"The sixth argument of function " + getName() + " should be String, illegal type: " + arguments[5].type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
             for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
-                if constexpr (const_a)
-                    successes_x = static_cast<UInt64>(col_sx[0]);
-                else
-                    successes_x = static_cast<UInt64>(col_sx[row_num]);
-
-                if constexpr (const_b)
-                    successes_y = static_cast<UInt64>(col_sy[0]);
-                else
-                    successes_y = static_cast<UInt64>(col_sy[row_num]);
-
-                if constexpr (const_c)
-                    trials_x = static_cast<UInt64>(col_tx[0]);
-                else
-                    trials_x = static_cast<UInt64>(col_tx[row_num]);
-
-                if constexpr (const_d)
-                    trials_y = static_cast<UInt64>(col_ty[0]);
-                else
-                    trials_y = static_cast<UInt64>(col_ty[row_num]);
+                const UInt64 successes_x = arguments[0].column->getUInt(row_num);
+                const UInt64 successes_y = arguments[1].column->getUInt(row_num);
+                const UInt64 trials_x = arguments[2].column->getUInt(row_num);
+                const UInt64 trials_y = arguments[3].column->getUInt(row_num);
 
                 const Float64 props_x = static_cast<Float64>(successes_x) / trials_x;
                 const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
                 const Float64 diff = props_x - props_y;
                 const UInt64 trials_total = trials_x + trials_y;
+                const Float64 confidence_level = arguments[4].column->getFloat64(row_num);
 
                 if (successes_x == 0 || successes_y == 0
                     || successes_x > trials_x || successes_y > trials_y
-                    || trials_total == 0)
+                    || trials_total == 0
+                    || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
                 {
-                    FILL_NAN
+                    nan(to);
                     continue;
                 }
+
+                const ColumnPtr & col_usevar = arguments[5].column;
+                String usevar = col_usevar->getDataAt(row_num).toString();
 
                 Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
 
@@ -224,17 +158,18 @@ namespace DB
                 }
                 else
                 {
-                    FILL_NAN
+                    nan(to);
                     continue;
                 }
 
                 if (!std::isfinite(zstat))
                 {
-                    FILL_NAN
+                    nan(to);
                     continue;
                 }
 
                 // pvalue
+                boost::math::normal_distribution<> nd(0.0, 1.0);
                 Float64 pvalue = 0;
                 Float64 one_side = 1 - boost::math::cdf(nd, std::abs(zstat));
                 pvalue = one_side * 2;
@@ -246,178 +181,11 @@ namespace DB
                 Float64 ci_low = d - dist;
                 Float64 ci_high = d + dist;
 
-                data_z_statistic.emplace_back(zstat);
-                data_p_value.emplace_back(pvalue);
-                data_ci_lower.emplace_back(ci_low);
-                data_ci_upper.emplace_back(ci_high);
+                Tuple tuple({zstat, pvalue, ci_low, ci_high});
+                to->insert(tuple);
             }
 
-            return ColumnTuple::create(Columns{std::move(res_z_statistic), std::move(res_p_value), std::move(res_ci_lower), std::move(res_ci_upper)});
-        }
-
-        template <typename A, typename B, typename C, typename D>
-        static ColumnPtr execute([[maybe_unused]] const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const A & sx, [[maybe_unused]] const B & sy, [[maybe_unused]] const C & tx, [[maybe_unused]] const D & ty, [[maybe_unused]] const size_t input_rows_count)
-        {
-            using SXDataType = std::decay_t<decltype(sx)>;
-            using SYDataType = std::decay_t<decltype(sy)>;
-            using TXDataType = std::decay_t<decltype(tx)>;
-            using TYDataType = std::decay_t<decltype(ty)>;
-
-            using TSX = typename SXDataType::FieldType;
-            using TSY = typename SYDataType::FieldType;
-            using TTX = typename TXDataType::FieldType;
-            using TTY = typename TYDataType::FieldType;
-
-            using ColVecTSX = ColumnVector<TSX>;
-            using ColVecTSY = ColumnVector<TSY>;
-            using ColVecTTX = ColumnVector<TTX>;
-            using ColVecTTY = ColumnVector<TTY>;
-
-            ColumnPtr sx_col = nullptr;
-            ColumnPtr sy_col = nullptr;
-            ColumnPtr tx_col = nullptr;
-            ColumnPtr ty_col = nullptr;
-
-            sx_col = arguments[0].column;
-            sy_col = arguments[1].column;
-            tx_col = arguments[2].column;
-            ty_col = arguments[3].column;
-
-            const auto * const col_sx_raw = sx_col.get();
-            const auto * const col_sy_raw = sy_col.get();
-            const auto * const col_tx_raw = tx_col.get();
-            const auto * const col_ty_raw = ty_col.get();
-
-            const ColumnConst * const col_sx_const = checkAndGetColumnConst<ColVecTSX>(col_sx_raw);
-            const ColumnConst * const col_sy_const = checkAndGetColumnConst<ColVecTSY>(col_sy_raw);
-            const ColumnConst * const col_tx_const = checkAndGetColumnConst<ColVecTTX>(col_tx_raw);
-            const ColumnConst * const col_ty_const = checkAndGetColumnConst<ColVecTTY>(col_ty_raw);
-
-            const ColVecTSX * const col_sx = checkAndGetColumn<ColVecTSX>(col_sx_raw);
-            const ColVecTSY * const col_sy = checkAndGetColumn<ColVecTSY>(col_sy_raw);
-            const ColVecTTX * const col_tx = checkAndGetColumn<ColVecTTX>(col_tx_raw);
-            const ColVecTTY * const col_ty = checkAndGetColumn<ColVecTTY>(col_ty_raw);
-
-            if (col_sx && col_sy && col_tx && col_ty)
-            {
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx && col_sy && col_tx && col_ty_const)
-            {
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, false, true>(arguments, col_sx->getData().data(), col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
-            }
-            else if (col_sx && col_sy && col_tx_const && col_ty)
-            {
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, true, false>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx && col_sy && col_tx_const && col_ty_const)
-            {
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, false, true, true>(arguments, col_sx->getData().data(), col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
-            }
-            else if (col_sx && col_sy_const && col_tx && col_ty)
-            {
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                return calculate<TSX, TSY, TTX, TTY, false, true, false, false>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx && col_sy_const && col_tx && col_ty_const)
-            {
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, true, false, true>(arguments, col_sx->getData().data(), &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
-            }
-            else if (col_sx && col_sy_const && col_tx_const && col_ty)
-            {
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, false, true, true, false>(arguments, col_sx->getData().data(), &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx && col_sy_const && col_tx_const && col_ty_const)
-            {
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, false, true, true, true>(arguments, col_sx->getData().data(), &sy_value, &tx_value, &ty_value, input_rows_count);
-            }
-            else if (col_sx_const && col_sy && col_tx && col_ty)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                return calculate<TSX, TSY, TTX, TTY, true, false, false, false>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx_const && col_sy && col_tx && col_ty_const)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, true, false, false, true>(arguments, &sx_value, col_sy->getData().data(), col_tx->getData().data(), &ty_value, input_rows_count);
-            }
-            else if (col_sx_const && col_sy && col_tx_const && col_ty)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, true, false, true, false>(arguments, &sx_value, col_sy->getData().data(), &tx_value, col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx_const && col_sy && col_tx_const && col_ty_const)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, true, false, true, true>(arguments, &sx_value, col_sy->getData().data(), &tx_value, &ty_value, input_rows_count);
-            }
-            else if (col_sx_const && col_sy_const && col_tx && col_ty)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                return calculate<TSX, TSY, TTX, TTY, true, true, false, false>(arguments, &sx_value, &sy_value, col_tx->getData().data(), col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx_const && col_sy_const && col_tx && col_ty_const)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, true, true, false, true>(arguments, &sx_value, &sy_value, col_tx->getData().data(), &ty_value, input_rows_count);
-            }
-            else if (col_sx_const && col_sy_const && col_tx_const && col_ty)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                return calculate<TSX, TSY, TTX, TTY, true, true, true, false>(arguments, &sx_value, &sy_value, &tx_value, col_ty->getData().data(), input_rows_count);
-            }
-            else if (col_sx_const && col_sy_const && col_tx_const && col_ty_const)
-            {
-                const TSX sx_value = col_sx_const->template getValue<TSX>();
-                const TSY sy_value = col_sy_const->template getValue<TSY>();
-                const TTX tx_value = col_tx_const->template getValue<TTX>();
-                const TTY ty_value = col_ty_const->template getValue<TTY>();
-                return calculate<TSX, TSY, TTX, TTY, true, true, true, true>(arguments, &sx_value, &sy_value, &tx_value, &ty_value, input_rows_count);
-            }
-            else
-            {
-                return nullptr;
-            }
-        }
-
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            ColumnPtr res;
-
-            const bool valid = castTypes(arguments[0].type.get(), arguments[1].type.get(), arguments[2].type.get(), arguments[3].type.get(),
-                                         [&]([[maybe_unused]] const auto & first, [[maybe_unused]] const auto & second, [[maybe_unused]] const auto & third, [[maybe_unused]] const auto & fourth)
-            {
-                return (res = execute(arguments, first, second, third, fourth, input_rows_count)) != nullptr;
-            });
-
-            if (!valid)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Arguments of '{}' have unsupported data types: '{}' of type '{}', '{}' of type '{}', '{}' of type '{}', '{}' of type '{}'",
-                        name, arguments[0].name, arguments[0].type->getName(), arguments[1].name, arguments[1].type->getName(),
-                        arguments[2].name, arguments[2].type->getName(), arguments[3].name, arguments[3].type->getName());
-            }
-            return res;
+            return to;
         }
 
     };
