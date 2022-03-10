@@ -5,22 +5,14 @@
 # Tag no-ubsan: requires jemalloc to track small allocations
 # Tag no-msan: requires jemalloc to track small allocations
 
-#
-# Regression for INSERT SELECT, that abnormally terminates the server
-# in case of too small memory limits.
-#
-# NOTE: After #24483 had been merged the only place where the allocation may
-# fail is the insert into PODArray in DB::OwnSplitChannel::log, but after
-# #24069 those errors will be ignored, so to check new behaviour separate
-# server is required.
-#
+
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 cp /etc/clickhouse-server/users.xml "$CURDIR"/users.xml
- sed -i 's/<password><\/password>/<password_sha256_hex>c64c5e4e53ea1a9f1427d2713b3a22bbebe8940bc807adaf654744b1568c70ab<\/password_sha256_hex>/g' "$CURDIR"/users.xml
+sed -i 's/<password><\/password>/<password_sha256_hex>c64c5e4e53ea1a9f1427d2713b3a22bbebe8940bc807adaf654744b1568c70ab<\/password_sha256_hex>/g' "$CURDIR"/users.xml
  sed -i 's/<!-- <access_management>1<\/access_management> -->/<access_management>1<\/access_management>/g' "$CURDIR"/users.xml
 
 server_opts=(
@@ -76,13 +68,13 @@ $CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port 
 
 $CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q " CREATE USER u1_02207 IDENTIFIED BY 'qwe123'";
 
-$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u2_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty' " " -- { serverError 43 } --" &> /dev/null ;
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u2_02207 HOST IP '127.1' IDENTIFIED WITH plaintext_password BY 'qwerty' " " -- { serverError 516 } --" &> /dev/null ;
 
-$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u3_02207 HOST IP '127.1' IDENTIFIED WITH no_password " " -- { serverError 43 } --" &> /dev/null ;
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u3_02207 HOST IP '127.1' IDENTIFIED WITH no_password " " -- { serverError 516 } --" &> /dev/null ;
 
-$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u4_02207 HOST IP '127.1' NOT IDENTIFIED " " -- { serverError 43 } --" &> /dev/null ;
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER u4_02207 HOST IP '127.1' NOT IDENTIFIED " " -- { serverError 516 } --" &> /dev/null ;
 
-$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER IF NOT EXISTS  u5_02207 " " -- { serverError 43 } --" &> /dev/null ;
+$CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q "CREATE USER IF NOT EXISTS  u5_02207 " " -- { serverError 516 } --" &> /dev/null ;
 
 $CLICKHOUSE_CLIENT_BINARY  -u default --password='1w2swhb1' --host 127.1 --port "$server_port" -q " DROP USER u_02207, u1_02207";
 

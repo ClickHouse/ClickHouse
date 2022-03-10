@@ -18,7 +18,8 @@ class ConfigReloader;
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
-    static bool ALLOW_PLAINTEXT_AND_NO_PASSWORD;
+    static bool ALLOW_PLAINTEXT_PASSWORD;
+    static bool ALLOW_NO_PASSWORD;
     static constexpr char STORAGE_TYPE[] = "users.xml";
     using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
 
@@ -34,7 +35,7 @@ public:
     bool isPathEqual(const String & path_) const;
 
     void setConfig(const Poco::Util::AbstractConfiguration & config);
-    static void setAuthTypeSetting(const bool allow_plaintext_and_no_password_) {  UsersConfigAccessStorage::ALLOW_PLAINTEXT_AND_NO_PASSWORD=allow_plaintext_and_no_password_;}
+    static void setAuthTypeSetting(const bool allow_plaintext_password_, const bool allow_no_password_) {  UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD=allow_plaintext_password_; UsersConfigAccessStorage::ALLOW_NO_PASSWORD=allow_no_password_;}
 
     void load(const String & users_config_path,
               const String & include_from_path = {},
@@ -62,6 +63,5 @@ private:
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;
-   // bool allow_plaintext_and_no_password;
 };
 }
