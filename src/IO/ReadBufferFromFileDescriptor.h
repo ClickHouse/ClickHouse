@@ -38,6 +38,10 @@ public:
         , fd(fd_)
     {
     }
+    
+    virutal ~ReadBufferFromFileDescriptor()
+    {
+    }
 
     int getFD() const
     {
@@ -79,6 +83,9 @@ public:
         : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
+    }
+    virtual ~ReadBufferFromFileDescriptorPRead()
+    {
     }
 };
 
