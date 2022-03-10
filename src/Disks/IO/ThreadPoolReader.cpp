@@ -190,7 +190,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             : MainThreadStatus::getInstance().getThreadGroup();
 
     ContextPtr query_context;
-    if (CurrentThread::isInitialized)
+    if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
     auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, running_group, query_context]
