@@ -64,7 +64,8 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
-     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
+     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
+     {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -92,6 +93,16 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS,
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
+
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
@@ -130,4 +141,10 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"JSON", FormatSettings::EscapingRule::JSON},
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
+
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+                       {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
+                        {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
+                        {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
+
 }

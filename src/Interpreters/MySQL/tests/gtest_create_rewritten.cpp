@@ -40,7 +40,8 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
         {"TINYINT", "Int8"}, {"SMALLINT", "Int16"}, {"MEDIUMINT", "Int32"}, {"INT", "Int32"},
         {"INTEGER", "Int32"}, {"BIGINT", "Int64"}, {"FLOAT", "Float32"}, {"DOUBLE", "Float64"},
         {"VARCHAR(10)", "String"}, {"CHAR(10)", "String"}, {"Date", "Date"}, {"DateTime", "DateTime"},
-        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}, {"BIT", "UInt64"}
+        {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}, {"BIT", "UInt64"}, {"SET", "UInt64"},
+        {"YEAR", "UInt16"}, {"TIME", "Int64"}, {"GEOMETRY", "String"}
     };
 
     for (const auto & [test_type, mapped_type] : test_types)

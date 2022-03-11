@@ -188,6 +188,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     size_t selected_table_size = 0;
 
+    /// TODO: Find a way to support projections for StorageMerge
+    query_info.ignore_projections = true;
     for (const auto & iterator : database_table_iterators)
     {
         while (iterator->isValid())
@@ -471,7 +473,9 @@ Pipe StorageMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
+        /// TODO: Find a way to support projections for StorageMerge
+        InterpreterSelectQuery interpreter{
+            modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
 
 
         pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline());
@@ -726,7 +730,7 @@ void StorageMerge::convertingSourceStream(
     for (const auto & alias : aliases)
     {
         pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-        ASTPtr expr = std::move(alias.expression);
+        ASTPtr expr = alias.expression;
         auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
         auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
 

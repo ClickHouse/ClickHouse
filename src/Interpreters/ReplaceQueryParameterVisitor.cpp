@@ -69,7 +69,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
-    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
+    Field literal;
+    /// If data type has custom serialization, we should use CAST from String,
+    /// because CAST from field may not work correctly (for example for type IPv6).
+    if (data_type->getCustomSerialization())
+        literal = value;
+    else
+        literal = temp_column[0];
+    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
