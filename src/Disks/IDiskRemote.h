@@ -3,6 +3,7 @@
 #include <Common/config.h>
 
 #include <atomic>
+#include <Common/FileCache_fwd.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/Executor.h>
 #include <utility>
@@ -55,6 +56,7 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
+        FileCachePtr cache_,
         const String & log_name_,
         size_t thread_pool_size);
 
@@ -162,6 +164,7 @@ protected:
     const String remote_fs_root_path;
 
     DiskPtr metadata_disk;
+    FileCachePtr cache;
 
 private:
     void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
