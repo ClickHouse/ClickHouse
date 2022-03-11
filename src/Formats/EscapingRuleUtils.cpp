@@ -10,6 +10,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 namespace DB
@@ -262,7 +263,7 @@ static bool evaluateConstantExpressionFromString(const StringRef & field, DataTy
 
     /// FIXME: Our parser cannot parse maps in the form of '{key : value}' that is used in text formats.
     bool parsed = parser.parse(token_iterator, ast, expected);
-    if (!parsed || !token_iterator->isEnd())
+    if (!parsed || !token_iterator->isEnd() || !ast->as<const ASTLiteral>())
         return false;
 
     try
