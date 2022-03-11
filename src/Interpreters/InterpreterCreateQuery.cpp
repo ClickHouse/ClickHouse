@@ -31,6 +31,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -94,6 +95,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
+    extern const int UNKNOWN_STORAGE;
 }
 
 namespace fs = std::filesystem;
@@ -1193,6 +1195,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
+    }
+
+    if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
+    {
+        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        if (!is_replicated_storage && database && database->getEngineName() != "Replicated")
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE, 
+                            "Only Replicated tables are allowed in database engine is Replicated");
     }
 
     if (from_path && !res->storesDataOnDisk())
