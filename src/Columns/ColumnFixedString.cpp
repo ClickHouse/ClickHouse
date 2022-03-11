@@ -173,7 +173,7 @@ void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection directi
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+                                    size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorEqual(*this);
 

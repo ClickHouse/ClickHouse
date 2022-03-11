@@ -313,8 +313,8 @@ public:
 
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
-      * direction - permutation direction Ascending, Descending.
-      * sort_type - permutation sort type Unstable, Stable.
+      * direction - permutation direction.
+      * stability - stability of result permutation.
       * limit - if isn't 0, then only first limit elements of the result column could be sorted.
       * nan_direction_hint - see above.
       */

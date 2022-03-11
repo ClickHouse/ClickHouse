@@ -160,6 +160,12 @@ public:
         throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void updatePermutation(PermutationSortDirection, PermutationSortStability,
+                    size_t, int, Permutation &, EqualRanges &) const override
+    {
+        throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
     {
         throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);

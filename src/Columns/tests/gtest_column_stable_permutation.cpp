@@ -2,24 +2,29 @@
 
 #include <vector>
 
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 
 
 using namespace DB;
 
-IColumn::Permutation stableGetColumnPermutation(const IColumn & column, IColumn::PermutationSortDirection direction, size_t limit = 0, int nan_direction_hint = 0)
+void stableGetColumnPermutation(const IColumn & column, IColumn::PermutationSortDirection direction,
+    size_t limit, int nan_direction_hint, IColumn::Permutation & out_permutation)
 {
     (void)(limit);
-
-    IColumn::Permutation out_permutation;
 
     size_t size = column.size();
     out_permutation.resize(size);
@@ -34,16 +39,12 @@ IColumn::Permutation stableGetColumnPermutation(const IColumn & column, IColumn:
         else
             return res > 0;
     });
-
-    return out_permutation;
 }
 
-IColumn::Permutation columnGetPermutation(const IColumn & column, IColumn::PermutationSortDirection direction, size_t limit = 0, int nan_direction_hint = 0)
+void columnGetPermutation(const IColumn & column, IColumn::PermutationSortDirection direction,
+    size_t limit, int nan_direction_hint, IColumn::Permutation & out_permutation)
 {
-    IColumn::Permutation column_permutation;
-    column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, column_permutation);
-
-    return column_permutation;
+    column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
 void printColumn(const IColumn & column)
@@ -58,15 +59,6 @@ void printColumn(const IColumn & column)
 
     std::cout << std::endl;
 }
-
-template <typename T>
-struct IndexInRangeValueTransform
-{
-    Field operator()(size_t range_index, size_t index_in_range) const
-    {
-        return Field(static_cast<T>(range_index * index_in_range));
-    }
-};
 
 template <typename ValueTransform>
 void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size, ValueTransform value_transform)
@@ -99,8 +91,6 @@ void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std:
 }
 
 void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit) {
-    ASSERT_EQ(lhs.size(), rhs.size());
-
     if (limit == 0) {
         limit = lhs.size();
     }
@@ -110,46 +100,39 @@ void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn
     }
 }
 
-void assertColumnPermutation(const IColumn & column, IColumn::PermutationSortDirection direction, size_t limit = 0, int nan_direction_hint = 0)
+void assertColumnPermutation(
+    const IColumn & column, IColumn::PermutationSortDirection direction,
+    size_t limit, int nan_direction_hint, IColumn::Permutation & actual_permutation, IColumn::Permutation & expected_permutation)
 {
-    // std::cout << "Limit " << limit << std::endl;
-
-    auto expected = stableGetColumnPermutation(column, direction, limit, nan_direction_hint);
-    auto actual = columnGetPermutation(column, direction, limit, nan_direction_hint);
+    stableGetColumnPermutation(column, direction, limit, nan_direction_hint, expected_permutation);
+    columnGetPermutation(column, direction, limit, nan_direction_hint, actual_permutation);
 
     if (limit == 0) {
-        limit = actual.size();
+        limit = actual_permutation.size();
     }
 
-    // std::cout << "Column" << std::endl;
-    // printColumn(column);
-
-    // std::cout << "Expected " << std::endl;
-    // for (size_t i = 0; i < limit; ++i) {
-    //     std::cout << expected[i] << ' ';
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Actual " << std::endl;
-    // for (size_t i = 0; i < limit; ++i) {
-    //     std::cout << actual[i] << ' ';
-    // }
-    // std::cout << std::endl;
-
-    assertPermutationsWithLimit(actual, expected, limit);
+    assertPermutationsWithLimit(actual_permutation, expected_permutation, limit);
 }
 
 template <typename ColumnCreateFunc, typename ValueTransform>
 void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransform value_transform)
 {
     static constexpr size_t ranges_size = 3;
-    static const std::vector<size_t> range_sizes = { 5, 50, 500, 5000 };
+    static const std::vector<size_t> range_sizes = {
+        1,
+        5,
+        50,
+        500
+    };
 
     std::vector<std::vector<Field>> ranges(ranges_size);
     std::vector<size_t> ranges_permutations(ranges_size);
     for (size_t i = 0; i < ranges_size; ++i) {
         ranges_permutations[i] = i;
     }
+
+    IColumn::Permutation actual_permutation;
+    IColumn::Permutation expected_permutation;
 
     for (const auto & range_size : range_sizes) {
         generateRanges(ranges, range_size, value_transform);
@@ -161,8 +144,6 @@ void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransfor
             auto & column = *column_ptr;
             insertRangesIntoColumn(ranges, ranges_permutations, column);
 
-            // printColumn(column);
-
             static constexpr size_t limit_parts = 4;
 
             size_t column_size = column.size();
@@ -170,18 +151,18 @@ void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransfor
 
             for (size_t limit = 0; limit < column_size; limit += column_limit_part)
             {
-                assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, limit, -1);
-                assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, limit, 1);
+                assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, limit, -1, actual_permutation, expected_permutation);
+                assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, limit, 1, actual_permutation, expected_permutation);
 
-                assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, limit, -1);
-                assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, limit, 1);
+                assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, limit, -1, actual_permutation, expected_permutation);
+                assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, limit, 1, actual_permutation, expected_permutation);
             }
 
-            assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, 0, -1);
-            assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, 0, 1);
+            assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, 0, -1, actual_permutation, expected_permutation);
+            assertColumnPermutation(column, IColumn::PermutationSortDirection::Ascending, 0, 1, actual_permutation, expected_permutation);
 
-            assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, 0, -1);
-            assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, 0, 1);
+            assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, 0, -1, actual_permutation, expected_permutation);
+            assertColumnPermutation(column, IColumn::PermutationSortDirection::Descending, 0, 1, actual_permutation, expected_permutation);
 
             if (!std::next_permutation(ranges_permutations.begin(), ranges_permutations.end()))
                 break;
@@ -189,13 +170,21 @@ void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransfor
     }
 }
 
+struct IndexInRangeInt64Transform
+{
+    Field operator()(size_t range_index, size_t index_in_range) const
+    {
+        return Field(static_cast<Int64>(range_index * index_in_range));
+    }
+};
+
 TEST(StablePermutation, ColumnVectorInteger)
 {
     auto create_column = []() {
         return ColumnVector<Int64>::create();
     };
 
-    assertColumnPermutations(create_column, IndexInRangeValueTransform<Int64>());
+    assertColumnPermutations(create_column, IndexInRangeInt64Transform());
 }
 
 struct IndexInRangeFloat64Transform
@@ -222,6 +211,24 @@ TEST(StablePermutation, ColumnVectorFloat)
 
     assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
 }
+
+struct IndexInRangeDecimal64Transform
+{
+    Field operator()(size_t range_index, size_t index_in_range) const
+    {
+        return Field(static_cast<Decimal64>(range_index * index_in_range));
+    }
+};
+
+TEST(StablePermutation, ColumnVectorDecimal)
+{
+    auto create_column = []() {
+        return ColumnDecimal<Decimal64>::create(0, 0);
+    };
+
+    assertColumnPermutations(create_column, IndexInRangeDecimal64Transform());
+}
+
 
 struct IndexInRangeStringTransform
 {
@@ -293,7 +300,6 @@ struct IndexInRangeToNullTransform
     }
 };
 
-
 TEST(StablePermutation, ColumnNullable)
 {
     {
@@ -304,9 +310,9 @@ TEST(StablePermutation, ColumnNullable)
             return nullable_data_type->createColumn();
         };
 
-        assertColumnPermutations(create_column, IndexInRangeNullableTransform<IndexInRangeValueTransform<Int64>>());
+        assertColumnPermutations(create_column, IndexInRangeNullableTransform<IndexInRangeInt64Transform>());
         assertColumnPermutations(create_column, IndexInRangeToNullTransform());
-        assertColumnPermutations(create_column, IndexInRangeValueTransform<Int64>());
+        assertColumnPermutations(create_column, IndexInRangeInt64Transform());
     }
     {
         auto float_data_type = std::make_shared<DataTypeFloat64>();
@@ -318,6 +324,173 @@ TEST(StablePermutation, ColumnNullable)
 
         assertColumnPermutations(create_column, IndexInRangeNullableTransform<IndexInRangeFloat64Transform>());
         assertColumnPermutations(create_column, IndexInRangeToNullTransform());
-        assertColumnPermutations(create_column, IndexInRangeValueTransform<Float64>());
+        assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
+    }
+}
+
+TEST(StablePermutation, ColumnLowCardinality)
+{
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto low_cardinality_data_type = std::make_shared<DataTypeLowCardinality>(std::move(int_data_type));
+
+        auto create_column = [&]() {
+            return low_cardinality_data_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, IndexInRangeInt64Transform());
+    }
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto nullable_data_type = std::make_shared<DataTypeNullable>(std::move(int_data_type));
+        auto low_cardinality_data_type = std::make_shared<DataTypeLowCardinality>(nullable_data_type);
+
+        auto create_column = [&]() {
+            return low_cardinality_data_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, IndexInRangeNullableTransform<IndexInRangeInt64Transform>());
+        assertColumnPermutations(create_column, IndexInRangeToNullTransform());
+        assertColumnPermutations(create_column, IndexInRangeInt64Transform());
+    }
+    {
+        auto float_data_type = std::make_shared<DataTypeFloat64>();
+        auto nullable_data_type = std::make_shared<DataTypeNullable>(std::move(float_data_type));
+        auto low_cardinality_data_type = std::make_shared<DataTypeLowCardinality>(nullable_data_type);
+
+        auto create_column = [&]() {
+            return low_cardinality_data_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, IndexInRangeNullableTransform<IndexInRangeFloat64Transform>());
+        assertColumnPermutations(create_column, IndexInRangeToNullTransform());
+        assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
+    }
+}
+
+template <typename FirstValueTransform, typename SecondValueTransform>
+struct TupleTransform
+{
+    Field operator()(size_t range_index, size_t index_in_range) const
+    {
+        Field first_value = first_value_transform(range_index, index_in_range);
+        Field second_value = second_value_transform(range_index, index_in_range);
+
+        return Tuple{std::move(first_value), std::move(second_value)};
+    }
+
+    FirstValueTransform first_value_transform;
+    SecondValueTransform second_value_transform;
+};
+
+TEST(StablePermutation, ColumnTuple)
+{
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto float_data_type = std::make_shared<DataTypeFloat64>();
+        DataTypes tuple_data_types = {int_data_type, float_data_type};
+        auto tuple_type = std::make_shared<DataTypeTuple>(tuple_data_types);
+
+        auto create_column = [&]() {
+            return tuple_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeInt64Transform, IndexInRangeFloat64Transform>());
+    }
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto float_type = std::make_shared<DataTypeFloat64>();
+        auto nullable_data_type = std::make_shared<DataTypeNullable>(int_data_type);
+        DataTypes tuple_data_types = {nullable_data_type, float_type};
+        auto tuple_type = std::make_shared<DataTypeTuple>(tuple_data_types);
+
+        auto create_column = [&]() {
+            return tuple_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeInt64Transform>, IndexInRangeFloat64Transform>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeToNullTransform>, IndexInRangeFloat64Transform>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeInt64Transform>, IndexInRangeFloat64Transform>());
+    }
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto float_type = std::make_shared<DataTypeFloat64>();
+        auto nullable_data_type = std::make_shared<DataTypeNullable>(int_data_type);
+        DataTypes tuple_data_types = {float_type, nullable_data_type};
+        auto tuple_type = std::make_shared<DataTypeTuple>(tuple_data_types);
+
+        auto create_column = [&]() {
+            return tuple_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeFloat64Transform, IndexInRangeNullableTransform<IndexInRangeInt64Transform>>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeFloat64Transform, IndexInRangeNullableTransform<IndexInRangeToNullTransform>>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeFloat64Transform, IndexInRangeNullableTransform<IndexInRangeInt64Transform>>());
+    }
+    {
+        auto float_data_type = std::make_shared<DataTypeFloat64>();
+        auto nullable_data_type = std::make_shared<DataTypeNullable>(float_data_type);
+        DataTypes tuple_data_types = {nullable_data_type, float_data_type};
+        auto tuple_type = std::make_shared<DataTypeTuple>(tuple_data_types);
+
+        auto create_column = [&]() {
+            return tuple_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeFloat64Transform>, IndexInRangeFloat64Transform>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeToNullTransform>, IndexInRangeFloat64Transform>());
+        assertColumnPermutations(create_column, TupleTransform<IndexInRangeNullableTransform<IndexInRangeFloat64Transform>, IndexInRangeFloat64Transform>());
+    }
+}
+
+template <typename FirstValueTransform, typename SecondValueTransform>
+struct MapTransform
+{
+    Field operator()(size_t range_index, size_t index_in_range) const
+    {
+        Field first_value = first_value_transform(range_index, index_in_range);
+        Field second_value = second_value_transform(range_index, index_in_range);
+
+        return Map{Tuple{std::move(first_value), std::move(second_value)}};
+    }
+
+    FirstValueTransform first_value_transform;
+    SecondValueTransform second_value_transform;
+};
+
+TEST(StablePermutation, ColumnMap)
+{
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+        auto float_data_type = std::make_shared<DataTypeFloat64>();
+        auto map_type = std::make_shared<DataTypeMap>(int_data_type, float_data_type);
+
+        auto create_column = [&]() {
+            return map_type->createColumn();
+        };
+
+        assertColumnPermutations(create_column, MapTransform<IndexInRangeInt64Transform, IndexInRangeFloat64Transform>());
+    }
+}
+
+TEST(StablePermutation, ColumnSparse)
+{
+    {
+        auto int_data_type = std::make_shared<DataTypeInt64>();
+
+        auto create_column = [&]() {
+            return ColumnSparse::create(int_data_type->createColumn());
+        };
+
+        assertColumnPermutations(create_column, IndexInRangeInt64Transform());
+    }
+    {
+        auto float_data_type = std::make_shared<DataTypeFloat64>();
+
+        auto create_column = [&]() {
+            return ColumnSparse::create(float_data_type->createColumn());
+        };
+
+        assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
     }
 }
