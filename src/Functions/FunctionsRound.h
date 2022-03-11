@@ -17,6 +17,7 @@
 #include <type_traits>
 #include <array>
 #include <base/bit_cast.h>
+#include <base/sort.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -158,7 +159,6 @@ struct IntegerRoundingComputation
         switch (scale_mode)
         {
             case ScaleMode::Zero:
-                return x;
             case ScaleMode::Positive:
                 return x;
             case ScaleMode::Negative:
@@ -170,10 +170,15 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
-            *out = 0;
-        else
-            *out = compute(*in, scale);
+        if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
+        {
+            if (scale > size_t(std::numeric_limits<T>::max()))
+            {
+                *out = 0;
+                return;
+            }
+        }
+        *out = compute(*in, scale);
     }
 
 };
@@ -422,9 +427,9 @@ private:
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
-    static NO_INLINE void apply(const Container & in, Container & out, Scale scale_arg)
+    static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
-        scale_arg = in.getScale() - scale_arg;
+        scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
             size_t scale = intExp10(scale_arg);
@@ -498,11 +503,11 @@ public:
         const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
-        auto col_res = ColumnDecimal<T>::create(vec_src.size(), vec_src.getScale());
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
-            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
+            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), col->getScale(), vec_res, scale_arg);
 
         return col_res;
     }
@@ -738,7 +743,7 @@ private:
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = boundaries[i].get<ValueType>();
 
-        std::sort(boundary_values.begin(), boundary_values.end());
+        ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
         size_t size = src.size();

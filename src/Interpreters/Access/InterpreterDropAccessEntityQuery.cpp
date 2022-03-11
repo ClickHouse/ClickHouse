@@ -49,12 +49,37 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     AccessRightsElements res;
     switch (query.type)
     {
-        case AccessEntityType::USER: res.emplace_back(AccessType::DROP_USER); return res;
-        case AccessEntityType::ROLE: res.emplace_back(AccessType::DROP_ROLE); return res;
-        case AccessEntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::DROP_SETTINGS_PROFILE); return res;
-        case AccessEntityType::ROW_POLICY: res.emplace_back(AccessType::DROP_ROW_POLICY); return res;
-        case AccessEntityType::QUOTA: res.emplace_back(AccessType::DROP_QUOTA); return res;
-        case AccessEntityType::MAX: break;
+        case AccessEntityType::USER:
+        {
+            res.emplace_back(AccessType::DROP_USER);
+            return res;
+        }
+        case AccessEntityType::ROLE:
+        {
+            res.emplace_back(AccessType::DROP_ROLE);
+            return res;
+        }
+        case AccessEntityType::SETTINGS_PROFILE:
+        {
+            res.emplace_back(AccessType::DROP_SETTINGS_PROFILE);
+            return res;
+        }
+        case AccessEntityType::ROW_POLICY:
+        {
+            if (query.row_policy_names)
+            {
+                for (const auto & row_policy_name : query.row_policy_names->full_names)
+                    res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+            }
+            return res;
+        }
+        case AccessEntityType::QUOTA:
+        {
+            res.emplace_back(AccessType::DROP_QUOTA);
+            return res;
+        }
+        case AccessEntityType::MAX:
+            break;
     }
     throw Exception(
         toString(query.type) + ": type is not supported by DROP query", ErrorCodes::NOT_IMPLEMENTED);

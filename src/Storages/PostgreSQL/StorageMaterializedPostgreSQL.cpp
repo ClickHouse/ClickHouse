@@ -277,10 +277,16 @@ Pipe StorageMaterializedPostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto materialized_table_lock = lockForShare(String(), context_->getSettingsRef().lock_acquire_timeout);
     auto nested_table = getNested();
-    return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+
+    auto pipe = readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
             query_info, context_, processed_stage, max_block_size, num_streams);
+
+    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+    pipe.addTableLock(lock);
+    pipe.addStorageHolder(shared_from_this());
+
+    return pipe;
 }
 
 
@@ -376,8 +382,6 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
-    if (table_override)
-        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -490,11 +494,36 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         constraints = metadata_snapshot->getConstraints();
     }
 
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
     create_table_query->set(create_table_query->storage, storage);
+
+    if (table_override)
+    {
+        if (auto * columns = table_override->columns)
+        {
+            if (columns->columns)
+            {
+                for (const auto & override_column_ast : columns->columns->children)
+                {
+                    auto * override_column = override_column_ast->as<ASTColumnDeclaration>();
+                    if (override_column->name == "_sign" || override_column->name == "_version")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot override _sign and _version column");
+                }
+            }
+        }
+
+        create_table_query->set(create_table_query->columns_list, columns_declare_list);
+
+        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
+
+        create_table_query->columns_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
+        create_table_query->columns_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
+    }
+    else
+    {
+        columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
+        columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
+        create_table_query->set(create_table_query->columns_list, columns_declare_list);
+    }
 
     /// Add columns _sign and _version, so that they can be accessed from nested ReplacingMergeTree table if needed.
     ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});

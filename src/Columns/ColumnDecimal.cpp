@@ -9,7 +9,6 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -31,12 +30,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
-
-template class DecimalPaddedPODArray<Decimal32>;
-template class DecimalPaddedPODArray<Decimal64>;
-template class DecimalPaddedPODArray<Decimal128>;
-template class DecimalPaddedPODArray<Decimal256>;
-template class DecimalPaddedPODArray<DateTime64>;
 
 template <is_decimal T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
@@ -131,19 +124,6 @@ void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
 template <is_decimal T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
-#if 1 /// TODO: perf test
-    if (data.size() <= std::numeric_limits<UInt32>::max())
-    {
-        PaddedPODArray<UInt32> tmp_res;
-        permutation(reverse, limit, tmp_res);
-
-        res.resize(tmp_res.size());
-        for (size_t i = 0; i < tmp_res.size(); ++i)
-            res[i] = tmp_res[i];
-        return;
-    }
-#endif
-
     permutation(reverse, limit, res);
 }
 
@@ -151,7 +131,7 @@ template <is_decimal T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
-    auto sort = [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); };
+    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (reverse)

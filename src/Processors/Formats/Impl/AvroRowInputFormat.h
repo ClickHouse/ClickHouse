@@ -115,7 +115,7 @@ private:
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 };
 
-class AvroRowInputFormat : public IRowInputFormat
+class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
@@ -137,7 +137,7 @@ private:
 /// 2. SchemaRegistry: schema cache (schema_id -> schema)
 /// 3. AvroConfluentRowInputFormat: deserializer cache (schema_id -> AvroDeserializer)
 /// This is needed because KafkaStorage creates a new instance of InputFormat per a batch of messages
-class AvroConfluentRowInputFormat : public IRowInputFormat
+class AvroConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);

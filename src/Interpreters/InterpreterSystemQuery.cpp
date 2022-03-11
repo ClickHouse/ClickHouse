@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int NO_ZOOKEEPER;
 }
 
 
@@ -142,12 +141,17 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto manager = getContext()->getActionLocksManager();
     manager->cleanExpired();
 
+    auto access = getContext()->getAccess();
+    auto required_access_type = getRequiredAccessType(action_type);
+
     if (volume_ptr && action_type == ActionLocks::PartsMerge)
     {
+        access->checkAccess(required_access_type);
         volume_ptr->setAvoidMergesUserOverride(!start);
     }
     else if (table_id)
     {
+        access->checkAccess(required_access_type, table_id.database_name, table_id.table_name);
         auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
         if (table)
         {
@@ -162,7 +166,6 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        auto access = getContext()->getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
             for (auto iterator = elem.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
@@ -171,14 +174,9 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 if (!table)
                     continue;
 
-                if (!access->isGranted(getRequiredAccessType(action_type), elem.first, iterator->name()))
+                if (!access->isGranted(required_access_type, elem.first, iterator->name()))
                 {
-                    LOG_INFO(
-                        log,
-                        "Access {} denied, skipping {}.{}",
-                        toString(getRequiredAccessType(action_type)),
-                        elem.first,
-                        iterator->name());
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), elem.first, iterator->name());
                     continue;
                 }
 
@@ -423,8 +421,7 @@ BlockIO InterpreterSystemQuery::execute()
             restartReplicas(system_context);
             break;
         case Type::RESTART_REPLICA:
-            if (!tryRestartReplica(table_id, system_context))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
+            restartReplica(table_id, system_context);
             break;
         case Type::RESTORE_REPLICA:
             restoreReplica();
@@ -472,12 +469,6 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const zkutil::ZooKeeperPtr & zookeeper = getContext()->getZooKeeper();
-
-    if (zookeeper->expired())
-        throw Exception(ErrorCodes::NO_ZOOKEEPER,
-            "Cannot restore table metadata because ZooKeeper session has expired");
-
     const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
@@ -485,30 +476,11 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    auto & table_replicated = *table_replicated_ptr;
-
-    StorageReplicatedMergeTree::Status status;
-    table_replicated.getStatus(status);
-
-    if (!status.is_readonly)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
-
-    const String replica_name = table_replicated.getReplicaName();
-    const String& zk_root_path = status.zookeeper_path;
-
-    if (String replica_path = zk_root_path + "replicas/" + replica_name; zookeeper->exists(replica_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Replica path is present at {} -- nothing to restore. "
-            "If you are sure that metadata it lost and replica path contain some garbage, "
-            "then use SYSTEM DROP REPLICA query first.", replica_path);
-
-    table_replicated.restoreMetadataInZooKeeper();
+    table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
-
     auto table_ddl_guard = need_ddl_guard
         ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
         : nullptr;
@@ -553,15 +525,36 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     return table;
 }
 
+void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMutablePtr system_context)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
+    if (!tryRestartReplica(replica, system_context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+}
+
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 {
     std::vector<StorageID> replica_names;
     auto & catalog = DatabaseCatalog::instance();
 
+    auto access = getContext()->getAccess();
+    bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
+
     for (auto & elem : catalog.getDatabases())
+    {
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
+        {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+            {
+                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM RESTART REPLICA", elem.first, it->name());
+                    continue;
+                }
                 replica_names.emplace_back(it->databaseName(), it->name());
+            }
+        }
+    }
 
     if (replica_names.empty())
         return;
@@ -607,14 +600,22 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
         auto databases = DatabaseCatalog::instance().getDatabases();
+        auto access = getContext()->getAccess();
+        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            {
+                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
+                    continue;
+                }
                 dropReplicaImpl(query, iterator->table());
+            }
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }

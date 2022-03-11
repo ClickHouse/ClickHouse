@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 
 namespace DB
@@ -37,6 +38,7 @@ private:
 
     MergeTreeData::DataPartsVector parts;
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
+    std::optional<ZeroCopyLock> zero_copy_lock;
 
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
