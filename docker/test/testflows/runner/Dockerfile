@@ -35,7 +35,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ENV TZ=Europe/Moscow
+ENV TZ=Asia/Istanbul
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN pip3 install urllib3 testflows==1.7.20 docker-compose==1.29.1 docker==5.0.0 dicttoxml kazoo tzlocal==2.1 pytz python-dateutil numpy
