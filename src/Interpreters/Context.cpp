@@ -3166,6 +3166,8 @@ ReadSettings Context::getReadSettings() const
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+    res.remote_fs_enable_cache = settings.remote_fs_enable_cache;
+    res.remote_fs_cache_max_wait_sec = settings.remote_fs_cache_max_wait_sec;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
