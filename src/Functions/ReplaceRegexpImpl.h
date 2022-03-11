@@ -141,7 +141,8 @@ struct ReplaceRegexpImpl
                 if (match.length() == 0)
                 {
                     /// Step one character to avoid infinite loop
-                    if (++match_pos >= static_cast<size_t>(input.length()))
+                    ++match_pos;
+                    if (match_pos >= static_cast<size_t>(input.length()))
                         can_finish_current_string = true;
                 }
             }
