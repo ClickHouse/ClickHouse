@@ -263,6 +263,11 @@ if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
     set (USE_BINARY_HASH 1)
 endif ()
 
+# Allows to build stripped binary in a separate directory
+if (OBJCOPY_PATH AND READELF_PATH)
+    set(BUILD_STRIPPED_BINARIES_PREFIX "" CACHE STRING "Build stripped binaries with debug info in separate directory")
+endif()
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
