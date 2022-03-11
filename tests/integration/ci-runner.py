@@ -710,8 +710,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
             logging.info("No tests to run found")
-            if should_fail:
-                return "failure", "Nothing to run", [("Nothing to run", "FAIL")], ""
             return "success", "Nothing to run", [("Nothing to run", "OK")], ""
 
         self._install_clickhouse(build_path)
@@ -775,12 +773,6 @@ class ClickhouseIntegrationTestsRunner:
                 for n, c in counters.items()
             ]
         )
-
-        if should_fail:
-            if result_state == "success":
-                result_state = "failure"
-            else:
-                result_state = "success"
 
         return result_state, status_text, test_result, logs
 
