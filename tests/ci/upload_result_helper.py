@@ -3,7 +3,7 @@ import logging
 import ast
 
 from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID
-from report import create_test_html_report
+from report import ReportColorTheme, create_test_html_report
 
 
 def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs):
@@ -39,7 +39,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_
     return additional_urls
 
 
-def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files, check_name, with_raw_logs=True):
+def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files, check_name, with_raw_logs=True, statuscolors=None):
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results, with_raw_logs)
 
@@ -58,7 +58,11 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
     else:
         raw_log_url = task_url
 
-    html_report = create_test_html_report(check_name, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, with_raw_logs)
+    statuscolors = ReportColorTheme.bugfixcheck if 'bugfix validate check' in check_name else None
+
+    html_report = create_test_html_report(check_name, test_results, raw_log_url,
+                                          task_url, branch_url, branch_name, commit_url,
+                                          additional_urls, with_raw_logs, statuscolors=statuscolors)
     with open('report.html', 'w', encoding='utf-8') as f:
         f.write(html_report)
 
