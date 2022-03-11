@@ -71,7 +71,7 @@ bool TasksStatsCounters::checkIfAvailable()
     return findBestAvailableProvider() != MetricsProvider::None;
 }
 
-std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(const UInt64 tid)
+std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(UInt64 tid)
 {
     std::unique_ptr<TasksStatsCounters> instance;
     if (checkIfAvailable())

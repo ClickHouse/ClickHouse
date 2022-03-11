@@ -55,11 +55,11 @@ inline size_t seqLength(const UInt8 first_octet)
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
     size_t res = 0;
-    const auto end = data + size;
+    const auto * end = data + size;
 
 #ifdef __SSE2__
     constexpr auto bytes_sse = sizeof(__m128i);
-    const auto src_end_sse = data + size / bytes_sse * bytes_sse;
+    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
 
     const auto threshold = _mm_set1_epi8(0xBF);
 

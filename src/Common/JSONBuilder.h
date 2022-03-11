@@ -33,7 +33,7 @@ using ItemPtr = std::unique_ptr<IItem>;
 class JSONString : public IItem
 {
 public:
-    JSONString(std::string_view value_) : value(value_) {}
+    explicit JSONString(std::string_view value_) : value(value_) {}
     void format(const FormatSettings & settings, FormatContext & context) override;
 
 private:
