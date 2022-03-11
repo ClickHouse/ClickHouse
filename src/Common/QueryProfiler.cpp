@@ -48,13 +48,13 @@ namespace
             if (overrun_count)
             {
                 /// But pass with some frequency to avoid drop of all traces.
-                if (write_trace_iteration % (overrun_count + 1) == 0)
+                if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
                     ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count + 1);
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }

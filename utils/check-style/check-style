@@ -74,6 +74,8 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
+    ProfileEvents::getProfileEvents
+    ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::CountersIncrement
 
