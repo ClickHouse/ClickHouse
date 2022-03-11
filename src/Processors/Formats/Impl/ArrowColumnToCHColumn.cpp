@@ -33,7 +33,6 @@
 #include <arrow/builder.h>
 #include <arrow/array.h>
 
-
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
@@ -69,7 +68,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
-
 
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
@@ -513,23 +511,20 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema,
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_, bool enable_lowering_column_name_)
-    : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_),
-      enable_lowering_column_name(enable_lowering_column_name_)
+    const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_)
+    : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_)
 {
 }
 
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
-    for (auto column_name : table->ColumnNames())
+    for (const auto & column_name : table->ColumnNames())
     {
         std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
         if (!arrow_column)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
-        if (enable_lowering_column_name)
-            boost::to_lower(column_name);
-        name_to_column_ptr[std::move(column_name)] = arrow_column;
+        name_to_column_ptr[column_name] = arrow_column;
     }
 
     arrowColumnsToCHChunk(res, name_to_column_ptr);
