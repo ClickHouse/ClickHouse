@@ -285,7 +285,16 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state, bool complete_because_of_error)
+void FileSegment::resetFileReader()
+{
+    bool is_downloader = downloader_id == getCallerId();
+    if (!is_downloader)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File reader can be reset only by downloader");
+
+    remote_file_reader.reset();
+}
+
+void FileSegment::complete(State state)
 {
     {
         std::lock_guard segment_lock(mutex);
@@ -305,12 +314,6 @@ void FileSegment::complete(State state, bool complete_because_of_error)
             cv.notify_all();
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Cannot complete file segment with state: {}", stateToString(state));
-        }
-
-        if (complete_because_of_error)
-        {
-            /// Let's use a new buffer on the next attempt in this case.
-            remote_file_reader.reset();
         }
 
         download_state = state;
@@ -335,7 +338,7 @@ void FileSegment::complete()
             download_state = State::PARTIALLY_DOWNLOADED;
     }
 
-    completeImpl();
+    completeImpl(true);
     cv.notify_all();
 }
 

@@ -407,12 +407,20 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
             }
             else
             {
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 bytes_to_predownload = 0;
+                file_segment->completeBatchAndResetDownloader();
+                file_segment->resetFileReader();
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                file_segment->completeBatchAndResetDownloader();
+
+                swap(*implementation_buffer);
+                working_buffer.resize(0);
+                position() = working_buffer.end();
+
                 implementation_buffer = getRemoteFSReadBuffer(file_segment, read_type);
+
+                swap(*implementation_buffer);
+
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
 
                 LOG_TEST(

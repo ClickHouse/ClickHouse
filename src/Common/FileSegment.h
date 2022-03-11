@@ -107,6 +107,8 @@ public:
 
     void resetDownloader();
 
+    void resetFileReader();
+
     bool isDownloader() const;
 
     bool isDownloaded() const { return is_downloaded.load(); }
@@ -117,7 +119,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void complete(State state, bool complete_because_of_error = false);
+    void complete(State state);
 
     String getInfoForLog() const;
 
