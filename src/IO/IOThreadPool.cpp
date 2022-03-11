@@ -3,6 +3,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 std::unique_ptr<ThreadPool> IOThreadPool::instance;
 
 void IOThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)

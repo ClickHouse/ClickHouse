@@ -21,6 +21,7 @@
 
 #include <Common/parseRemoteDescription.h>
 #include "IO/HTTPCommon.h"
+#include "IO/ReadWriteBufferFromHTTP.h"
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
 
@@ -258,59 +259,81 @@ namespace
 
                 setCredentials(credentials, request_uri);
 
+                const auto settings = context->getSettings();
                 try
                 {
-                    bool supports_ranges = false;
-                    std::optional<size_t> content_length;
-                    try
+                    if (settings.max_download_threads > 1)
                     {
-                        auto http_session = makeHTTPSession(request_uri, timeouts);
-                        auto request = Poco::Net::HTTPRequest(
-                            Poco::Net::HTTPRequest::HTTP_HEAD, request_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                        request.setHost(request_uri.getHost()); // use original, not resolved host name in header
-                        // to check if Range header is supported, we need to send a request with it set
-                        request.set("Range", "bytes=0-");
-                        http_session->sendRequest(request);
-                        Poco::Net::HTTPResponse res;
-                        receiveResponse(*http_session, request, res, true);
-                        supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
-                        LOG_TRACE(
-                            &Poco::Logger::get("StorageURLSource"),
-                            fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
-
-                        if (res.hasContentLength())
+                        try
                         {
-                            content_length.emplace(res.getContentLength());
+                            ReadWriteBufferFromHTTP buffer(
+                                request_uri,
+                                Poco::Net::HTTPRequest::HTTP_HEAD,
+                                callback,
+                                timeouts,
+                                credentials,
+                                settings.max_http_get_redirects,
+                                DBMS_DEFAULT_BUFFER_SIZE,
+                                read_settings,
+                                headers,
+                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
+                                context->getRemoteHostFilter(),
+                                true,
+                                /* use_external_buffer */ false,
+                                /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                            Poco::Net::HTTPResponse res;
+                            buffer.call(res, Poco::Net::HTTPRequest::HTTP_HEAD);
+                            // to check if Range header is supported, we need to send a request with it set
+                            const bool supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
+                            LOG_TRACE(
+                                &Poco::Logger::get("StorageURLSource"),
+                                fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
+
+
+                            if (supports_ranges && res.hasContentLength())
+                            {
+                                LOG_TRACE(
+                                    &Poco::Logger::get("StorageURLSource"),
+                                    "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
+                                    settings.max_download_threads,
+                                    settings.max_download_buffer_size);
+
+                                auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+                                    res.getContentLength(),
+                                    settings.max_download_buffer_size,
+                                    request_uri,
+                                    http_method,
+                                    callback,
+                                    timeouts,
+                                    credentials,
+                                    settings.max_http_get_redirects,
+                                    DBMS_DEFAULT_BUFFER_SIZE,
+                                    read_settings,
+                                    headers,
+                                    context->getRemoteHostFilter(),
+                                    delay_initialization,
+                                    /* use_external_buffer */ false,
+                                    /* skip_url_not_found_error */ skip_url_not_found_error);
+                                return wrapReadBufferWithCompressionMethod(
+                                    std::make_unique<ParallelReadBuffer>(
+                                        std::move(read_buffer_factory), &IOThreadPool::get(), settings.max_download_threads),
+                                    chooseCompressionMethod(request_uri.getPath(), compression_method));
+                            }
+                        }
+                        catch (...)
+                        {
+                            LOG_TRACE(
+                                &Poco::Logger::get(__PRETTY_FUNCTION__),
+                                "Failed to setup ParallelReadBuffer. Falling back to the single-threaded buffer");
                         }
                     }
-                    catch (...)
-                    {
-                        LOG_TRACE(&Poco::Logger::get(__PRETTY_FUNCTION__), "HEAD request failed. HTTP Range cannot be used.");
-                    }
 
-                    if (supports_ranges && content_length)
-                    {
-                        auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-                            *content_length,
-                            context->getSettings().max_download_buffer_size,
-                            request_uri,
-                            http_method,
-                            callback,
-                            timeouts,
-                            credentials,
-                            context->getSettingsRef().max_http_get_redirects,
-                            DBMS_DEFAULT_BUFFER_SIZE,
-                            read_settings,
-                            headers,
-                            context->getRemoteHostFilter(),
-                            delay_initialization,
-                            /* use_external_buffer */ false,
-                            /* skip_url_not_found_error */ skip_url_not_found_error);
-                        return wrapReadBufferWithCompressionMethod(
-                            std::make_unique<ParallelReadBuffer>(std::move(read_buffer_factory), &IOThreadPool::get(), context->getSettings().max_download_threads),
-                            chooseCompressionMethod(request_uri.getPath(), compression_method));
-                    }
-
+                    LOG_TRACE(
+                        &Poco::Logger::get("StorageURLSource"),
+                        "Using single-threaded read buffer",
+                        settings.max_download_threads,
+                        settings.max_download_buffer_size);
 
                     return wrapReadBufferWithCompressionMethod(
                         std::make_unique<ReadWriteBufferFromHTTP>(
@@ -319,15 +342,15 @@ namespace
                             callback,
                             timeouts,
                             credentials,
-                            context->getSettingsRef().max_http_get_redirects,
+                            settings.max_http_get_redirects,
                             DBMS_DEFAULT_BUFFER_SIZE,
                             read_settings,
                             headers,
                             ReadWriteBufferFromHTTP::Range{},
                             context->getRemoteHostFilter(),
                             delay_initialization,
-                            /* use_external_buffer */false,
-                            /* skip_url_not_found_error */skip_url_not_found_error),
+                            /* use_external_buffer */ false,
+                            /* skip_url_not_found_error */ skip_url_not_found_error),
                         chooseCompressionMethod(request_uri.getPath(), compression_method));
                 }
                 catch (...)
