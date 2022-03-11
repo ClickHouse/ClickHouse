@@ -83,11 +83,11 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (std::is_same<Method, FuncLinearRegression>::value)
+        if (std::is_same_v<Method, FuncLinearRegression>)
         {
             gradient_computer = std::make_unique<LinearRegression>();
         }
-        else if (std::is_same<Method, FuncLogisticRegression>::value)
+        else if (std::is_same_v<Method, FuncLogisticRegression>)
         {
             gradient_computer = std::make_unique<LogisticRegression>();
         }
