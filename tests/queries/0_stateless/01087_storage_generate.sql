@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS test_table;
 SELECT '-';
 
 DROP TABLE IF EXISTS test_table_2;
-CREATE TABLE test_table_2(a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, 'Europe/Moscow'), UUID)) ENGINE=GenerateRandom(10, 5, 3);
+CREATE TABLE test_table_2(a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, 'Asia/Istanbul'), UUID)) ENGINE=GenerateRandom(10, 5, 3);
 
 SELECT * FROM test_table_2 LIMIT 100;
 

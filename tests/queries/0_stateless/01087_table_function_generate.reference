@@ -46,7 +46,7 @@ h
 \N
 o
 -
-Date	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
+Date	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')
 2113-06-12	2050-12-17 02:46:35	2096-02-16 22:18:22
 2141-08-09	2013-10-17 23:35:26	1976-01-24 12:52:48
 2039-08-16	1974-11-17 23:22:46	1980-03-04 21:02:50
@@ -58,7 +58,7 @@ Date	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
 2008-03-16	2047-05-16 23:28:36	2103-02-11 16:44:39
 2000-07-07	2105-07-19 19:29:06	1980-01-02 05:18:22
 -
-DateTime64(3, \'Europe/Moscow\')	DateTime64(6, \'Europe/Moscow\')	DateTime64(6, \'Europe/Moscow\')
+DateTime64(3, \'Asia/Istanbul\')	DateTime64(6, \'Asia/Istanbul\')	DateTime64(6, \'Asia/Istanbul\')
 1978-06-07 23:50:57.320	2013-08-28 10:21:54.010758	1991-08-25 16:23:26.140215
 1978-08-25 17:07:25.427	2034-05-02 20:49:42.148578	2015-08-26 15:26:31.783160
 2037-04-04 10:50:56.898	2055-05-28 11:12:48.819271	2068-12-26 09:58:49.635722

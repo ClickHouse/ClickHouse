@@ -1,4 +1,4 @@
-DST boundary test for Europe/Moscow:
+DST boundary test for Asia/Istanbul:
 0	1981-04-01 22:40:00	14400	354998400
 1	1981-04-01 22:50:00	14400	354999000
 2	1981-04-01 23:00:00	14400	354999600
@@ -70,7 +70,7 @@ DST boundary test for Australia/Lord_Howe:
 15	2019-04-07 03:00:00	37800	1554568200
 16	2019-04-07 03:10:00	37800	1554568800
 17	2019-04-07 03:20:00	37800	1554569400
-4 days test in batch comparing with manually computation result for Europe/Moscow:
+4 days test in batch comparing with manually computation result for Asia/Istanbul:
 4 days test in batch comparing with manually computation result for Asia/Tehran:
 4 days test in batch comparing with manually computation result for Australia/Lord_Howe
 Moscow DST Years:
