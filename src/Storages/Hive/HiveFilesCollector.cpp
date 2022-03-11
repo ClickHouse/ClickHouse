@@ -78,6 +78,7 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect()
                 }
             });
         }
+        thread_pool.wait();
     }
     else if (partition_name_and_types.empty())
     {
@@ -94,7 +95,7 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect()
                 }
             });
         }
-
+        thread_pool.wait();
     }
     else
     {
@@ -128,7 +129,9 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collectHiveFilesFr
         }
     }
     if (has_default_partition)
+    {
         return {};
+    }
 
     if (partition_.values.size() != partition_name_and_types.size())
         throw Exception(
