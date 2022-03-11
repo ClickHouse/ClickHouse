@@ -281,13 +281,13 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        context_->getRemoteHostFilter().checkHostAndPort(configuration.addresses[0].first, toString(configuration.addresses[0].second));
         if (engine_args.size() >= 6)
             configuration.replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-
+    for (auto address : configuration.addresses)
+        context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
     if (configuration.replace_query && !configuration.on_duplicate_clause.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them");
