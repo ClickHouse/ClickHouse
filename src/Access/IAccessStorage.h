@@ -24,8 +24,8 @@ class ExternalAuthenticators;
 class IAccessStorage
 {
 public:
-    IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
-    virtual ~IAccessStorage() {}
+    explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
+    virtual ~IAccessStorage() = default;
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
