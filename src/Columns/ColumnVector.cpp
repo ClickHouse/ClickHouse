@@ -220,10 +220,10 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
 
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
-            bool should_use_radix_sort_for_stable_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
+            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && should_use_radix_sort_for_stable_sort)
+            if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 PaddedPODArray<ValueWithIndex<T>> pairs(s);
                 for (UInt32 i = 0; i < UInt32(s); ++i)

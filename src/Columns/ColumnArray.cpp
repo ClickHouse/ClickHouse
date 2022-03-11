@@ -805,7 +805,7 @@ void ColumnArray::getPermutation(PermutationSortDirection direction, Permutation
         getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
@@ -820,7 +820,7 @@ void ColumnArray::updatePermutation(PermutationSortDirection direction, Permutat
         updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
@@ -833,7 +833,7 @@ void ColumnArray::getPermutationWithCollation(const Collator & collator, Permuta
         getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
 }
 
@@ -848,7 +848,7 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
         updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 

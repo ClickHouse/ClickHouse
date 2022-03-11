@@ -339,7 +339,7 @@ void ColumnString::getPermutation(PermutationSortDirection direction, Permutatio
         getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
@@ -354,12 +354,12 @@ void ColumnString::updatePermutation(PermutationSortDirection direction, Permuta
         updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnString::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
-                                size_t limit, int, Permutation & res) const
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
@@ -367,12 +367,12 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, Permut
         getPermutationImpl(limit, res, ComparatorAscendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
-    else
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnString::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
-                                size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorEqual(*this, &collator);
 

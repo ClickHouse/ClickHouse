@@ -248,16 +248,28 @@ struct ComparatorEqualHelperImpl : public ComparatorBase
 };
 
 template <typename ComparatorBase>
-using ComparatorAscendingUnstableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable>;
+using ComparatorAscendingUnstableImpl = ComparatorHelperImpl<
+    ComparatorBase,
+    IColumn::PermutationSortDirection::Ascending,
+    IColumn::PermutationSortStability::Unstable>;
 
 template <typename ComparatorBase>
-using ComparatorAscendingStableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Stable>;
+using ComparatorAscendingStableImpl = ComparatorHelperImpl<
+    ComparatorBase,
+    IColumn::PermutationSortDirection::Ascending,
+    IColumn::PermutationSortStability::Stable>;
 
 template <typename ComparatorBase>
-using ComparatorDescendingUnstableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Descending, IColumn::PermutationSortStability::Unstable>;
+using ComparatorDescendingUnstableImpl = ComparatorHelperImpl<
+    ComparatorBase,
+    IColumn::PermutationSortDirection::Descending,
+    IColumn::PermutationSortStability::Unstable>;
 
 template <typename ComparatorBase>
-using ComparatorDescendingStableImpl = ComparatorHelperImpl<ComparatorBase, IColumn::PermutationSortDirection::Descending, IColumn::PermutationSortStability::Stable>;
+using ComparatorDescendingStableImpl = ComparatorHelperImpl<
+    ComparatorBase,
+    IColumn::PermutationSortDirection::Descending,
+    IColumn::PermutationSortStability::Stable>;
 
 template <typename ComparatorBase>
 using ComparatorEqualImpl = ComparatorEqualHelperImpl<ComparatorBase>;

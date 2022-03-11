@@ -312,6 +312,10 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
     else
         limit = std::min(res_size, limit);
 
+    /// For stable sort we must process all NULL values
+    if (unlikely(stability == IColumn::PermutationSortStability::Stable))
+        limit = res_size;
+
     if (is_nulls_last)
     {
         /// Shift all NULL values to the end.
@@ -327,10 +331,6 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
         }
 
         ++read_idx;
-
-        /// For stable sort we must process all NULL values
-        if (stability == IColumn::PermutationSortStability::Stable)
-            limit = res_size;
 
         /// Invariants:
         ///  write_idx < read_idx
@@ -352,16 +352,9 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
             ++read_idx;
         }
 
-        if (stability == IColumn::PermutationSortStability::Stable)
+        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != res_size)
         {
-            ssize_t nulls_start_index = limit - 1;
-
-            while (nulls_start_index >= 0 && isNullAt(res[nulls_start_index])) {
-                --nulls_start_index;
-            }
-
-            ++nulls_start_index;
-            ::sort(res.begin() + nulls_start_index, res.begin() + limit);
+            ::sort(res.begin() + write_idx, res.begin() + res_size);
         }
     }
     else
@@ -389,14 +382,9 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
             --read_idx;
         }
 
-        if (stability == IColumn::PermutationSortStability::Stable)
+        if (unlikely(stability == IColumn::PermutationSortStability::Stable) && write_idx != 0)
         {
-            size_t nulls_end_index = 0;
-
-            while (nulls_end_index < limit && isNullAt(res[nulls_end_index]))
-                ++nulls_end_index;
-
-            ::sort(res.begin(), res.begin() + nulls_end_index);
+            ::sort(res.begin(), res.begin() + write_idx + 1);
         }
     }
 }
@@ -460,7 +448,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             if (first != write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
-            /// We have a range [write_idx, list) of NULL values
+            /// We have a range [write_idx, last) of NULL values
             if (write_idx != last)
                 null_ranges.emplace_back(write_idx, last);
         }
@@ -512,6 +500,13 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
         getNestedColumn().updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
 
     equal_ranges = std::move(new_ranges);
+
+    if (unlikely(stability == PermutationSortStability::Stable)) {
+        for (auto & null_range : null_ranges) {
+            ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
+        }
+    }
+
     std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
 }
 
