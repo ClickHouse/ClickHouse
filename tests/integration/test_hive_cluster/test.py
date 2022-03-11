@@ -50,7 +50,7 @@ def test_groupby_use_function(started_cluster):
     node = started_cluster.instances['h0_0_0']
     node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
-    SELECT day, count(*) FROM hiveCluster('cluster_simple', 'thrift://hivetest:9083', 'tmp', 'demo', 'id Nullable(String), score Nullable(Int32), day String', 'day') group by day order by day
+    SELECT day, count(*) FROM hiveCluster('cluster_simple', 'thrift://hivetest:9083', 'test', 'demo', 'id Nullable(String), score Nullable(Int32), day String', 'day') group by day order by day
             """)
     expected_result = """2021-11-01	1
 2021-11-05	2

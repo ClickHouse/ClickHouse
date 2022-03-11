@@ -104,7 +104,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 
-    ASTPtr extractKeyExpressionList(const ASTPtr & node);
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     void lazyInitialize();
 };
