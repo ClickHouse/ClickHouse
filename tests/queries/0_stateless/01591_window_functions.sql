@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: long
 
 -- { echo }
 
