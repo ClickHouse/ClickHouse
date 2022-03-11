@@ -413,7 +413,7 @@ public:
 
     /// Returns ration of values in column, that equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
-    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
