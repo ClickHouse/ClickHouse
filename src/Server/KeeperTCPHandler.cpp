@@ -547,19 +547,13 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
 void KeeperTCPHandler::packageSent()
 {
-    {
-        std::lock_guard lock(conn_stats_mutex);
-        conn_stats.incrementPacketsSent();
-    }
+    conn_stats.incrementPacketsSent();
     keeper_dispatcher->incrementPacketsSent();
 }
 
 void KeeperTCPHandler::packageReceived()
 {
-    {
-        std::lock_guard lock(conn_stats_mutex);
-        conn_stats.incrementPacketsReceived();
-    }
+    conn_stats.incrementPacketsReceived();
     keeper_dispatcher->incrementPacketsReceived();
 }
 
@@ -569,10 +563,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
         Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
-        {
-            std::lock_guard lock(conn_stats_mutex);
-            conn_stats.updateLatency(elapsed);
-        }
+        conn_stats.updateLatency(elapsed);
 
         operations.erase(response->xid);
         keeper_dispatcher->updateKeeperStatLatency(elapsed);
@@ -587,15 +578,14 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
 
 }
 
-KeeperConnectionStats KeeperTCPHandler::getConnectionStats() const
+KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 {
-    std::lock_guard lock(conn_stats_mutex);
     return conn_stats;
 }
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
-    KeeperConnectionStats stats = getConnectionStats();
+    auto & stats = getConnectionStats();
 
     writeText(' ', buf);
     writeText(socket().peerAddress().toString(), buf);
@@ -644,10 +634,7 @@ void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 
 void KeeperTCPHandler::resetStats()
 {
-    {
-        std::lock_guard lock(conn_stats_mutex);
-        conn_stats.reset();
-    }
+    conn_stats.reset();
     last_op.set(std::make_unique<LastOp>(EMPTY_LAST_OP));
 }
 
