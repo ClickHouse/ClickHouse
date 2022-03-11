@@ -164,6 +164,8 @@ protected:
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
+    static bool isPlaintextPasswordAllowed(const User & user, bool allow_plaintext_password) ;
+    static bool isNoPasswordAllowed(const User & user, bool allow_no_password);
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
@@ -179,8 +181,7 @@ protected:
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
-    static bool isAuthenticationTypeAllowed(const User & user, bool allow_no_password, bool allow_plaintext_password) ;
-    [[noreturn]] static void throwAuthenticationTypeNotAllowed();
+    [[noreturn]] static void throwPasswordTypeNotAllowed();
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
     using Notifications = std::vector<Notification>;
     static void notify(const Notifications & notifications);

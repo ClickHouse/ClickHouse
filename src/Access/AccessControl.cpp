@@ -171,7 +171,9 @@ void AccessControl::addUsersConfigStorage(const Poco::Util::AbstractConfiguratio
 void AccessControl::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_)
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
+    auto is_no_password_allowed_function = [this]() -> bool { return isNoPasswordAllowed(); };
+    auto is_plaintext_password_allowed_function = [this]() -> bool { return isPlaintextPasswordAllowed(); };
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function,is_no_password_allowed_function,is_plaintext_password_allowed_function);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
@@ -205,7 +207,9 @@ void AccessControl::addUsersConfigStorage(
         }
     }
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
+    auto is_no_password_allowed_function = [this]() -> bool { return isNoPasswordAllowed(); };
+    auto is_plaintext_password_allowed_function = [this]() -> bool { return isPlaintextPasswordAllowed(); };
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function,is_no_password_allowed_function,is_plaintext_password_allowed_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -407,7 +411,7 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
 {
     try
     {
-        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators,UsersConfigAccessStorage::ALLOW_NO_PASSWORD, UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD);
+        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators,allow_no_password, allow_plaintext_password);
     }
     catch (...)
     {
@@ -441,6 +445,15 @@ void AccessControl::setCustomSettingsPrefixes(const String & comma_separated_pre
     Strings prefixes;
     splitInto<','>(prefixes, comma_separated_prefixes);
     setCustomSettingsPrefixes(prefixes);
+}
+
+void AccessControl::setPlaintextPasswordSetting(bool allow_plaintext_password_)
+{
+    allow_plaintext_password = allow_plaintext_password_;
+}
+void AccessControl::setNoPasswordSetting(bool allow_no_password_)
+{
+    allow_no_password = allow_no_password_;
 }
 
 bool AccessControl::isSettingNameAllowed(const std::string_view & setting_name) const
@@ -537,6 +550,15 @@ std::vector<QuotaUsage> AccessControl::getAllQuotasUsage() const
     return quota_cache->getAllQuotasUsage();
 }
 
+bool AccessControl::isPlaintextPasswordAllowed() const
+{
+    return allow_plaintext_password;
+}
+
+bool AccessControl::isNoPasswordAllowed() const
+{
+    return allow_no_password;
+}
 
 std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const UUID & user_id,

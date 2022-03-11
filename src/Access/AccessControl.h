@@ -49,6 +49,8 @@ class AccessControl : public MultipleAccessStorage
 public:
     AccessControl();
     ~AccessControl() override;
+    std::atomic_bool allow_plaintext_password;
+    std::atomic_bool allow_no_password;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
@@ -74,7 +76,6 @@ public:
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();
     void stopPeriodicReloadingUsersConfigs();
-
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
     void addDiskStorage(const String & directory_, bool readonly_ = false);
@@ -115,6 +116,10 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
+    //sets allow_plaintext_password and allow_no_password setting
+    void setPlaintextPasswordSetting(const bool allow_plaintext_password_);
+    void setNoPasswordSetting(const bool allow_no_password_);
+
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -146,11 +151,10 @@ public:
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
-    static void setAuthTypeSetting(const bool allow_plaintext_password, const bool allow_no_password){ UsersConfigAccessStorage::setAuthTypeSetting(allow_plaintext_password, allow_no_password);}
-    static bool isPlaintextPasswordAllowed() {return UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD;}
-    static bool isNoPasswordAllowed()  {return UsersConfigAccessStorage::ALLOW_NO_PASSWORD;}
-
     std::vector<QuotaUsage> getAllQuotasUsage() const;
+
+    bool isPlaintextPasswordAllowed() const;
+    bool isNoPasswordAllowed() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,

@@ -18,13 +18,14 @@ class ConfigReloader;
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
-    static bool ALLOW_PLAINTEXT_PASSWORD;
-    static bool ALLOW_NO_PASSWORD;
+
     static constexpr char STORAGE_TYPE[] = "users.xml";
     using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
+    using IsNoPasswordFunction = std::function<bool()>;
+    using IsPlaintextPasswordFunction =  std::function<bool()>;
 
-    UsersConfigAccessStorage(const String & storage_name_ = STORAGE_TYPE, const CheckSettingNameFunction & check_setting_name_function_ = {});
-    UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_);
+    UsersConfigAccessStorage(const String & storage_name_ = STORAGE_TYPE, const CheckSettingNameFunction & check_setting_name_function_ = {}, const IsNoPasswordFunction & is_no_password_allowed_function_ ={}, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_ = {});
+    UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_, const IsNoPasswordFunction & is_no_password_allowed_function_, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -35,8 +36,6 @@ public:
     bool isPathEqual(const String & path_) const;
 
     void setConfig(const Poco::Util::AbstractConfiguration & config);
-    static void setAuthTypeSetting(const bool allow_plaintext_password_, const bool allow_no_password_) {  UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD=allow_plaintext_password_; UsersConfigAccessStorage::ALLOW_NO_PASSWORD=allow_no_password_;}
-
     void load(const String & users_config_path,
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
@@ -60,6 +59,8 @@ private:
 
     MemoryAccessStorage memory_storage;
     CheckSettingNameFunction check_setting_name_function;
+    IsNoPasswordFunction is_no_password_allowed_function;
+    IsPlaintextPasswordFunction is_plaintext_password_allowed_function;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;
