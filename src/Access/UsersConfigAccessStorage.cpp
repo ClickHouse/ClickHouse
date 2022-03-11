@@ -225,20 +225,21 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Fn<bool()> auto && is_no_password_allowed_function, Fn<bool()> auto && is_plaintext_password_allowed_function)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
 
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
-
+        bool allow_plaintext_password = is_plaintext_password_allowed_function();
+        bool allow_no_password = is_no_password_allowed_function();
         for (const auto & user_name : user_names)
         {
             try
             {
                 String user_config = "users." + user_name;
-                if ((config.has(user_config + ".password") && !UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD) || (config.has(user_config + ".no_password") && !UsersConfigAccessStorage::ALLOW_NO_PASSWORD))
+                if ((config.has(user_config + ".password") && !allow_plaintext_password) || (config.has(user_config + ".no_password") && !allow_no_password))
                     throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD or NO_PASSWORD. Please configure User with authtype SHA256_PASSWORD_HASH, SHA256_PASSWORD, DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_and_no_password in server configuration to configure user with plaintext and no password Auth_Type"
                             " Though it is not recommended to use plaintext_password and No_password for user authentication.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 users.push_back(parseUser(config, user_name));
@@ -513,16 +514,13 @@ namespace
     }
 }
 
-bool UsersConfigAccessStorage::ALLOW_PLAINTEXT_PASSWORD=true;
-bool UsersConfigAccessStorage::ALLOW_NO_PASSWORD=true;
-
-UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
-    : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_, const IsNoPasswordFunction & is_no_password_allowed_function_, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_)
+    : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_, is_no_password_allowed_function_, is_plaintext_password_allowed_function_)
 {
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const CheckSettingNameFunction & check_setting_name_function_)
-    : IAccessStorage(storage_name_), check_setting_name_function(check_setting_name_function_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const CheckSettingNameFunction & check_setting_name_function_, const IsNoPasswordFunction & is_no_password_allowed_function_, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_)
+    : IAccessStorage(storage_name_), check_setting_name_function(check_setting_name_function_),is_no_password_allowed_function(is_no_password_allowed_function_), is_plaintext_password_allowed_function(is_plaintext_password_allowed_function_)
 {
 }
 
@@ -565,7 +563,7 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
     try
     {
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config))
+        for (const auto & entity : parseUsers(config,is_no_password_allowed_function, is_plaintext_password_allowed_function))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);

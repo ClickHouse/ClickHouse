@@ -390,10 +390,8 @@ void LocalServer::setupUsers()
 
     ConfigurationPtr users_config;
     auto & access_control = global_context->getAccessControl();
-    //set the allow_plaintext_password setting in global context.
-    auto allow_plaintext_password = config().getBool("allow_plaintext_password", true);
-    auto allow_no_password = config().getBool("allow_no_password", true);
-    access_control.setAuthTypeSetting(allow_plaintext_password, allow_no_password);
+    access_control.setPlaintextPasswordSetting(config().getBool("allow_plaintext_password", true));
+    access_control.setNoPasswordSetting(config().getBool("allow_no_password", true));
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));

@@ -27,7 +27,7 @@ namespace
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
-        const std::optional<RolesOrUsersSet> & override_grantees, bool allow_plaintext_password, bool allow_no_password)
+        const std::optional<RolesOrUsersSet> & override_grantees, bool allow_no_password, bool allow_plaintext_password)
     {
         if (override_name)
             user.setName(override_name->toString());
@@ -119,7 +119,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query, allow_plaintext_password, allow_no_password);
+            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query, allow_no_password, allow_plaintext_password);
             return updated_user;
         };
 
@@ -138,7 +138,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, allow_plaintext_password, allow_no_password);
+            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, allow_no_password, allow_plaintext_password);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -166,9 +166,9 @@ BlockIO InterpreterCreateUserQuery::execute()
 }
 
 
-void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_plaintext_password,bool allow_no_password)
+void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
 {
-    updateUserFromQueryImpl(user, query, {}, {}, {}, {}, allow_plaintext_password, allow_no_password);
+    updateUserFromQueryImpl(user, query, {}, {}, {}, {}, allow_no_password, allow_plaintext_password);
 }
 
 }
