@@ -1,5 +1,4 @@
 #include "ArrowColumnToCHColumn.h"
-#include <boost/algorithm/string/case_conv.hpp>
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
