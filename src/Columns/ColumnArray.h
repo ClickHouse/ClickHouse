@@ -158,7 +158,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
+        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }

@@ -24,9 +24,8 @@ class IColumnDummy : public IColumn
 {
 public:
     IColumnDummy() : s(0) {}
-    IColumnDummy(size_t s_) : s(s_) {}
+    explicit IColumnDummy(size_t s_) : s(s_) {}
 
-public:
     virtual MutableColumnPtr cloneDummy(size_t s_) const = 0;
 
     MutableColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }

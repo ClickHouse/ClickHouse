@@ -103,7 +103,6 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-protected:
     bool processQueryText(const String & text);
 
 private:

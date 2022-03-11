@@ -137,7 +137,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+        if (const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
             return nested_column->structureEquals(*rhs_nullable->nested_column);
         return false;
     }

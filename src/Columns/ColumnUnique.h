@@ -317,7 +317,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (valuesHaveFixedSize())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
-    auto & val = x.get<String>();
+    const auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());
 }
 
@@ -327,7 +327,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
     if (is_nullable && src.isNullAt(n))
         return getNullValueIndex();
 
-    if (auto * nullable = checkAndGetColumn<ColumnNullable>(src))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
 
     auto ref = src.getDataAt(n);
@@ -354,7 +354,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
     {
         static constexpr auto s = sizeof(UInt8);
 
-        auto pos = arena.allocContinue(s, begin);
+        auto * pos = arena.allocContinue(s, begin);
         UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
         unalignedStore<UInt8>(pos, flag);
 
@@ -491,7 +491,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
     {
         src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
         null_map = &nullable_column->getNullMapData();
@@ -555,7 +555,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
 template <typename ColumnType>
 MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto callForType = [this, &src, start, length](auto x) -> MutableColumnPtr
+    auto call_for_type = [this, &src, start, length](auto x) -> MutableColumnPtr
     {
         size_t size = getRawColumnPtr()->size();
 
@@ -571,13 +571,13 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn &
 
     MutableColumnPtr positions_column;
     if (!positions_column)
-        positions_column = callForType(UInt8());
+        positions_column = call_for_type(UInt8());
     if (!positions_column)
-        positions_column = callForType(UInt16());
+        positions_column = call_for_type(UInt16());
     if (!positions_column)
-        positions_column = callForType(UInt32());
+        positions_column = call_for_type(UInt32());
     if (!positions_column)
-        positions_column = callForType(UInt64());
+        positions_column = call_for_type(UInt64());
     if (!positions_column)
         throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
 
@@ -598,7 +598,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     if (!overflowed_keys_ptr)
         throw Exception("Invalid keys type for ColumnUnique.", ErrorCodes::LOGICAL_ERROR);
 
-    auto callForType = [this, &src, start, length, overflowed_keys_ptr, max_dictionary_size](auto x) -> MutableColumnPtr
+    auto call_for_type = [this, &src, start, length, overflowed_keys_ptr, max_dictionary_size](auto x) -> MutableColumnPtr
     {
         size_t size = getRawColumnPtr()->size();
 
@@ -617,13 +617,13 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
 
     MutableColumnPtr positions_column;
     if (!positions_column)
-        positions_column = callForType(UInt8());
+        positions_column = call_for_type(UInt8());
     if (!positions_column)
-        positions_column = callForType(UInt16());
+        positions_column = call_for_type(UInt16());
     if (!positions_column)
-        positions_column = callForType(UInt32());
+        positions_column = call_for_type(UInt32());
     if (!positions_column)
-        positions_column = callForType(UInt64());
+        positions_column = call_for_type(UInt64());
     if (!positions_column)
         throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
 

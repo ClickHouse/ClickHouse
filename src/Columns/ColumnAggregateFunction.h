@@ -92,7 +92,7 @@ private:
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
