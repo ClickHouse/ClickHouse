@@ -264,6 +264,7 @@ void FileSegment::setDownloaded(std::lock_guard<std::mutex> & /* segment_lock */
     {
         cache_writer->finalize();
         cache_writer.reset();
+        remote_file_reader.reset();
     }
 }
 
@@ -283,15 +284,6 @@ void FileSegment::completeBatchAndResetDownloader()
     LOG_TEST(log, "Complete batch. Current downloaded size: {}", downloaded_size);
 
     cv.notify_all();
-}
-
-void FileSegment::resetFileReader()
-{
-    bool is_downloader = downloader_id == getCallerId();
-    if (!is_downloader)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "File reader can be reset only by downloader");
-
-    remote_file_reader.reset();
 }
 
 void FileSegment::complete(State state)
@@ -392,6 +384,7 @@ void FileSegment::completeImpl(bool allow_non_strict_checking)
     {
         cache_writer->finalize();
         cache_writer.reset();
+        remote_file_reader.reset();
     }
 
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);

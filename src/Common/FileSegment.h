@@ -107,8 +107,6 @@ public:
 
     void resetDownloader();
 
-    void resetFileReader();
-
     bool isDownloader() const;
 
     bool isDownloaded() const { return is_downloaded.load(); }
