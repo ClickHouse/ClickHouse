@@ -175,7 +175,8 @@ if __name__ == "__main__":
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
-            commit.create_status(context=check_name_with_group, description='Not found changed stateless tests', state='success')
+            state = override_status('success', check_name, validate_bugix_check)
+            commit.create_status(context=check_name_with_group, description='Not found changed stateless tests', state=state)
             sys.exit(0)
 
     image_name = get_image_name(check_name)
