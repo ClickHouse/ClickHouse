@@ -1247,7 +1247,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
