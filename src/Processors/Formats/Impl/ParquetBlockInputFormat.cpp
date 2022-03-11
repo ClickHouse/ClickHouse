@@ -1,5 +1,6 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
+
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
@@ -54,6 +55,9 @@ Chunk ParquetBlockInputFormat::generate()
     if (!read_status.ok())
         throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
+
+    if (format_settings.use_lowercase_column_name)
+        table = arrow::Table::Make(schema, table->columns());
 
     ++row_group_current;
 
@@ -118,11 +122,24 @@ static void getFileReaderAndSchema(
         return;
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
+
+    if (format_settings.use_lowercase_column_name)
+    {
+        std::vector<std::shared_ptr<::arrow::Field>> fields;
+        fields.reserve(schema->num_fields());
+        for (int i = 0; i < schema->num_fields(); ++i)
+        {
+            const auto& field = schema->field(i);
+            auto name = field->name();
+            boost::to_lower(name);
+            fields.push_back(field->WithName(name));
+        }
+        schema = arrow::schema(fields, schema->metadata());
+    }
 }
 
 void ParquetBlockInputFormat::prepareReader()
 {
-    std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
@@ -130,7 +147,7 @@ void ParquetBlockInputFormat::prepareReader()
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns, format_settings.enable_lowering_column_name);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -144,10 +161,7 @@ void ParquetBlockInputFormat::prepareReader()
         /// nested elements, so we should recursively
         /// count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        auto name = schema->field(i)->name();
-        if (format_settings.enable_lowering_column_name)
-            boost::to_lower(name);
-
+        const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)

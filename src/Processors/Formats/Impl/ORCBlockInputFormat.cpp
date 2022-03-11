@@ -53,6 +53,9 @@ Chunk ORCBlockInputFormat::generate()
     if (!table || !table->num_rows())
         return res;
 
+    if (format_settings.use_lowercase_column_name)
+        table = arrow::Table::Make(schema, table->columns());
+
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -121,17 +124,30 @@ static void getFileReaderAndSchema(
     if (!read_schema_result.ok())
         throw Exception(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     schema = std::move(read_schema_result).ValueOrDie();
+
+    if (format_settings.use_lowercase_column_name)
+    {
+        std::vector<std::shared_ptr<::arrow::Field>> fields;
+        fields.reserve(schema->num_fields());
+        for (int i = 0; i < schema->num_fields(); ++i)
+        {
+            const auto& field = schema->field(i);
+            auto name = field->name();
+            boost::to_lower(name);
+            fields.push_back(field->WithName(name));
+        }
+        schema = arrow::schema(fields, schema->metadata());
+    }
 }
 
 void ORCBlockInputFormat::prepareReader()
 {
-    std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns, format_settings.enable_lowering_column_name);
+        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -146,10 +162,7 @@ void ORCBlockInputFormat::prepareReader()
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        auto name = schema->field(i)->name();
-        if (format_settings.enable_lowering_column_name)
-            boost::to_lower(name);
-
+        const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)

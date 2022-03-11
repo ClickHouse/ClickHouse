@@ -8,7 +8,11 @@
 
 namespace parquet::arrow { class FileReader; }
 
-namespace arrow { class Buffer; }
+namespace arrow
+{
+class Buffer;
+class Schema;
+}
 
 namespace DB
 {
@@ -36,6 +40,7 @@ private:
         is_stopped = 1;
     }
 
+    std::shared_ptr<arrow::Schema> schema;
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
     int row_group_total = 0;
     // indices of columns to read from Parquet file
