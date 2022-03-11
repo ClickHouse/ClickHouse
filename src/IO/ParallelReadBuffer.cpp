@@ -59,20 +59,14 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
         return offset;
     }
 
-
+    std::unique_lock lock{mutex};
     const auto offset_is_in_range
         = [&](const auto & range) { return static_cast<size_t>(offset) >= range.from && static_cast<size_t>(offset) < range.to; };
 
-    std::unique_lock lock{mutex};
-    bool worker_removed = false;
     while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
     {
         read_workers.pop_front();
-        worker_removed = true;
     }
-
-    if (worker_removed)
-        reader_condvar.notify_all();
 
     if (!read_workers.empty())
     {
@@ -104,7 +98,6 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     finishAndWait();
 
     reader_factory->seek(offset, whence);
-    all_created = false;
     all_completed = false;
     read_workers.clear();
 
@@ -112,6 +105,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     resetWorkingBuffer();
 
     emergency_stop = false;
+
     lock.lock();
     addReaders(lock);
     return offset;
@@ -126,6 +120,16 @@ std::optional<size_t> ParallelReadBuffer::getTotalSize()
 off_t ParallelReadBuffer::getPosition()
 {
     return current_position - available();
+}
+
+bool ParallelReadBuffer::currentWorkerReady() const
+{
+    return !read_workers.empty() && (read_workers.front()->finished || !read_workers.front()->segments.empty());
+}
+
+bool ParallelReadBuffer::currentWorkerCompleted() const
+{
+    return !read_workers.empty() && read_workers.front()->finished && read_workers.front()->segments.empty();
 }
 
 void ParallelReadBuffer::handleEmergencyStop()

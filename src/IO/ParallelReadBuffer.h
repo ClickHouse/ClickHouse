@@ -116,16 +116,9 @@ private:
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
 
     /// First worker in deque have new data or processed all available amount
-    inline bool currentWorkerReady() const
-    {
-        return !read_workers.empty() && (read_workers.front()->finished || !read_workers.front()->segments.empty());
-    }
-
+    bool currentWorkerReady() const;
     /// First worker in deque processed and flushed all data
-    inline bool currentWorkerCompleted() const
-    {
-        return !read_workers.empty() && read_workers.front()->finished && read_workers.front()->segments.empty();
-    }
+    bool currentWorkerCompleted() const;
 
     [[noreturn]] void handleEmergencyStop();
 
@@ -157,8 +150,6 @@ private:
      * deque and data from next reader will be consumed to user.
      */
     std::deque<ReadWorkerPtr> read_workers;
-    // Triggered when a reader worker was removed
-    std::condition_variable reader_condvar;
 
     std::mutex mutex;
     /// Triggered when new data available
@@ -170,7 +161,6 @@ private:
     off_t current_position{0};
 
     bool all_completed{false};
-    bool all_created{false};
 };
 
 }
