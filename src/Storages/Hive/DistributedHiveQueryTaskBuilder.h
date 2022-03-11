@@ -5,6 +5,7 @@
 #if USE_HIVE
 #include <IO/Marshallable.h>
 #include <Storages/Hive/HiveCommon.h>
+#include <Storages/Hive/HiveFilesCollector.h>
 #include <Storages/Hive/HiveQueryTask.h>
 #include <Poco/Logger.h>
 namespace DB
@@ -17,11 +18,6 @@ namespace DB
  *
  */
 //using BasicFileInfo = HiveMetastoreClient::FileInfo;
-struct DistributedHiveQueryTaskFileInfo
-{
-    HiveMetastoreClient::FileInfo file_info;
-    Strings partition_values;
-};
 
 class DistributedHiveQueryTaskPartitionInfo : public Marshallable
 {
@@ -94,31 +90,9 @@ private:
      *
      */
     std::map<String, DistributedHiveQueryTaskMetadata> node_tasks;
-
-    ExpressionActionsPtr partition_key_expr;
-    ExpressionActionsPtr partition_minmax_idx_expr;
-    NamesAndTypesList partition_name_and_types;
-    ExpressionActionsPtr hive_file_minmax_idx_expr;
-    NamesAndTypesList hive_file_name_and_types;
-    //std::vector<Apache::Hadoop::Hive::Partition> hive_partitions;
-    String format_name;
-    String hdfs_namenode_url;
-
-    std::vector<DistributedHiveQueryTaskFileInfo> collectHiveFiles();
-
-    std::vector<DistributedHiveQueryTaskFileInfo> collectHiveFilesFromPartition(
-        const Apache::Hadoop::Hive::Partition & partition_,
-        SelectQueryInfo & query_info_,
-        HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
-        const HDFSFSPtr & fs_,
-        ContextPtr context_);
-
-    HiveFilePtr createHiveFileIfNeeded(
-        const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_, SelectQueryInfo & query_info_, ContextPtr context_);
-
     Cluster::Addresses getSortedShardAddresses() const;
 
-    void distributeHiveFilesToNodes(const std::vector<DistributedHiveQueryTaskFileInfo> & hive_file_infos_);
+    void distributeHiveFilesToNodes(const std::vector<HiveFilesCollector::FileInfo> & hive_file_infos_);
 };
 
 class DistributedHiveQueryTaskFilesCollector : public IHiveQueryTaskFilesCollector
