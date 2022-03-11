@@ -54,7 +54,7 @@ Chunk ORCBlockInputFormat::generate()
         return res;
 
     if (format_settings.use_lowercase_column_name)
-        table = arrow::Table::Make(schema, table->columns());
+        table = *table->RenameColumns(include_column_names);
 
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
@@ -73,6 +73,7 @@ void ORCBlockInputFormat::resetParser()
 
     file_reader.reset();
     include_indices.clear();
+    include_column_names.clear();
     block_missing_values.clear();
 }
 
@@ -142,6 +143,7 @@ static void getFileReaderAndSchema(
 
 void ORCBlockInputFormat::prepareReader()
 {
+    std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
@@ -166,7 +168,10 @@ void ORCBlockInputFormat::prepareReader()
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
+            {
                 include_indices.push_back(index + j);
+                include_column_names.push_back(name);
+            }
         }
         index += indexes_count;
     }

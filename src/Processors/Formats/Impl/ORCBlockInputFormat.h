@@ -13,8 +13,6 @@ namespace arrow::adapters::orc
     class ORCFileReader;
 }
 
-namespace arrow { class Schema; }
-
 namespace DB
 {
 
@@ -43,13 +41,13 @@ private:
 
     // TODO: check that this class implements every part of its parent
 
-    std::shared_ptr<arrow::Schema> schema;
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
 
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
+    std::vector<String> include_column_names;
 
     std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;

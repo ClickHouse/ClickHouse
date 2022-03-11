@@ -57,7 +57,7 @@ Chunk ParquetBlockInputFormat::generate()
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
     if (format_settings.use_lowercase_column_name)
-        table = arrow::Table::Make(schema, table->columns());
+        table = *table->RenameColumns(column_names);
 
     ++row_group_current;
 
@@ -78,6 +78,7 @@ void ParquetBlockInputFormat::resetParser()
 
     file_reader.reset();
     column_indices.clear();
+    column_names.clear();
     row_group_current = 0;
     block_missing_values.clear();
 }
@@ -140,6 +141,7 @@ static void getFileReaderAndSchema(
 
 void ParquetBlockInputFormat::prepareReader()
 {
+    std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
@@ -165,7 +167,10 @@ void ParquetBlockInputFormat::prepareReader()
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
+            {
                 column_indices.push_back(index + j);
+                column_names.push_back(name);
+            }
         }
         index += indexes_count;
     }
