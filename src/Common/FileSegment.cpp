@@ -335,7 +335,7 @@ void FileSegment::complete()
             download_state = State::PARTIALLY_DOWNLOADED;
     }
 
-    completeImpl();
+    completeImpl(true);
     cv.notify_all();
 }
 
