@@ -128,4 +128,3 @@ if __name__ == '__main__':
     server_version = Version(input())
     previous_release = get_previous_release(server_version)
     download_packets(previous_release)
-
