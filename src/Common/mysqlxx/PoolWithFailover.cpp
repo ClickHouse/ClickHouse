@@ -127,6 +127,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
+    std::string error_detail;
 
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
@@ -160,6 +161,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
+                    error_detail =  e.displayText();
                     continue;
                 }
 
@@ -181,6 +183,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
             message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();
-
+    if (!error_detail.empty())
+        message << ", ERROR is: " << error_detail;
     throw Poco::Exception(message.str());
 }
