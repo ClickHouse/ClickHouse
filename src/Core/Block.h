@@ -36,8 +36,8 @@ public:
 
     Block() = default;
     Block(std::initializer_list<ColumnWithTypeAndName> il);
-    Block(const ColumnsWithTypeAndName & data_);
-    Block(ColumnsWithTypeAndName && data_);
+    Block(const ColumnsWithTypeAndName & data_); /// NOLINT
+    Block(ColumnsWithTypeAndName && data_); /// NOLINT
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);
@@ -107,8 +107,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !!columns(); }
-    bool operator!() const { return !this->operator bool(); }
+    operator bool() const { return !!columns(); } /// NOLINT
+    bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;

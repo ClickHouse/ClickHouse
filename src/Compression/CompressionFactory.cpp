@@ -98,7 +98,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
+CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
 {
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
