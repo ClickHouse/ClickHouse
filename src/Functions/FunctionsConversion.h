@@ -542,7 +542,7 @@ struct ToDateTime64TransformUnsigned
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    ToDateTime64TransformUnsigned(UInt32 scale = 0)
+    ToDateTime64TransformUnsigned(UInt32 scale = 0) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -559,7 +559,7 @@ struct ToDateTime64TransformSigned
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    ToDateTime64TransformSigned(UInt32 scale = 0)
+    ToDateTime64TransformSigned(UInt32 scale = 0) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -577,7 +577,7 @@ struct ToDateTime64TransformFloat
 
     const UInt32 scale = 1;
 
-    ToDateTime64TransformFloat(UInt32 scale_ = 0)
+    ToDateTime64TransformFloat(UInt32 scale_ = 0) /// NOLINT
         : scale(scale_)
     {}
 
@@ -615,7 +615,7 @@ struct FromDateTime64Transform
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    FromDateTime64Transform(UInt32 scale)
+    FromDateTime64Transform(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -639,7 +639,7 @@ struct ToDateTime64Transform
 
     const DateTime64::NativeType scale_multiplier = 1;
 
-    ToDateTime64Transform(UInt32 scale = 0)
+    ToDateTime64Transform(UInt32 scale = 0) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 

@@ -158,14 +158,14 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) = 0;
@@ -354,7 +354,7 @@ public:
     virtual UInt64 getSize() const = 0;
 
     /// Get i-th disk where reservation take place.
-    virtual DiskPtr getDisk(size_t i = 0) const = 0;
+    virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
     virtual Disks getDisks() const = 0;
