@@ -318,12 +318,12 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {}
-    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {}
-    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {}
+    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {} /// NOLINT
+    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {} /// NOLINT
+    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     // shared ptr -> is non-constexpr in gcc
-    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {}
+    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
     constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
