@@ -552,7 +552,8 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
 void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    if (unlikely(stability == IColumn::PermutationSortStability::Stable)) {
+    if (unlikely(stability == IColumn::PermutationSortStability::Stable))
+    {
         auto this_full = convertToFullColumnIfSparse();
         this_full->getPermutation(direction, stability, limit, null_direction_hint, res);
         return;
