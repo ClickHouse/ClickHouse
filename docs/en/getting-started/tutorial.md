@@ -287,7 +287,7 @@ CREATE TABLE tutorial.visits_v1
     `URLCategories` Array(UInt16),
     `URLRegions` Array(UInt32),
     `RefererRegions` Array(UInt32),
-    `IsClickHouse` UInt8,
+    `IsYandex` UInt8,
     `GoalReachesDepth` Int32,
     `GoalReachesURL` Int32,
     `GoalReachesAny` Int32,
@@ -512,7 +512,7 @@ SELECT
     sumIf(Sign, has(Goals.ID, 1105530)) AS goal_visits,
     (100. * goal_visits) / visits AS goal_percent
 FROM tutorial.visits_v1
-WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'http://public_search')
+WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
 ```
 
 ## Cluster Deployment {#cluster-deployment}
