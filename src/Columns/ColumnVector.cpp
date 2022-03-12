@@ -112,7 +112,8 @@ struct ColumnVector<T>::less_stable
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs]))) {
+            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            {
                 return lhs < rhs;
             }
         }
@@ -143,7 +144,8 @@ struct ColumnVector<T>::greater_stable
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs]))) {
+            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            {
                 return lhs < rhs;
             }
         }

@@ -306,25 +306,37 @@ bool ColumnString::hasEqualValues() const
 struct ColumnString::ComparatorBase
 {
     const ColumnString & parent;
+
+    explicit ComparatorBase(const ColumnString & parent_)
+        : parent(parent_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = memcmpSmallAllowOverflow15(
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
+
+        return res;
+    }
+};
+
+struct ColumnString::ComparatorCollationBase
+{
+    const ColumnString & parent;
     const Collator * collator;
 
-    explicit ComparatorBase(const ColumnString & parent_, const Collator * collator_ = nullptr)
+    explicit ComparatorCollationBase(const ColumnString & parent_, const Collator * collator_)
         : parent(parent_), collator(collator_)
     {
     }
 
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
-        int res;
-
-        if (collator)
-            res = collator->compare(
-                reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-                reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
-        else
-            res = memcmpSmallAllowOverflow15(
-                parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
-                parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
+        int res = collator->compare(
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 
         return res;
     }
@@ -362,28 +374,56 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, Permut
                                 size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorCollationAscendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorCollationDescendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnString::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto comparator_equal = ComparatorEqual(*this, &collator);
+    auto comparator_equal = ComparatorCollationEqual(*this, &collator);
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingUnstable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingStable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, &collator), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingUnstable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingStable(*this, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const

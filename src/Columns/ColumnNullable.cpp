@@ -501,10 +501,10 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
     equal_ranges = std::move(new_ranges);
 
-    if (unlikely(stability == PermutationSortStability::Stable)) {
-        for (auto & null_range : null_ranges) {
+    if (unlikely(stability == PermutationSortStability::Stable))
+    {
+        for (auto & null_range : null_ranges)
             ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
-        }
     }
 
     std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
