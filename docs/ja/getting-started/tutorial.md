@@ -295,7 +295,7 @@ CREATE TABLE tutorial.visits_v1
     `URLCategories` Array(UInt16),
     `URLRegions` Array(UInt32),
     `RefererRegions` Array(UInt32),
-    `IsYandex` UInt8,
+    `IsClickHouse` UInt8,
     `GoalReachesDepth` Int32,
     `GoalReachesURL` Int32,
     `GoalReachesAny` Int32,
@@ -523,7 +523,7 @@ SELECT
     sumIf(Sign, has(Goals.ID, 1105530)) AS goal_visits,
     (100. * goal_visits) / visits AS goal_percent
 FROM tutorial.visits_v1
-WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
+WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'http://public_search')
 ```
 
 ## クラスタのデプロイ {#cluster-deployment}
@@ -547,19 +547,19 @@ ClickHouseクラスタは均質なクラスタ(homogenous cluster)です。セ�
     <perftest_3shards_1replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
             </replica>
         </shard>
@@ -607,15 +607,15 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
     <perftest_1shards_3replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
              </replica>
         </shard>
@@ -637,15 +637,15 @@ ZooKeeperの場所は設定ファイルで指定します:
 ``` xml
 <zookeeper>
     <node>
-        <host>zoo01.yandex.ru</host>
+        <host>zoo01</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo02.yandex.ru</host>
+        <host>zoo02</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo03.yandex.ru</host>
+        <host>zoo03</host>
         <port>2181</port>
     </node>
 </zookeeper>
