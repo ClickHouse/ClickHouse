@@ -358,13 +358,13 @@ Query with timezone:
 
 ``` sql
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
+┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
 ```
@@ -560,13 +560,13 @@ Result:
 Query with the specified timezone:
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
+SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
 ```
 
 Result:
 
 ```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
+┌───────────────now()─┬─date_trunc('hour', now(), 'Asia/Istanbul')─┐
 │ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
 └─────────────────────┴────────────────────────────────────────────┘
 ```
@@ -871,13 +871,13 @@ Result:
 Query with the specified timezone:
 
 ``` sql
-SELECT now('Europe/Moscow');
+SELECT now('Asia/Istanbul');
 ```
 
 Result:
 
 ``` text
-┌─now('Europe/Moscow')─┐
+┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
 ```
