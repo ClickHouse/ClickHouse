@@ -1,3 +1,6 @@
+-- Tags: no-polymorphic-parts
+-- Tag no-polymorphic-parts: bug, shoud be fixed
+
 DROP TABLE IF EXISTS APPLICATION;
 DROP TABLE IF EXISTS DATABASE_IO;
 
@@ -19,9 +22,9 @@ ORDER BY Date;
 insert into table DATABASE_IO  values ('AppA', 'BaseA', '2020-01-01 00:00:00', 1000);
 
 SELECT `APPLICATION`.`Name` AS `App`,
-       CAST(CAST(`DATABASE_IO`.`Date` AS DATE) AS DATE) AS `date`
+       CAST(CAST(`DATABASE_IO`.`Date` AS DATE) AS DATE) AS `date` 
 FROM   `DATABASE_IO`
-INNER
+INNER 
 JOIN   `APPLICATION` ON (`DATABASE_IO`.`Base` = `APPLICATION`.`Base`)
 WHERE (
        CAST(CAST(`DATABASE_IO`.`Date` AS DATE) AS TIMESTAMP) >= toDateTime('2020-01-01 00:00:00')
