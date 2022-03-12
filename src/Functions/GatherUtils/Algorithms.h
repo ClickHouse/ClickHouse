@@ -203,7 +203,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     size_t sources_num = array_sources.size();
     std::vector<char> is_const(sources_num);
 
-    auto checkAndGetSizeToReserve = [] (auto source, IArraySource * array_source)
+    auto check_and_get_size_to_reserve = [] (auto source, IArraySource * array_source)
     {
         if (source == nullptr)
             throw Exception("Concat function expected " + demangle(typeid(Source).name()) + " or "
@@ -215,17 +215,17 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     size_t size_to_reserve = 0;
     for (auto i : collections::range(0, sources_num))
     {
-        auto & source = array_sources[i];
+        const auto & source = array_sources[i];
         is_const[i] = source->isConst();
         if (is_const[i])
-            size_to_reserve += checkAndGetSizeToReserve(typeid_cast<ConstSource<Source> *>(source.get()), source.get());
+            size_to_reserve += check_and_get_size_to_reserve(typeid_cast<ConstSource<Source> *>(source.get()), source.get());
         else
-            size_to_reserve += checkAndGetSizeToReserve(typeid_cast<Source *>(source.get()), source.get());
+            size_to_reserve += check_and_get_size_to_reserve(typeid_cast<Source *>(source.get()), source.get());
     }
 
     sink.reserve(size_to_reserve);
 
-    auto writeNext = [& sink] (auto source)
+    auto write_next = [& sink] (auto source)
     {
         writeSlice(source->getWhole(), sink);
         source->next();
@@ -235,11 +235,11 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     {
         for (auto i : collections::range(0, sources_num))
         {
-            auto & source = array_sources[i];
+            const auto & source = array_sources[i];
             if (is_const[i])
-                writeNext(static_cast<ConstSource<Source> *>(source.get()));
+                write_next(static_cast<ConstSource<Source> *>(source.get()));
             else
-                writeNext(static_cast<Source *>(source.get()));
+                write_next(static_cast<Source *>(source.get()));
         }
         sink.next();
     }
@@ -576,31 +576,31 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
                 [](const SecondSliceType & pattern, size_t i, size_t j) { return isEqualUnary(pattern, i, j); });
     }
 
-    size_t firstCur = 0;
-    size_t secondCur = 0;
-    while (firstCur < first.size && secondCur < second.size)
+    size_t first_cur = 0;
+    size_t second_cur = 0;
+    while (first_cur < first.size && second_cur < second.size)
     {
-        const bool is_first_null = has_first_null_map && first_null_map[firstCur];
-        const bool is_second_null = has_second_null_map && second_null_map[secondCur];
+        const bool is_first_null = has_first_null_map && first_null_map[first_cur];
+        const bool is_second_null = has_second_null_map && second_null_map[second_cur];
 
         const bool cond_both_null_match = is_first_null && is_second_null;
         const bool cond_both_not_null = !is_first_null && !is_second_null;
-        if (cond_both_null_match || (cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
+        if (cond_both_null_match || (cond_both_not_null && isEqual(first, second, first_cur, second_cur)))
         {
-            ++firstCur;
-            ++secondCur;
+            ++first_cur;
+            ++second_cur;
         }
-        else if (secondCur > 0)
+        else if (second_cur > 0)
         {
-            secondCur = prefix_function[secondCur - 1];
+            second_cur = prefix_function[second_cur - 1];
         }
         else
         {
-            ++firstCur;
+            ++first_cur;
         }
     }
 
-    return secondCur == second.size;
+    return second_cur == second.size;
 }
 
 
