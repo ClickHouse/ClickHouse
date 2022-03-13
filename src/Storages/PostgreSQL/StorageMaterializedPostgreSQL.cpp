@@ -291,11 +291,11 @@ Pipe StorageMaterializedPostgreSQL::read(
 
 
 std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
-        const String name, const String type, UInt64 default_value)
+        String name, String type, UInt64 default_value)
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
-    column_declaration->name = name;
+    column_declaration->name = std::move(name);
     column_declaration->type = makeASTFunction(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
