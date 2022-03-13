@@ -29,12 +29,11 @@ class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
     ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
-    ~ProtobufRowInputFormat() override;
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension &) override;
+    bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
