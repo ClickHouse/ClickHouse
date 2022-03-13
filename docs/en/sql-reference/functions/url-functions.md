@@ -34,7 +34,7 @@ The URL can be specified with or without a scheme. Examples:
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
+https://clickhouse.com/time/
 ```
 
 For these examples, the `domain` function returns the following results:
@@ -42,7 +42,7 @@ For these examples, the `domain` function returns the following results:
 ``` text
 some.svn-hosting.com
 some.svn-hosting.com
-yandex.com
+clickhouse.com
 ```
 
 **Returned values**
@@ -85,7 +85,7 @@ The URL can be specified with or without a scheme. Examples:
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
+https://clickhouse.com/time/
 ```
 
 **Returned values**
@@ -109,7 +109,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 
 ### firstSignificantSubdomain {#firstsignificantsubdomain}
 
-Returns the “first significant subdomain”. This is a non-standard concept specific to Yandex.Metrica. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
+Returns the “first significant subdomain”. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
 
 ### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
 
@@ -117,7 +117,7 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
 -   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
@@ -127,7 +127,7 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
 -   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
@@ -335,7 +335,7 @@ Returns an array containing the URL, truncated at the end by the symbols /,? in 
 
 ### URLPathHierarchy(URL) {#urlpathhierarchyurl}
 
-The same as above, but without the protocol and host in the result. The / element (root) is not included. Example: the function is used to implement tree reports the URL in Yandex. Metric.
+The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
 ``` text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
