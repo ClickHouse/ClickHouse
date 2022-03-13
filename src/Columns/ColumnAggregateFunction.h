@@ -75,6 +75,8 @@ private:
     /// Source column. Used (holds source from destruction),
     ///  if this column has been constructed from another and uses all or part of its values.
     ColumnPtr src;
+    /// Do not share the source column (`src`) after further modifications (i.e. insertRangeFrom()).
+    /// This may be useful for proper memory tracking, since source column may contain aggregate states.
     bool force_data_ownership = false;
 
     /// Array of pointers to aggregation states, that are placed in arenas.
