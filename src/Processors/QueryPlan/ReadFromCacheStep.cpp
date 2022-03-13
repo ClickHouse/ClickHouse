@@ -21,7 +21,7 @@ static ITransformingStep::Traits getTraits()
 
 
 ReadFromCacheStep::ReadFromCacheStep(
-    const DB::DataStream & input_stream_, std::unordered_map<IAST::Hash, Data> & cached_results, DB::ASTPtr query_ptr_)
+    const DB::DataStream & input_stream_, std::unordered_map<IAST::Hash, Data, ASTHash> & cached_results, DB::ASTPtr query_ptr_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , cache(cached_results)
     , query_ptr(query_ptr_)

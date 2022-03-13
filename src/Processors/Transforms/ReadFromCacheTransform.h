@@ -9,12 +9,12 @@ namespace DB
 class ReadFromCacheTransform : public ISource
 {
 public:
-    ReadFromCacheTransform(const Block & header_, std::unordered_map<IAST::Hash, Data> & cache_, ASTPtr query_ptr_);
+    ReadFromCacheTransform(const Block & header_, std::unordered_map<IAST::Hash, Data, ASTHash> & cache_, ASTPtr query_ptr_);
     String getName() const override { return "ReadFromCacheTransform"; }
 
 protected:
     Chunk generate() override;
-    std::unordered_map<IAST::Hash, Data> & cache;
+    std::unordered_map<IAST::Hash, Data, ASTHash> & cache;
     ASTPtr query_ptr;
     size_t chunks_read_count;
 };

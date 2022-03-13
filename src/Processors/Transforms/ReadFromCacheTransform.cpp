@@ -13,7 +13,7 @@ Chunk ReadFromCacheTransform::generate()
     return {};
 }
 
-ReadFromCacheTransform::ReadFromCacheTransform(const Block & header_, std::unordered_map<IAST::Hash, Data> & cache_, ASTPtr query_ptr_)
+ReadFromCacheTransform::ReadFromCacheTransform(const Block & header_, std::unordered_map<IAST::Hash, Data, ASTHash> & cache_, ASTPtr query_ptr_)
     : ISource(header_)
     , cache(cache_)
     , query_ptr(query_ptr_)

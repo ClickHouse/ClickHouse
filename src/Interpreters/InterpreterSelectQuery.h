@@ -31,6 +31,14 @@ struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 using Data = std::vector<Chunk>;
 
+struct ASTHash
+{
+    size_t operator() (const IAST::Hash & hash) const
+    {
+        return hash.first * 7919 + hash.second;
+    }
+};
+
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
@@ -207,7 +215,7 @@ private:
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;
 
-    static std::unordered_map<IAST::Hash, Data> cached_data;
+    static std::unordered_map<IAST::Hash, Data, ASTHash> cached_data;
 };
 
 }
