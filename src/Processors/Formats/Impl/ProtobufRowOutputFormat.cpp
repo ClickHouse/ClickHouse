@@ -29,8 +29,9 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
+          /* with_envelope = */ false,
           *writer))
     , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
