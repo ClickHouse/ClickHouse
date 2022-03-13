@@ -3,16 +3,13 @@
 #if USE_PROTOBUF
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
-#   include <Formats/FormatSchemaInfo.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
-#   include <Interpreters/Context.h>
-#   include <base/range.h>
-
 
 namespace DB
 {
+
 ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
@@ -111,7 +108,6 @@ namespace DB
 {
 class FormatFactory;
 void registerInputFormatProtobuf(FormatFactory &) {}
-
 void registerProtobufSchemaReader(FormatFactory &) {}
 }
 
