@@ -5,7 +5,7 @@ namespace DB
 
 Chunk ReadFromCacheTransform::generate()
 {
-    auto query_cache = cache[query_ptr->getTreeHash()];
+    const auto& query_cache = cache[query_ptr->getTreeHash()];
     if (chunks_read_count < query_cache.size()) {
         const auto &chunk = query_cache[chunks_read_count++];
         return Chunk(chunk.getColumns(), chunk.getNumRows(), chunk.getChunkInfo());
