@@ -52,7 +52,7 @@ private:
     class Impl
     {
     public:
-        virtual ~Impl() {}
+        virtual ~Impl() = default;
         virtual void start() = 0;
         virtual void stop() = 0;
         virtual bool isStopping() const = 0;
