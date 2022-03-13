@@ -129,14 +129,16 @@ public:
         return cloneDummy(limit ? limit : s);
     }
 
-    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
+    void getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
 
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
+    void updatePermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t, int, Permutation &, EqualRanges&) const override {}
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
