@@ -17,7 +17,7 @@ public:
 
     /// new_database should be used by queries that refer to default db
     ///  and default_database is specified for remote server
-    virtual ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const = 0;
+    virtual ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const = 0; /// NOLINT
 
     /// Returns a query prepared for execution on remote server
     std::string getRewrittenQueryWithoutOnCluster(const std::string & new_database = {}) const;
