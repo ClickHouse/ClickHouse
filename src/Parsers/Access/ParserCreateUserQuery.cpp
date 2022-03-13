@@ -15,7 +15,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -250,7 +250,7 @@ namespace
             if (!parseHostsWithoutPrefix(pos, expected, res_hosts))
                 return false;
 
-            hosts.add(std::move(res_hosts));
+            hosts.add(res_hosts);
             return true;
         });
     }
@@ -289,7 +289,7 @@ namespace
             if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
+            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -414,7 +414,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             if (!settings)
                 settings = std::make_shared<ASTSettingsProfileElements>();
-            boost::range::push_back(settings->elements, std::move(new_settings));
+
+            insertAtEnd(settings->elements, std::move(new_settings));
             continue;
         }
 
