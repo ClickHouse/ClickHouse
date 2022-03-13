@@ -3,17 +3,16 @@
 #include "config_formats.h"
 
 #if USE_PROTOBUF
-#    include <Formats/FormatSchemaInfo.h>
-#    include <Processors/Formats/IRowInputFormat.h>
-#    include <Processors/Formats/ISchemaReader.h>
+#   include <Processors/Formats/IRowInputFormat.h>
+#   include <Processors/Formats/ISchemaReader.h>
+#   include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
 class Block;
-class FormatSchemaInfo;
 class ProtobufReader;
 class ProtobufSerializer;
-
+class ReadBuffer;
 
 /** Stream designed to deserialize data from the google protobuf format.
   * One Protobuf message is parsed as one row of data.
@@ -52,7 +51,7 @@ public:
     NamesAndTypesList readSchema() override;
 
 private:
-    FormatSchemaInfo schema_info;
+    const FormatSchemaInfo schema_info;
 };
 
 }
