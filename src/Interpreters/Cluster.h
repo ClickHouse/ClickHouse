@@ -63,7 +63,6 @@ public:
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
-public:
     using SlotToShard = std::vector<UInt64>;
 
     struct Address
@@ -192,7 +191,6 @@ public:
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
 
-    public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;

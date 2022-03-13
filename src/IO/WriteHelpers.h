@@ -80,7 +80,7 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
+    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
 template <typename T>
@@ -663,7 +663,7 @@ inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 }
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
