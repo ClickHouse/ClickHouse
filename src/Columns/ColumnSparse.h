@@ -40,7 +40,7 @@ public:
     template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
     static MutablePtr create(TColumnPtr && values_, TColumnPtr && offsets_, size_t size_)
     {
-        return Base::create(std::move(values_), std::move(offsets_), size_);
+        return Base::create(std::forward<TColumnPtr>(values_), std::forward<TColumnPtr>(offsets_), size_);
     }
 
     static Ptr create(const ColumnPtr & values_)
@@ -230,7 +230,7 @@ private:
     /// Sorted offsets of non-default values in the full column.
     /// 'offsets[i]' corresponds to 'values[i + 1]'.
     WrappedPtr offsets;
-    size_t _size;
+    size_t _size; /// NOLINT
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);

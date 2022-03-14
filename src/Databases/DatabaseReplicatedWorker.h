@@ -30,7 +30,7 @@ public:
     void shutdown() override;
 
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false);
+                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
 
 private:
     bool initializeMainThread() override;

@@ -23,8 +23,8 @@ struct RapidJSONParser
     class Element
     {
     public:
-        ALWAYS_INLINE Element() {}
-        ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {}
+        ALWAYS_INLINE Element() = default;
+        ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
 
         ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
         ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
@@ -54,17 +54,17 @@ struct RapidJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstValueIterator & it_) : it(it_) {}
-            ALWAYS_INLINE Element operator*() const { return *it; }
+            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstValueIterator & it_) : it(it_) {} /// NOLINT
+            ALWAYS_INLINE Element operator*() const { return *it; } /// NOLINT
             ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
             ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
         private:
             rapidjson::Value::ConstValueIterator it;
         };
 
-        ALWAYS_INLINE Array(const rapidjson::Value & value_) : ptr(&value_) {}
+        ALWAYS_INLINE Array(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->End(); }
         ALWAYS_INLINE size_t size() const { return ptr->Size(); }
@@ -83,17 +83,17 @@ struct RapidJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstMemberIterator & it_) : it(it_) {}
+            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstMemberIterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE KeyValuePair operator *() const { std::string_view key{it->name.GetString(), it->name.GetStringLength()}; return {key, it->value}; }
             ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
             ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
         private:
             rapidjson::Value::ConstMemberIterator it;
         };
 
-        ALWAYS_INLINE Object(const rapidjson::Value & value_) : ptr(&value_) {}
+        ALWAYS_INLINE Object(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return ptr->MemberBegin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }

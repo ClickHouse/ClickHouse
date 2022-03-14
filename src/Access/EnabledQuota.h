@@ -60,8 +60,8 @@ public:
 
 private:
     friend class QuotaCache;
-    EnabledQuota(const Params & params_);
-    EnabledQuota() {}
+    explicit EnabledQuota(const Params & params_);
+    EnabledQuota() {} /// NOLINT
 
     const String & getUserName() const { return params.user_name; }
 
