@@ -6,8 +6,10 @@ import time
 import subprocess
 import logging
 
+from typing import Optional
+
 class DockerImage:
-    def __init__(self, name, version=None):
+    def __init__(self, name, version : Optional[str] = None):
         self.name = name
         if version is None:
             self.version = 'latest'
@@ -17,7 +19,7 @@ class DockerImage:
     def __str__(self):
         return f"{self.name}:{self.version}"
 
-def get_images_with_versions(reports_path, required_image, pull=True, version=None):
+def get_images_with_versions(reports_path, required_image, pull=True, version : Optional[str] = None):
     images_path = None
     for root, _, files in os.walk(reports_path):
         for f in files:
@@ -40,11 +42,9 @@ def get_images_with_versions(reports_path, required_image, pull=True, version=No
 
     docker_images = []
     for image_name in required_image:
-        docker_image = DockerImage(image_name)
+        docker_image = DockerImage(image_name, version)
         if image_name in images:
             docker_image.version = images[image_name]
-        if version is not None:
-            docker_image.version = str(version)
         docker_images.append(docker_image)
 
     if pull:
