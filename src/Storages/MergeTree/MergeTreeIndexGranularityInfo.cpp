@@ -21,8 +21,8 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
         {
             const auto & ext = fs::path(it->path()).extension();
             if (ext == getNonAdaptiveMrkExtension()
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
                 return ext;
         }
     }
@@ -38,7 +38,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
     /// Granularity is fixed
     if (!storage.canUseAdaptiveGranularity())
     {
-        if (type != MergeTreeDataPartType::WIDE)
+        if (type != MergeTreeDataPartType::Wide)
             throw Exception("Only Wide parts can be used with non-adaptive granularity.", ErrorCodes::NOT_IMPLEMENTED);
         setNonAdaptive();
     }
@@ -69,11 +69,11 @@ void MergeTreeIndexGranularityInfo::setNonAdaptive()
 
 size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) const
 {
-    if (type == MergeTreeDataPartType::WIDE)
+    if (type == MergeTreeDataPartType::Wide)
         return is_adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    else if (type == MergeTreeDataPartType::COMPACT)
+    else if (type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
-    else if (type == MergeTreeDataPartType::IN_MEMORY)
+    else if (type == MergeTreeDataPartType::InMemory)
         return 0;
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
@@ -87,11 +87,11 @@ size_t getAdaptiveMrkSizeCompact(size_t columns_num)
 
 std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
 {
-    if (part_type == MergeTreeDataPartType::WIDE)
+    if (part_type == MergeTreeDataPartType::Wide)
         return ".mrk2";
-    else if (part_type == MergeTreeDataPartType::COMPACT)
+    else if (part_type == MergeTreeDataPartType::Compact)
         return ".mrk3";
-    else if (part_type == MergeTreeDataPartType::IN_MEMORY)
+    else if (part_type == MergeTreeDataPartType::InMemory)
         return "";
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);

@@ -775,7 +775,7 @@ void PartMergerWriter::prepare()
         // build in-memory projection because we don't support merging into a new in-memory part.
         // Otherwise we split the materialization into multiple stages similar to the process of
         // INSERT SELECT query.
-        if (ctx->new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+        if (ctx->new_data_part->getType() == MergeTreeDataPartType::InMemory)
             projection_squashes.emplace_back(0, 0);
         else
             projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);

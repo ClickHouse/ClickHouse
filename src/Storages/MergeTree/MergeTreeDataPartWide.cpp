@@ -24,7 +24,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::WIDE, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::Wide, parent_part_)
 {
 }
 
@@ -35,7 +35,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::WIDE, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::Wide, parent_part_)
 {
 }
 

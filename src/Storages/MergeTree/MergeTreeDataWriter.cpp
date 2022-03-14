@@ -566,9 +566,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 {
     String part_name = projection.name;
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -603,9 +603,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
 {
     String part_name = fmt::format("{}_{}", projection.name, block_num);
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -637,7 +637,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
 {
     return writeProjectionPartImpl(
         projection.name,
-        MergeTreeDataPartType::IN_MEMORY,
+        MergeTreeDataPartType::InMemory,
         projection.name + ".proj" /* relative_path */,
         false /* is_temp */,
         parent_part,
