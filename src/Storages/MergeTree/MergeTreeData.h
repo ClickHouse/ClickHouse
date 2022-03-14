@@ -3,30 +3,31 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/DataDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
-#include <Interpreters/PartLog.h>
-#include <Disks/StoragePolicy.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/TemporaryParts.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Interpreters/PartLog.h>
+#include <Disks/StoragePolicy.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -586,7 +587,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
+    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
 
     size_t clearEmptyParts();
 
@@ -932,7 +933,6 @@ public:
     mutable std::mutex currently_submerging_emerging_mutex;
 
 protected:
-
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend struct ReplicatedMergeTreeTableMetadata;
@@ -1238,6 +1238,8 @@ private:
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
+
+    TemporaryParts temporary_parts;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

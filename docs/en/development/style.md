@@ -404,9 +404,9 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** All names must be in English. Transliteration of Hebrew words is not allowed.
 
-    not Stroka
+    not T_PAAMAYIM_NEKUDOTAYIM
 
 **16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
 
