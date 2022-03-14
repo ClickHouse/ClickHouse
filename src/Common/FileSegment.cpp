@@ -264,6 +264,7 @@ void FileSegment::setDownloaded(std::lock_guard<std::mutex> & /* segment_lock */
     {
         cache_writer->finalize();
         cache_writer.reset();
+        remote_file_reader.reset();
     }
 }
 
@@ -285,7 +286,7 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state, bool complete_because_of_error)
+void FileSegment::complete(State state)
 {
     {
         std::lock_guard segment_lock(mutex);
@@ -305,12 +306,6 @@ void FileSegment::complete(State state, bool complete_because_of_error)
             cv.notify_all();
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                             "Cannot complete file segment with state: {}", stateToString(state));
-        }
-
-        if (complete_because_of_error)
-        {
-            /// Let's use a new buffer on the next attempt in this case.
-            remote_file_reader.reset();
         }
 
         download_state = state;
@@ -335,7 +330,7 @@ void FileSegment::complete()
             download_state = State::PARTIALLY_DOWNLOADED;
     }
 
-    completeImpl();
+    completeImpl(true);
     cv.notify_all();
 }
 
@@ -389,6 +384,7 @@ void FileSegment::completeImpl(bool allow_non_strict_checking)
     {
         cache_writer->finalize();
         cache_writer.reset();
+        remote_file_reader.reset();
     }
 
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);

@@ -802,7 +802,7 @@ Configuration markup:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
@@ -856,7 +856,7 @@ S3 disk can be configured as `main` or `cold` storage:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
         </s3>

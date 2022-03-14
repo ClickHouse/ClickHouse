@@ -136,12 +136,3 @@ git push
 
 ## 性能测试 {#performance-tests}
 测量查询性能的变化. 这是最长的检查, 只需不到 6 小时即可运行.性能测试报告在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report)有详细描述.
-
-## 质量保证 {#qa}
-什么是状态页面上的任务(专用网络)项目?
-
-它是 Yandex 内部工作系统的链接. Yandex 员工可以看到检查的开始时间及其更详细的状态.
-
-运行测试的地方
-
-Yandex 内部基础设施的某个地方.

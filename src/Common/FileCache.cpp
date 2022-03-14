@@ -575,7 +575,13 @@ void LRUFileCache::loadCacheInfoIntoMemory()
     pcg64 generator(randomSeed());
     std::shuffle(cells.begin(), cells.end(), generator);
     for (const auto & cell : cells)
-        queue.splice(queue.end(), queue, *cell->queue_iterator);
+    {
+        /// Cell cache size changed and, for example, 1st file segment fits into cache
+        /// and 2nd file segment will fit only if first was evicted, then first will be removed and
+        /// cell is nullptr here.
+        if (cell)
+            queue.splice(queue.end(), queue, *cell->queue_iterator);
+    }
 }
 
 LRUFileCache::Stat LRUFileCache::getStat()
