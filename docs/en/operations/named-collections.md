@@ -159,7 +159,7 @@ Example of configuration:
             <port>5432</port>
             <database>test</database>
             <schema>test_schema</schema>
-	          <connection_pool_size>8</connection_pool_size>
+            <connection_pool_size>8</connection_pool_size>
         </mypg>
     </named_collections>
 </clickhouse>
