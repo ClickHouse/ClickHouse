@@ -124,7 +124,7 @@ struct AggregateFunctionSumData
             /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
             static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
+            typedef typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64> equivalent_integer;
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
 

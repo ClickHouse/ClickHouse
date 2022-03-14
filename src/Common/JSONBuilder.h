@@ -76,7 +76,7 @@ public:
     void add(const char * value) { add(std::make_unique<JSONString>(value)); }
     void add(bool value) { add(std::make_unique<JSONBool>(std::move(value))); }
 
-    template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>
+    template <typename T, std::enable_if_t<std::is_arithmetic_v<T>, bool> = true>
     void add(T value) { add(std::make_unique<JSONNumber<T>>(value)); }
 
     void format(const FormatSettings & settings, FormatContext & context) override;
@@ -100,7 +100,7 @@ public:
     void add(std::string key, std::string_view value) { add(std::move(key), std::make_unique<JSONString>(value)); }
     void add(std::string key, bool value) { add(std::move(key), std::make_unique<JSONBool>(std::move(value))); }
 
-    template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>
+    template <typename T, std::enable_if_t<std::is_arithmetic_v<T>, bool> = true>
     void add(std::string key, T value) { add(std::move(key), std::make_unique<JSONNumber<T>>(value)); }
 
     void format(const FormatSettings & settings, FormatContext & context) override;
