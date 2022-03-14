@@ -3385,7 +3385,9 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        if (from_type->equals(*to_type) && to_type->getCustomName() && to_type->getCustomName()->getName() != "IPv6")
+        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+
+        if (from_type->equals(*to_type) && !convert_to_ipv6)
         {
             if (isUInt8(from_type))
                 return createUInt8ToUInt8Wrapper(from_type, to_type);
