@@ -147,7 +147,8 @@ void MergeTreeTransaction::beforeCommit()
     for (const auto & table_and_mutation : mutations_to_wait)
         table_and_mutation.first->waitForMutation(table_and_mutation.second);
 
-    assert([&]() {
+    assert([&]()
+    {
         std::lock_guard lock{mutex};
         return mutations == mutations_to_wait;
     }());
