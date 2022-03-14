@@ -100,6 +100,7 @@ private:
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;
+    String last_caller_id;
 };
 
 }
