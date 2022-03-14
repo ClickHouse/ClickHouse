@@ -100,7 +100,7 @@ public:
 
     /// Write and modification part
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }

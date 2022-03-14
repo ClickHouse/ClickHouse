@@ -196,7 +196,7 @@ DiskCacheWrapper::readFile(
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode);

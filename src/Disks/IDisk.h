@@ -9,6 +9,7 @@
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 
 #include <memory>
 #include <mutex>
@@ -168,7 +169,8 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite) = 0;
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const String & path) = 0;
