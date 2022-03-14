@@ -253,6 +253,8 @@
     \
     M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
     M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
+    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
