@@ -180,7 +180,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     size_t keys_found = 0;
 
-    if (unlikely(attributes.empty()))
+    if (attributes.empty()) [[unlikely]]
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
@@ -436,7 +436,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (attributes_size == 0) [[unlikely]]
     {
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
@@ -513,12 +513,12 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
 {
-    if (unlikely(!added_rows))
+    if (!added_rows) [[unlikely]]
         return;
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (attributes_size == 0) [[unlikely]]
     {
         size_t reserve_size = added_rows + no_attributes_container.size();
 
@@ -668,7 +668,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
-    if (unlikely(attributes_size == 0))
+    if (attributes_size == 0) [[unlikely]]
     {
         bytes_allocated += sizeof(no_attributes_container);
 

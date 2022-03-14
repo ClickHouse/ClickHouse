@@ -58,7 +58,7 @@ namespace detail
         /// Can only be used while `count < TINY_MAX_ELEMS`.
         void insert(UInt64 x)
         {
-            if (unlikely(x > BIG_THRESHOLD))
+            if (x > BIG_THRESHOLD) [[unlikely]]
                 x = BIG_THRESHOLD;
 
             elems[count] = x;
@@ -146,7 +146,7 @@ namespace detail
 
         void insert(UInt64 x)
         {
-            if (unlikely(x > BIG_THRESHOLD))
+            if (x > BIG_THRESHOLD) [[unlikely]]
                 x = BIG_THRESHOLD;
 
             elems.emplace_back(x);
@@ -571,12 +571,12 @@ public:
         }
         else
         {
-            if (unlikely(tiny.count == TINY_MAX_ELEMS))
+            if (tiny.count == TINY_MAX_ELEMS) [[unlikely]]
                 tinyToMedium();
 
             if (which() == Kind::Medium)
             {
-                if (unlikely(mediumIsWorthToConvertToLarge()))
+                if (mediumIsWorthToConvertToLarge()) [[unlikely]]
                 {
                     mediumToLarge();
                     large->insert(x);
@@ -599,7 +599,7 @@ public:
         }
         else
         {
-            if (unlikely(tiny.count <= TINY_MAX_ELEMS))
+            if (tiny.count <= TINY_MAX_ELEMS) [[unlikely]]
                 tinyToLarge();    /// For the weighted variant we do not use `medium` - presumably, it is impractical.
 
             large->insertWeighted(x, weight);
@@ -668,7 +668,7 @@ public:
 
             /// For determinism, we should always convert to `large` when size condition is reached
             ///  - regardless of merge order.
-            if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
+            if (kind == Kind::Medium && mediumIsWorthToConvertToLarge()) [[unlikely]]
             {
                 mediumToLarge();
             }

@@ -193,7 +193,7 @@ private:
             for (; start_offset < end_offset; ++start_offset)
                 sorted_keys_values.emplace_back(key_column_data[start_offset], value_column_data[start_offset]);
 
-            if unlikely(sorted_keys_values.empty())
+            if (sorted_keys_values.empty()) [[unlikely]]
             {
                 result_offsets_data.emplace_back(result_value_data.size());
                 continue;
@@ -208,7 +208,7 @@ private:
             {
                 max_key = (*max_key_data)[offset_index];
 
-                if (unlikely(max_key < min_key))
+                if (max_key < min_key) [[unlikely]]
                 {
                     result_offsets_data.emplace_back(result_value_data.size());
                     continue;

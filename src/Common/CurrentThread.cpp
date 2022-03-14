@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 void CurrentThread::updatePerformanceCounters()
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->updatePerformanceCounters();
 }
@@ -32,7 +32,7 @@ bool CurrentThread::isInitialized()
 
 ThreadStatus & CurrentThread::get()
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     return *current_thread;
@@ -45,21 +45,21 @@ ProfileEvents::Counters & CurrentThread::getProfileEvents()
 
 MemoryTracker * CurrentThread::getMemoryTracker()
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return nullptr;
     return &current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->progress_in.incrementPiecewiseAtomically(value);
 }
 
 void CurrentThread::updateProgressOut(const Progress & value)
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
@@ -67,14 +67,14 @@ void CurrentThread::updateProgressOut(const Progress & value)
 void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                                 LogsLevel client_logs_level)
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
 void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->setFatalErrorCallback(callback);
 }
@@ -82,7 +82,7 @@ void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return nullptr;
 
     if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
@@ -93,14 +93,14 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 
 void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return;
     current_thread->attachInternalProfileEventsQueue(queue);
 }
 
 InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return nullptr;
 
     if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
@@ -111,7 +111,7 @@ InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
 
 ThreadGroupStatusPtr CurrentThread::getGroup()
 {
-    if (unlikely(!current_thread))
+    if (!current_thread) [[unlikely]]
         return nullptr;
 
     return current_thread->getThreadGroup();

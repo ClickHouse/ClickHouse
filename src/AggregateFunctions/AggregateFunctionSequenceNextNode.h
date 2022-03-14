@@ -323,7 +323,7 @@ public:
         UInt64 size;
         readVarUInt(size, buf);
 
-        if (unlikely(size == 0))
+        if (size == 0) [[unlikely]]
             return;
 
         auto & value = data(place).value;

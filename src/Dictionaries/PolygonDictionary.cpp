@@ -85,7 +85,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     auto result = attribute_values_column->cloneEmpty();
     result->reserve(requested_key_points.size());
 
-    if (unlikely(attribute.is_nullable))
+    if (attribute.is_nullable) [[unlikely]]
     {
         getItemsImpl<Field>(
             requested_key_points,

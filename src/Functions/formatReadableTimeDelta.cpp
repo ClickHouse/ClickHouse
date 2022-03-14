@@ -177,7 +177,7 @@ public:
         UInt64 unit_size, const char * unit_name, size_t unit_name_size,
         Float64 & value, WriteBuffer & buf_to, bool & has_output)
     {
-        if (unlikely(value + 1.0 == value))
+        if (value + 1.0 == value) [[unlikely]]
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
             writeText(std::floor(value / unit_size), buf_to);

@@ -46,9 +46,9 @@ struct AggregateFunctionIntervalLengthSumData
     void add(T begin, T end)
     {
         /// Reversed intervals are counted by absolute value of their length.
-        if (unlikely(end < begin))
+        if (end < begin) [[unlikely]]
             std::swap(begin, end);
-        else if (unlikely(begin == end))
+        else if (begin == end) [[unlikely]]
             return;
 
         if (sorted && !segments.empty())
@@ -116,7 +116,7 @@ struct AggregateFunctionIntervalLengthSumData
         size_t size;
         readBinary(size, buf);
 
-        if (unlikely(size > MAX_ARRAY_SIZE))
+        if (size > MAX_ARRAY_SIZE) [[unlikely]]
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         segments.clear();

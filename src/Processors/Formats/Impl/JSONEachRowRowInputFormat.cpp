@@ -172,7 +172,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         StringRef name_ref = readColumnName(*in);
         const size_t column_index = columnIndex(name_ref, key_index);
 
-        if (unlikely(ssize_t(column_index) < 0))
+        if (ssize_t(column_index) < 0) [[unlikely]]
         {
             /// name_ref may point directly to the input buffer
             /// and input buffer may be filled with new data on next read

@@ -59,7 +59,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        if (unlikely(is_signed_v<B> && b == -1))
+        if (is_signed_v<B> && b == -1) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
@@ -67,8 +67,8 @@ struct DivideIntegralByConstantImpl
         }
 
         /// Division with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if (b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
@@ -77,7 +77,7 @@ struct DivideIntegralByConstantImpl
 
 #pragma GCC diagnostic pop
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         divideImpl(a_pos, b, c_pos, size);

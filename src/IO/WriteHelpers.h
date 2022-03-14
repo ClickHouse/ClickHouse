@@ -169,7 +169,7 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
 
     using Converter = DoubleConverter<false>;
-    if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
+    if (buf.available() >= Converter::MAX_REPRESENTATION_LENGTH) [[likely]]
     {
         buf.position() += writeFloatTextFastPath(x, buf.position());
         return;

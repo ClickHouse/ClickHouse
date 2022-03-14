@@ -23,9 +23,9 @@ protected:
         MySQLParser::ParserDeclareColumn p_declare_column;
         MySQLParser::ParserDeclareConstraint p_declare_constraint;
 
-        if (likely(!p_declare_index.parse(pos, node, expected)))
+        if (!p_declare_index.parse(pos, node, expected)) [[likely]]
         {
-            if (likely(!p_declare_constraint.parse(pos, node, expected)))
+            if (!p_declare_constraint.parse(pos, node, expected)) [[likely]]
             {
                 if (!p_declare_column.parse(pos, node, expected))
                     return false;

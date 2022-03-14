@@ -67,7 +67,7 @@ public:
         ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
-            if (unlikely(max_depth > 0 && depth > max_depth))
+            if (max_depth > 0 && depth > max_depth) [[unlikely]]
                 throw Exception(
                     "Maximum parse depth (" + std::to_string(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.",
                     ErrorCodes::TOO_DEEP_RECURSION);
@@ -75,7 +75,7 @@ public:
 
         ALWAYS_INLINE void decreaseDepth()
         {
-            if (unlikely(depth == 0))
+            if (depth == 0) [[unlikely]]
                 throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
             --depth;
         }

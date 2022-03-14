@@ -269,7 +269,7 @@ public:
     void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = size() + ELEMENT_SIZE;
-        if (unlikely(required_capacity > capacity()))
+        if (required_capacity > capacity()) [[unlikely]]
             reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         memcpy(c_end, ptr, ELEMENT_SIZE);
@@ -429,7 +429,7 @@ public:
     template <typename U, typename ... TAllocatorParams>
     void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
+        if (this->c_end + sizeof(T) > this->c_end_of_storage) [[unlikely]]
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
@@ -442,7 +442,7 @@ public:
     template <typename... Args>
     void emplace_back(Args &&... args)
     {
-        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
+        if (this->c_end + sizeof(T) > this->c_end_of_storage) [[unlikely]]
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
@@ -520,7 +520,7 @@ public:
 
         insertPrepare(from_begin, from_end);
 
-        if (unlikely(bytes_to_move))
+        if (bytes_to_move) [[unlikely]]
             memmove(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
         memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);

@@ -345,7 +345,7 @@ public:
             return false;
 
         token_begin = pos;
-        if (unlikely(max_split && curr_split >= *max_split))
+        if (max_split && curr_split >= *max_split) [[unlikely]]
         {
             token_end = end;
             pos = nullptr;
@@ -755,7 +755,7 @@ private:
             /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
-                if (unlikely(null_map && null_map[current_src_array_offset]))
+                if (null_map && null_map[current_src_array_offset]) [[unlikely]]
                     continue;
 
                 if (!first_non_null)

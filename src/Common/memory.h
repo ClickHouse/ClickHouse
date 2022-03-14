@@ -21,7 +21,7 @@ namespace Memory
 inline ALWAYS_INLINE void * newImpl(std::size_t size)
 {
     auto * ptr = malloc(size);
-    if (likely(ptr != nullptr))
+    if (ptr != nullptr) [[likely]]
         return ptr;
 
     /// @note no std::get_new_handler logic implemented
@@ -42,7 +42,7 @@ inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
-    if (unlikely(ptr == nullptr))
+    if (ptr == nullptr) [[unlikely]]
         return;
 
     sdallocx(ptr, size, 0);
@@ -71,7 +71,7 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size)
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    if (likely(size != 0))
+    if (size != 0) [[likely]]
         actual_size = nallocx(size, 0);
 #endif
 
@@ -90,7 +90,7 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
     {
 #if USE_JEMALLOC
         /// @note It's also possible to use je_malloc_usable_size() here.
-        if (likely(ptr != nullptr))
+        if (ptr != nullptr) [[likely]]
             CurrentMemoryTracker::free(sallocx(ptr, 0));
 #else
         if (size)

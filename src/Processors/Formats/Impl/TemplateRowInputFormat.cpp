@@ -81,10 +81,10 @@ void TemplateRowInputFormat::readPrefix()
 bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & extra)
 {
     /// This function can be called again after it returned false
-    if (unlikely(end_of_stream))
+    if (end_of_stream) [[unlikely]]
         return false;
 
-    if (unlikely(format_reader->checkForSuffix()))
+    if (format_reader->checkForSuffix()) [[unlikely]]
     {
         end_of_stream = true;
         return false;
@@ -92,7 +92,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1))
+    if (row_num != 1) [[likely]]
         format_reader->skipRowBetweenDelimiter();
 
     extra.read_columns.assign(columns.size(), false);
@@ -171,7 +171,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 
     out << "\nUsing format string (from format_schema_rows): " << row_format.dump() << "\n";
     out << "\nTrying to parse next row, because suffix does not match:\n";
-    if (likely(row_num != 1) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
+    if (row_num != 1 && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces)) [[likely]]
         return false;
 
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
@@ -354,7 +354,7 @@ ReturnType TemplateFormatReader::tryReadPrefixOrSuffix(size_t & input_part_beg, 
         assertString(format.delimiters[input_part_beg], *buf);
     else
     {
-        if (likely(!checkString(format.delimiters[input_part_beg], *buf)))
+        if (!checkString(format.delimiters[input_part_beg], *buf)) [[likely]]
             return ReturnType(false);
     }
 
@@ -386,7 +386,7 @@ ReturnType TemplateFormatReader::tryReadPrefixOrSuffix(size_t & input_part_beg, 
             assertString(format.delimiters[input_part_beg], *buf);
         else
         {
-            if (likely(!checkString(format.delimiters[input_part_beg], *buf)))
+            if (!checkString(format.delimiters[input_part_beg], *buf)) [[likely]]
                 return ReturnType(false);
         }
     }
@@ -414,7 +414,7 @@ bool TemplateFormatReader::checkForSuffix()
             throw;
     }
 
-    if (unlikely(suffix_found))
+    if (suffix_found) [[unlikely]]
     {
         skipSpaces();
         if (buf->eof())

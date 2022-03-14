@@ -85,7 +85,7 @@ MemoryWriteBuffer::MemoryWriteBuffer(size_t max_total_size_, size_t initial_chun
 
 void MemoryWriteBuffer::nextImpl()
 {
-    if (unlikely(hasPendingData()))
+    if (hasPendingData()) [[unlikely]]
     {
         /// ignore flush
         buffer() = Buffer(pos, buffer().end());

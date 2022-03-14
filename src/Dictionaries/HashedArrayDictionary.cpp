@@ -481,7 +481,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
 template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::resize(size_t added_rows)
 {
-    if (unlikely(!added_rows))
+    if (!added_rows) [[unlikely]]
         return;
 
     key_attribute.container.reserve(added_rows);

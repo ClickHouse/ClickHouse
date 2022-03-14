@@ -15,7 +15,7 @@ struct DivideIntegralOrZeroImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        if (divisionLeadsToFPE(a, b)) [[unlikely]]
             return 0;
 
         return DivideIntegralImpl<A, B>::template apply<Result>(a, b);

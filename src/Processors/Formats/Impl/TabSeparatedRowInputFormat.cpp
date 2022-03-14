@@ -59,7 +59,7 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     if (in->eof())
         return;
 
-    if (unlikely(first_row))
+    if (first_row) [[unlikely]]
     {
         checkForCarriageReturn(*in);
         first_row = false;

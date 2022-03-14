@@ -78,7 +78,7 @@ public:
     /// Returns a non-empty string if the thread is attached to a query
     static StringRef getQueryId()
     {
-        if (unlikely(!current_thread))
+        if (!current_thread) [[unlikely]]
             return {};
         return current_thread->getQueryId();
     }

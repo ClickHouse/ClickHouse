@@ -109,7 +109,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
-    if (unlikely(*in->position() == '\n'))
+    if (*in->position() == '\n') [[unlikely]]
     {
         /// An empty string. It is permissible, but it is unclear why.
         ++in->position();

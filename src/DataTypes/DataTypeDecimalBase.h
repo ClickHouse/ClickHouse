@@ -70,9 +70,9 @@ public:
     :   precision(precision_),
         scale(scale_)
     {
-        if (unlikely(precision < 1 || precision > maxPrecision()))
+        if (precision < 1 || precision > maxPrecision()) [[unlikely]]
             throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        if (unlikely(scale > maxPrecision()))
+        if (scale > maxPrecision()) [[unlikely]]
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 

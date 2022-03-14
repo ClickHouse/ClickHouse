@@ -312,7 +312,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (unlikely(addr.size != IPV6_BINARY_LENGTH))
+            if (addr.size != IPV6_BINARY_LENGTH) [[unlikely]]
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected key to be FixedString(16)");
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
@@ -641,9 +641,9 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
             auto range = collections::range(0, row_idx.size());
             auto found_it = std::lower_bound(range.begin(), range.end(), IPv4Subnet{addr, mask}, comp_v4);
 
-            if (likely(found_it != range.end() &&
+            if (found_it != range.end() &&
                 (*ipv4_col)[*found_it] == addr &&
-                mask_column[*found_it] == mask))
+                mask_column[*found_it] == mask) [[likely]]
             {
                 set_value(i, vec[row_idx[*found_it]]);
             }
@@ -678,9 +678,9 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         auto range = collections::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
 
-        if (likely(found_it != range.end() &&
+        if (found_it != range.end() &&
             memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
-            mask_column[*found_it] == mask))
+            mask_column[*found_it] == mask) [[likely]]
             set_value(i, vec[row_idx[*found_it]]);
         else
             set_value(i, default_value_extractor[i]);
@@ -698,7 +698,7 @@ void IPAddressDictionary::getItemsImpl(
     const auto rows = first_column->size();
 
     // special case for getBlockInputStream
-    if (unlikely(key_columns.size() == 2))
+    if (key_columns.size() == 2) [[unlikely]]
     {
         getItemsByTwoKeyColumnsImpl<AttributeType>(
             attribute, key_columns, std::forward<ValueSetter>(set_value), default_value_extractor);

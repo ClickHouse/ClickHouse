@@ -153,7 +153,7 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
     {
         if (current_message_end == END_OF_FILE)
         {
-            if (unlikely(in.eof()))
+            if (in.eof()) [[unlikely]]
             {
                 current_message_end = cursor;
                 return false;
@@ -168,7 +168,7 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
     }
 
     UInt64 varint = readVarint();
-    if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
+    if (varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)) [[unlikely]]
         throwUnknownFormat();
     UInt32 key = static_cast<UInt32>(varint);
     field_number_ = field_number = (key >> 3);
@@ -226,7 +226,7 @@ UInt64 ProtobufReader::readUInt()
         value = readVarint();
         if (cursor < field_end)
             next_field_number = field_number;
-        else if (unlikely(cursor) > field_end)
+        else if (cursor > field_end) [[unlikely]]
             throwUnknownFormat();
     }
     return value;
@@ -245,7 +245,7 @@ Int64 ProtobufReader::readSInt()
 template<typename T>
 T ProtobufReader::readFixed()
 {
-    if (unlikely(cursor + static_cast<Int64>(sizeof(T)) > field_end))
+    if (cursor + static_cast<Int64>(sizeof(T)) > field_end) [[unlikely]]
         throwUnknownFormat();
     T value;
     readBinary(&value, sizeof(T));
@@ -263,7 +263,7 @@ template Float64 ProtobufReader::readFixed<Float64>();
 
 void ProtobufReader::readString(String & str)
 {
-    if (unlikely(cursor > field_end))
+    if (cursor > field_end) [[unlikely]]
         throwUnknownFormat();
     size_t length = field_end - cursor;
     str.resize(length);
@@ -272,7 +272,7 @@ void ProtobufReader::readString(String & str)
 
 void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
 {
-    if (unlikely(cursor > field_end))
+    if (cursor > field_end) [[unlikely]]
         throwUnknownFormat();
     size_t length = field_end - cursor;
     size_t old_size = str.size();
@@ -318,12 +318,12 @@ UInt64 ProtobufReader::continueReadingVarint(UInt64 first_byte)
             if constexpr ((byteNo) < 10) \
             { \
                 result |= static_cast<UInt64>(static_cast<UInt8>(c)) << (7 * ((byteNo)-1)); \
-                if (likely(!(c & 0x80))) \
+                if (!(c & 0x80)) [[likely]] \
                     return result; \
             } \
             else \
             { \
-                if (likely(c == 1)) \
+                if (c == 1) [[likely]] \
                     return result; \
             } \
             if constexpr ((byteNo) < 9) \
@@ -356,12 +356,12 @@ void ProtobufReader::ignoreVarint()
             ++cursor; \
             if constexpr ((byteNo) < 10) \
             { \
-                if (likely(!(c & 0x80))) \
+                if (!(c & 0x80)) [[likely]] \
                     return; \
             } \
             else \
             { \
-                if (likely(c == 1)) \
+                if (c == 1) [[likely]] \
                     return; \
             } \
         } while (false)

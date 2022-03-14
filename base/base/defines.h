@@ -15,6 +15,7 @@
 #    define ch_has_feature __has_feature
 #endif
 
+// Legacy, please use [[likely]] and [[unlikely]] instead
 #if !defined(likely)
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #endif

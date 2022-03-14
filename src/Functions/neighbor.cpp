@@ -120,7 +120,7 @@ public:
             Int64 offset = offset_column->getInt(0);
 
             /// Protection from possible overflow.
-            if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+            if (offset > (1 << 30) || offset < -(1 << 30)) [[unlikely]]
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
 
             auto result_column = result_type->createColumn();
@@ -183,7 +183,7 @@ public:
                 Int64 offset = offset_column->getInt(row);
 
                 /// Protection from possible overflow.
-                if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                if (offset > (1 << 30) || offset < -(1 << 30)) [[unlikely]]
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
 
                 Int64 src_idx = row + offset;

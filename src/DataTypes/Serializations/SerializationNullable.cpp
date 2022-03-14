@@ -353,7 +353,7 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
         else
             nested_serialization->deserializeTextRaw(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
-        if (likely(!buf.hasUnreadData()))
+        if (!buf.hasUnreadData()) [[likely]]
             return;
 
         /// We have some unread data in PeekableReadBuffer own memory.
@@ -446,7 +446,7 @@ ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, Re
     {
         nested->deserializeTextQuoted(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
-        if (likely(!buf.hasUnreadData()))
+        if (!buf.hasUnreadData()) [[likely]]
             return;
 
         /// We have some unread data in PeekableReadBuffer own memory.
@@ -563,7 +563,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         auto * pos = buf.position();
         nested_serialization->deserializeTextCSV(nested_column, buf, settings);
         /// Check that we don't have any unread data in PeekableReadBuffer own memory.
-        if (likely(!buf.hasUnreadData()))
+        if (!buf.hasUnreadData()) [[likely]]
             return;
 
         /// We have some unread data in PeekableReadBuffer own memory.

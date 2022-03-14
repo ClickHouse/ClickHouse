@@ -517,7 +517,7 @@ public:
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
                 AggregateDataPtr & place = map[key[i + j]];
-                if (unlikely(!place))
+                if (!place) [[unlikely]]
                     init(place);
 
                 places[j] = place;
@@ -530,7 +530,7 @@ public:
         for (; i < batch_size; ++i)
         {
             AggregateDataPtr & place = map[key[i]];
-            if (unlikely(!place))
+            if (!place) [[unlikely]]
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
@@ -647,7 +647,7 @@ public:
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
                 size_t idx = j * 256 + key[i + j];
-                if (unlikely(!has_data[idx]))
+                if (!has_data[idx]) [[unlikely]]
                 {
                     new (&places[idx]) Data;
                     has_data[idx] = true;
@@ -666,7 +666,7 @@ public:
                 if (has_data[idx])
                 {
                     AggregateDataPtr & place = map[k];
-                    if (unlikely(!place))
+                    if (!place) [[unlikely]]
                         init(place);
 
                     func.merge(place + place_offset, reinterpret_cast<const char *>(&places[idx]), nullptr);
@@ -680,7 +680,7 @@ public:
         {
             size_t k = key[i];
             AggregateDataPtr & place = map[k];
-            if (unlikely(!place))
+            if (!place) [[unlikely]]
                 init(place);
 
             func.add(place + place_offset, columns, i, nullptr);

@@ -130,9 +130,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     /// And since total_memory_tracker is reset to the process resident
     /// memory peridically (in AsynchronousMetrics::update()), any limit can be
     /// capped to it, to avoid possible drift.
-    if (unlikely(current_hard_limit
+    if (current_hard_limit
         && will_be > current_hard_limit
-        && level == VariableContext::User))
+        && level == VariableContext::User) [[unlikely]]
     {
         Int64 total_amount = total_memory_tracker.get();
         if (amount > total_amount)
@@ -143,7 +143,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
+    if (memory_tracker_always_throw_logical_error_on_allocation) [[unlikely]]
     {
         memory_tracker_always_throw_logical_error_on_allocation = false;
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
@@ -151,7 +151,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 #endif
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
+    if (fault_probability && fault(thread_local_rng) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded) [[unlikely]]
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -171,7 +171,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
 
     bool allocation_traced = false;
-    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    if (current_profiler_limit && will_be > current_profiler_limit) [[unlikely]]
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
@@ -180,14 +180,14 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (sample_probability && sample(thread_local_rng)) [[unlikely]]
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
         allocation_traced = true;
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+    if (current_hard_limit && will_be > current_hard_limit && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded) [[unlikely]]
     {
         bool need_to_throw = true;
         bool try_to_free_memory = overcommit_tracker != nullptr && query_tracker != nullptr;
@@ -280,7 +280,7 @@ void MemoryTracker::free(Int64 size)
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
+    if (sample_probability && sample(thread_local_rng)) [[unlikely]]
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
@@ -302,7 +302,7 @@ void MemoryTracker::free(Int64 size)
           * Memory usage will be calculated with some error.
           * NOTE: The code is not atomic. Not worth to fix.
           */
-        if (unlikely(new_amount < 0))
+        if (new_amount < 0) [[unlikely]]
         {
             amount.fetch_sub(new_amount);
             accounted_size += new_amount;

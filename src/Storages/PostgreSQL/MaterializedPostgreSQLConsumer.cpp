@@ -229,7 +229,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 /// Sanity check for protocol misuse.
                 /// PostgreSQL uses a fixed page size (commonly 8 kB), and does not allow tuples to span multiple pages.
                 static constexpr Int32 sanity_check_max_col_len = 1024 * 8 * 2; /// *2 -- just in case.
-                if (unlikely(col_len > sanity_check_max_col_len))
+                if (col_len > sanity_check_max_col_len) [[unlikely]]
                     throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                                     "Column length is suspiciously long: {}", col_len);
 

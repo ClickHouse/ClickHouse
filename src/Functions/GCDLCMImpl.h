@@ -40,7 +40,7 @@ struct GCDLCMImpl
             Int b_s = static_cast<Int>(b);
             Int min = std::numeric_limits<Int>::lowest();
             Int max = std::numeric_limits<Int>::max();
-            if (unlikely((a_s == min || a_s == max) || (b_s == min || b_s == max)))
+            if ((a_s == min || a_s == max) || (b_s == min || b_s == max)) [[unlikely]]
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Intermediate result overflow (signed a = {}, signed b = {}, min = {}, max = {})", a_s, b_s, min, max);
         }
 

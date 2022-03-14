@@ -622,7 +622,7 @@ protected:
         Derived & operator++()
         {
             /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
-            if (unlikely(ptr->isZero(*container)))
+            if (ptr->isZero(*container)) [[unlikely]]
                 ptr = container->buf;
             else
                 ++ptr;
@@ -892,7 +892,7 @@ protected:
         inserted = true;
         ++m_size;
 
-        if (unlikely(grower.overflow(m_size)))
+        if (grower.overflow(m_size)) [[unlikely]]
         {
             try
             {
@@ -1003,7 +1003,7 @@ public:
         memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
         ++m_size;
 
-        if (unlikely(grower.overflow(m_size)))
+        if (grower.overflow(m_size)) [[unlikely]]
             resize();
     }
 

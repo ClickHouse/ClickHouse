@@ -159,7 +159,7 @@ public:
         }
 
         // Key doesn't exist, but can fit in the top K
-        if (unlikely(size() < capacity()))
+        if (size() < capacity()) [[unlikely]]
         {
             auto * c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);

@@ -85,11 +85,11 @@ private:
     template <typename T>
     inline BucketsType checkBucketsRange(T buckets) const
     {
-        if (unlikely(buckets <= 0))
+        if (buckets <= 0) [[unlikely]]
             throw Exception(
                 "The second argument of function " + getName() + " (number of buckets) must be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
+        if (static_cast<UInt64>(buckets) > Impl::max_buckets) [[unlikely]]
             throw Exception("The value of the second argument of function " + getName() + " (number of buckets) must not be greater than "
                     + std::to_string(Impl::max_buckets), ErrorCodes::BAD_ARGUMENTS);
 

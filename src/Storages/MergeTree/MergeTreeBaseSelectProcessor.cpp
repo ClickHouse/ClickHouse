@@ -352,7 +352,7 @@ static void injectVirtualColumnsImpl(
     /// Except _sample_factor, which is added from the outside.
     if (!virtual_columns.empty())
     {
-        if (unlikely(rows && !task))
+        if (rows && !task) [[unlikely]]
             throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
                             ErrorCodes::LOGICAL_ERROR);
 

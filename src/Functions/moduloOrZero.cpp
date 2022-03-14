@@ -24,7 +24,7 @@ struct ModuloOrZeroImpl
         }
         else
         {
-            if (unlikely(divisionLeadsToFPE(a, b)))
+            if (divisionLeadsToFPE(a, b)) [[unlikely]]
                 return 0;
 
             return ModuloImpl<A, B>::template apply<Result>(a, b);

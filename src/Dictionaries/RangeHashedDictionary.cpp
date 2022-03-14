@@ -556,7 +556,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
                 {
                     if (range)
                     {
-                        if (likely(configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min) && interval < *range)
+                        if (configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min && interval < *range) [[likely]]
                         {
                             range = interval;
                             value_index = interval_value_index;
@@ -630,7 +630,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
     {
         UInt64 container_index = key_to_index[key_index];
 
-        if (unlikely(container_index >= container_size))
+        if (container_index >= container_size) [[unlikely]]
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Dictionary {} expected attribute container index {} must be less than attribute container size {}",
@@ -790,19 +790,19 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
 
             bool invalid_range = false;
 
-            if (unlikely(min_range_null_map && (*min_range_null_map)[key_index]))
+            if (min_range_null_map && (*min_range_null_map)[key_index]) [[unlikely]]
             {
                 lower_bound = std::numeric_limits<RangeStorageType>::min();
                 invalid_range = true;
             }
 
-            if (unlikely(max_range_null_map && (*max_range_null_map)[key_index]))
+            if (max_range_null_map && (*max_range_null_map)[key_index]) [[unlikely]]
             {
                 upper_bound = std::numeric_limits<RangeStorageType>::max();
                 invalid_range = true;
             }
 
-            if (unlikely(!configuration.convert_null_range_bound_to_open && invalid_range))
+            if (!configuration.convert_null_range_bound_to_open && invalid_range) [[unlikely]]
             {
                 keys_extractor.rollbackCurrentKey();
                 continue;
@@ -837,7 +837,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 key_attribute_container.insert({key, std::move(intervals)});
             }
 
-            if (unlikely(!emplaced_in_interval_tree))
+            if (!emplaced_in_interval_tree) [[unlikely]]
             {
                 InvalidIntervalWithKey<RangeStorageType> invalid_interval{key, interval, element_count};
                 invalid_intervals_container.emplace_back(invalid_interval);
@@ -861,12 +861,12 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
         container.emplace_back();
 
-        if (unlikely(attribute.is_value_nullable.has_value()))
+        if (attribute.is_value_nullable.has_value()) [[unlikely]]
         {
             bool value_is_null = value.isNull();
             attribute.is_value_nullable->emplace_back(value_is_null);
 
-            if (unlikely(value_is_null))
+            if (value_is_null) [[unlikely]]
                 return;
         }
 

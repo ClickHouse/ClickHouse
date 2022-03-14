@@ -254,7 +254,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     bool lval_is_null = isNullAt(n);
     bool rval_is_null = nullable_rhs.isNullAt(m);
 
-    if (unlikely(lval_is_null || rval_is_null))
+    if (lval_is_null || rval_is_null) [[unlikely]]
     {
         if (lval_is_null && rval_is_null)
             return 0;

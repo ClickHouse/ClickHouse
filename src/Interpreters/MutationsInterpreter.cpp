@@ -1007,7 +1007,7 @@ const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
 size_t MutationsInterpreter::evaluateCommandsSize()
 {
     for (const MutationCommand & command : commands)
-        if (unlikely(!command.predicate && !command.partition)) /// The command touches all rows.
+        if (!command.predicate && !command.partition) [[unlikely]] /// The command touches all rows.
             return mutation_ast->size();
 
     return std::max(prepareQueryAffectedAST(commands, storage, context)->size(), mutation_ast->size());

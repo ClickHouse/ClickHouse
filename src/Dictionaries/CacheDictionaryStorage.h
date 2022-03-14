@@ -196,7 +196,7 @@ private:
             auto key = keys[key_index];
             auto [key_state, cell_index] = getKeyStateAndCellIndex(key, now);
 
-            if (unlikely(key_state == KeyState::not_found))
+            if (key_state == KeyState::not_found) [[unlikely]]
             {
                 result.key_index_to_state[key_index] = {KeyState::not_found};
                 ++result.not_found_keys_size;
@@ -229,7 +229,7 @@ private:
             auto & fetched_column = *result.fetched_columns[attribute_index];
             fetched_column.reserve(fetched_columns_index);
 
-            if (unlikely(attribute.is_nullable))
+            if (attribute.is_nullable) [[unlikely]]
             {
                 getItemsForFetchedKeys<Field>(
                     attribute,
@@ -498,7 +498,7 @@ private:
         auto & attribute = attributes[attribute_index];
         auto & attribute_type = attribute.type;
 
-        if (unlikely(attribute.is_nullable))
+        if (attribute.is_nullable) [[unlikely]]
         {
             auto & container = std::get<ContainerType<Field>>(attribute.attribute_container);
             std::forward<GetContainerFunc>(func)(container);
@@ -576,7 +576,7 @@ private:
         {
             auto fetched_key = fetched_keys[fetched_key_index];
 
-            if (unlikely(fetched_key.is_default))
+            if (fetched_key.is_default) [[unlikely]]
             {
                 auto default_value = default_value_provider.getDefaultValue(fetched_key_index);
 
@@ -701,10 +701,10 @@ private:
             if (cell.key != key)
                 continue;
 
-            if (unlikely(now > cell.deadline + max_lifetime_seconds))
+            if (now > cell.deadline + max_lifetime_seconds) [[unlikely]]
                 return std::make_pair(KeyState::not_found, cell_place_value);
 
-            if (unlikely(now > cell.deadline))
+            if (now > cell.deadline) [[unlikely]]
                 return std::make_pair(KeyState::expired, cell_place_value);
 
             return std::make_pair(KeyState::found, cell_place_value);

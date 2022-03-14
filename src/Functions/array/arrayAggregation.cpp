@@ -220,7 +220,7 @@ struct ArrayAggregateImpl
                         }
 
                         auto result_scale = column_typed->getScale() * array_size;
-                        if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
+                        if (result_scale > DecimalUtils::max_precision<AggregationType>) [[unlikely]]
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
                         res[i] = DecimalUtils::convertTo<ResultType>(product, result_scale);
@@ -329,7 +329,7 @@ struct ArrayAggregateImpl
             {
                 auto result_scale = column->getScale() * count;
 
-                if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
+                if (result_scale > DecimalUtils::max_precision<AggregationType>) [[unlikely]]
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
                 res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, result_scale);

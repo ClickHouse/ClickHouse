@@ -166,10 +166,10 @@ void RowInputFormatWithNamesAndTypes::insertDefaultsForNotSeenColumns(MutableCol
 
 bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (unlikely(end_of_stream))
+    if (end_of_stream) [[unlikely]]
         return false;
 
-    if (unlikely(format_reader->checkForSuffix()))
+    if (format_reader->checkForSuffix()) [[unlikely]]
     {
         end_of_stream = true;
         return false;
@@ -177,7 +177,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))))
+    if (row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))) [[likely]]
         format_reader->skipRowBetweenDelimiter();
 
     format_reader->skipRowStartDelimiter();
@@ -247,7 +247,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (row_num != 1 && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out)) [[likely]]
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))

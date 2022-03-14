@@ -646,7 +646,7 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(fs::path(path) / children.back());
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child_node.empty() || keep_child_node != children.back()) [[likely]]
                 ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             children.pop_back();
         }
@@ -667,7 +667,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         {
             String child_path = fs::path(path) / children.back();
             tryRemoveChildrenRecursive(child_path);
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child_node.empty() || keep_child_node != children.back()) [[likely]]
             {
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));

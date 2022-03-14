@@ -226,7 +226,7 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
         return buf->eof();
     }
 
-    if (unlikely(checkString(format_settings.custom.result_after_delimiter, *buf)))
+    if (checkString(format_settings.custom.result_after_delimiter, *buf)) [[unlikely]]
     {
         skipSpaces();
         if (!check_eof)

@@ -46,7 +46,7 @@ private:
         in.readStrict(c);
         UInt64 first_byte = static_cast<UInt8>(c);
         ++cursor;
-        if (likely(!(c & 0x80)))
+        if (!(c & 0x80)) [[likely]]
             return first_byte;
         return continueReadingVarint(first_byte);
     }

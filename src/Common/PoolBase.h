@@ -124,7 +124,7 @@ public:
             {
                 if (!item->in_use)
                 {
-                    if (likely(!item->is_expired))
+                    if (!item->is_expired) [[likely]]
                     {
                         return Entry(*item);
                     }

@@ -129,7 +129,7 @@ private:
     // SIMD optimization will be more efficient.
     static void process(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
     {
-        if (unlikely(repeat_time <= 0))
+        if (repeat_time <= 0) [[unlikely]]
         {
             *dst = 0;
             return;

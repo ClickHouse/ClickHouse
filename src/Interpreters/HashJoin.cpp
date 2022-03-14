@@ -734,7 +734,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+    if (source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()) [[unlikely]]
         throw Exception("Too many rows in right table block for HashJoin: " + toString(source_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
 
     /// There's no optimization for right side const columns. Remove constness if any.
@@ -1847,7 +1847,7 @@ public:
     size_t fillColumns(MutableColumns & columns_right) override
     {
         size_t rows_added = 0;
-        if (unlikely(parent.data->type == HashJoin::Type::EMPTY))
+        if (parent.data->type == HashJoin::Type::EMPTY) [[unlikely]]
         {
             rows_added = fillColumnsFromData(parent.data->blocks, columns_right);
         }

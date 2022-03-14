@@ -52,7 +52,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
     {
         Block granule_index_block = granule_index_blocks_[index];
 
-        if (unlikely(!granule_index_block || !granule_index_block.rows()))
+        if (!granule_index_block || !granule_index_block.rows()) [[unlikely]]
             throw Exception("LOGICAL ERROR: granule_index_block is empty.", ErrorCodes::LOGICAL_ERROR);
 
         if (index == 0)

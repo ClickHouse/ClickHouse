@@ -22,7 +22,7 @@ inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
 inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type = CLOCK_MONOTONIC)
 {
     UInt64 current_time = clock_gettime_ns(clock_type);
-    if (likely(prev_time <= current_time))
+    if (prev_time <= current_time) [[likely]]
         return current_time;
 
     /// Something probably went completely wrong if time stepped back for more than 1 second.

@@ -46,7 +46,7 @@ public:
 
         bool has_unlimited_size = (max_size == 0);
 
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
+        if (has_unlimited_size || allocated_objects_size < max_size) [[unlikely]]
         {
             dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
             return;
@@ -71,7 +71,7 @@ public:
 
         bool has_unlimited_size = (max_size == 0);
 
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
+        if (has_unlimited_size || allocated_objects_size < max_size) [[unlikely]]
         {
             dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
             return true;

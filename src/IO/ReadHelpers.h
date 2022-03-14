@@ -475,14 +475,14 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             throwReadAfterEOF();
     };
 
-    if (unlikely(buf.eof()))
+    if (buf.eof()) [[unlikely]]
         return on_error();
 
     if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
-        if (unlikely(buf.eof()))
+        if (buf.eof()) [[unlikely]]
             return on_error();
     }
 
@@ -688,9 +688,9 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (unlikely(from < 0))
+    if (from < 0) [[unlikely]]
         date = 0;
-    else if (unlikely(from > 0xFFFF))
+    else if (from > 0xFFFF) [[unlikely]]
         date = 0xFFFF;
     else
         date = from;
@@ -859,7 +859,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
             UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
 
-            if (unlikely(year == 0))
+            if (year == 0) [[unlikely]]
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);

@@ -14,7 +14,7 @@
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
     // if MSB is set, return n, to avoid return zero
-    if (unlikely(n >= 0x8000000000000000ULL))
+    if (n >= 0x8000000000000000ULL) [[unlikely]]
         return n;
 
     --n;

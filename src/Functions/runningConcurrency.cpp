@@ -54,7 +54,7 @@ namespace DB
                 const auto begin = vec_begin[i];
                 const auto end   = vec_end[i];
 
-                if (unlikely(begin > end))
+                if (begin > end) [[unlikely]]
                 {
                     const FormatSettings default_format;
                     WriteBufferFromOwnString buf_begin, buf_end;
@@ -169,7 +169,7 @@ namespace DB
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             // The type of the second argument must match with that of the first one.
-            if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
+            if (!arguments[1].type->equals(*(arguments[0].type))) [[unlikely]]
             {
                 throw Exception(
                     "Function " + getName() + " must be called with two arguments having the same type.",

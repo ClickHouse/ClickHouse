@@ -103,7 +103,7 @@ namespace detail
 
                     bool is_loop = (offset == offsets.size());
 
-                    if (unlikely(is_loop))
+                    if (is_loop) [[unlikely]]
                         break;
 
                     size_t array_element_offset = index.array_element_offset;
@@ -300,7 +300,7 @@ namespace detail
                     }
                 }
 
-                if (unlikely(already_processed_keys_during_loop.find(key) != nullptr))
+                if (already_processed_keys_during_loop.find(key) != nullptr) [[unlikely]]
                 {
                     next_keys_to_process_stack.clear();
                     break;
@@ -314,7 +314,7 @@ namespace detail
                     {
                         Range range = already_processed_it->getMapped();
 
-                        if (unlikely(range.start_index > range.end_index))
+                        if (range.start_index > range.end_index) [[unlikely]]
                         {
                             /// Broken range because there was loop
                             already_processed_keys_to_range.erase(key);

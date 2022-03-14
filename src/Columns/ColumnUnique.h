@@ -418,7 +418,7 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         bool lval_is_null = n == getNullValueIndex();
         bool rval_is_null = m == getNullValueIndex();
 
-        if (unlikely(lval_is_null || rval_is_null))
+        if (lval_is_null || rval_is_null) [[unlikely]]
         {
             if (lval_is_null && rval_is_null)
                 return 0;

@@ -298,13 +298,13 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
     size_t attributes_size = attributes.size();
 
-    if (unlikely(attributes_size == 0))
+    if (attributes_size == 0) [[unlikely]]
     {
         for (size_t i = 0; i < keys_size; ++i)
         {
             auto key = keys_extractor.extractCurrentKey();
 
-            if (unlikely(key >= configuration.max_array_size))
+            if (key >= configuration.max_array_size) [[unlikely]]
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "{}: identifier should be less than {}",
                     getFullName(),
