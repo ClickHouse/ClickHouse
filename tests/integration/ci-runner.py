@@ -12,6 +12,7 @@ import subprocess
 import time
 import zlib  # for crc32
 
+NO_CHANGES_MSG = 'Nothing to run'
 
 MAX_RETRY = 3
 NUM_WORKERS = 5
@@ -710,7 +711,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
             logging.info("No tests to run found")
-            return "success", "Nothing to run", [("Nothing to run", "OK")], ""
+            return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))

@@ -22,6 +22,9 @@ from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
+NO_CHANGES_MSG = 'Nothing to run'
+
+
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
     result = []
     if 'DatabaseReplicated' in check_name:
@@ -175,8 +178,8 @@ if __name__ == "__main__":
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
-            state = override_status('success', check_name, validate_bugix_check)
-            commit.create_status(context=check_name_with_group, description='Not found changed stateless tests', state=state)
+            state = 'success' # mark as success, but integration tests check would fail if it also doesn't have any tests
+            commit.create_status(context=check_name_with_group, description=NO_CHANGES_MSG, state=state)
             sys.exit(0)
 
     image_name = get_image_name(check_name)
@@ -222,7 +225,13 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
     state, description, test_results, additional_logs = process_results(result_path, server_log_path)
-    state = override_status(state, check_name, validate_bugix_check)
+    if validate_bugix_check:
+        if state != 'success':
+            description = f'Failed tests found: {description}'
+        # force success, because even if we don't have failed tests here, we need to check if there're intergration tests
+        state = 'success'
+    else:
+        state = override_status(state, check_name)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
