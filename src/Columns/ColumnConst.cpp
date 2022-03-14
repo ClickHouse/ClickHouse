@@ -124,14 +124,16 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
     return res;
 }
 
-void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
     res.resize(s);
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 }
 
-void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t, int, Permutation &, EqualRanges &) const
 {
 }
 

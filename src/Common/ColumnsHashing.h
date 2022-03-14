@@ -206,7 +206,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         NotFound = 2,
     };
 
-    static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 

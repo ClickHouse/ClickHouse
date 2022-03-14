@@ -459,7 +459,7 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
             return true;
         }
         else if (download_offset < file_offset_of_buffer_end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} >= {}", download_offset, file_offset_of_buffer_end);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} >= {} ({})", download_offset, file_offset_of_buffer_end, getInfoForLog());
     }
 
     if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
