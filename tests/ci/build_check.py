@@ -54,7 +54,6 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
-    pr_info: PRInfo,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -76,8 +75,7 @@ def get_packager_cmd(
     cmd += " --ccache_dir={}".format(ccache_path)
 
     if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
-        if pr_info.number == 0 or "release" in pr_info.labels:
-            cmd += " --additional-pkgs"
+        cmd += " --additional-pkgs"
 
     cmd += " --docker-image-version={}".format(image_version)
     cmd += " --version={}".format(build_version)
@@ -292,7 +290,6 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        pr_info,
     )
     logging.info("Going to run packager with %s", packager_cmd)
 
