@@ -3,6 +3,7 @@
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include <Common/FileCacheSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -31,13 +32,11 @@ namespace
 
 IFileCache::IFileCache(
     const String & cache_base_path_,
-    size_t max_size_,
-    size_t max_element_size_,
-    size_t max_file_segment_size_)
+    const FileCacheSettings & cache_settings_)
     : cache_base_path(cache_base_path_)
-    , max_size(max_size_)
-    , max_element_size(max_element_size_)
-    , max_file_segment_size(max_file_segment_size_)
+    , max_size(cache_settings_.max_cache_size)
+    , max_element_size(cache_settings_.max_cache_elements)
+    , max_file_segment_size(cache_settings_.max_cache_elements)
 {
 }
 
@@ -71,8 +70,8 @@ void IFileCache::assertInitialized() const
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
 }
 
-LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_, size_t max_file_segment_size_)
-    : IFileCache(cache_base_path_, max_size_, max_element_size_, max_file_segment_size_)
+LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
+    : IFileCache(cache_base_path_, cache_settings_)
     , log(&Poco::Logger::get("LRUFileCache"))
 {
 }
@@ -364,7 +363,7 @@ bool LRUFileCache::tryReserve(
 
     auto is_overflow = [&]
     {
-        return (current_size + size - removed_size > max_size)
+        return (max_size != 0 && current_size + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size);
     };
 

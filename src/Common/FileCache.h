@@ -32,9 +32,7 @@ public:
 
     IFileCache(
         const String & cache_base_path_,
-        size_t max_size_,
-        size_t max_element_size_,
-        size_t max_file_segment_size_);
+        const FileCacheSettings & cache_settings_);
 
     virtual ~IFileCache() = default;
 
@@ -111,9 +109,7 @@ class LRUFileCache final : public IFileCache
 public:
     LRUFileCache(
         const String & cache_base_path_,
-        size_t max_size_,
-        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
-        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
+        const FileCacheSettings & cache_settings_);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
 

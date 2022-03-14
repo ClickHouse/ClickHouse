@@ -2,17 +2,19 @@
 
 #if USE_AWS_S3
 
-#    include <IO/WriteBufferFromS3.h>
-#    include <IO/WriteHelpers.h>
+#include <base/logger_useful.h>
+#include <Common/FileCache.h>
 
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/CreateMultipartUploadRequest.h>
-#    include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#    include <aws/s3/model/PutObjectRequest.h>
-#    include <aws/s3/model/UploadPartRequest.h>
-#    include <base/logger_useful.h>
+#include <IO/WriteBufferFromS3.h>
+#include <IO/WriteHelpers.h>
 
-#    include <utility>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/PutObjectRequest.h>
+#include <aws/s3/model/UploadPartRequest.h>
+
+#include <utility>
 
 
 namespace ProfileEvents
@@ -59,7 +61,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t max_single_part_upload_size_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ScheduleFunc schedule_)
+    ScheduleFunc schedule_,
+    FileCachePtr cache_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
@@ -70,6 +73,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_part_size_multiply_threshold(upload_part_size_multiply_threshold_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , schedule(std::move(schedule_))
+    , cache(cache_)
 {
     allocateBuffer();
 }
@@ -95,7 +99,6 @@ void WriteBufferFromS3::nextImpl()
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
-
         writePart();
 
         allocateBuffer();
@@ -123,6 +126,21 @@ WriteBufferFromS3::~WriteBufferFromS3()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void WriteBufferFromS3::tryWriteToCacheIfNeeded()
+{
+    if (!cache || IFileCache::shouldBypassCache())
+        return;
+
+    try
+    {
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
     }
 }
 
