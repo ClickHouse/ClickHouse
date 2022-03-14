@@ -108,7 +108,7 @@ def is_stateless_bugfix_check_already_passed(gh, git_sha):
     status = get_post_commit_status(gh, git_sha, 'Stateless tests bugfix validate check*')
     if status is None:
         return False
-    return status.description.statswith('Failed tests found')
+    return status.description.startswith('Failed tests found')
 
 
 if __name__ == "__main__":
