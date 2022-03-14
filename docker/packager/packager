@@ -83,7 +83,7 @@ def parse_env_variables(
     version,
     author,
     official,
-    alien_pkgs,
+    additional_pkgs,
     with_coverage,
     with_binaries,
 ):
@@ -204,7 +204,7 @@ def parse_env_variables(
     elif cache == "distcc":
         result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
-    if alien_pkgs:
+    if additional_pkgs:
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
 
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     parser.add_argument("--version")
     parser.add_argument("--author", default="clickhouse", help="a package author")
     parser.add_argument("--official", action="store_true")
-    parser.add_argument("--alien-pkgs", nargs="+", default=[])
+    parser.add_argument("--additional-pkgs", action="store_true")
     parser.add_argument("--with-coverage", action="store_true")
     parser.add_argument(
         "--with-binaries", choices=("programs", "tests", ""), default=""
@@ -336,8 +336,8 @@ if __name__ == "__main__":
     else:
         ch_root = args.clickhouse_repo_path
 
-    if args.alien_pkgs and image_type != "deb":
-        raise Exception("Can add alien packages only in deb build")
+    if args.additional_pkgs and image_type != "deb":
+        raise Exception("Can build tgz and rpm packages only in deb build")
 
     if args.with_binaries != "" and image_type != "deb":
         raise Exception("Can add additional binaries only in deb build")
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         args.version,
         args.author,
         args.official,
-        args.alien_pkgs,
+        args.additional_pkgs,
         args.with_coverage,
         args.with_binaries,
     )
