@@ -9,13 +9,25 @@ Details for connecting to external sources (dictionaries, tables, table function
 in configuration files and thus simplify the creation of objects and hide credentials
 from users with only SQL access.
 
-
 Parameters can be set in XML `<format>CSV</format>` and overridden in SQL `, format = 'TSV'`.
 The parameters in SQL can be overridden using format `key` = `value`: `compression_method = 'gzip'`.
 
+Named connections are stored in the `config.xml` file of the ClickHouse server in the `<named_collections>` section and are applied when ClickHouse starts.
+
+Example of configuration:
+```xml
+$ cat /etc/clickhouse-server/config.d/named_collections.xml
+<clickhouse>
+     <named_collections>
+     ...
+     </named_collections>
+</clickhouse>
+```
+
+
 ## Named connections for accessing S3.
 
-The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3).
+The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
 
 Example of configuration:
 ```xml
@@ -63,7 +75,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 
 ## Named connections for accessing MySQL database.
 
-The description of parameters see [mysql](../sql-reference/table-functions/mysql/).
+The description of parameters see [mysql](../sql-reference/table-functions/mysql.md).
 
 Example of configuration:
 ```xml

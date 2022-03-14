@@ -12,9 +12,21 @@ toc_title: "Именованные соединения"
 Параметры можно задать в XML `<format>CSV</format>` и переопределить в SQL `, format = 'TSV'`.
 При использовании именованных соединений, параметры в SQL задаются в формате `ключ` = `значение`: `compression_method = 'gzip'`.
 
+Именованные соединения хранятся в файле `config.xml` сервера ClickHouse в секции `<named_collections>` и применяются при старте ClickHouse.
+
+Пример конфигурации:
+```xml
+$ cat /etc/clickhouse-server/config.d/named_collections.xml
+<clickhouse>
+     <named_collections>
+     ...
+     </named_collections>
+</clickhouse>
+```
+
 ## Именованные соединения для доступа к S3.
 
-Описание параметров смотри [Табличная Функция S3](../sql-reference/table-functions/s3).
+Описание параметров смотри [Табличная Функция S3](../sql-reference/table-functions/s3.md).
 
 Пример конфигурации:
 ```xml
@@ -62,7 +74,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 
 ## Пример использования именованных соединений с базой данных MySQL.
 
-Описание параметров смотри [mysql](../sql-reference/table-functions/mysql/).
+Описание параметров смотри [mysql](../sql-reference/table-functions/mysql.md).
 
 Пример конфигурации:
 ```xml
