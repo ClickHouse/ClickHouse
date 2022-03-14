@@ -1,5 +1,6 @@
 #include "ThreadPoolRemoteFSReader.h"
 
+#include <base/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -62,6 +63,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         if (running_group)
             thread_status.attachQuery(running_group);
 
+        SCOPE_EXIT_SAFE({
+            if (running_group)
+                CurrentThread::detachQuery();
+        });
+
         setThreadName("VFSRead");
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
@@ -73,9 +79,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
-
-        if (running_group)
-            thread_status.detachQuery();
 
         return Result{ .size = bytes_read, .offset = offset };
     });

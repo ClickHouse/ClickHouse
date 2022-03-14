@@ -325,7 +325,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     if (files[key].contains(offset))
         throw Exception(
             ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-            "Cache already exists for key: `{}`, offset: {}, size: {}, current cache structure: {}",
+            "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             keyToStr(key), offset, size, dumpStructureImpl(key, cache_lock));
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
