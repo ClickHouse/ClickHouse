@@ -22,8 +22,8 @@ struct ConnectionParameters
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
 
-    ConnectionParameters() {}
-    ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
+    ConnectionParameters() = default;
+    explicit ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, int port);
 
     static int getPortFromConfig(const Poco::Util::AbstractConfiguration & config);

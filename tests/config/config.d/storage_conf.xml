@@ -1,0 +1,23 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_cache>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3_cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>

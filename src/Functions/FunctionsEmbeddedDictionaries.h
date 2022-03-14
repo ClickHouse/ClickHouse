@@ -593,7 +593,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     /// For the purpose of query optimization, we assume this function to be injective
-    ///  even in face of fact that there are many different cities named Moscow.
+    ///  even in face of fact that there are many different cities named Paris.
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

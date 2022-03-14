@@ -371,6 +371,13 @@ void Client::initialize(Poco::Util::Application & self)
 
     configReadClient(config(), home_path);
 
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_user)
+        config().setString("user", env_user);
+    if (env_password)
+        config().setString("password", env_password);
+
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
@@ -486,12 +493,19 @@ void Client::connect()
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
+    if (hosts_and_ports.empty())
+    {
+        String host = config().getString("host", "localhost");
+        UInt16 port = static_cast<UInt16>(ConnectionParameters::getPortFromConfig(config()));
+        hosts_and_ports.emplace_back(HostAndPort{host, port});
+    }
+
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
     {
         try
         {
-            connection_parameters
-                = ConnectionParameters(config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+            connection_parameters = ConnectionParameters(
+                config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
                 std::cout << "Connecting to "
@@ -1085,22 +1099,15 @@ void Client::processOptions(const OptionsDescription & options_description,
         }
     }
 
-    if (hosts_and_ports_arguments.empty())
+    for (const auto & hosts_and_ports_argument : hosts_and_ports_arguments)
     {
-        hosts_and_ports.emplace_back(HostAndPort{"localhost", DBMS_DEFAULT_PORT});
-    }
-    else
-    {
-        for (const auto & hosts_and_ports_argument : hosts_and_ports_arguments)
-        {
-            /// Parse commandline options related to external tables.
-            po::parsed_options parsed_hosts_and_ports
-                = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
-            po::variables_map host_and_port_options;
-            po::store(parsed_hosts_and_ports, host_and_port_options);
-            hosts_and_ports.emplace_back(
-                HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
-        }
+        /// Parse commandline options related to external tables.
+        po::parsed_options parsed_hosts_and_ports
+            = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
+        po::variables_map host_and_port_options;
+        po::store(parsed_hosts_and_ports, host_and_port_options);
+        hosts_and_ports.emplace_back(
+            HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
     }
 
     send_external_tables = true;
@@ -1119,7 +1126,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))
