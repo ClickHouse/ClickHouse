@@ -58,7 +58,7 @@ echo "${error}" | grep -Fc "${ipv6_host_with_brackets}:${not_alive_port}"
 
 echo '=== Values form config'
 
-CUSTOM_CONFIG="$CURDIR/02100_config.xml"
+CUSTOM_CONFIG="$CURDIR/02100_config_$(${CLICKHOUSE_LOCAL} -q 'SELECT rand()').xml"
 rm -f ${CUSTOM_CONFIG}
 
 cat << EOF > ${CUSTOM_CONFIG}
