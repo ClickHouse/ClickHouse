@@ -17,7 +17,7 @@ from build_download_helper import download_all_deb_packages
 from download_previous_release import download_previous_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
-from commit_status_helper import post_commit_status, override_status, get_post_commit_status
+from commit_status_helper import post_commit_status, override_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
@@ -104,13 +104,6 @@ def process_results(result_folder):
     return state, description, test_results, additional_files
 
 
-def is_stateless_bugfix_check_already_passed(gh, git_sha):
-    status = get_post_commit_status(gh, git_sha, 'Stateless tests bugfix validate check*')
-    if status is None:
-        return False
-    return status.description.startswith('Failed tests found')
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -147,10 +140,6 @@ if __name__ == "__main__":
     rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
-    if validate_bugix_check and is_stateless_bugfix_check_already_passed(gh, pr_info.sha):
-        logging.info("There already are stateless tests for this bugfix")
         sys.exit(0)
 
     images = get_images_with_versions(reports_path, IMAGES)
