@@ -300,7 +300,7 @@ Result:
     <tr> <th>Search phrase</th> <th>Count</th> </tr>
     <tr> <td></td> <td>8267016</td> </tr>
     <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
-    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>clickhouse</td> <td>1655</td> </tr>
     <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
     <tr> <td>freeform photos</td> <td>1480</td> </tr>
   </table>
@@ -371,7 +371,7 @@ Similar to TabSeparated, but outputs a value in name=value format. Names are esc
 ``` text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
+SearchPhrase=clickhouse     count()=1655
 SearchPhrase=2014 spring fashion    count()=1549
 SearchPhrase=freeform photos       count()=1480
 SearchPhrase=angelina jolie    count()=1245
@@ -1060,7 +1060,7 @@ XML format is suitable only for output, not for parsing. Example:
                         <field>2166</field>
                 </row>
                 <row>
-                        <SearchPhrase>yandex</SearchPhrase>
+                        <SearchPhrase>clickhouse</SearchPhrase>
                         <field>1655</field>
                 </row>
                 <row>
