@@ -119,8 +119,8 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, const UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, const UInt64 client_protocol_revision);
+    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

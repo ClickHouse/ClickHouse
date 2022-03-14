@@ -132,7 +132,7 @@ inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
             if (istr.eof())
                 throwReadAfterEOF();
 
-        UInt64 byte = *istr.position();
+        UInt64 byte = *istr.position(); /// NOLINT
         ++istr.position();
         x |= (byte & 0x7F) << (7 * i);
 
@@ -172,7 +172,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
         if (istr == end)
             throwReadAfterEOF();
 
-        UInt64 byte = *istr;
+        UInt64 byte = *istr; /// NOLINT
         ++istr;
         x |= (byte & 0x7F) << (7 * i);
 
