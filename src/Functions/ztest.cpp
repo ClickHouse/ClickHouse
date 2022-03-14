@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
@@ -49,13 +50,8 @@ namespace DB
 
         static DataTypePtr getReturnType()
         {
-            DataTypes types
-            {
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
+            auto float_data_type = std::make_shared<DataTypeNumber<Float64>>();
+            DataTypes types(4, float_data_type);
 
             Strings names
             {
@@ -73,72 +69,119 @@ namespace DB
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-
             for (size_t i = 0; i < 4; ++i)
             {
-                if (!isNativeInteger(arguments[i]))
+                if (!isUnsignedInteger(arguments[i]))
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a integer or unsigned integer.", i + 1, getName());
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "The {}th Argument of function {} must be a UInt64.", i + 1, getName());
                 }
             }
 
             if (!isFloat(arguments[4]))
             {
-                throw Exception{"The fifth argument of function " + getName() + " should be a float, illegal type: " + arguments[4]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The fifth argument {} of function {} should be a float,", arguments[4]->getName(), getName()};
             }
 
+            /// There is an additional check for constancy in ExecuteImpl
             if (!isString(arguments[5]))
             {
-                throw Exception{"The sixth argument of function " + getName() + " should be a string, illegal type: " + arguments[5]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The sixth argument {} of function {} should be a string", arguments[5]->getName(),  getName()};
             }
 
             return getReturnType();
         }
 
 
-        static void nan(MutableColumnPtr & to)
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & const_arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
-            const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
-            Tuple tuple({nan, nan, nan, nan});
-            to->insert(tuple);
-        }
+            auto arguments = const_arguments;
+            /// Only last argument have to be constant
+            for (size_t i = 0; i < 5; ++i) {
+                arguments[i].column = arguments[i].column->convertToFullColumnIfConst();
+            }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            auto non_const_arguments = arguments;
-            for (auto & argument : non_const_arguments)
-                argument.column = argument.column->convertToFullColumnIfConst();
+            static const auto uint64_data_type = std::make_shared<DataTypeNumber<UInt64>>();
 
-            MutableColumnPtr to{getReturnType()->createColumn()};
-            to->reserve(input_rows_count);
+            auto column_successes_x = castColumnAccurate(arguments[0], uint64_data_type);
+            const auto & data_successes_x = checkAndGetColumn<ColumnVector<UInt64>>(column_successes_x.get())->getData();
 
-            if (!isString(arguments[5].type))
-                throw Exception{"The sixth argument of function " + getName() + " should be String, illegal type: " + arguments[5].type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            auto column_successes_y = castColumnAccurate(arguments[1], uint64_data_type);
+            const auto & data_successes_y = checkAndGetColumn<ColumnVector<UInt64>>(column_successes_y.get())->getData();
+
+            auto column_trials_x = castColumnAccurate(arguments[2], uint64_data_type);
+            const auto & data_trials_x = checkAndGetColumn<ColumnVector<UInt64>>(column_trials_x.get())->getData();
+
+            auto column_trials_y = castColumnAccurate(arguments[3], uint64_data_type);
+            const auto & data_trials_y = checkAndGetColumn<ColumnVector<UInt64>>(column_trials_y.get())->getData();
+
+            static const auto float64_data_type = std::make_shared<DataTypeNumber<Float64>>();
+
+            auto column_confidence_level = castColumnAccurate(arguments[4], float64_data_type);
+            const auto & data_confidence_level = checkAndGetColumn<ColumnVector<Float64>>(column_confidence_level.get())->getData();
+
+            if (!isColumnConst(*arguments[5].column.get()))
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(),  getName()};
+
+            String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
+
+            auto res_z_statistic = ColumnFloat64::create();
+            auto & data_z_statistic = res_z_statistic->getData();
+            data_z_statistic.reserve(input_rows_count);
+
+            auto res_p_value = ColumnFloat64::create();
+            auto & data_p_value = res_p_value->getData();
+            data_p_value.reserve(input_rows_count);
+
+            auto res_ci_lower = ColumnFloat64::create();
+            auto & data_ci_lower = res_ci_lower->getData();
+            data_ci_lower.reserve(input_rows_count);
+
+            auto res_ci_upper = ColumnFloat64::create();
+            auto & data_ci_upper = res_ci_upper->getData();
+            data_ci_upper.reserve(input_rows_count);
+
+            auto insert_values = [&data_z_statistic, &data_p_value, &data_ci_lower, &data_ci_upper](Float64 z_stat, Float64 p_value, Float64 lower, Float64 upper)
+            {
+                data_z_statistic.emplace_back(z_stat);
+                data_p_value.emplace_back(p_value);
+                data_ci_lower.emplace_back(lower);
+                data_ci_upper.emplace_back(upper);
+            };
+
+            static const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
+
+            auto insert_nan_into_columns = [&insert_values]()
+            {
+                return insert_values(nan, nan, nan, nan);
+            };
+
+            boost::math::normal_distribution<> nd(0.0, 1.0);
 
             for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
-                const UInt64 successes_x = arguments[0].column->getUInt(row_num);
-                const UInt64 successes_y = arguments[1].column->getUInt(row_num);
-                const UInt64 trials_x = arguments[2].column->getUInt(row_num);
-                const UInt64 trials_y = arguments[3].column->getUInt(row_num);
+                const UInt64 successes_x = data_successes_x[row_num];
+                const UInt64 successes_y = data_successes_y[row_num];
+                const UInt64 trials_x = data_trials_x[row_num];
+                const UInt64 trials_y = data_trials_y[row_num];
+                const Float64 confidence_level = data_confidence_level[row_num];
 
                 const Float64 props_x = static_cast<Float64>(successes_x) / trials_x;
                 const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
                 const Float64 diff = props_x - props_y;
                 const UInt64 trials_total = trials_x + trials_y;
-                const Float64 confidence_level = arguments[4].column->getFloat64(row_num);
 
                 if (successes_x == 0 || successes_y == 0
                     || successes_x > trials_x || successes_y > trials_y
                     || trials_total == 0
                     || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
                 {
-                    nan(to);
+                    insert_nan_into_columns();
                     continue;
                 }
-
-                const ColumnPtr & col_usevar = arguments[5].column;
-                String usevar = col_usevar->getDataAt(row_num).toString();
 
                 Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
 
@@ -158,18 +201,17 @@ namespace DB
                 }
                 else
                 {
-                    nan(to);
+                    insert_nan_into_columns();
                     continue;
                 }
 
                 if (!std::isfinite(zstat))
                 {
-                    nan(to);
+                    insert_nan_into_columns();
                     continue;
                 }
 
                 // pvalue
-                boost::math::normal_distribution<> nd(0.0, 1.0);
                 Float64 pvalue = 0;
                 Float64 one_side = 1 - boost::math::cdf(nd, std::abs(zstat));
                 pvalue = one_side * 2;
@@ -181,11 +223,10 @@ namespace DB
                 Float64 ci_low = d - dist;
                 Float64 ci_high = d + dist;
 
-                Tuple tuple({zstat, pvalue, ci_low, ci_high});
-                to->insert(tuple);
+                insert_values(zstat, pvalue, ci_low, ci_high);
             }
 
-            return to;
+            return ColumnTuple::create(Columns{std::move(res_z_statistic), std::move(res_p_value), std::move(res_ci_lower), std::move(res_ci_upper)});
         }
 
     };
