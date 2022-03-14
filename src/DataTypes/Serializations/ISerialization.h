@@ -145,7 +145,7 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
-        Substream(Type type_) : type(type_) {}
+        Substream(Type type_) : type(type_) {} /// NOLINT
 
         String toString() const;
     };
