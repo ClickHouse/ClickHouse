@@ -435,7 +435,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         if (engine_args.size() >= 7)
             configuration.on_conflict = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-    for (auto address : configuration.addresses)
+    for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
 
     return configuration;
