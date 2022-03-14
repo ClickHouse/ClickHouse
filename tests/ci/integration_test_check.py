@@ -9,6 +9,7 @@ import csv
 
 from github import Github
 
+import argparse
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -104,6 +105,13 @@ def process_results(result_folder):
     return state, description, test_results, additional_files
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    parser.add_argument("--validate-bugfix", action='store_true', help="Check that added tests failed on latest stable")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -113,8 +121,9 @@ if __name__ == "__main__":
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
-    check_name = sys.argv[1]
-    validate_bugix_check = len(sys.argv) >= 3 and sys.argv[2] == "--validate-bugfix"
+    args = parse_args()
+    check_name = args.check_name
+    validate_bugix_check = args.validate_bugfix
 
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
@@ -156,10 +165,10 @@ if __name__ == "__main__":
     if not os.path.exists(build_path):
         os.makedirs(build_path)
 
-    if not validate_bugix_check:
-        download_all_deb_packages(check_name, reports_path, build_path)
-    else:
+    if validate_bugix_check:
         download_previous_release(build_path)
+    else:
+        download_all_deb_packages(check_name, reports_path, build_path)
 
     my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 

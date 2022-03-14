@@ -8,6 +8,7 @@ import sys
 
 from github import Github
 
+import argparse
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -129,6 +130,14 @@ def process_results(result_folder, server_log_path):
     return state, description, test_results, additional_files
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    parser.add_argument("kill_timeout", type=int)
+    parser.add_argument("--validate-bugfix", action='store_true', help="Check that added tests failed on latest stable")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -138,10 +147,11 @@ if __name__ == "__main__":
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
-    check_name = sys.argv[1]
-    kill_timeout = int(sys.argv[2])
+    args = parse_args()
+    check_name = args.check_name
+    kill_timeout = args.kill_timeout
+    validate_bugix_check = args.validate_bugfix
 
-    validate_bugix_check = len(sys.argv) >= 4 and sys.argv[3] == "--validate-bugfix"
     flaky_check = 'flaky' in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugix_check
@@ -188,10 +198,10 @@ if __name__ == "__main__":
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
 
-    if not validate_bugix_check:
-        download_all_deb_packages(check_name, reports_path, packages_path)
-    else:
+    if validate_bugix_check:
         download_previous_release(packages_path)
+    else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = os.path.join(temp_path, "server_log")
     if not os.path.exists(server_log_path):
