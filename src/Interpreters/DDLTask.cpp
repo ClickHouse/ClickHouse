@@ -390,12 +390,7 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
-    /// Sequential counter in ZooKeeper is Int32.
-    assert(log_entry_number < std::numeric_limits<Int32>::max());
-    constexpr size_t seq_node_digits = 10;
-    String number = toString(log_entry_number);
-    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
-    return name;
+    return zkutil::getSequentialNodeName("query-", log_entry_number);
 }
 
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)

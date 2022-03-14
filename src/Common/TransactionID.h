@@ -11,7 +11,6 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 class MergeTreeTransaction;
 
-/// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough
 using CSN = UInt64;
 using Snapshot = CSN;
 using LocalTID = UInt64;
@@ -21,8 +20,8 @@ namespace Tx
 {
     const CSN UnknownCSN = 0;
     const CSN PrehistoricCSN = 1;
-    const CSN CommittingCSN = 2; /// TODO do we really need it?
-    const CSN MaxReservedCSN = 2;
+    const CSN CommittingCSN = 2;
+    const CSN MaxReservedCSN = 16;
 
     const LocalTID PrehistoricLocalTID = 1;
     const LocalTID DummyLocalTID = 1;
@@ -31,9 +30,18 @@ namespace Tx
 
 struct TransactionID
 {
+    /// Global sequential number, the newest commit timestamp the we saw when this transaction began
     CSN start_csn = 0;
+    /// Local sequential that is unique for each transaction started by this host within specific start_csn
     LocalTID local_tid = 0;
+    /// UUID of host that has started this transaction
     UUID host_id = UUIDHelpers::Nil;
+
+    /// NOTE Maybe we could just generate UUIDv4 for each transaction, but it would be harder to debug.
+    /// Partial order is defined for this TransactionID structure:
+    /// (tid1.start_csn <= tid2.start_csn)    <==>    (tid1 <= tid2)
+    /// (tid1.start_csn == tid2.start_csn && tid1.host_id == tid2.host_id && tid1.local_tid < tid2.local_tid)    ==>    (tid1 < tid2)
+    /// If two transaction have the same start_csn, but were started by different hosts, then order is undefined.
 
     bool operator == (const TransactionID & rhs) const
     {

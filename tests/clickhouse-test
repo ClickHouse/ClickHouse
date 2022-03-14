@@ -201,6 +201,17 @@ def get_processlist(args):
     else:
         return clickhouse_execute_json(args, 'SHOW PROCESSLIST')
 
+def get_transactions_list(args):
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(args, """
+            SELECT materialize((hostName(), tcpPort())) as host, *
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.transactions)
+            """)
+        else:
+            return clickhouse_execute_json(args, 'select * from system.transactions')
+    except Exception as e:
+        return f"Cannot get list of transactions: {e}"
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
@@ -1320,6 +1331,7 @@ def main(args):
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(json.dumps(processlist, indent=4))
+            print(get_transactions_list(args))
 
             print_stacktraces()
             exit_code.value = 1

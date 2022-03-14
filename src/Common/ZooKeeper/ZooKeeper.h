@@ -386,4 +386,6 @@ String extractZooKeeperName(const String & path);
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
 
+String getSequentialNodeName(const String & prefix, UInt64 number);
+
 }

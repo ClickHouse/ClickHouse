@@ -722,6 +722,7 @@ void StorageMergeTree::loadMutations()
                 {
                     if (!TransactionLog::getCSN(entry.tid))
                     {
+                        TransactionLog::assertTIDIsNotOutdated(entry.tid);
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
                         disk->removeFile(it->path());

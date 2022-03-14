@@ -1184,4 +1184,14 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, P
     return normalizeZooKeeperPath(path, check_starts_with_slash, log);
 }
 
+String getSequentialNodeName(const String & prefix, UInt64 number)
+{
+    /// NOTE Sequential counter in ZooKeeper is Int32.
+    assert(number < std::numeric_limits<Int32>::max());
+    constexpr size_t seq_node_digits = 10;
+    String num_str = std::to_string(number);
+    String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
+    return name;
+}
+
 }

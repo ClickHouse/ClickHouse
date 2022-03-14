@@ -31,14 +31,14 @@ struct VersionMetadata
 
     /// Checks if an object is visible for transaction or not.
     bool isVisible(const MergeTreeTransaction & txn);
-    bool isVisible(Snapshot snapshot_version, TransactionID current_tid = Tx::EmptyTID);
+    bool isVisible(CSN snapshot_version, TransactionID current_tid = Tx::EmptyTID);
 
     TransactionID getCreationTID() const { return creation_tid; }
     TransactionID getRemovalTID() const;
 
-    bool tryLockMaxTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id = nullptr);
-    void lockMaxTID(const TransactionID & tid, const TransactionInfoContext & context);
-    void unlockMaxTID(const TransactionID & tid, const TransactionInfoContext & context);
+    bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id = nullptr);
+    void lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
+    void unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
 
     bool isRemovalTIDLocked() const;
 
@@ -47,7 +47,7 @@ struct VersionMetadata
 
     /// Checks if it's safe to remove outdated version of an object
     bool canBeRemoved();
-    bool canBeRemovedImpl(Snapshot oldest_snapshot_version);
+    bool canBeRemovedImpl(CSN oldest_snapshot_version);
 
     void write(WriteBuffer & buf) const;
     void read(ReadBuffer & buf);
