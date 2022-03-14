@@ -229,6 +229,25 @@ As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate 
 
 Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
+## Debugging
+
+Many graphical IDEs offer with an integrated debugger but you can also use a standalone debugger.
+
+### GDB
+
+### LLDB
+
+    # tell LLDB where to find the source code
+    settings set target.source-map /path/to/build/dir /path/to/source/dir
+
+    # configure LLDB to display code before/after currently executing line
+    settings set stop-line-count-before 10
+    settings set stop-line-count-after 10
+
+    target create ./clickhouse-client
+    # <set breakpoints here>
+    process launch -- --query="SELECT * FROM TAB"
+
 ## Writing Code {#writing-code}
 
 The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
