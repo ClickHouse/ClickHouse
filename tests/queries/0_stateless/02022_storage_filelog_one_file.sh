@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: backward-incompatible
+# Tags: no-backward-compatibility-check
 
 set -eu
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: backward-incompatible:21.12.1.8761
+# Tags: no-backward-compatibility-check:21.12.1.8761
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

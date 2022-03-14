@@ -482,10 +482,10 @@ class TestCase:
         self.base_url_params = os.environ['CLICKHOUSE_URL_PARAMS'] if 'CLICKHOUSE_URL_PARAMS' in os.environ else ''
         self.base_client_options = os.environ['CLICKHOUSE_CLIENT_OPT'] if 'CLICKHOUSE_CLIENT_OPT' in os.environ else ''
 
-    # Check if test contains tag "backward-incompatible" and we should skip it
+    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
     def check_backward_incompatible_tag(self) -> bool:
         for tag in self.tags:
-            if tag.startswith("backward-incompatible"):
+            if tag.startswith("no-backward-compatibility-check"):
                 split = tag.split(':')
 
                 # If version is not specified in tag, always skip this test.

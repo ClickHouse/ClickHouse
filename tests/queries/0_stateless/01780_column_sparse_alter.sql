@@ -1,4 +1,4 @@
--- Tags: backward-incompatible
+-- Tags: no-backward-compatibility-check
 
 SET mutations_sync = 2;
 
