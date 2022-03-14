@@ -88,7 +88,7 @@ namespace DB
             if (!isString(arguments[5]))
             {
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The sixth argument {} of function {} should be a string", arguments[5]->getName(),  getName()};
+                                "The sixth argument {} of function {} should be a string", arguments[5]->getName(), getName()};
             }
 
             return getReturnType();
@@ -99,9 +99,8 @@ namespace DB
         {
             auto arguments = const_arguments;
             /// Only last argument have to be constant
-            for (size_t i = 0; i < 5; ++i) {
+            for (size_t i = 0; i < 5; ++i)
                 arguments[i].column = arguments[i].column->convertToFullColumnIfConst();
-            }
 
             static const auto uint64_data_type = std::make_shared<DataTypeNumber<UInt64>>();
 
@@ -124,7 +123,7 @@ namespace DB
 
             if (!isColumnConst(*arguments[5].column.get()))
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(),  getName()};
+                                "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(), getName()};
 
             String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
 
