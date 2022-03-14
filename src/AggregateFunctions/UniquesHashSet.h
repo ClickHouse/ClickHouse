@@ -306,9 +306,8 @@ public:
 
     UniquesHashSet & operator=(const UniquesHashSet & rhs)
     {
-        if (&rhs == this) {
+        if (&rhs == this)
             return *this;
-        }
 
         if (size_degree != rhs.size_degree)
         {
