@@ -286,7 +286,7 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-    for (auto address : configuration.addresses)
+    for (const auto & address : configuration.addresses)
         context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
     if (configuration.replace_query && !configuration.on_duplicate_clause.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
