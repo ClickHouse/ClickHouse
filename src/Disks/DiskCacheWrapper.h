@@ -40,7 +40,7 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;

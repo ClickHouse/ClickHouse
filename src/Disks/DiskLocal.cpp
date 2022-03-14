@@ -344,7 +344,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
