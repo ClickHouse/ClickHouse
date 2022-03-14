@@ -7150,9 +7150,9 @@ void StorageReplicatedMergeTree::createTableSharedID()
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
         UUID table_id_candidate;
-        auto storage_id = getStorageID();
-        if (storage_id.uuid != UUIDHelpers::Nil)
-            table_id_candidate = storage_id.uuid;
+        auto local_storage_id = getStorageID();
+        if (local_storage_id.uuid != UUIDHelpers::Nil)
+            table_id_candidate = local_storage_id.uuid;
         else
             table_id_candidate = UUIDHelpers::generateV4();
 

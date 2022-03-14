@@ -900,7 +900,7 @@ public:
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {}
+    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {} /// NOLINT
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree

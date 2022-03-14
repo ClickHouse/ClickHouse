@@ -76,7 +76,7 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | FLOAT                   | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE                  | [Float64](../../sql-reference/data-types/float.md)           |
 | DECIMAL, NEWDECIMAL     | [Decimal](../../sql-reference/data-types/decimal.md)         |
-| DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
+| DATE, NEWDATE           | [Date32](../../sql-reference/data-types/date32.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
 | YEAR                    | [UInt16](../../sql-reference/data-types/int-uint.md)         |

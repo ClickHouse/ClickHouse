@@ -26,7 +26,7 @@ struct RowRef
     const Block * block = nullptr;
     SizeT row_num = 0;
 
-    RowRef() {}
+    RowRef() {} /// NOLINT
     RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
 };
 
@@ -42,7 +42,7 @@ struct RowRefList : RowRef
         Batch * next;
         RowRef row_refs[MAX_SIZE];
 
-        Batch(Batch * parent)
+        explicit Batch(Batch * parent)
             : next(parent)
         {}
 
@@ -52,7 +52,7 @@ struct RowRefList : RowRef
         {
             if (full())
             {
-                auto batch = pool.alloc<Batch>();
+                auto * batch = pool.alloc<Batch>();
                 *batch = Batch(this);
                 batch->insert(std::move(row_ref), pool);
                 return batch;
@@ -66,7 +66,7 @@ struct RowRefList : RowRef
     class ForwardIterator
     {
     public:
-        ForwardIterator(const RowRefList * begin)
+        explicit ForwardIterator(const RowRefList * begin)
             : root(begin)
             , first(true)
             , batch(root->next)
@@ -115,7 +115,7 @@ struct RowRefList : RowRef
         size_t position;
     };
 
-    RowRefList() {}
+    RowRefList() {} /// NOLINT
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
@@ -221,7 +221,7 @@ public:
         T asof_value;
         RowRef row_ref;
 
-        Entry(T v) : asof_value(v) {}
+        explicit Entry(T v) : asof_value(v) {}
         Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
     };
 
@@ -241,8 +241,8 @@ public:
         Entry<Decimal128>::LookupPtr,
         Entry<DateTime64>::LookupPtr>;
 
-    AsofRowRefs() {}
-    AsofRowRefs(TypeIndex t);
+    AsofRowRefs() = default;
+    explicit AsofRowRefs(TypeIndex t);
 
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 

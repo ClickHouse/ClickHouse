@@ -37,8 +37,8 @@ public:
 
     ASTPtr clone() const override;
 
-    const ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
-    const ASTPtr where() const { return getExpression(where_expr_pos); }
+    ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
+    ASTPtr where() const { return getExpression(where_expr_pos); }
 
     void setTTL(ASTPtr && ast) { setExpression(ttl_expr_pos, std::forward<ASTPtr>(ast)); }
     void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::forward<ASTPtr>(ast)); }
@@ -50,7 +50,6 @@ private:
     int ttl_expr_pos;
     int where_expr_pos;
 
-private:
     void setExpression(int & pos, ASTPtr && ast);
     ASTPtr getExpression(int pos, bool clone = false) const;
 };
