@@ -20,6 +20,22 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
+inline static CSN getCSNAndAssert(TIDHash tid_hash, std::atomic<CSN> & csn, const TransactionID * tid = nullptr)
+{
+    CSN maybe_csn = TransactionLog::getCSN(tid_hash);
+    if (maybe_csn)
+        return maybe_csn;
+
+    maybe_csn = csn.load();
+    if (maybe_csn)
+        return maybe_csn;
+
+    if (tid)
+        TransactionLog::assertTIDIsNotOutdated(*tid);
+
+    return Tx::UnknownCSN;
+}
+
 VersionMetadata::VersionMetadata()
 {
     /// It would be better to make it static, but static loggers do not work for some reason (initialization order?)
@@ -29,12 +45,12 @@ VersionMetadata::VersionMetadata()
 /// It can be used for introspection purposes only
 TransactionID VersionMetadata::getRemovalTID() const
 {
-    TIDHash max_lock = removal_tid_lock.load();
-    if (max_lock)
+    TIDHash removal_lock = removal_tid_lock.load();
+    if (removal_lock)
     {
-        if (max_lock == Tx::PrehistoricTID.getHash())
+        if (removal_lock == Tx::PrehistoricTID.getHash())
             return Tx::PrehistoricTID;
-        if (auto txn = TransactionLog::instance().tryGetRunningTransaction(max_lock))
+        if (auto txn = TransactionLog::instance().tryGetRunningTransaction(removal_lock))
             return txn->tid;
     }
 
@@ -47,11 +63,11 @@ TransactionID VersionMetadata::getRemovalTID() const
     return Tx::EmptyTID;
 }
 
-void VersionMetadata::lockMaxTID(const TransactionID & tid, const TransactionInfoContext & context)
+void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     LOG_TEST(log, "Trying to lock removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     TIDHash locked_by = 0;
-    if (tryLockMaxTID(tid, context, &locked_by))
+    if (tryLockRemovalTID(tid, context, &locked_by))
         return;
 
     String part_desc;
@@ -66,16 +82,16 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const TransactionInf
                     tid, part_desc, context.table.getNameForLogs(), getRemovalTID(), locked_by);
 }
 
-bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
+bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
     assert(!tid.isEmpty());
     assert(!creation_tid.isEmpty());
-    TIDHash max_lock_value = tid.getHash();
-    TIDHash expected_max_lock_value = 0;
-    bool locked = removal_tid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
+    TIDHash removal_lock_value = tid.getHash();
+    TIDHash expected_removal_lock_value = 0;
+    bool locked = removal_tid_lock.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
     if (!locked)
     {
-        if (tid == Tx::PrehistoricTID && expected_max_lock_value == Tx::PrehistoricTID.getHash())
+        if (tid == Tx::PrehistoricTID && expected_removal_lock_value == Tx::PrehistoricTID.getHash())
         {
             /// Don't need to lock part for queries without transaction
             LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
@@ -83,7 +99,7 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
         }
 
         if (locked_by_id)
-            *locked_by_id = expected_max_lock_value;
+            *locked_by_id = expected_removal_lock_value;
         return false;
     }
 
@@ -92,21 +108,21 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
     return true;
 }
 
-void VersionMetadata::unlockMaxTID(const TransactionID & tid, const TransactionInfoContext & context)
+void VersionMetadata::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     LOG_TEST(log, "Unlocking removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     assert(!tid.isEmpty());
-    TIDHash max_lock_value = tid.getHash();
+    TIDHash removal_lock_value = tid.getHash();
     TIDHash locked_by = removal_tid_lock.load();
 
     auto throw_cannot_unlock = [&]()
     {
         auto locked_by_txn = TransactionLog::instance().tryGetRunningTransaction(locked_by);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unlock removal_tid, it's a bug. Current: {} {}, actual: {} {}",
-                        max_lock_value, tid, locked_by, locked_by_txn ? locked_by_txn->tid : Tx::EmptyTID);
+                        removal_lock_value, tid, locked_by, locked_by_txn ? locked_by_txn->tid : Tx::EmptyTID);
     };
 
-    if (locked_by != max_lock_value)
+    if (locked_by != removal_lock_value)
         throw_cannot_unlock();
 
     removal_tid = Tx::EmptyTID;
@@ -136,22 +152,20 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
     return isVisible(txn.getSnapshot(), txn.tid);
 }
 
-bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current_tid)
+bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
     assert(!creation_tid.isEmpty());
-    CSN min = creation_csn.load(std::memory_order_relaxed);
-    TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
-    CSN max = removal_csn.load(std::memory_order_relaxed);
+    CSN creation = creation_csn.load(std::memory_order_relaxed);
+    TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
+    CSN removal = removal_csn.load(std::memory_order_relaxed);
 
-    //LOG_TEST(log, "Checking if creation_tid {} creation_csn {} removal_tidhash {} removal_csn {} visible for {} {}", creation_tid, min, max_lock, max, snapshot_version, current_tid);
-
-    [[maybe_unused]] bool had_creation_csn = min;
-    [[maybe_unused]] bool had_removal_tid = max_lock;
-    [[maybe_unused]] bool had_removal_csn = max;
+    [[maybe_unused]] bool had_creation_csn = creation;
+    [[maybe_unused]] bool had_removal_tid = removal_lock;
+    [[maybe_unused]] bool had_removal_csn = removal;
     assert(!had_removal_csn || had_removal_tid);
     assert(!had_removal_csn || had_creation_csn);
-    assert(min == Tx::UnknownCSN || min == Tx::PrehistoricCSN || Tx::MaxReservedCSN < min);
-    assert(max == Tx::UnknownCSN || max == Tx::PrehistoricCSN || Tx::MaxReservedCSN < max);
+    assert(creation == Tx::UnknownCSN || creation == Tx::PrehistoricCSN || Tx::MaxReservedCSN < creation);
+    assert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
 
     /// Fast path:
 
@@ -159,20 +173,20 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     /// - creation was committed after we took the snapshot
     /// - removal was committed before we took the snapshot
     /// - current transaction is removing it
-    if (min && snapshot_version < min)
+    if (creation && snapshot_version < creation)
         return false;
-    if (max && max <= snapshot_version)
+    if (removal && removal <= snapshot_version)
         return false;
-    if (!current_tid.isEmpty() && max_lock && max_lock == current_tid.getHash())
+    if (!current_tid.isEmpty() && removal_lock && removal_lock == current_tid.getHash())
         return false;
 
     /// Otherwise, part is definitely visible if:
     /// - creation was committed before we took the snapshot and nobody tried to remove the part
     /// - creation was committed before and removal was committed after
     /// - current transaction is creating it
-    if (min && min <= snapshot_version && !max_lock)
+    if (creation && creation <= snapshot_version && !removal_lock)
         return true;
-    if (min && min <= snapshot_version && max && snapshot_version < max)
+    if (creation && creation <= snapshot_version && removal && snapshot_version < removal)
         return true;
     if (!current_tid.isEmpty() && creation_tid == current_tid)
         return true;
@@ -183,7 +197,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed or not.
     assert(!had_creation_csn || (had_removal_tid && !had_removal_csn));
-    assert(current_tid.isEmpty() || (creation_tid != current_tid && max_lock != current_tid.getHash()));
+    assert(current_tid.isEmpty() || (creation_tid != current_tid && removal_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
@@ -193,28 +207,30 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
         return false;
 
     /// Check if creation_tid/removal_tid transactions are committed and write CSNs
-    /// TODO Transactions: we probably need some optimizations here
+    /// TODO Transactions: we probably need more optimizations here
     /// to avoid some CSN lookups or make the lookups cheaper.
     /// NOTE: Old enough committed parts always have written CSNs,
     /// so we can determine their visibility through fast path.
     /// But for long-running writing transactions we will always do
     /// CNS lookup and get 0 (UnknownCSN) until the transaction is committer/rolled back.
-    min = TransactionLog::getCSN(creation_tid);
-    if (!min)
+    creation = getCSNAndAssert(creation_tid.getHash(), creation_csn, &creation_tid);
+    if (!creation)
+    {
         return false;   /// Part creation is not committed yet
+    }
 
     /// We don't need to check if CSNs are already written or not,
     /// because once written CSN cannot be changed, so it's safe to overwrite it (with the same value).
-    creation_csn.store(min, std::memory_order_relaxed);
+    creation_csn.store(creation, std::memory_order_relaxed);
 
-    if (max_lock)
+    if (removal_lock)
     {
-        max = TransactionLog::getCSN(max_lock);
-        if (max)
-            removal_csn.store(max, std::memory_order_relaxed);
+        removal = getCSNAndAssert(removal_lock, removal_csn);
+        if (removal)
+            removal_csn.store(removal, std::memory_order_relaxed);
     }
 
-    return min <= snapshot_version && (!max || snapshot_version < max);
+    return creation <= snapshot_version && (!removal || snapshot_version < removal);
 }
 
 bool VersionMetadata::canBeRemoved()
@@ -223,56 +239,56 @@ bool VersionMetadata::canBeRemoved()
     {
         /// Avoid access to Transaction log if transactions are not involved
 
-        TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
-        if (!max_lock)
+        TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
+        if (!removal_lock)
             return false;
 
-        if (max_lock == Tx::PrehistoricTID.getHash())
+        if (removal_lock == Tx::PrehistoricTID.getHash())
             return true;
     }
 
     return canBeRemovedImpl(TransactionLog::instance().getOldestSnapshot());
 }
 
-bool VersionMetadata::canBeRemovedImpl(Snapshot oldest_snapshot_version)
+bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
 {
-    CSN min = creation_csn.load(std::memory_order_relaxed);
+    CSN creation = creation_csn.load(std::memory_order_relaxed);
     /// We can safely remove part if its creation was rolled back
-    if (min == Tx::RolledBackCSN)
+    if (creation == Tx::RolledBackCSN)
         return true;
 
-    if (!min)
+    if (!creation)
     {
         /// Cannot remove part if its creation not committed yet
-        min = TransactionLog::getCSN(creation_tid);
-        if (min)
-            creation_csn.store(min, std::memory_order_relaxed);
+        creation = getCSNAndAssert(creation_tid.getHash(), creation_csn, &creation_tid);
+        if (creation)
+            creation_csn.store(creation, std::memory_order_relaxed);
         else
             return false;
     }
 
     /// Part is probably visible for some transactions (part is too new or the oldest snapshot is too old)
-    if (oldest_snapshot_version < min)
+    if (oldest_snapshot_version < creation)
         return false;
 
-    TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
+    TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
     /// Part is active
-    if (!max_lock)
+    if (!removal_lock)
         return false;
 
-    CSN max = removal_csn.load(std::memory_order_relaxed);
-    if (!max)
+    CSN removal = removal_csn.load(std::memory_order_relaxed);
+    if (!removal)
     {
         /// Part removal is not committed yet
-        max = TransactionLog::getCSN(max_lock);
-        if (max)
-            removal_csn.store(max, std::memory_order_relaxed);
+        removal = getCSNAndAssert(removal_lock, removal_csn);
+        if (removal)
+            removal_csn.store(removal, std::memory_order_relaxed);
         else
             return false;
     }
 
     /// We can safely remove part if all running transactions were started after part removal was committed
-    return max <= oldest_snapshot_version;
+    return removal <= oldest_snapshot_version;
 }
 
 #define CREATION_TID_STR "creation_tid: "
@@ -285,20 +301,20 @@ void VersionMetadata::writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool inter
 {
     if (which_csn == CREATION)
     {
-        if (CSN min = creation_csn.load())
+        if (CSN creation = creation_csn.load())
         {
             writeCString("\n" CREATION_CSN_STR, buf);
-            writeText(min, buf);
+            writeText(creation, buf);
         }
         else if (!internal)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "writeCSN called for creation_csn = 0, it's a bug");
     }
     else /// if (which_csn == REMOVAL)
     {
-        if (CSN max = removal_csn.load())
+        if (CSN removal = removal_csn.load())
         {
             writeCString("\n" REMOVAL_CSN_STR, buf);
-            writeText(max, buf);
+            writeText(removal, buf);
         }
         else if (!internal)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "writeCSN called for removal_csn = 0, it's a bug");

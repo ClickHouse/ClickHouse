@@ -887,6 +887,9 @@ public:
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
     MergeTreeTransactionPtr getCurrentTransaction() const;
 
+    bool isServerCompletelyStarted() const;
+    void setServerCompletelyStarted();
+
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 

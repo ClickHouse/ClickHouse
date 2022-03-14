@@ -25,12 +25,12 @@ public:
         ROLLED_BACK,
     };
 
-    Snapshot getSnapshot() const { return snapshot; }
+    CSN getSnapshot() const { return snapshot; }
     State getState() const;
 
     const TransactionID tid;
 
-    MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id);
+    MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id);
 
     void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part);
     void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context);
@@ -58,7 +58,7 @@ private:
     mutable std::mutex mutex;
     Stopwatch elapsed;
 
-    Snapshot snapshot;
+    CSN snapshot;
 
     std::unordered_set<StoragePtr> storages;
     DataPartsVector creating_parts;
@@ -66,7 +66,7 @@ private:
 
     std::atomic<CSN> csn;
 
-    std::list<Snapshot>::iterator snapshot_in_use_it;
+    std::list<CSN>::iterator snapshot_in_use_it;
 
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
     RunningMutationsList mutations;

@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeTransaction::MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id)
+MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id)
     : tid({snapshot_, local_tid_, host_id})
     , snapshot(snapshot_)
     , csn(Tx::UnknownCSN)
@@ -41,22 +41,33 @@ void MergeTreeTransaction::checkIsNotCancelled() const
 
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn)
 {
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-
-    /// Now we know actual part name and can write it to system log table.
-    tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+    /// Creation TID was written to data part earlier on part creation.
+    /// We only need to ensure that it's written and add part to in-memory set of new parts.
     new_part->assertHasVersionMetadata(txn);
     if (txn)
+    {
         txn->addNewPart(storage, new_part);
+        /// Now we know actual part name and can write it to system log table.
+        tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, txn->tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+    }
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
 {
     TransactionInfoContext context{storage->getStorageID(), part_to_remove->name};
     if (txn)
+    {
+        /// Lock part for removal and write current TID into version metadata file.
+        /// If server crash just after committing transactions
+        /// we will find this TID in version metadata and will finally remove part.
         txn->removeOldPart(storage, part_to_remove, context);
+    }
     else
-        part_to_remove->version.lockMaxTID(Tx::PrehistoricTID, context);
+    {
+        /// Lock part for removal with special TID, so transactions will no try to remove it concurrently.
+        /// We lock it only in memory.
+        part_to_remove->version.lockRemovalTID(Tx::PrehistoricTID, context);
+    }
 }
 
 void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
@@ -81,7 +92,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             context.part_name = covered->name;
-            covered->version.lockMaxTID(tid, context);
+            covered->version.lockRemovalTID(tid, context);
         }
     }
 }
@@ -101,7 +112,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         checkIsNotCancelled();
 
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-        part_to_remove->version.lockMaxTID(tid, context);
+        part_to_remove->version.lockRemovalTID(tid, context);
         storages.insert(storage);
         removing_parts.push_back(part_to_remove);
     }
@@ -126,27 +137,37 @@ bool MergeTreeTransaction::isReadOnly() const
 
 void MergeTreeTransaction::beforeCommit()
 {
-    CSN expected = Tx::UnknownCSN;
-    bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
-    if (!can_commit)
-    {
-        if (expected == Tx::RolledBackCSN)
-            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
-    }
-
     RunningMutationsList mutations_to_wait;
     {
         std::lock_guard lock{mutex};
         mutations_to_wait = mutations;
     }
 
+    /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.
     for (const auto & table_and_mutation : mutations_to_wait)
         table_and_mutation.first->waitForMutation(table_and_mutation.second);
+
+    assert([&]() {
+        std::lock_guard lock{mutex};
+        return mutations == mutations_to_wait;
+    }());
+
+    CSN expected = Tx::UnknownCSN;
+    bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
+    if (!can_commit)
+    {
+        /// Transaction was concurrently cancelled by KILL TRANSACTION or KILL MUTATION
+        if (expected == Tx::RolledBackCSN)
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
+    }
 }
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
+    /// and we will be able to remove old entries from transaction log in ZK.
+    /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     assert(prev_value == Tx::CommittingCSN);
     for (const auto & part : creating_parts)
@@ -167,21 +188,31 @@ bool MergeTreeTransaction::rollback() noexcept
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 
+    /// Check that it was not rolled back concurrently
     if (!need_rollback)
         return false;
 
+    /// It's not a problem if server crash at this point
+    /// because on startup we will see that TID is not committed and will simply discard these changes.
+
+    /// Forcefully stop related mutations if any
     for (const auto & table_and_mutation : mutations)
         table_and_mutation.first->killMutation(table_and_mutation.second);
 
+    /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : creating_parts)
         part->version.creation_csn.store(Tx::RolledBackCSN);
 
     for (const auto & part : removing_parts)
     {
+        /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
+        /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
         part->appendRemovalTIDToVersionMetadata(/* clear */ true);
-        part->version.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
+    /// Discard changes in active parts set
+    /// Remove parts that were created, restore parts that were removed (except parts that were created by this transaction too)
     for (const auto & part : creating_parts)
         const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(nullptr, {part}, true);
 

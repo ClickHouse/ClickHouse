@@ -277,6 +277,8 @@ struct ContextSharedPart
 
     Context::ConfigReloadCallback config_reload_callback;
 
+    bool is_server_completely_started = false;
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -3051,6 +3053,22 @@ void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
 MergeTreeTransactionPtr Context::getCurrentTransaction() const
 {
     return merge_tree_transaction;
+}
+
+bool Context::isServerCompletelyStarted() const
+{
+    auto lock = getLock();
+    assert(getApplicationType() == ApplicationType::SERVER);
+    return shared->is_server_completely_started;
+}
+
+void Context::setServerCompletelyStarted()
+{
+    auto lock = getLock();
+    assert(global_context.lock().get() == this);
+    assert(!shared->is_server_completely_started);
+    assert(getApplicationType() == ApplicationType::SERVER);
+    shared->is_server_completely_started = true;
 }
 
 PartUUIDsPtr Context::getPartUUIDs() const

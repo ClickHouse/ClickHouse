@@ -1366,6 +1366,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (!min)
             {
                 /// Transaction that created this part was not committed. Remove part.
+                TransactionLog::assertTIDIsNotOutdated(version.creation_tid);
                 min = Tx::RolledBackCSN;
             }
             LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has creation_tid={}, setting creation_csn={}",
@@ -1384,10 +1385,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             }
             else
             {
+                TransactionLog::assertTIDIsNotOutdated(version.removal_tid);
                 /// Transaction that tried to remove this part was not committed. Clear removal_tid.
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: clearing removal_tid={}",
                           part->name, version.removal_tid);
-                version.unlockMaxTID(version.removal_tid, TransactionInfoContext{getStorageID(), part->name});
+                version.unlockRemovalTID(version.removal_tid, TransactionInfoContext{getStorageID(), part->name});
             }
             version_updated = true;
         }
@@ -4030,14 +4032,14 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const Me
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(Snapshot snapshot_version, TransactionID current_tid) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const
 {
     auto res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated});
     filterVisibleDataParts(res, snapshot_version, current_tid);
     return res;
 }
 
-void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts, Snapshot snapshot_version, TransactionID current_tid) const
+void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const
 {
     if (maybe_visible_parts.empty())
         return;
@@ -4559,7 +4561,7 @@ void MergeTreeData::Transaction::rollback()
                 DataPartPtr covering_part;
                 DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, lock);
                 for (auto & covered : covered_parts)
-                    covered->version.unlockMaxTID(Tx::PrehistoricTID, TransactionInfoContext{data.getStorageID(), covered->name});
+                    covered->version.unlockRemovalTID(Tx::PrehistoricTID, TransactionInfoContext{data.getStorageID(), covered->name});
             }
         }
 

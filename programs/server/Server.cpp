@@ -1455,6 +1455,8 @@ if (ThreadFuzzer::instance().isEffective())
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 
