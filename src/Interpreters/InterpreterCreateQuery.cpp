@@ -1197,13 +1197,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
-    std::cerr << "!!!!!!!!!!!!!! database_replicated_allow_only_replicated_engine " << getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine << std::endl;
-
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
     {
-        std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!111\n";
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
-        std::cerr << (!is_replicated_storage) << res->storesDataOnDisk() << database->getEngineName() << std::endl;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
