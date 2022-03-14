@@ -28,7 +28,7 @@ DateTime64(precision, [timezone])
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime64(3, 'Europe/Moscow'),
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
     `event_id` UInt8
 )
 ENGINE = TinyLog
@@ -49,13 +49,13 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   将日期时间作为integer类型插入时，它会被视为适当缩放的Unix时间戳(UTC)。`1546300800000` （精度为3）表示 `'2019-01-01 00:00:00'` UTC. 不过，因为 `timestamp` 列指定了 `Europe/Moscow` （UTC+3）的时区，当作为字符串输出时，它将显示为 `'2019-01-01 03:00:00'`
--   当把字符串作为日期时间插入时，它会被赋予时区信息。 `'2019-01-01 00:00:00'` 将被认为处于 `Europe/Moscow` 时区并被存储为 `1546290000000`.
+-   将日期时间作为integer类型插入时，它会被视为适当缩放的Unix时间戳(UTC)。`1546300800000` （精度为3）表示 `'2019-01-01 00:00:00'` UTC. 不过，因为 `timestamp` 列指定了 `Asia/Istanbul` （UTC+3）的时区，当作为字符串输出时，它将显示为 `'2019-01-01 03:00:00'`
+-   当把字符串作为日期时间插入时，它会被赋予时区信息。 `'2019-01-01 00:00:00'` 将被认为处于 `Asia/Istanbul` 时区并被存储为 `1546290000000`.
 
 **2.** 过滤 `DateTime64` 类型的值
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
+SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul')
 ```
 
 ``` text
@@ -69,12 +69,12 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 **3.** 获取 `DateTime64` 类型值的时区信息:
 
 ``` sql
-SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────────column─┬─x──────────────────────────────┐
-│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Europe/Moscow') │
+│ 2019-10-16 04:12:04.000 │ DateTime64(3, 'Asia/Istanbul') │
 └─────────────────────────┴────────────────────────────────┘
 ```
 
@@ -83,7 +83,7 @@ SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS 
 ``` sql
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Europe/Moscow') as mos_time
+toDateTime64(timestamp, 3, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 
