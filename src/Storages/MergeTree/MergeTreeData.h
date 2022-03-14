@@ -423,7 +423,8 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    /// Snapshot for MergeTree fixes the current set of data parts.
+    /// Snapshot for MergeTree contains the current set of data parts
+    /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         DataPartsVector parts;

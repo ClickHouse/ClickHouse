@@ -15,13 +15,12 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
     if (!elem)
         return nullptr;
 
-    auto subcolumn_name = requested_column.getSubcolumnName();
-
     DataTypePtr elem_type;
     ColumnPtr elem_column;
 
     if (requested_column.isSubcolumn())
     {
+        auto subcolumn_name = requested_column.getSubcolumnName();
         elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
         elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column);
 
