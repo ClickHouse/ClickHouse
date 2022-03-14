@@ -48,6 +48,8 @@ private:
 
     void predownload(FileSegmentPtr & file_segment);
 
+    bool nextImplStep();
+
     enum class ReadType
     {
         CACHED,

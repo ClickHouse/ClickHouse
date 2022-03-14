@@ -1,4 +1,5 @@
 #include "ORCBlockInputFormat.h"
+#include <boost/algorithm/string/case_conv.hpp>
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
@@ -52,6 +53,9 @@ Chunk ORCBlockInputFormat::generate()
     if (!table || !table->num_rows())
         return res;
 
+    if (format_settings.use_lowercase_column_name)
+        table = *table->RenameColumns(include_column_names);
+
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -69,6 +73,7 @@ void ORCBlockInputFormat::resetParser()
 
     file_reader.reset();
     include_indices.clear();
+    include_column_names.clear();
     block_missing_values.clear();
 }
 
@@ -120,6 +125,20 @@ static void getFileReaderAndSchema(
     if (!read_schema_result.ok())
         throw Exception(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     schema = std::move(read_schema_result).ValueOrDie();
+
+    if (format_settings.use_lowercase_column_name)
+    {
+        std::vector<std::shared_ptr<::arrow::Field>> fields;
+        fields.reserve(schema->num_fields());
+        for (int i = 0; i < schema->num_fields(); ++i)
+        {
+            const auto& field = schema->field(i);
+            auto name = field->name();
+            boost::to_lower(name);
+            fields.push_back(field->WithName(name));
+        }
+        schema = arrow::schema(fields, schema->metadata());
+    }
 }
 
 void ORCBlockInputFormat::prepareReader()
@@ -148,9 +167,11 @@ void ORCBlockInputFormat::prepareReader()
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
-            column_names.push_back(name);
             for (int j = 0; j != indexes_count; ++j)
+            {
                 include_indices.push_back(index + j);
+                include_column_names.push_back(name);
+            }
         }
         index += indexes_count;
     }
