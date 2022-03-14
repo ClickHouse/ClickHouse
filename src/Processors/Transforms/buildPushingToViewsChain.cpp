@@ -8,6 +8,7 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -338,7 +339,7 @@ Chain buildPushingToViewsChain(
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-                storage_header, views_data->views.back(), views_data);
+            storage_header, views_data->views.back(), views_data);
             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
@@ -434,21 +435,33 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
-    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
-    ///
-    /// - We copy Context inside InterpreterSelectQuery to support
-    ///   modification of context (Settings) for subqueries
-    /// - InterpreterSelectQuery lives shorter than query pipeline.
-    ///   It's used just to build the query pipeline and no longer needed
-    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
-    ///   **can** take a reference to Context from InterpreterSelectQuery
-    ///   (the problem raises only when function uses context from the
-    ///    execute*() method, like FunctionDictGet do)
-    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
-    InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+    QueryPipelineBuilder pipeline;
+    std::unique_ptr<InterpreterSelectQuery> select;
 
-    auto pipeline = select.buildQueryPipeline();
-    pipeline.resize(1);
+    if (view.query)
+    {
+         /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+        ///
+        /// - We copy Context inside InterpreterSelectQuery to support
+        ///   modification of context (Settings) for subqueries
+        /// - InterpreterSelectQuery lives shorter than query pipeline.
+        ///   It's used just to build the query pipeline and no longer needed
+        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+        ///   **can** take a reference to Context from InterpreterSelectQuery
+        ///   (the problem raises only when function uses context from the
+        ///    execute*() method, like FunctionDictGet do)
+        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+
+        select = std::make_unique<InterpreterSelectQuery>(view.query, local_context, SelectQueryOptions());
+        pipeline = select->buildQueryPipeline();
+        pipeline.resize(1);
+    }
+    else
+    {
+        Chunk chunk(block.getColumns(), block.rows());
+        auto source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
+        pipeline.init(Pipe(std::move(source)));
+    }
 
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

@@ -22,7 +22,7 @@ struct SelectQueryDescription
 
     /// Parse description from select query for aggregating engine. Also
     /// validates query.
-    static SelectQueryDescription getSelectQueryFromASTForAggr(const ASTPtr & select);
+    static SelectQueryDescription getSelectQueryFromASTForAggregation(const ASTPtr & select);
 
     SelectQueryDescription() = default;
     SelectQueryDescription(const SelectQueryDescription & other);

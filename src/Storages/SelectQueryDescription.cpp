@@ -132,7 +132,7 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     return result;
 }
 
-SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForAggr(const ASTPtr & select)
+SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForAggregation(const ASTPtr & select)
 {
     ASTPtr new_inner_query;
 

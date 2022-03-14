@@ -148,14 +148,11 @@ StorageMaterializedView::StorageMaterializedView(
     {
         /// This is a special case for AggregatingMemory.
         /// AS SELECT is a part of .inner table, for MATERIALIZED VIEW it should be empty.
-        if (has_inner_table)
-        {
-            select.inner_query = nullptr;
-            select.select_query = nullptr;
+        select.inner_query = nullptr;
+        select.select_query = nullptr;
 
-            storage_metadata.setSelectQuery(select);
-            setInMemoryMetadata(storage_metadata);
-        }
+        storage_metadata.setSelectQuery(select);
+        setInMemoryMetadata(storage_metadata);
     }
 
     if (!attach_)

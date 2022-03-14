@@ -129,7 +129,7 @@ public:
         }
 
         // TODO data.aggregation_keys can differ in names of aggregation keys (i.e. AS aliases)
-        int key_position = -1;
+        std::optional<size_t> key_position;
         for (size_t i = 0; i < data.params.keys_size; ++i)
         {
             if (data.header.getByPosition(i).name == ident->name())
@@ -140,18 +140,18 @@ public:
         }
 
         /// This identifier is not a key.
-        if (key_position == -1)
+        if (!key_position)
             return;
 
         /// function->name == "equals"
         if (const auto * literal = value->as<ASTLiteral>())
         {
-            auto column_type = data.header.getByPosition(key_position).type;
+            auto column_type = data.header.getByPosition(*key_position).type;
 
             auto converted_field = convertFieldToType(literal->value, *column_type);
-            if (!converted_field.isNull() && data.raw_key_columns[key_position]->empty())
+            if (!converted_field.isNull() && data.raw_key_columns[*key_position]->empty())
             {
-                data.raw_key_columns[key_position]->insert(converted_field);
+                data.raw_key_columns[*key_position]->insert(converted_field);
             }
         }
     }
@@ -187,9 +187,9 @@ public:
           storage(storage_),
           metadata_snapshot(metadata_snapshot_),
           context(context_),
-          variants(*(storage.many_data)->variants[0]),
-          key_columns(storage.aggregator_transform_params->params.keys_size),
-          aggregate_columns(storage.aggregator_transform_params->params.aggregates_size) {}
+          variants(*(storage.many_data)->variants[0])
+    {
+    }
 
     String getName() const override { return "AggregatingMemorySink"; }
 
@@ -200,8 +200,7 @@ public:
         /// This block may have more columns then needed in case of MV.
         metadata_snapshot->check(block, true);
 
-        //StoragePtr source_storage = storage.source_storage;
-        auto query = storage.select_query.inner_query; // .select_query->as<ASTSelectWithUnionQuery>()->list_of_selects->children.at(0);// metadata_snapshot->getSelectQuery();
+        auto query = storage.select_query.inner_query;
 
         StoragePtr block_storage
             = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
@@ -243,8 +242,6 @@ private:
     ContextPtr context;
 
     AggregatedDataVariants & variants;
-    ColumnRawPtrs key_columns;
-    Aggregator::AggregateColumns aggregate_columns;
 };
 
 class StorageSource final : public shared_ptr_helper<StorageSource>, public IStorage
@@ -327,11 +324,9 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     ConstraintsDescription constraints_,
     const ASTCreateQuery & query,
     ContextPtr context_)
-    : IStorage(table_id_),
-      log(&Poco::Logger::get("StorageAggregatingMemory"))
+    : IStorage(table_id_)
+    , log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
-    // std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
-
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
@@ -339,7 +334,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
         throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
 
     // TODO check validity of aggregation query inside this func
-    select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
+    select_query = SelectQueryDescription::getSelectQueryFromASTForAggregation(query.select->clone());
 
     auto query_context = Context::createCopy(context_);
     query_context->makeQueryContext();
@@ -437,7 +432,8 @@ void StorageAggregatingMemory::initState(ContextPtr context)
 {
     many_data = std::make_shared<ManyAggregatedData>(1);
 
-    /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
+    /// If there was no data, and we aggregate without keys,
+    /// and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (aggregator_transform_params->params.keys_size == 0 && !aggregator_transform_params->params.empty_result_for_aggregation_by_empty_set)
     {
@@ -497,8 +493,7 @@ Pipe StorageAggregatingMemory::read(
 
 SinkToStoragePtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    auto out = std::make_shared<AggregatingMemorySink>(*this, metadata_snapshot, context);
-    return out;
+    return std::make_shared<AggregatingMemorySink>(*this, metadata_snapshot, context);
 }
 
 void StorageAggregatingMemory::drop()
