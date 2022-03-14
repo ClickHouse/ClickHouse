@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS buf_dest;
 DROP TABLE IF EXISTS buf;
 
