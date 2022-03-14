@@ -4,16 +4,19 @@
 
 #if USE_AWS_S3
 
-#    include <memory>
-#    include <vector>
-#    include <list>
-#    include <base/logger_useful.h>
-#    include <base/types.h>
+#include <memory>
+#include <vector>
+#include <list>
+#include <base/logger_useful.h>
+#include <base/types.h>
 
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
+#include <Common/ThreadPool.h>
+#include <Common/FileCache_fwd.h>
 
-#    include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBuffer.h>
+
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 namespace Aws::S3
 {
@@ -51,7 +54,8 @@ public:
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {});
+        ScheduleFunc schedule_ = {},
+        FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
 
@@ -81,6 +85,8 @@ private:
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+
+    void tryWriteToCacheIfNeeded();
 
     String bucket;
     String key;
@@ -113,6 +119,8 @@ private:
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+
+    FileCachePtr cache;
 };
 
 }
