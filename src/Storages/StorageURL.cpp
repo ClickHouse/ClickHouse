@@ -279,7 +279,7 @@ namespace
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 read_settings,
                                 headers,
-                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
+                                ReadWriteBufferFromHTTP::Range{},
                                 context->getRemoteHostFilter(),
                                 true,
                                 /* use_external_buffer */ false,
