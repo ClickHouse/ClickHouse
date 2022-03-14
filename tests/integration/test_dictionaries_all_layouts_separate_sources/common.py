@@ -214,7 +214,7 @@ class ComplexLayoutTester(BaseLayoutTester):
             # print query
             node_answer = node.query(query)
             answer = str(answer) + '\n'
-            assert node.query(query) == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
 
 
 class RangedLayoutTester(BaseLayoutTester):
@@ -246,4 +246,4 @@ class RangedLayoutTester(BaseLayoutTester):
             # print query
             node_answer = node.query(query)
             answer = str(answer) + '\n'
-            assert node.query(query) == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
