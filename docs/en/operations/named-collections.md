@@ -24,7 +24,6 @@ $ cat /etc/clickhouse-server/config.d/named_collections.xml
 </clickhouse>
 ```
 
-
 ## Named connections for accessing S3.
 
 The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
