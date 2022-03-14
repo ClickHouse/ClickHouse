@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
