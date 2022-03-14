@@ -35,9 +35,12 @@ public:
 
     const google::protobuf::Descriptor * import(const String & schema_path, const String & message_name)
     {
-        // Retrieve descriptor either by import from provided path (first call) or from the descriptor pool cache.
-        const auto * file_descriptor = importer.Import(schema_path);
+        // Search the message type among already imported ones.
+        const auto * descriptor = importer.pool()->FindMessageTypeByName(message_name);
+        if (descriptor)
+            return descriptor;
 
+        const auto * file_descriptor = importer.Import(schema_path);
         // If there are parsing errors, AddError() throws an exception and in this case the following line
         // isn't executed.
         assert(file_descriptor);

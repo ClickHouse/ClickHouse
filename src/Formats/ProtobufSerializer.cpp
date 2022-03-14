@@ -2236,25 +2236,14 @@ namespace
                     writer->endRepeatedPack(info.field_tag, true);
             }
 
-            if (parent_field_descriptor || has_envelope_as_parent)
+            if (parent_field_descriptor)
             {
-                int field_number;
-                bool is_group;
-                if (parent_field_descriptor && !has_envelope_as_parent)
-                {
-                    field_number = parent_field_descriptor->number();
-                    is_group = parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP;
-                }
-                else if (!parent_field_descriptor && has_envelope_as_parent)
-                {
-                    field_number = 1;
-                    is_group = false;
-                }
-                else
-                {
-                    assert(0); // invalid state
-                }
-                writer->endNestedMessage(field_number, is_group, should_skip_if_empty);
+                bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
+                writer->endNestedMessage(parent_field_descriptor->number(), is_group, should_skip_if_empty);
+            }
+            else if (has_envelope_as_parent)
+            {
+                writer->endNestedMessage(1, false, should_skip_if_empty);
             }
             else
                 writer->endMessage(with_length_delimiter);
@@ -2753,14 +2742,18 @@ namespace
             if (!with_envelope)
             {
                 *root_serializer_ptr = message_serializer.get();
+#if 0
                 LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+#endif
                 return message_serializer;
             }
             else
             {
                 auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
                 *root_serializer_ptr = envelope_serializer.get();
+#if 0
                 LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+#endif
                 return envelope_serializer;
             }
         }
