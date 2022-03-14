@@ -224,6 +224,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
             Buffer buffer = read_worker->reader->buffer();
             Segment new_segment(buffer.size(), &arena);
             memcpy(new_segment.data(), buffer.begin(), buffer.size());
+            read_worker->reader->ignore(buffer.size());
             {
                 /// New data ready to be read
                 std::lock_guard lock(mutex);
