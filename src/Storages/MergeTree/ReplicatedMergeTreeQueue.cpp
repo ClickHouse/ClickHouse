@@ -971,7 +971,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
     return parts_for_merge;
 }
 
-bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const
+bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const
 {
     if (entry_ptr->type != LogEntry::REPLACE_RANGE)
         return false;
@@ -1515,7 +1515,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
 bool ReplicatedMergeTreeQueue::processEntry(
     std::function<zkutil::ZooKeeperPtr()> get_zookeeper,
     LogEntryPtr & entry,
-    const std::function<bool(LogEntryPtr &)> func)
+    std::function<bool(LogEntryPtr &)> func)
 {
     std::exception_ptr saved_exception;
 

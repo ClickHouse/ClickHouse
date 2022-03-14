@@ -474,6 +474,14 @@ static void appendBlock(const Block & from, Block & to)
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
             last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
+            /// In case of ColumnAggregateFunction aggregate states will
+            /// be allocated from the query context but can be destroyed from the
+            /// server context (in case of background flush), and thus memory
+            /// will be leaked from the query, but only tracked memory, not
+            /// memory itself.
+            ///
+            /// To avoid this, prohibit sharing the aggregate states.
+            last_col->ensureOwnership();
             last_col->insertRangeFrom(col_from, 0, rows);
 
             to.getByPosition(column_no).column = std::move(last_col);

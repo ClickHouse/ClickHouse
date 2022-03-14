@@ -46,7 +46,7 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0;
+    virtual void flush(bool force = false) = 0; /// NOLINT
     virtual void prepareTable() = 0;
 
     /// Start the background thread.
