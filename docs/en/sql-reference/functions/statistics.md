@@ -7,25 +7,24 @@ toc_title: Statistics
 
 # proportionsZTest {#proportionsztest}
 
-Applies proportion z-test to samples from two populations. The alternative is 'two-sided'.
+Applies proportion z-test to samples from two populations (X and Y). The alternative is 'two-sided'.
 
 **Syntax**
 
 ``` sql
-proportionsZTest(successes_x, successes_y, trials_x, trials_y, confidence_level, usevar)
+proportionsZTest(successes_x, successes_y, trials_x, trials_y, significance_level, usevar)
 ```
 
 **Arguments**
 
-, successes_y, trials_x, trials_y, confidence_level
-
--   `successes_x` — The number of successes for X in trials. [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `trials_x` — The number of trials for X. [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `successes_y` — The number of successes for X in trials. [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `trials_y` — The number of trials for X. [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `usevar` - It can be `'pooled'` or `'unpooled'`.
-  -    `'pooled'` - The variance of the two populations are assumed to be equal.
-  -    `'unpooled'` - The assumption of equal variances is dropped.
+- `successes_x` — The number of successes for X in trials.
+- `successes_y` — The number of successes for X in trials.
+- `trials_x` — The number of trials for X.
+- `trials_y` — The number of trials for Y.
+- `significance_level`
+- `usevar` - It can be `'pooled'` or `'unpooled'`.
+  - `'pooled'` - The variance of the two populations are assumed to be equal.
+  - `'unpooled'` - The assumption of equal variances is dropped.
 
 **Returned value**
 

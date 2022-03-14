@@ -74,7 +74,7 @@ namespace DB
                 if (!isUnsignedInteger(arguments[i]))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "The {}th Argument of function {} must be a UInt64.", i + 1, getName());
+                                    "The {}th Argument of function {} must be an unsigned integer.", i + 1, getName());
                 }
             }
 
