@@ -14,7 +14,7 @@ echo "${error}" | grep -Fq "${not_alive_host}:9440" && echo 1 || (echo ${error} 
 
 echo '=== Values form config'
 
-CUSTOM_CONFIG="$CURDIR/02100_config_2.xml"
+CUSTOM_CONFIG="$CURDIR/02100_config_$(${CLICKHOUSE_LOCAL} -q 'SELECT rand()').xml"
 rm -f ${CUSTOM_CONFIG}
 
 cat << EOF > ${CUSTOM_CONFIG}
