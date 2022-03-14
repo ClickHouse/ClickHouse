@@ -2728,7 +2728,6 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsBugfixCheck:
     runs-on: [self-hosted, stress-tester]
-    needs: [FunctionalStatelessTestBugfixCheck]
     steps:
       - name: Set envs
         run: |

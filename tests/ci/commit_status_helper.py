@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import time
-import fnmatch
 from env_helper import GITHUB_REPOSITORY
 from ci_config import CI_CONFIG
 
@@ -46,26 +45,6 @@ def post_commit_status(gh, sha, check_name, description, state, report_url):
                 target_url=report_url,
             )
             break
-        except Exception as ex:
-            if i == RETRY - 1:
-                raise ex
-            time.sleep(i)
-
-
-def get_post_commit_status(gh, sha, check_name):
-    MAX_PAGES_NUM = 100
-    for i in range(RETRY):
-        try:
-            statuses = get_commit(gh, sha, 1).get_statuses()
-            for num in range(MAX_PAGES_NUM):
-                page = statuses.get_page(num)
-                if not page:
-                    break
-                for status in page:
-                    if fnmatch.fnmatch(status.context, check_name):
-                        return status
-                num += 1
-            return None
         except Exception as ex:
             if i == RETRY - 1:
                 raise ex
