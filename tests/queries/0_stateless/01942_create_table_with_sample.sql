@@ -1,4 +1,4 @@
--- Tags: backward-incompatible:21.9.1.1
+-- Tags: no-backward-compatibility-check:21.9.1.1
 
 CREATE TABLE IF NOT EXISTS sample_incorrect
 (`x` UUID)
