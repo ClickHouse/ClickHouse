@@ -49,8 +49,6 @@ class AccessControl : public MultipleAccessStorage
 public:
     AccessControl();
     ~AccessControl() override;
-    std::atomic_bool allow_plaintext_password;
-    std::atomic_bool allow_no_password;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
@@ -116,9 +114,13 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
-    //sets allow_plaintext_password and allow_no_password setting
-    void setPlaintextPasswordSetting(const bool allow_plaintext_password_);
-    void setNoPasswordSetting(const bool allow_no_password_);
+    /// Allows users without password (by default it's allowed).
+    void setNoPasswordAllowed(const bool allow_no_password_);
+    bool isNoPasswordAllowed() const;
+
+    /// Allows users with plaintext password (by default it's allowed).
+    void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
+    bool isPlaintextPasswordAllowed() const;
 
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
@@ -153,9 +155,6 @@ public:
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
-    bool isPlaintextPasswordAllowed() const;
-    bool isNoPasswordAllowed() const;
-
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user,
@@ -177,6 +176,8 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
+    std::atomic_bool allow_plaintext_password = true;
+    std::atomic_bool allow_no_password = true;
 };
 
 }
