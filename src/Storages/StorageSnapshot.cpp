@@ -124,13 +124,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 
 namespace
 {
-
-#if !defined(ARCADIA_BUILD)
     using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using DenseHashSet = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
-
 }
 
 void StorageSnapshot::check(const Names & column_names) const

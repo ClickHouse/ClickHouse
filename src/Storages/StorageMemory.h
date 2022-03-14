@@ -29,7 +29,8 @@ public:
 
     size_t getSize() const { return data.get()->size(); }
 
-    /// Snapshot for StorageMemory fixes current set of blocks.
+    /// Snapshot for StorageMemory contains current set of blocks
+    /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;

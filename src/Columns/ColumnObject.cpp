@@ -676,6 +676,10 @@ void ColumnObject::addSubcolumn(const PathInData & key, MutableColumnPtr && subc
 
     if (num_rows == 0)
         num_rows = new_size;
+    else if (new_size != num_rows)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of subcolumn {} ({}) is inconsistent with column size ({})",
+            key.getPath(), new_size, num_rows);
 }
 
 void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
@@ -686,6 +690,10 @@ void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
 
     if (num_rows == 0)
         num_rows = new_size;
+    else if (new_size != num_rows)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Requiered size of subcolumn {} ({}) is inconsistent with column size ({})",
+            key.getPath(), new_size, num_rows);
 }
 
 void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size)
