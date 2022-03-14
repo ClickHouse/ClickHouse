@@ -155,7 +155,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
                 part = storage.createPart(
                     part_name,
-                    MergeTreeDataPartType::IN_MEMORY,
+                    MergeTreeDataPartType::InMemory,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
                     single_disk_volume,
                     part_name);

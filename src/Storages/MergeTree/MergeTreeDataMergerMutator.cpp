@@ -248,7 +248,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
         if (!parts_to_merge.empty())
         {
-            future_part->merge_type = MergeType::TTL_DELETE;
+            future_part->merge_type = MergeType::TTLDelete;
         }
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
@@ -260,7 +260,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
-                future_part->merge_type = MergeType::TTL_RECOMPRESS;
+                future_part->merge_type = MergeType::TTLRecompress;
         }
     }
 

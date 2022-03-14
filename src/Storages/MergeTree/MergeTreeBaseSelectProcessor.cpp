@@ -658,7 +658,7 @@ size_t MergeTreeBaseSelectProcessor::estimateMaxBatchSizeForHugeRanges()
 
     size_t sum_average_marks_size = 0;
     /// getColumnSize is not fully implemented for compact parts
-    if (task->data_part->getType() == IMergeTreeDataPart::Type::COMPACT)
+    if (task->data_part->getType() == IMergeTreeDataPart::Type::Compact)
     {
         sum_average_marks_size = average_granule_size_bytes;
     }
