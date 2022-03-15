@@ -92,14 +92,6 @@ namespace DB
                                 "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(), getName()};
             }
 
-            String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
-
-            if (usevar != UNPOOLED && usevar != POOLED)
-                throw Exception{ErrorCodes::BAD_ARGUMENTS,
-                                "The sixth argument {} of function {} must be equal to `pooled` or `unpooled`", arguments[5].type->getName(), getName()};
-
-            is_unpooled = (usevar == UNPOOLED);
-
             return getReturnType();
         }
 
@@ -129,6 +121,14 @@ namespace DB
 
             auto column_confidence_level = castColumnAccurate(arguments[4], float64_data_type);
             const auto & data_confidence_level = checkAndGetColumn<ColumnVector<Float64>>(column_confidence_level.get())->getData();
+
+            String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
+
+            if (usevar != UNPOOLED && usevar != POOLED)
+                throw Exception{ErrorCodes::BAD_ARGUMENTS,
+                                "The sixth argument {} of function {} must be equal to `pooled` or `unpooled`", arguments[5].type->getName(), getName()};
+
+            const bool is_unpooled = (usevar == UNPOOLED);
 
             auto res_z_statistic = ColumnFloat64::create();
             auto & data_z_statistic = res_z_statistic->getData();
@@ -220,9 +220,6 @@ namespace DB
 
             return ColumnTuple::create(Columns{std::move(res_z_statistic), std::move(res_p_value), std::move(res_ci_lower), std::move(res_ci_upper)});
         }
-
-    private:
-        mutable bool is_unpooled{false};
     };
 
 
