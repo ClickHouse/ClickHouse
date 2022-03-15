@@ -66,6 +66,7 @@ struct URI
     String endpoint;
     String bucket;
     String key;
+    String version_id;
     String storage_name;
 
     bool is_virtual_hosted_style;

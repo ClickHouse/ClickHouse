@@ -104,12 +104,14 @@ public:
         const String & path_,
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
+        const String & version_id_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(metadata_, settings_, path_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
+        , version_id(version_id_)
         , max_single_read_retries(max_single_read_retries_)
     {
     }
@@ -119,6 +121,7 @@ public:
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
+    String version_id;
     UInt64 max_single_read_retries;
 };
 #endif
