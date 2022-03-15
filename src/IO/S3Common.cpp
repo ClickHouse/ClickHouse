@@ -780,7 +780,7 @@ namespace S3
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
-        // Extract object version ID from query string.
+        /// Extract object version ID from query string.
         {
             version_id = "";
             const String version_key = "versionId=";
@@ -790,7 +790,6 @@ namespace S3
             if (start != std::string::npos)
             {
                 start += version_key.length();
-                start = start == std::string::npos ? query_string.length() : start + 1;
 
                 auto end = query_string.find_first_of('&', start);
                 end = end == std::string::npos ? query_string.length() : end - start;
