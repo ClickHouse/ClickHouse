@@ -1,3 +1,5 @@
+SET cast_ipv4_ipv6_default_on_conversion_error = 1;
+
 SELECT CAST('127.0.0.1' as IPv4) as v, toTypeName(v);
 SELECT CAST(toIPv4('127.0.0.1') as String) as v, toTypeName(v);
 
@@ -10,4 +12,4 @@ SELECT toIPv6('hello') as v, toTypeName(v);
 SELECT CAST('hello' as IPv4) as v, toTypeName(v); -- { serverError CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING }
 SELECT CAST('hello' as IPv6) as v, toTypeName(v); -- { serverError CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING }
 
-SELECT CAST('1.1.1.1' as IPv6) as v, toTypeName(v); -- { serverError CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING }
+SELECT CAST('1.1.1.1' as IPv6) as v, toTypeName(v);
