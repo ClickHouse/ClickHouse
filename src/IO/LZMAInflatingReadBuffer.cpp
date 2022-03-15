@@ -1,7 +1,5 @@
 #include <IO/LZMAInflatingReadBuffer.h>
 
-#include <base/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
