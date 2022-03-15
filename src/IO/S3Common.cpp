@@ -782,15 +782,12 @@ namespace S3
 
         // Extract object version ID from query string.
         {
+            version_id = "";
             const String version_key = "versionId=";
             const auto query_string = uri.getQuery();
 
             auto start = query_string.rfind(version_key);
-            if (start == std::string::npos)
-            {
-                version_id = "";
-            }
-            else
+            if (start != std::string::npos)
             {
                 start += version_key.length();
                 start = start == std::string::npos ? query_string.length() : start + 1;
