@@ -23,7 +23,7 @@ static ITransformingStep::Traits getTraits()
 
 void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header,  QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
         return std::make_shared<CachingTransform>(header, cache, query_ptr);
     });

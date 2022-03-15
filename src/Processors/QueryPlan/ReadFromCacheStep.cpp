@@ -31,7 +31,7 @@ ReadFromCacheStep::ReadFromCacheStep(
 
 void ReadFromCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header,  QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
         return std::make_shared<ReadFromCacheTransform>(header, cache, query_ptr);
     });
