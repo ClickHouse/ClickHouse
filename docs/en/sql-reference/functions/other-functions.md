@@ -2499,3 +2499,39 @@ Result:
 │                      286 │
 └──────────────────────────┘
 ```
+
+## enumerateStreams {#enumerateStreams}
+
+return the enumerated stream paths of data type.
+
+**Syntax**
+
+``` sql
+enumerateStreams(type_name)
+```
+
+**Arguments**
+- `type_name` - Name of data type to enumerate its stream paths. [String](../../sql-reference/data-types/string.md#string).
+
+**Returned value**
+- List of enumerated stream paths.
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+
+
+**Example**
+
+Query:
+
+``` sql
+SELECT enumerateStreams('Array(Array(Int8))')
+```
+
+Result:
+
+``` text
+┌─enumerateStreams('Array(Array(Int8))')───────────────────────────────────────────────────┐
+│ ['{ArraySizes}','{ArrayElements, ArraySizes}','{ArrayElements, ArrayElements, Regular}'] │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
