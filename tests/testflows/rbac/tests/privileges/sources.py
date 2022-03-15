@@ -165,7 +165,7 @@ def url(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("URL source with privilege"):
@@ -173,8 +173,7 @@ def url(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings = [("user", f"{user_name}")],
-                exitcode=42, message='Exception: Storage')
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1', 'TSV')", settings = [("user", f"{user_name}")])
 
     with Scenario("URL source with revoked privilege"):
         with When(f"I grant {privilege}"):
@@ -184,7 +183,7 @@ def url(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the URL source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=URL('127.0.0.1', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -610,8 +609,9 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
     if node is None:
         node = self.context.node
 
+    table_name = f'table_{getuid()}'
+
     with Scenario("HDFS source without privilege"):
-        table_name = f'table_{getuid()}'
 
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
@@ -623,7 +623,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('hdfs://127.0.0.1:8020/path', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("HDFS source with privilege"):
@@ -632,8 +632,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings = [("user", f"{user_name}")],
-                exitcode=42, message='Exception: Storage')
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('hdfs://127.0.0.1:8020/path', 'TSV')", settings = [("user", f"{user_name}")])
 
     with Scenario("HDFS source with revoked privilege"):
 
@@ -644,7 +643,7 @@ def HDFS(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the HDFS source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=HDFS('hdfs://127.0.0.1:8020/path', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestSuite
@@ -702,8 +701,9 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
     if node is None:
         node = self.context.node
 
+    table_name = f'table_{getuid()}'
+
     with Scenario("S3 source without privilege"):
-        table_name = f'table_{getuid()}'
 
         with Given("The user has table privilege"):
             node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
@@ -715,7 +715,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
         with Then("I check the user can't use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('https://my.amazonaws.com/mybucket/mydata', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
     with Scenario("S3 source with privilege"):
@@ -724,8 +724,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
         with Then("I check the user can use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings = [("user", f"{user_name}")],
-                exitcode=42, message='Exception: Storage')
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('https://my.amazonaws.com/mybucket/mydata', 'TSV')", settings = [("user", f"{user_name}")])
 
     with Scenario("S3 source with revoked privilege"):
 
@@ -736,7 +735,7 @@ def S3(self, privilege, grant_target_name, user_name, node=None):
             node.query(f"REVOKE {privilege} ON *.* FROM {grant_target_name}")
 
         with Then("I check the user cannot use the S3 source"):
-            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('127.0.0.1')", settings=[("user",user_name)],
+            node.query(f"CREATE TABLE {table_name} (x String) ENGINE=S3('https://my.amazonaws.com/mybucket/mydata', 'TSV')", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
 @TestFeature
