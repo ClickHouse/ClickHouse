@@ -20,6 +20,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+        extern const int BAD_ARGUMENTS;
     }
 
 
@@ -42,7 +43,7 @@ namespace DB
         }
 
         size_t getNumberOfArguments() const override { return 6; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5, 6}; }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5}; }
 
         bool useDefaultImplementationForNulls() const override { return false; }
         bool useDefaultImplementationForConstants() const override { return true; }
@@ -67,29 +68,37 @@ namespace DB
             );
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             for (size_t i = 0; i < 4; ++i)
             {
-                if (!isUnsignedInteger(arguments[i]))
+                if (!isUnsignedInteger(arguments[i].type))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                     "The {}th Argument of function {} must be an unsigned integer.", i + 1, getName());
                 }
             }
 
-            if (!isFloat(arguments[4]))
+            if (!isFloat(arguments[4].type))
             {
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The fifth argument {} of function {} should be a float,", arguments[4]->getName(), getName()};
+                                "The fifth argument {} of function {} should be a float,", arguments[4].type->getName(), getName()};
             }
 
             /// There is an additional check for constancy in ExecuteImpl
-            if (!isString(arguments[5]))
+            if (!isString(arguments[5].type) && !arguments[5].column)
             {
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The sixth argument {} of function {} should be a string", arguments[5]->getName(), getName()};
+                                "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(), getName()};
             }
+
+            String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
+
+            if (usevar != UNPOOLED && usevar != POOLED)
+                throw Exception{ErrorCodes::BAD_ARGUMENTS,
+                                "The sixth argument {} of function {} must be equal to `pooled` or `unpooled`", arguments[5].type->getName(), getName()};
+
+            is_unpooled = (usevar == UNPOOLED);
 
             return getReturnType();
         }
@@ -121,12 +130,6 @@ namespace DB
             auto column_confidence_level = castColumnAccurate(arguments[4], float64_data_type);
             const auto & data_confidence_level = checkAndGetColumn<ColumnVector<Float64>>(column_confidence_level.get())->getData();
 
-            if (!isColumnConst(*arguments[5].column.get()))
-                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(), getName()};
-
-            String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
-
             auto res_z_statistic = ColumnFloat64::create();
             auto & data_z_statistic = res_z_statistic->getData();
             data_z_statistic.reserve(input_rows_count);
@@ -143,7 +146,7 @@ namespace DB
             auto & data_ci_upper = res_ci_upper->getData();
             data_ci_upper.reserve(input_rows_count);
 
-            auto insert_values = [&data_z_statistic, &data_p_value, &data_ci_lower, &data_ci_upper](Float64 z_stat, Float64 p_value, Float64 lower, Float64 upper)
+            auto insert_values_into_result = [&data_z_statistic, &data_p_value, &data_ci_lower, &data_ci_upper](Float64 z_stat, Float64 p_value, Float64 lower, Float64 upper)
             {
                 data_z_statistic.emplace_back(z_stat);
                 data_p_value.emplace_back(p_value);
@@ -151,12 +154,7 @@ namespace DB
                 data_ci_upper.emplace_back(upper);
             };
 
-            static const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
-
-            auto insert_nan_into_columns = [&insert_values]()
-            {
-                return insert_values(nan, nan, nan, nan);
-            };
+            static constexpr Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
 
             boost::math::normal_distribution<> nd(0.0, 1.0);
 
@@ -178,7 +176,7 @@ namespace DB
                     || trials_total == 0
                     || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
                 {
-                    insert_nan_into_columns();
+                    insert_values_into_result(nan, nan, nan, nan);
                     continue;
                 }
 
@@ -187,26 +185,21 @@ namespace DB
                 /// z-statistics
                 /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
                 Float64 zstat;
-                if (usevar == UNPOOLED)
+                if (is_unpooled)
                 {
                     zstat = (props_x - props_y) / se;
                 }
-                else if (usevar == POOLED)
+                else
                 {
                     UInt64 successes_total = successes_x + successes_y;
                     Float64 p_pooled = static_cast<Float64>(successes_total) / trials_total;
                     Float64 trials_fact = 1.0 / trials_x + 1.0 / trials_y;
                     zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
                 }
-                else
-                {
-                    insert_nan_into_columns();
-                    continue;
-                }
 
                 if (!std::isfinite(zstat))
                 {
-                    insert_nan_into_columns();
+                    insert_values_into_result(nan, nan, nan, nan);
                     continue;
                 }
 
@@ -222,12 +215,14 @@ namespace DB
                 Float64 ci_low = d - dist;
                 Float64 ci_high = d + dist;
 
-                insert_values(zstat, pvalue, ci_low, ci_high);
+                insert_values_into_result(zstat, pvalue, ci_low, ci_high);
             }
 
             return ColumnTuple::create(Columns{std::move(res_z_statistic), std::move(res_p_value), std::move(res_ci_lower), std::move(res_ci_upper)});
         }
 
+    private:
+        mutable bool is_unpooled{false};
     };
 
 
