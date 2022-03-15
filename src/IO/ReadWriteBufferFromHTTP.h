@@ -115,7 +115,7 @@ namespace detail
         const Poco::Net::HTTPBasicCredentials & credentials;
         std::vector<Poco::Net::HTTPCookie> cookies;
         HTTPHeaderEntries http_header_entries;
-        RemoteHostFilter remote_host_filter;
+        const RemoteHostFilter * remote_host_filter = nullptr;
         std::function<void(size_t)> next_callback;
 
         size_t buffer_size;
@@ -219,7 +219,8 @@ namespace detail
                     while (isRedirect(response.getStatus()))
                     {
                         Poco::URI uri_redirect(response.get("Location"));
-                        remote_host_filter.checkURL(uri_redirect);
+                        if (remote_host_filter)
+                            remote_host_filter->checkURL(uri_redirect);
 
                         session->updateSession(uri_redirect);
 
@@ -265,7 +266,7 @@ namespace detail
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
             Range read_range_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {},
+            const RemoteHostFilter * remote_host_filter_ = nullptr,
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false)
@@ -348,7 +349,8 @@ namespace detail
             while (isRedirect(response.getStatus()))
             {
                 Poco::URI uri_redirect(response.get("Location"));
-                remote_host_filter.checkURL(uri_redirect);
+                if (remote_host_filter)
+                    remote_host_filter->checkURL(uri_redirect);
 
                 session->updateSession(uri_redirect);
 
@@ -629,7 +631,7 @@ public:
         const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
         Range read_range_ = {},
-        const RemoteHostFilter & remote_host_filter_ = {},
+        const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
