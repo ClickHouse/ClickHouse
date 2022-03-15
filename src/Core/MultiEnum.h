@@ -53,7 +53,8 @@ struct MultiEnum
         return bitset;
     }
 
-    template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
+    template <typename ValueType>
+    requires std::is_convertible_v<ValueType, StorageType>
     void setValue(ValueType new_value)
     {
         // Can't set value from any enum avoid confusion
@@ -66,7 +67,8 @@ struct MultiEnum
         return bitset == other.bitset;
     }
 
-    template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
+    template <typename ValueType>
+    requires std::is_convertible_v<ValueType, StorageType>
     bool operator==(ValueType other) const
     {
         // Shouldn't be comparable with any enum to avoid confusion
@@ -80,13 +82,15 @@ struct MultiEnum
         return !(*this == other);
     }
 
-    template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
+    template <typename ValueType>
+    requires std::is_convertible_v<ValueType, StorageType>
     friend bool operator==(ValueType left, MultiEnum right)
     {
         return right.operator==(left);
     }
 
-    template <typename L, typename = typename std::enable_if<!std::is_same_v<L, MultiEnum>>::type>
+    template <typename L>
+    requires (!std::is_same_v<L, MultiEnum>)
     friend bool operator!=(L left, MultiEnum right)
     {
         return !(right.operator==(left));
