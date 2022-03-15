@@ -103,6 +103,8 @@ protected:
 
     Names virt_column_names;
 
+    bool add_part_offset = false;
+
     DataTypePtr partition_value_type;
 
     /// This header is used for chunks from readFromPart().

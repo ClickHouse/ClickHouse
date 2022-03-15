@@ -58,6 +58,9 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         if (header_without_virtual_columns.has(*it))
             header_without_virtual_columns.erase(*it);
 
+    if (std::find(virt_column_names.begin(), virt_column_names.end(), "_part_offset") != virt_column_names.end())
+        add_part_offset = true;
+
     if (prewhere_info)
     {
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
@@ -199,23 +202,23 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true, add_part_offset);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false, add_part_offset);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
-            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true);
+            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true, add_part_offset);
         }
     }
     else
     {
-        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true);
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, add_part_offset);
     }
 }
 
@@ -305,6 +308,12 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     for (size_t ps = 0; ps < header_without_virtual_columns.columns(); ++ps)
     {
         auto pos_in_sample_block = sample_block.getPositionByName(header_without_virtual_columns.getByPosition(ps).name);
+        ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
+    }
+
+    if (add_part_offset)
+    {
+        auto pos_in_sample_block = sample_block.getPositionByName("_part_offset");
         ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
     }
 
@@ -503,6 +512,19 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
 {
     VirtualColumnsInserterIntoBlock inserter{block};
     injectVirtualColumnsImpl(block.rows(), inserter, task, partition_value_type, virtual_columns);
+
+    /// injectVirtualColumns is used to get header of a block, so we patch it here. But when generating data, it
+    /// is not a constant value, so we do not put it in injectVirtualColumnsImpl.
+    if (std::find(virtual_columns.begin(), virtual_columns.end(), "_part_offset") != virtual_columns.end())
+    {
+        ColumnPtr column;
+        if (block.rows())
+            column = DataTypeUInt64().createColumnConst(block.rows(), 0)->convertToFullColumnIfConst();
+        else
+            column = DataTypeUInt64().createColumn();
+
+        inserter.insertUInt64Column(column, "_part_offset");
+    }
 }
 
 void MergeTreeBaseSelectProcessor::injectVirtualColumns(
