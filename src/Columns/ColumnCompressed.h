@@ -126,7 +126,7 @@ protected:
     Lazy lazy;
 
 private:
-    [[noreturn]] void throwMustBeDecompressed() const
+    [[noreturn]] static void throwMustBeDecompressed()
     {
         throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
     }
