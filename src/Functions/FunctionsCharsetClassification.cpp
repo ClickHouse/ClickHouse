@@ -20,7 +20,7 @@ namespace
     constexpr size_t max_string_size = 1UL << 15;
 
     template <typename ModelMap>
-    static ALWAYS_INLINE inline Float64 naiveBayes(
+    ALWAYS_INLINE inline Float64 naiveBayes(
         const FrequencyHolder::EncodingMap & standard,
         const ModelMap & model,
         Float64 max_result)
@@ -48,7 +48,7 @@ namespace
 
     /// Сount how many times each bigram occurs in the text.
     template <typename ModelMap>
-    static ALWAYS_INLINE inline void calculateStats(
+    ALWAYS_INLINE inline void calculateStats(
         const UInt8 * data,
         const size_t size,
         ModelMap & model)
