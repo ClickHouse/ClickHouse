@@ -36,4 +36,3 @@ tornado==6.1
 Unidecode==1.1.1
 urllib3>=1.26.8
 Pygments>=2.11.2
-
