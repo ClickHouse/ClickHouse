@@ -151,6 +151,7 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, Fn<String()
 DiskS3::DiskS3(
     String name_,
     String bucket_,
+    String version_id_,
     String s3_root_path_,
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
@@ -159,6 +160,7 @@ DiskS3::DiskS3(
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
+    , version_id(std::move(version_id_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
     , context(context_)
