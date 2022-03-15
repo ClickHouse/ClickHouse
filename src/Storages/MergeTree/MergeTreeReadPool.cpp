@@ -18,9 +18,9 @@ namespace ErrorCodes
 namespace DB
 {
 MergeTreeReadPool::MergeTreeReadPool(
-    const size_t threads_,
-    const size_t sum_marks_,
-    const size_t min_marks_for_concurrent_read_,
+    size_t threads_,
+    size_t sum_marks_,
+    size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
     const MergeTreeData & data_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -28,7 +28,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     const Names & column_names_,
     const BackoffSettings & backoff_settings_,
     size_t preferred_block_size_bytes_,
-    const bool do_not_steal_tasks_)
+    bool do_not_steal_tasks_)
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
     , data{data_}
@@ -45,7 +45,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names)
 {
     const std::lock_guard lock{mutex};
 
@@ -149,7 +149,7 @@ Block MergeTreeReadPool::getHeader() const
     return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
 }
 
-void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
+void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
 {
     if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
         return;
@@ -232,8 +232,8 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 
 
 void MergeTreeReadPool::fillPerThreadInfo(
-    const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-    const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read)
+    size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+    const RangesInDataParts & parts, size_t min_marks_for_concurrent_read)
 {
     threads_tasks.resize(threads);
     if (parts.empty())

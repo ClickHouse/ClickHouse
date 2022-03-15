@@ -101,7 +101,7 @@ namespace mysqlxx
          * max_tries_            Max number of connection tries.
          * wait_timeout_         Timeout for waiting free connection.
          */
-        PoolWithFailover(
+        explicit PoolWithFailover(
             const std::string & config_name_,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,

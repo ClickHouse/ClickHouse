@@ -1,4 +1,6 @@
 #include "ParquetBlockInputFormat.h"
+#include <boost/algorithm/string/case_conv.hpp>
+
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
@@ -12,9 +14,6 @@
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
-
-#include <base/logger_useful.h>
-
 
 namespace DB
 {
@@ -57,6 +56,9 @@ Chunk ParquetBlockInputFormat::generate()
         throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
+    if (format_settings.use_lowercase_column_name)
+        table = *table->RenameColumns(column_names);
+
     ++row_group_current;
 
     arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
@@ -76,6 +78,7 @@ void ParquetBlockInputFormat::resetParser()
 
     file_reader.reset();
     column_indices.clear();
+    column_names.clear();
     row_group_current = 0;
     block_missing_values.clear();
 }
@@ -120,6 +123,20 @@ static void getFileReaderAndSchema(
         return;
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
+
+    if (format_settings.use_lowercase_column_name)
+    {
+        std::vector<std::shared_ptr<::arrow::Field>> fields;
+        fields.reserve(schema->num_fields());
+        for (int i = 0; i < schema->num_fields(); ++i)
+        {
+            const auto& field = schema->field(i);
+            auto name = field->name();
+            boost::to_lower(name);
+            fields.push_back(field->WithName(name));
+        }
+        schema = arrow::schema(fields, schema->metadata());
+    }
 }
 
 void ParquetBlockInputFormat::prepareReader()
@@ -150,7 +167,10 @@ void ParquetBlockInputFormat::prepareReader()
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
+            {
                 column_indices.push_back(index + j);
+                column_names.push_back(name);
+            }
         }
         index += indexes_count;
     }

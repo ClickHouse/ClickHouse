@@ -39,6 +39,8 @@ public:
 
     std::optional<size_t> getTotalSize() override;
 
+    size_t getFileOffsetOfBufferEnd() const override;
+
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };
