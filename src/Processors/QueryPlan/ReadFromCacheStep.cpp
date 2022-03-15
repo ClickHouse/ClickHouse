@@ -1,3 +1,5 @@
+#include <memory>
+
 #include <Processors/QueryPlan/ReadFromCacheStep.h>
 
 namespace DB

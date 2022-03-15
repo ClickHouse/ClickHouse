@@ -1,4 +1,5 @@
 #pragma once
+#include <unordered_map>
 #include <Processors/ISimpleTransform.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InterpreterSelectQuery.h>

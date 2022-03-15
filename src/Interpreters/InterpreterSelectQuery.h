@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,6 +15,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Processors/Chunk.h>
+#include <Parsers/IAST.h>
 #include <Columns/FilterDescription.h>
 
 namespace Poco
