@@ -36,6 +36,8 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
         config.keys("remote_url_allow_hosts", keys);
 
         std::lock_guard guard(hosts_mutex);
+        primary_hosts.clear();
+        regexp_hosts.clear();
 
         for (const auto & key : keys)
         {
