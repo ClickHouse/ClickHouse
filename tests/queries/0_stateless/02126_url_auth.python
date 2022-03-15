@@ -217,7 +217,7 @@ def main():
        query : 'hello, world',
     }
 
-    t = start_server(len(list(select_requests_url_auth.keys())))
+    t = start_server(len(list(select_requests_url_auth.keys())) * 2)
     t.start()
     test_select(requests=list(select_requests_url_auth.keys()), answers=list(select_requests_url_auth.values()), test_data=test_data)
     t.join()
