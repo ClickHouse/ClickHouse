@@ -151,8 +151,8 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, Fn<String()
 DiskS3::DiskS3(
     String name_,
     String bucket_,
-    String version_id_,
     String s3_root_path_,
+    String version_id_,
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
