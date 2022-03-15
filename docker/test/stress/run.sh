@@ -285,7 +285,7 @@ then
 
     mkdir tmp_stress_output
     
-    ./stress --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1800 \
+    ./stress --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
         && echo -e 'Test script exit code\tOK' >> /test_output/backward_compatibility_check_results.tsv \
         || echo -e 'Test script failed\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
     rm -rf tmp_stress_output
