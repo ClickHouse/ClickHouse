@@ -86,7 +86,7 @@ namespace DB
             }
 
             /// There is an additional check for constancy in ExecuteImpl
-            if (!isString(arguments[5].type) && !arguments[5].column)
+            if (!isString(arguments[5].type) || !arguments[5].column)
             {
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "The sixth argument {} of function {} should be a constant string", arguments[5].type->getName(), getName()};
