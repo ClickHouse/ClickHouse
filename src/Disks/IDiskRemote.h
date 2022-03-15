@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -28,7 +27,7 @@ namespace DB
 class RemoteFSPathKeeper
 {
 public:
-    RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
+    explicit RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
 
     virtual ~RemoteFSPathKeeper() = default;
 

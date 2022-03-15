@@ -248,7 +248,9 @@ endif()
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
 endif()
+
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
+option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -262,6 +264,11 @@ endif ()
 if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
     set (USE_BINARY_HASH 1)
 endif ()
+
+# Allows to build stripped binary in a separate directory
+if (OBJCOPY_PATH AND READELF_PATH)
+    set(BUILD_STRIPPED_BINARIES_PREFIX "" CACHE STRING "Build stripped binaries with debug info in separate directory")
+endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 

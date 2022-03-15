@@ -291,11 +291,11 @@ Pipe StorageMaterializedPostgreSQL::read(
 
 
 std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
-        const String name, const String type, UInt64 default_value)
+        String name, String type, UInt64 default_value)
 {
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
-    column_declaration->name = name;
+    column_declaration->name = std::move(name);
     column_declaration->type = makeASTFunction(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
@@ -352,7 +352,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
         ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
-        return std::move(ast_expression);
+        return ast_expression;
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
@@ -534,7 +534,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 
-    return std::move(create_table_query);
+    return create_table_query;
 }
 
 

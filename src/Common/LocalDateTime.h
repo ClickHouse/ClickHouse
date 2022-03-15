@@ -18,7 +18,7 @@
 class LocalDateTime
 {
 private:
-    unsigned short m_year;
+    unsigned short m_year; /// NOLINT
     unsigned char m_month;
     unsigned char m_day;
     unsigned char m_hour;
@@ -65,7 +65,7 @@ public:
         init(time, time_zone);
     }
 
-    LocalDateTime(unsigned short year_, unsigned char month_, unsigned char day_,
+    LocalDateTime(unsigned short year_, unsigned char month_, unsigned char day_, /// NOLINT
         unsigned char hour_, unsigned char minute_, unsigned char second_)
         : m_year(year_), m_month(month_), m_day(day_), m_hour(hour_), m_minute(minute_), m_second(second_)
     {
@@ -91,14 +91,14 @@ public:
     LocalDateTime(const LocalDateTime &) noexcept = default;
     LocalDateTime & operator= (const LocalDateTime &) noexcept = default;
 
-    unsigned short year() const { return m_year; }
+    unsigned short year() const { return m_year; } /// NOLINT
     unsigned char month() const { return m_month; }
     unsigned char day() const { return m_day; }
     unsigned char hour() const { return m_hour; }
     unsigned char minute() const { return m_minute; }
     unsigned char second() const { return m_second; }
 
-    void year(unsigned short x) { m_year = x; }
+    void year(unsigned short x) { m_year = x; } /// NOLINT
     void month(unsigned char x) { m_month = x; }
     void day(unsigned char x) { m_day = x; }
     void hour(unsigned char x) { m_hour = x; }
@@ -108,7 +108,7 @@ public:
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
     LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const
+    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const /// NOLINT
     {
         return time_zone.makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
     }

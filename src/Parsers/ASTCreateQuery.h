@@ -51,7 +51,7 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
-    bool empty()
+    bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());

@@ -106,7 +106,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
+    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
 template <typename T>
@@ -611,7 +611,7 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void push_back(char) {}
+    void push_back(char) {} /// NOLINT
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
@@ -1278,7 +1278,6 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         default:
             return;
     }
-    return;
 }
 
 /// Read something from text format and trying to parse the suffix.
