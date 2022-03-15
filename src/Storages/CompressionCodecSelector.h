@@ -69,7 +69,7 @@ private:
     std::vector<Element> elements;
 
 public:
-    CompressionCodecSelector() {}    /// Always returns the default method.
+    CompressionCodecSelector() = default;    /// Always returns the default method.
 
     CompressionCodecSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {
@@ -78,7 +78,7 @@ public:
 
         for (const auto & name : keys)
         {
-            if (!startsWith(name.data(), "case"))
+            if (!startsWith(name, "case"))
                 throw Exception("Unknown element in config: " + config_prefix + "." + name + ", must be 'case'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
             elements.emplace_back(config, config_prefix + "." + name);

@@ -52,8 +52,7 @@ public:
           bits_count(0)
     {}
 
-    ~BitReader()
-    {}
+    ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
     inline UInt64 readBits(UInt8 bits_to_read)

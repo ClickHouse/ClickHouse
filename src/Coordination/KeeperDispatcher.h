@@ -77,7 +77,6 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
-private:
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
