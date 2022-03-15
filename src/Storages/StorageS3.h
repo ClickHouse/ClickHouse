@@ -85,6 +85,7 @@ public:
 private:
     String name;
     String bucket;
+    String version_id;
     String file_path;
     String format;
     ColumnsDescription columns_desc;
