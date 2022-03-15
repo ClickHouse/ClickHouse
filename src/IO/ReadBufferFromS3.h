@@ -29,6 +29,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
+    String version_id;
     UInt64 max_single_read_retries;
     off_t offset = 0;
 
@@ -42,6 +43,7 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
+        const String & version_id_,
         UInt64 max_single_read_retries_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,

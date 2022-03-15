@@ -236,11 +236,13 @@ StorageS3Source::StorageS3Source(
     String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
+    const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
     : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
+    , version_id(version_id_)
     , format(format_)
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
@@ -274,7 +276,7 @@ bool StorageS3Source::initialize()
     file_path = fs::path(bucket) / current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, version_id, max_single_read_retries, getContext()->getReadSettings()),
         chooseCompressionMethod(current_key, compression_hint));
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -674,6 +676,7 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
+            client_auth.uri.version_id,
             iterator_wrapper));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -927,7 +930,12 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
             return wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadBufferFromS3>(
-                    client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
+                    client_auth.client,
+                    client_auth.uri.bucket,
+                    current_key,
+                    client_auth.uri.version_id,
+                    max_single_read_retries,
+                    ctx->getReadSettings()),
                 chooseCompressionMethod(current_key, compression_method));
         };
 
