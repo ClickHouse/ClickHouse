@@ -203,24 +203,26 @@ bool MergeTreeTransaction::rollback() noexcept
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
 
-    /// Forcefully stop related mutations if any (call killMutation with unlocked mutex)
     RunningMutationsList mutations_to_kill;
+    DataPartsVector parts_to_remove;
+    DataPartsVector parts_to_activate;
+
     {
         std::lock_guard lock{mutex};
         mutations_to_kill = mutations;
+        parts_to_remove = creating_parts;
+        parts_to_activate = removing_parts;
     }
 
+    /// Forcefully stop related mutations if any
     for (const auto & table_and_mutation : mutations_to_kill)
         table_and_mutation.first->killMutation(table_and_mutation.second);
 
-    std::lock_guard lock{mutex};
-    assert(mutations == mutations_to_kill);
-
     /// Kind of optimization: cleanup thread can remove these parts immediately
-    for (const auto & part : creating_parts)
+    for (const auto & part : parts_to_remove)
         part->version.creation_csn.store(Tx::RolledBackCSN);
 
-    for (const auto & part : removing_parts)
+    for (const auto & part : parts_to_activate)
     {
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
@@ -230,12 +232,21 @@ bool MergeTreeTransaction::rollback() noexcept
 
     /// Discard changes in active parts set
     /// Remove parts that were created, restore parts that were removed (except parts that were created by this transaction too)
-    for (const auto & part : creating_parts)
+    for (const auto & part : parts_to_remove)
         const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(nullptr, {part}, true);
 
-    for (const auto & part : removing_parts)
+    for (const auto & part : parts_to_activate)
         if (part->version.getCreationTID() != tid)
             const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+
+    assert([&]()
+    {
+        std::lock_guard lock{mutex};
+        assert(mutations_to_kill == mutations);
+        assert(parts_to_remove == creating_parts);
+        assert(parts_to_activate == removing_parts);
+        return csn == Tx::RolledBackCSN;
+    }());
 
     return true;
 }
