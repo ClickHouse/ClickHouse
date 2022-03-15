@@ -168,8 +168,8 @@ def parse_env_variables(
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
-    cmake_flags.append(f"-DCMAKE_C_COMPILER=`which {cc}`")
-    cmake_flags.append(f"-DCMAKE_CXX_COMPILER=`which {cxx}`")
+    cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
+    cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
     # Create combined output archive for split build and for performance tests.
     if package_type == "performance":
