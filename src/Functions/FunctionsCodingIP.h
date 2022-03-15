@@ -55,7 +55,7 @@ namespace detail
         size_t src_offset = 0;
         char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
-        /// ColumnFixedString contains not null terminated strings. But functions parseIPv6, parseIPv4 expect null teminated string.
+        /// ColumnFixedString contains not null terminated strings. But functions parseIPv6, parseIPv4 expect null terminated string.
         std::string fixed_string_buffer;
 
         if constexpr (std::is_same_v<StringColumnType, ColumnFixedString>)
