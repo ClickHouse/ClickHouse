@@ -96,7 +96,7 @@ public:
     void rethrow() const override { throw *this; }
 
     int getErrno() const { return saved_errno; }
-    const std::optional<std::string> getPath() const { return path; }
+    std::optional<std::string> getPath() const { return path; }
 
 private:
     int saved_errno;
@@ -129,12 +129,12 @@ public:
 #endif
     ;
 
-    int getLineNumber() { return line_number_; }
-    void setLineNumber(int line_number) { line_number_ = line_number;}
+    int getLineNumber() const { return line_number; }
+    void setLineNumber(int line_number_) { line_number = line_number_;}
 
 private:
-    ssize_t line_number_{-1};
-    mutable std::string formatted_message_;
+    ssize_t line_number{-1};
+    mutable std::string formatted_message;
 
     const char * name() const throw() override { return "DB::ParsingException"; }
     const char * className() const throw() override { return "DB::ParsingException"; }
@@ -209,7 +209,7 @@ std::enable_if_t<std::is_pointer_v<T>, T> exception_cast(std::exception_ptr e)
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(e);
     }
     catch (std::remove_pointer_t<T> & concrete)
     {
