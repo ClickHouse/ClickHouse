@@ -71,7 +71,7 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
@@ -139,7 +139,7 @@ public:
     template <typename T>
     void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x));
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
     void update(const std::string & x)

@@ -30,7 +30,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    StorageSystemReplicas(const StorageID & table_id_);
+    explicit StorageSystemReplicas(const StorageID & table_id_);
 };
 
 }

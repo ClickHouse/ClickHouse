@@ -74,7 +74,7 @@ public:
             ASAN_UNPOISON_MEMORY_REGION(free_block_ptr,
                                         std::max(size, sizeof(Block)));
 
-            auto * res = free_block_ptr->data;
+            auto * const res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
             return res;
         }
@@ -93,7 +93,7 @@ public:
 
         /// Insert the released block into the head of the list.
         auto & free_block_ptr = free_lists[list_idx];
-        auto * old_head = free_block_ptr;
+        auto * const old_head = free_block_ptr;
         free_block_ptr = reinterpret_cast<Block *>(ptr);
         free_block_ptr->next = old_head;
 
