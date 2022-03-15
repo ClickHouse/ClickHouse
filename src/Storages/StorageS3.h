@@ -71,7 +71,7 @@ public:
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
-        const String compression_hint_,
+        String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
         std::shared_ptr<IteratorWrapper> file_iterator_);
@@ -218,6 +218,8 @@ private:
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
+    bool isColumnOriented() const override;
 };
 
 }

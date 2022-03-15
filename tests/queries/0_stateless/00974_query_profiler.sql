@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
 -- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
 SET allow_introspection_functions = 1;

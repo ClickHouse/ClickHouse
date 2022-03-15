@@ -1,4 +1,5 @@
 set short_circuit_function_evaluation = 'enable';
+set convert_query_to_cnf = 0;
 
 select if(number > 0, intDiv(number + 100, number), throwIf(number)) from numbers(10);
 select multiIf(number == 0, 0, number == 1, intDiv(1, number), number == 2, intDiv(1, number - 1), number == 3, intDiv(1, number - 2), intDiv(1, number - 3)) from numbers(10);
