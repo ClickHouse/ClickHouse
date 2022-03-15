@@ -244,7 +244,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction(MergeTreeData & data_) : data(data_) {}
+        explicit Transaction(MergeTreeData & data_) : data(data_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -877,7 +877,7 @@ public:
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {}
+    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {} /// NOLINT
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree

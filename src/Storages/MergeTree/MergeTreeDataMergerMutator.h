@@ -176,7 +176,6 @@ private:
         bool need_remove_expired_values,
         const MergeTreeData::MergingParams & merging_params) const;
 
-private:
     MergeTreeData & data;
     const size_t max_tasks_count;
 

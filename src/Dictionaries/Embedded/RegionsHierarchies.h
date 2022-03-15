@@ -17,7 +17,7 @@ private:
     Container data;
 
 public:
-    RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider);
+    explicit RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider);
 
     /** Reloads, if necessary, all hierarchies of regions.
       */
