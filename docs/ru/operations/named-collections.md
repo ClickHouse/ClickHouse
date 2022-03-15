@@ -24,7 +24,7 @@ $ cat /etc/clickhouse-server/config.d/named_collections.xml
 </clickhouse>
 ```
 
-## Именованные соединения для доступа к S3.
+## Именованные соединения для доступа к S3
 
 Описание параметров смотри [Табличная Функция S3](../sql-reference/table-functions/s3.md).
 
@@ -72,7 +72,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 └────────┘
 ```
 
-## Пример использования именованных соединений с базой данных MySQL.
+## Пример использования именованных соединений с базой данных MySQL
 
 Описание параметров смотри [mysql](../sql-reference/table-functions/mysql.md).
 
@@ -104,7 +104,7 @@ SELECT count() FROM mysql(mymysql, table = 'test');
 └─────────┘
 ```
 
-### Пример использования именованных таблицей с движком mysql
+### Пример использования именованных соединений таблицей с движком mysql
 
 ```sql
 CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
@@ -115,7 +115,20 @@ SELECT count() FROM mytable;
 └─────────┘
 ```
 
-### Пример использования именованных с внешним словарем с источником mysql
+### Пример использования именованных соединений базой данных с движком MySQL
+
+```sql
+CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
+
+SHOW TABLES FROM mydatabase;
+
+┌─name───┐
+│ source │
+│ test   │
+└────────┘
+```
+
+### Пример использования именованных соединений с внешним словарем с источником mysql
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -127,6 +140,89 @@ LAYOUT(HASHED());
 SELECT dictGet('dict', 'B', 2);
 
 ┌─dictGet('dict', 'B', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+## Пример использования именованных соединений с базой данных PostgreSQL
+
+Описание параметров смотри [postgresql](../sql-reference/table-functions/postgresql.md).
+
+Пример конфигурации:
+```xml
+<clickhouse>
+    <named_collections>
+        <mypg>
+            <user>pguser</user>
+            <password>jw8s0F4</password>
+            <host>127.0.0.1</host>
+            <port>5432</port>
+            <database>test</database>
+            <schema>test_schema</schema>
+            <connection_pool_size>8</connection_pool_size>
+        </mypg>
+    </named_collections>
+</clickhouse>
+```
+
+### Пример использования именованных соединений с табличной функцией postgresql
+
+```sql
+SELECT * FROM postgresql(mypg, table = 'test');
+
+┌─a─┬─b───┐
+│ 2 │ two │
+│ 1 │ one │
+└───┴─────┘
+
+
+SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+### Пример использования именованных соединений таблицей с движком PostgreSQL
+
+```sql
+CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
+
+SELECT * FROM mypgtable;
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+### Пример использования именованных соединений базой данных с движком PostgreSQL
+
+```sql
+CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
+
+SHOW TABLES FROM mydatabase
+
+┌─name─┐
+│ test │
+└──────┘
+```
+
+### Пример использования именованных соединений с внешним словарем с источником POSTGRESQL
+
+```sql
+CREATE DICTIONARY dict (a Int64, b String)
+PRIMARY KEY a
+SOURCE(POSTGRESQL(NAME mypg TABLE test))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
 │ two                     │
 └─────────────────────────┘
 ```
