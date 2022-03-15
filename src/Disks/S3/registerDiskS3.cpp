@@ -192,6 +192,7 @@ void registerDiskS3(DiskFactory & factory)
             name,
             uri.bucket,
             uri.key,
+            uri.version_id,
             metadata_disk,
             std::move(cache),
             context,
