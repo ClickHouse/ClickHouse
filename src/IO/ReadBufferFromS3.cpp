@@ -39,6 +39,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
+    const String & version_id_,
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
@@ -48,6 +49,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
+    , version_id(version_id_)
     , max_single_read_retries(max_single_read_retries_)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
@@ -125,8 +127,15 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
-            LOG_DEBUG(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
-                    bucket, key, getPosition(), attempt, e.message());
+            LOG_DEBUG(
+                log,
+                "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, Attempt: {}, Message: {}",
+                bucket,
+                key,
+                version_id.empty() ? "Latest" : version_id,
+                getPosition(),
+                attempt,
+                e.message());
 
             if (attempt + 1 == max_single_read_retries)
                 throw;
@@ -213,6 +222,10 @@ std::optional<size_t> ReadBufferFromS3::getTotalSize()
     Aws::S3::Model::HeadObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(key);
+    if (!version_id.empty())
+    {
+        request.SetVersionId(version_id);
+    }
 
     auto outcome = client_ptr->HeadObject(request);
     auto head_result = outcome.GetResultWithOwnership();
@@ -239,6 +252,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+    if (!version_id.empty())
+    {
+        req.SetVersionId(version_id);
+    }
 
     /**
      * If remote_filesystem_read_method = 'threadpool', then for MergeTree family tables
@@ -250,13 +267,26 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
         req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
-        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+        LOG_TEST(
+            log,
+            "Read S3 object. Bucket: {}, Key: {}, Version: {}, Range: {}-{}",
+            bucket,
+            key,
+            version_id.empty() ? "Latest" : version_id,
+            offset,
+            read_until_position - 1);
     }
     else
     {
         if (offset)
             req.SetRange(fmt::format("bytes={}-", offset));
-        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        LOG_TEST(
+            log,
+            "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
+            bucket,
+            key,
+            version_id.empty() ? "Latest" : version_id,
+            offset);
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
