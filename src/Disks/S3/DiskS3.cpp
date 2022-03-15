@@ -402,6 +402,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
     ReadBufferFromS3 buffer(
         settings->client,
         source_bucket,
+        "" /* version_id empty and to be extract */,
         source_path + SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries,
         context->getReadSettings());
