@@ -153,10 +153,11 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     DiskPtr metadata_disk_,
+    FileCachePtr cache_,
     ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(name_, s3_root_path_, metadata_disk_, "DiskS3", settings_->thread_pool_size)
+    : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -223,17 +224,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    ReadSettings disk_read_settings{read_settings};
+    if (cache)
+        disk_read_settings.remote_fs_cache = cache;
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        path,
-        settings->client, bucket, metadata,
-        settings->s3_max_single_read_retries, read_settings, threadpool_read);
+        path, settings->client, bucket, metadata,
+        settings->s3_max_single_read_retries, disk_read_settings);
 
-    if (threadpool_read)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(s3_impl));
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
     {
