@@ -190,15 +190,3 @@ Runs randomly generated queries to catch program errors. If it fails, ask a main
 
 ## Performance Tests
 Measure changes in query performance. This is the longest check that takes just below 6 hours to run. The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
-
-
-
-# QA
-
-> What is a `Task (private network)` item on status pages?
-
-It's a link to the Yandex's internal job system. Yandex employees can see the check's start time and its more verbose status.
-
-> Where the tests are run
-
-Somewhere on Yandex internal infrastructure.

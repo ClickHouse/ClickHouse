@@ -44,7 +44,7 @@ class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFil
 public:
     RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
+    explicit RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
 
     arrow::Result<int64_t> GetSize() override;
 
