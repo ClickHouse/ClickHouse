@@ -5833,6 +5833,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
     };
 }
 

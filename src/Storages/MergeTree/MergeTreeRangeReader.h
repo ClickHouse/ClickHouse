@@ -44,7 +44,8 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprInfo * prewhere_info_,
-        bool last_reader_in_chain_);
+        bool last_reader_in_chain_,
+        bool add_part_offset);
 
     MergeTreeRangeReader() = default;
 
@@ -120,6 +121,8 @@ public:
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
         size_t currentMark() const { return current_mark; }
+        UInt64 currentPartOffset() const;
+        UInt64 lastPartOffset() const;
 
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
@@ -236,6 +239,7 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
+    void patchPartOffsetColumn(ReadResult & result, UInt64 leading_part_offset, UInt64 leading_rows);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -248,6 +252,7 @@ private:
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
+    bool add_part_offset = false;
 };
 
 }
