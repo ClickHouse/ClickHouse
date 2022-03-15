@@ -20,6 +20,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3.yandexcloud.net", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
@@ -27,6 +28,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3.yandexcloud.net", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
@@ -34,6 +36,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://yandexcloud.net", uri.endpoint);
         ASSERT_EQ("bucket", uri.bucket);
         ASSERT_EQ("", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
@@ -41,6 +44,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3.yandexcloud.net", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
@@ -48,6 +52,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://storage.yandexcloud.net", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
@@ -55,6 +60,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://cos.ap-beijing.myqcloud.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
@@ -62,6 +68,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
@@ -69,6 +76,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
@@ -76,6 +84,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
@@ -83,6 +92,7 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
         ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
 }
