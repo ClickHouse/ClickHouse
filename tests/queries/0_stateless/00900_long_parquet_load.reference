@@ -339,9 +339,6 @@ Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Unkno
 (NULL)
 === Try load data from single_nan.parquet
 \N
-=== Try load data from test_setting_input_format_use_lowercase_column_name.parquet
-123	1
-456	2
 === Try load data from userdata1.parquet
 1454486129	1	Amanda	Jordan	ajordan0@com.com	Female	1.197.201.2	6759521864920116	Indonesia	3/8/1971	49756.53	Internal Auditor	1E+02
 1454519043	2	Albert	Freeman	afreeman1@is.gd	Male	218.111.175.34		Canada	1/16/1968	150280.17	Accountant IV	
