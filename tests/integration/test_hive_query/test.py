@@ -121,6 +121,18 @@ def test_orc_groupby(started_cluster):
 """
     assert result == expected_result
 
+def test_hive_columns_prunning(started_cluster):
+    logging.info('Start testing groupby ...')
+    node = started_cluster.instances['h0_0_0']
+    result = node.query("""
+    SELECT count(*) FROM default.demo_parquet_parts where day = '2021-11-05'
+            """)
+    expected_result = """4
+"""
+    logging.info("query result:{}".format(result))
+    assert result == expected_result
+
+
 def test_text_count(started_cluster):
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
