@@ -37,7 +37,7 @@ public:
 };
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
+    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
     , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
     , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
