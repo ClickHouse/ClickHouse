@@ -62,34 +62,28 @@ public:
         return instance;
     }
 
-    const Map & getEmotionalDict()
+    const Map & getEmotionalDict() const
     {
-        std::lock_guard lock(mutex);
-        if (emotional_dict.empty())
-            loadEmotionalDict();
-
         return emotional_dict;
     }
 
-    const EncodingContainer & getEncodingsFrequency()
+    const EncodingContainer & getEncodingsFrequency() const
     {
-        std::lock_guard lock(mutex);
-        if (encodings_freq.empty())
-            loadEncodingsFrequency();
-
         return encodings_freq;
     }
 
-    const Container & getProgrammingFrequency()
+    const Container & getProgrammingFrequency() const
     {
-        std::lock_guard lock(mutex);
-        if (programming_freq.empty())
-            loadProgrammingFrequency();
-
         return programming_freq;
     }
 
 private:
+
+    FrequencyHolder() {
+        loadEmotionalDict();
+        loadEncodingsFrequency();
+        loadProgrammingFrequency();
+    }
 
     void loadEncodingsFrequency()
     {
@@ -149,7 +143,6 @@ private:
         LOG_TRACE(log, "Charset frequencies was added, charsets count: {}", encodings_freq.size());
     }
 
-
     void loadEmotionalDict()
     {
         Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
@@ -187,7 +180,6 @@ private:
         }
         LOG_TRACE(log, "Emotional dictionary was added. Word count: {}", std::to_string(count));
     }
-
 
     void loadProgrammingFrequency()
     {
@@ -246,7 +238,5 @@ private:
     Map emotional_dict;
     Container programming_freq;
     EncodingContainer encodings_freq;
-
-    std::mutex mutex;
 };
 }
