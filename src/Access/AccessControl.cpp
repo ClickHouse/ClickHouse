@@ -450,12 +450,12 @@ void AccessControl::setCustomSettingsPrefixes(const String & comma_separated_pre
     setCustomSettingsPrefixes(prefixes);
 }
 
-bool AccessControl::isSettingNameAllowed(const std::string_view & setting_name) const
+bool AccessControl::isSettingNameAllowed(const std::string_view setting_name) const
 {
     return custom_settings_prefixes->isSettingNameAllowed(setting_name);
 }
 
-void AccessControl::checkSettingNameIsAllowed(const std::string_view & setting_name) const
+void AccessControl::checkSettingNameIsAllowed(const std::string_view setting_name) const
 {
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
