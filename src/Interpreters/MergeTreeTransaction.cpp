@@ -135,7 +135,7 @@ bool MergeTreeTransaction::isReadOnly() const
     return storages.empty();
 }
 
-void MergeTreeTransaction::beforeCommit()
+scope_guard MergeTreeTransaction::beforeCommit()
 {
     RunningMutationsList mutations_to_wait;
     {
@@ -162,6 +162,13 @@ void MergeTreeTransaction::beforeCommit()
             throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
     }
+
+    /// We should set CSN back to Unknown if we will fail to commit transaction for some reason (connection loss, etc)
+    return [this]()
+    {
+        CSN expected_value = Tx::CommittingCSN;
+        csn.compare_exchange_strong(expected_value, Tx::UnknownCSN);
+    };
 }
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
@@ -196,9 +203,18 @@ bool MergeTreeTransaction::rollback() noexcept
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
 
-    /// Forcefully stop related mutations if any
-    for (const auto & table_and_mutation : mutations)
+    /// Forcefully stop related mutations if any (call killMutation with unlocked mutex)
+    RunningMutationsList mutations_to_kill;
+    {
+        std::lock_guard lock{mutex};
+        mutations_to_kill = mutations;
+    }
+
+    for (const auto & table_and_mutation : mutations_to_kill)
         table_and_mutation.first->killMutation(table_and_mutation.second);
+
+    std::lock_guard lock{mutex};
+    assert(mutations == mutations_to_kill);
 
     /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : creating_parts)

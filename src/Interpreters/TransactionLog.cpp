@@ -340,7 +340,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
 CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
 {
     /// Some precommit checks, may throw
-    txn->beforeCommit();
+    auto committing_lock = txn->beforeCommit();
 
     CSN new_csn;
     if (txn->isReadOnly())
@@ -399,6 +399,7 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
     if (!txn->rollback())
     {
         /// Transaction was cancelled concurrently, it's already rolled back.
+        assert(txn->csn == Tx::RolledBackCSN);
         return;
     }
 

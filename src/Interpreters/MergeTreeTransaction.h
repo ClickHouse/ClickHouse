@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 #include <Storages/IStorage_fwd.h>
 #include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 
 #include <list>
 #include <unordered_set>
@@ -50,7 +51,7 @@ public:
     Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
 
 private:
-    void beforeCommit();
+    scope_guard beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
     bool rollback() noexcept;
     void checkIsNotCancelled() const;
