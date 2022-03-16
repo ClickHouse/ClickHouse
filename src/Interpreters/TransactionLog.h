@@ -130,10 +130,10 @@ private:
     void loadNewEntries();
     void removeOldEntries();
 
-    static UInt64 parseCSN(const String & csn_node_name);
-    static String writeCSN(CSN csn);
-    static TransactionID parseTID(const String & csn_node_content);
-    static String writeTID(const TransactionID & tid);
+    static UInt64 deserializeCSN(const String & csn_node_name);
+    static String serializeCSN(CSN csn);
+    static TransactionID deserializeTID(const String & csn_node_content);
+    static String serializeTID(const TransactionID & tid);
 
     ZooKeeperPtr getZooKeeper() const;
 

@@ -164,7 +164,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
 
-    if (context->getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0) == 42)
+    if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions");
 }
 

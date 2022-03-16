@@ -11,6 +11,14 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 class MergeTreeTransaction;
 
+/// This macro is useful for places where a pointer to current transaction should be passed,
+/// but transactions are not supported yet (e.g. when calling MergeTreeData's methods from StorageReplicatedMergeTree)
+/// or transaction object is not needed and not passed intentionally.
+#ifndef NO_TRANSACTION_PTR
+#define NO_TRANSACTION_PTR std::shared_ptr<MergeTreeTransaction>(nullptr)
+#define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr)
+#endif
+
 using CSN = UInt64;
 using Snapshot = CSN;
 using LocalTID = UInt64;

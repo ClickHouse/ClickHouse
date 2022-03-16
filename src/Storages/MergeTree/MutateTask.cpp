@@ -643,7 +643,7 @@ public:
                 false, // TODO Do we need deduplicate for projections
                 {},
                 projection_merging_params,
-                nullptr,
+                NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
                 ".tmp_proj");
 

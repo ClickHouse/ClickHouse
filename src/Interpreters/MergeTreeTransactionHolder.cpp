@@ -28,7 +28,7 @@ MergeTreeTransactionHolder::MergeTreeTransactionHolder(MergeTreeTransactionHolde
 MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(MergeTreeTransactionHolder && rhs) noexcept
 {
     onDestroy();
-    txn = nullptr;
+    txn = NO_TRANSACTION_PTR;
     autocommit = false;
     owned_by_session_context = nullptr;
     std::swap(txn, rhs.txn);

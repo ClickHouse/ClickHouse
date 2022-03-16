@@ -1,5 +1,5 @@
 <yandex>
-    <_enable_experimental_mvcc_prototype_test_helper_dev>42</_enable_experimental_mvcc_prototype_test_helper_dev>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
 
     <merge_tree>
     </merge_tree>

@@ -59,15 +59,15 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         auto out = disk->writeFile(path_prefix + file_name);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
+        *out << "commands: ";
+        commands.writeText(*out);
+        *out << "\n";
         if (!tid.isPrehistoric())
         {
             *out << "tid: ";
             TransactionID::write(tid, *out);
             *out << "\n";
         }
-        *out << "commands: ";
-        commands.writeText(*out);
-        *out << "\n";
         out->sync();
     }
     catch (...)
@@ -116,17 +116,16 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
-    assertNotEOF(*buf);
-    if (*(buf->position()) == 't')
+    *buf >> "commands: ";
+    commands.readText(*buf);
+    *buf >> "\n";
+
+    if (!buf->eof())
     {
         *buf >> "tid: ";
         tid = TransactionID::read(*buf);
         *buf >> "\n";
     }
-
-    *buf >> "commands: ";
-    commands.readText(*buf);
-    *buf >> "\n";
 
     assertEOF(*buf);
 }

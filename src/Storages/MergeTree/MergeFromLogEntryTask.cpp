@@ -189,7 +189,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
         future_merged_part,
         settings);
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -204,7 +204,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             entry.deduplicate,
             entry.deduplicate_by_columns,
             storage.merging_params,
-            nullptr);
+            NO_TRANSACTION_PTR);
 
 
     /// Adjust priority
@@ -227,7 +227,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// Task is not needed
     merge_task.reset();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, nullptr, transaction_ptr.get());
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, transaction_ptr.get());
 
     try
     {

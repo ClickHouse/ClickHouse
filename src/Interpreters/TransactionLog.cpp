@@ -50,7 +50,7 @@ TransactionLog::TransactionLog()
     global_context = Context::getGlobalContextInstance();
     global_context->checkTransactionsAreAllowed();
 
-    zookeeper_path = global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/test/clickhouse/txn");
+    zookeeper_path = global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn");
     zookeeper_path_log = zookeeper_path + "/log";
 
     loadLogFromZooKeeper();
@@ -82,7 +82,7 @@ ZooKeeperPtr TransactionLog::getZooKeeper() const
     return zookeeper;
 }
 
-UInt64 TransactionLog::parseCSN(const String & csn_node_name)
+UInt64 TransactionLog::deserializeCSN(const String & csn_node_name)
 {
     ReadBufferFromString buf{csn_node_name};
     assertString("csn-", buf);
@@ -92,12 +92,12 @@ UInt64 TransactionLog::parseCSN(const String & csn_node_name)
     return res;
 }
 
-String TransactionLog::writeCSN(CSN csn)
+String TransactionLog::serializeCSN(CSN csn)
 {
     return zkutil::getSequentialNodeName("csn-", csn);
 }
 
-TransactionID TransactionLog::parseTID(const String & csn_node_content)
+TransactionID TransactionLog::deserializeTID(const String & csn_node_content)
 {
     TransactionID tid = Tx::EmptyTID;
     if (csn_node_content.empty())
@@ -109,7 +109,7 @@ TransactionID TransactionLog::parseTID(const String & csn_node_content)
     return tid;
 }
 
-String TransactionLog::writeTID(const TransactionID & tid)
+String TransactionLog::serializeTID(const TransactionID & tid)
 {
     WriteBufferFromOwnString buf;
     TransactionID::write(tid, buf);
@@ -136,8 +136,8 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     for (size_t i = 0; i < entries_count; ++i, ++it)
     {
         auto res = futures[i].get();
-        CSN csn = parseCSN(*it);
-        TransactionID tid = parseTID(res.data);
+        CSN csn = deserializeCSN(*it);
+        TransactionID tid = deserializeTID(res.data);
         loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
         LOG_TEST(log, "Got entry {} -> {}", tid, csn);
     }
@@ -175,7 +175,7 @@ void TransactionLog::loadLogFromZooKeeper()
         assert(code == Coordination::Error::ZNONODE);
         zookeeper->createAncestors(zookeeper_path_log);
         Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/tail_ptr", writeCSN(Tx::MaxReservedCSN), zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/tail_ptr", serializeCSN(Tx::MaxReservedCSN), zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path_log, "", zkutil::CreateMode::Persistent));
 
         /// Fast-forward sequential counter to skip reserved CSNs
@@ -196,10 +196,10 @@ void TransactionLog::loadLogFromZooKeeper()
     std::sort(entries_list.begin(), entries_list.end());
     loadEntries(entries_list.begin(), entries_list.end());
     assert(!last_loaded_entry.empty());
-    assert(latest_snapshot == parseCSN(last_loaded_entry));
+    assert(latest_snapshot == deserializeCSN(last_loaded_entry));
     local_tid_counter = Tx::MaxReservedLocalTID;
 
-    tail_ptr = parseCSN(zookeeper->get(zookeeper_path + "/tail_ptr"));
+    tail_ptr = deserializeCSN(zookeeper->get(zookeeper_path + "/tail_ptr"));
 }
 
 void TransactionLog::runUpdatingThread()
@@ -251,7 +251,7 @@ void TransactionLog::loadNewEntries()
     auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
     loadEntries(it, entries_list.end());
     assert(last_loaded_entry == entries_list.back());
-    assert(latest_snapshot == parseCSN(last_loaded_entry));
+    assert(latest_snapshot == deserializeCSN(last_loaded_entry));
     latest_snapshot.notify_all();
 }
 
@@ -271,14 +271,14 @@ void TransactionLog::removeOldEntries()
 
     /// TODO we will need a bit more complex logic for multiple hosts
     Coordination::Stat stat;
-    CSN old_tail_ptr = parseCSN(zookeeper->get(zookeeper_path + "/tail_ptr", &stat));
+    CSN old_tail_ptr = deserializeCSN(zookeeper->get(zookeeper_path + "/tail_ptr", &stat));
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
     LOG_TRACE(log, "Updating tail_ptr from {} to {}", old_tail_ptr, new_tail_ptr);
-    zookeeper->set(zookeeper_path + "/tail_ptr", writeCSN(new_tail_ptr), stat.version);
+    zookeeper->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
     tail_ptr.store(new_tail_ptr);
 
     /// Now we can find and remove old entries
@@ -302,7 +302,7 @@ void TransactionLog::removeOldEntries()
             continue;
 
         LOG_TEST(log, "Removing entry {} -> {}", elem.second.tid, elem.second.csn);
-        auto code = zookeeper->tryRemove(zookeeper_path_log + "/" + writeCSN(elem.second.csn));
+        auto code = zookeeper->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
             removed_entries.push_back(elem.first);
     }
@@ -356,12 +356,12 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         /// TODO handle connection loss
         /// TODO support batching
         auto current_zookeeper = getZooKeeper();
-        String path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", writeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
+        String path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
         NOEXCEPT_SCOPE;
 
         /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
         /// (overflow is possible in a several weeks/months of active usage)
-        new_csn = parseCSN(path_created.substr(zookeeper_path_log.size() + 1));
+        new_csn = deserializeCSN(path_created.substr(zookeeper_path_log.size() + 1));
 
         LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
         tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, new_csn);
@@ -419,7 +419,7 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
     std::lock_guard lock{running_list_mutex};
     auto it = running_list.find(tid);
     if (it == running_list.end())
-        return nullptr;
+        return NO_TRANSACTION_PTR;
     return it->second;
 }
 

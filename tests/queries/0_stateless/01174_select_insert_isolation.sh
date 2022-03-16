@@ -17,8 +17,8 @@ function thread_insert_commit()
     for i in {1..50}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO mt VALUES ($i, $1);
-        INSERT INTO mt VALUES (-$i, $1);
+        INSERT INTO mt VALUES /* ($i, $1) */ ($i, $1);
+        INSERT INTO mt VALUES /* (-$i, $1) */ (-$i, $1);
         COMMIT;";
     done
 }
@@ -28,7 +28,7 @@ function thread_insert_rollback()
     for _ in {1..50}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO mt VALUES (42, $1);
+        INSERT INTO mt VALUES /* (42, $1) */ (42, $1);
         ROLLBACK;";
     done
 }

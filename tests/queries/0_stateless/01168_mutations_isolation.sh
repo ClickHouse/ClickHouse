@@ -73,7 +73,7 @@ tx 7 "commit"
 tx_async 11 "begin transaction"
 tx_async 11 "select 9, n, _part from mt order by n"
 tx_async 12                                           "begin transaction"
-tx_async 11 "alter table mt update n=n+1 where 1" >/dev/null &
+tx_async 11 "alter table mt update n=n+1 where 1" >/dev/null
 tx_async 12                                           "alter table mt update n=n+1 where 1" >/dev/null
 tx_async 11 "commit" >/dev/null
 tx_async 12                                           "commit" >/dev/null
