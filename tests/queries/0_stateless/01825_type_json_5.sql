@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET allow_experimental_object_type = 1;
+
 SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s;
 SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s format JSONEachRow;
 

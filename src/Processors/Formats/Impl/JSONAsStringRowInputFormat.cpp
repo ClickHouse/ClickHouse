@@ -240,11 +240,6 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
     });
 }
 
-void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
-{
-    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRow);
-}
-
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);

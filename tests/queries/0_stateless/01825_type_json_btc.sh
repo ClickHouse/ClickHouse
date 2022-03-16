@@ -7,9 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS btc"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE btc (data JSON) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE btc (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
-cat $CUR_DIR/data_json/btc_transactions.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO btc FORMAT JSONAsObject" --input_format_parallel_parsing 0
+cat $CUR_DIR/data_json/btc_transactions.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO btc FORMAT JSONAsObject"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM btc WHERE NOT ignore(*)"
 ${CLICKHOUSE_CLIENT} -q "DESC btc SETTINGS describe_extend_object_types = 1"

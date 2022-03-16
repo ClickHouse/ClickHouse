@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET allow_experimental_object_type = 1;
+
 DROP TABLE IF EXISTS t_json_field;
 
 CREATE TABLE t_json_field (id UInt32, data JSON)
