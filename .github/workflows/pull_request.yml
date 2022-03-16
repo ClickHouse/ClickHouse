@@ -142,6 +142,8 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
   FastTest:
     needs: DockerHubPush
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-fast-test') }}
+    continue-on-error: ${{ contains(github.event.pull_request.labels.*.name, 'skip-fast-test') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
