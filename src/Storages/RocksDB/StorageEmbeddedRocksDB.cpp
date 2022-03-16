@@ -195,16 +195,17 @@ static std::vector<rocksdb::Slice> getSlicedKeys(
     FieldVector::const_iterator & it,
     FieldVector::const_iterator end,
     DataTypePtr key_column_type,
-    size_t max_block_size)
+    size_t max_block_size,
+    std::vector<std::string> & holder)
 {
     size_t num_keys = end - it;
-
+    holder.reserve(num_keys);
     std::vector<rocksdb::Slice> slices_keys(num_keys);
 
     size_t rows_processed = 0;
     while (it < end && (max_block_size == 0 || rows_processed < max_block_size))
     {
-        std::string serialized_key;
+        std::string & serialized_key = holder.emplace_back();
         WriteBufferFromString wb(serialized_key);
         key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
         wb.finalize();
@@ -216,17 +217,18 @@ static std::vector<rocksdb::Slice> getSlicedKeys(
     return slices_keys;
 }
 
-static std::vector<rocksdb::Slice> getSlicedKeys(const ColumnWithTypeAndName & col)
+static std::vector<rocksdb::Slice> getSlicedKeys(const ColumnWithTypeAndName & col, std::vector<std::string> & holder)
 {
     if (!col.column)
         return {};
 
     size_t num_keys = col.column->size();
+    holder.reserve(num_keys);
 
     std::vector<rocksdb::Slice> slices_keys(num_keys);
     for (size_t i = 0; i < num_keys; ++i)
     {
-        std::string serialized_key;
+        std::string & serialized_key = holder.emplace_back();
         WriteBufferFromString wb(serialized_key);
         Field field;
         col.column->get(i, field);
@@ -291,7 +293,8 @@ public:
         }
 
         const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey()).type;
-        auto slices_keys = getSlicedKeys(it, end, key_column_type, max_block_size);
+        std::vector<std::string> holder;
+        auto slices_keys = getSlicedKeys(it, end, key_column_type, max_block_size, holder);
         return storage.getByKeysImpl(slices_keys, sample_block, nullptr);
     }
 
@@ -552,7 +555,12 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     const Block & sample_block,
     PaddedPODArray<UInt8> * null_map) const
 {
-    auto sliced_keys = getSlicedKeys(col);
+    std::vector<std::string> holder;
+    auto sliced_keys = getSlicedKeys(col, holder);
+
+    if (sliced_keys.size() != col.column->size())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", sliced_keys.size(), col.column->size());
+
     return getByKeysImpl(sliced_keys, sample_block, null_map);
 }
 
