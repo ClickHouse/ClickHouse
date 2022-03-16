@@ -25,8 +25,8 @@ SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) 
 
 SettingsConstraints::SettingsConstraints(const SettingsConstraints & src) = default;
 SettingsConstraints & SettingsConstraints::operator=(const SettingsConstraints & src) = default;
-SettingsConstraints::SettingsConstraints(SettingsConstraints && src) noexcept = default;
-SettingsConstraints & SettingsConstraints::operator=(SettingsConstraints && src) noexcept = default;
+SettingsConstraints::SettingsConstraints(SettingsConstraints && src) = default;
+SettingsConstraints & SettingsConstraints::operator=(SettingsConstraints && src) = default;
 SettingsConstraints::~SettingsConstraints() = default;
 
 

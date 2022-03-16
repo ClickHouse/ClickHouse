@@ -283,7 +283,7 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const;
 
-    static String getDefaultZooKeeperName() { return default_zookeeper_name; }
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
@@ -837,7 +837,6 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
   * PS. Perhaps it would be better to add a flag to the DataPart that a part is inserted into ZK.
   * But here it's too easy to get confused with the consistency of this flag.
   */
-/// NOLINTNEXTLINE
 #define MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER (5 * 60)
 
 }

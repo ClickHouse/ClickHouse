@@ -34,13 +34,12 @@ public:
      * Does buffer need to know something about mark ranges bounds it is going to read?
      * (In case of MergeTree* tables). Mostly needed for reading from remote fs.
      */
-    void adjustRightMark(size_t right_mark);
+    void adjustForRange(MarkRange range);
 
     ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
 
 private:
-    size_t getRightOffset(size_t right_mark_non_included);
+    std::pair<size_t, size_t> getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark_non_included);
 
     DiskPtr disk;
     std::string path_prefix;

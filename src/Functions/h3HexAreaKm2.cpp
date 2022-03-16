@@ -53,11 +53,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
-        const auto * column = checkAndGetColumn<ColumnUInt8>(non_const_arguments[0].column.get());
+        const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

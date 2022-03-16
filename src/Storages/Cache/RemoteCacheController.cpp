@@ -31,9 +31,9 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     auto cache_controller = std::make_shared<RemoteCacheController>(nullptr, local_path_, 0);
     if (cache_controller->file_status != DOWNLOADED)
     {
-        // Do not load this invalid cached file and clear it. the clear action is in
+        // do not load this invalid cached file and clear it. the clear action is in
         // ExternalDataSourceCache::recoverTask(), because deleting directories during iteration will
-        // cause unexpected behaviors.
+        // cause unexpected behaviors
         LOG_INFO(log, "Recover cached file failed. local path:{}", local_path_.string());
         return nullptr;
     }
@@ -76,7 +76,7 @@ RemoteCacheController::RemoteCacheController(
     , local_cache_bytes_read_before_flush(cache_bytes_before_flush_)
     , current_offset(0)
 {
-    // On recover, file_metadata_ptr is null, but it will be allocated after loading from metadata.txt
+    // on recover, file_metadata_ptr is null, but it will be allocated after loading from metadata.txt
     // when we allocate a whole new file cache，file_metadata_ptr must not be null.
     if (file_metadata_ptr)
     {
@@ -106,14 +106,14 @@ void RemoteCacheController::waitMoreData(size_t start_offset_, size_t end_offset
     std::unique_lock lock{mutex};
     if (file_status == DOWNLOADED)
     {
-        // Finish reading.
+        // finish reading
         if (start_offset_ >= current_offset)
         {
             lock.unlock();
             return;
         }
     }
-    else // Block until more data is ready.
+    else // block until more data is ready
     {
         if (current_offset >= end_offset_)
         {
@@ -169,7 +169,6 @@ void RemoteCacheController::backgroundDownload(ReadBufferPtr remote_read_buffer)
     file_status = DOWNLOADED;
     flush(true);
     data_file_writer.reset();
-    is_enable = true;
     lock.unlock();
     more_data_signal.notify_all();
     ExternalDataSourceCache::instance().updateTotalSize(file_metadata_ptr->file_size);

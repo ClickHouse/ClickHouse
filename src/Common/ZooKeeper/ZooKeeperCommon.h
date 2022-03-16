@@ -524,6 +524,7 @@ public:
 private:
     OpNumToRequest op_num_to_request;
 
+private:
     ZooKeeperRequestFactory();
 };
 

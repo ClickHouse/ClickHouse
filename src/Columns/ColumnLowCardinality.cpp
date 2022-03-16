@@ -356,8 +356,7 @@ bool ColumnLowCardinality::hasEqualValues() const
     return getIndexes().hasEqualValues();
 }
 
-void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                            size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
+void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
 {
     if (limit == 0)
         limit = size();
@@ -365,9 +364,9 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     size_t unique_limit = getDictionary().size();
     Permutation unique_perm;
     if (collator)
-        getDictionary().getNestedColumn()->getPermutationWithCollation(*collator, direction, stability, unique_limit, nan_direction_hint, unique_perm);
+        getDictionary().getNestedColumn()->getPermutationWithCollation(*collator, reverse, unique_limit, nan_direction_hint, unique_perm);
     else
-        getDictionary().getNestedColumn()->getPermutation(direction, stability, unique_limit, nan_direction_hint, unique_perm);
+        getDictionary().getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
 
     /// TODO: optimize with sse.
 
@@ -395,73 +394,36 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     }
 }
 
-void ColumnLowCardinality::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, nan_direction_hint, res);
+    getPermutationImpl(reverse, limit, nan_direction_hint, res);
 }
 
-void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                        size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-
-    auto comparator = [this, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
+    auto comparator = [this, nan_direction_hint, reverse](size_t lhs, size_t rhs)
     {
         int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
-            return lhs < rhs;
-
-        if (ascending)
-            return ret < 0;
-        else
-            return ret > 0;
+        return reverse ? -ret : ret;
     };
 
-    auto equal_comparator = [this, nan_direction_hint](size_t lhs, size_t rhs)
-    {
-        int ret = getDictionary().compareAt(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), getDictionary(), nan_direction_hint);
-        return ret == 0;
-    };
-
-    updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
+    updatePermutationImpl(limit, res, equal_ranges, comparator);
 }
 
-void ColumnLowCardinality::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnLowCardinality::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, nan_direction_hint, res, &collator);
+    getPermutationImpl(reverse, limit, nan_direction_hint, res, &collator);
 }
 
-void ColumnLowCardinality::updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                                        size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnLowCardinality::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-
-    auto comparator = [this, &collator, ascending, stability, nan_direction_hint](size_t lhs, size_t rhs)
-    {
-        auto nested_column = getDictionary().getNestedColumn();
-        size_t lhs_index = getIndexes().getUInt(lhs);
-        size_t rhs_index = getIndexes().getUInt(rhs);
-
-        int ret = nested_column->compareAtWithCollation(lhs_index, rhs_index, *nested_column, nan_direction_hint, collator);
-
-        if (unlikely(stability == IColumn::PermutationSortStability::Stable && ret == 0))
-            return lhs < rhs;
-
-        if (ascending)
-            return ret < 0;
-        else
-            return ret > 0;
-    };
-
-    auto equal_comparator = [this, &collator, nan_direction_hint](size_t lhs, size_t rhs)
+    auto comparator = [this, &collator, reverse, nan_direction_hint](size_t lhs, size_t rhs)
     {
         int ret = getDictionary().getNestedColumn()->compareAtWithCollation(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), *getDictionary().getNestedColumn(), nan_direction_hint, collator);
-        return ret == 0;
+        return reverse ? -ret : ret;
     };
 
-    updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
+    updatePermutationImpl(limit, res, equal_ranges, comparator);
 }
 
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const

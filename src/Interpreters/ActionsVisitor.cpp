@@ -120,7 +120,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
             if (i == tuple_size)
                 for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(tuple_values[i]);
+                    columns[i]->insert(std::move(tuple_values[i]));
         }
     }
 
@@ -391,7 +391,7 @@ SetPtr makeExplicitSet(
 
 ScopeStack::Level::~Level() = default;
 ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
+ScopeStack::Level::Level(Level &&) = default;
 
 class ScopeStack::Index
 {

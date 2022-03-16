@@ -100,12 +100,12 @@ template <typename T>
 class DecimalField
 {
 public:
-    explicit DecimalField(T value = {}, UInt32 scale_ = 0)
+    DecimalField(T value = {}, UInt32 scale_ = 0)
     :   dec(value),
         scale(scale_)
     {}
 
-    operator T() const { return dec; } /// NOLINT
+    operator T() const { return dec; }
     T getValue() const { return dec; }
     T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
     UInt32 getScale() const { return scale; }
@@ -191,10 +191,10 @@ template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
 
 /// long and long long are always different types that may behave identically or not.
 /// This is different on Linux and Mac.
-template <> struct NearestFieldTypeImpl<long> { using Type = Int64; }; /// NOLINT
-template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; }; /// NOLINT
-template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; }; /// NOLINT
-template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; }; /// NOLINT
+template <> struct NearestFieldTypeImpl<long> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<UInt256> { using Type = UInt256; };
 template <> struct NearestFieldTypeImpl<Int256> { using Type = Int256; };
@@ -291,7 +291,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
-    static bool isDecimal(Types::Which which)
+    static bool IsDecimal(Types::Which which)
     {
         return which == Types::Decimal32
             || which == Types::Decimal64
@@ -316,24 +316,24 @@ public:
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept
+    Field(Field && rhs)
     {
         create(std::move(rhs));
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr); /// NOLINT
+    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr);
 
-    Field(bool rhs) : Field(castToNearestFieldType(rhs)) /// NOLINT
+    Field(bool rhs) : Field(castToNearestFieldType(rhs))
     {
         which = Types::Bool;
     }
 
     /// Create a string inplace.
-    Field(const std::string_view & str) { create(str.data(), str.size()); } /// NOLINT
-    Field(const String & str) { create(std::string_view{str}); } /// NOLINT
-    Field(String && str) { create(std::move(str)); } /// NOLINT
-    Field(const char * str) { create(std::string_view{str}); } /// NOLINT
+    Field(const std::string_view & str) { create(str.data(), str.size()); }
+    Field(const String & str) { create(std::string_view{str}); }
+    Field(String && str) { create(std::move(str)); }
+    Field(const char * str) { create(std::string_view{str}); }
 
     template <typename CharT>
     Field(const CharT * data, size_t size)
@@ -356,7 +356,7 @@ public:
         return *this;
     }
 
-    Field & operator= (Field && rhs) noexcept
+    Field & operator= (Field && rhs)
     {
         if (this != &rhs)
         {
@@ -377,7 +377,7 @@ public:
     /// 1. float <--> int needs explicit cast
     /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+    enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
     operator=(T && rhs);
 
     Field & operator= (bool rhs)
@@ -409,7 +409,7 @@ public:
     template <typename T>
     const auto & get() const
     {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
+        auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
         return mutable_this->get<T>();
     }
 
@@ -422,7 +422,7 @@ public:
     template <typename T>
     const T & reinterpret() const
     {
-        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
+        auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
         return mutable_this->reinterpret<T>();
     }
 
@@ -887,7 +887,7 @@ Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 }
 
 template <typename T>
-Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
 Field::operator=(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -986,10 +986,10 @@ String toString(const Field & x);
 template <>
 struct fmt::formatter<DB::Field>
 {
-    static constexpr auto parse(format_parse_context & ctx)
+    constexpr auto parse(format_parse_context & ctx)
     {
-        const auto * it = ctx.begin();
-        const auto * end = ctx.end();
+        auto it = ctx.begin();
+        auto end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

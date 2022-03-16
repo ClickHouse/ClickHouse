@@ -141,18 +141,6 @@ namespace
 
 /// Settings. Different for each explain type.
 
-struct QueryASTSettings
-{
-    bool graph = false;
-
-    constexpr static char name[] = "AST";
-
-    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
-    {
-        {"graph", graph},
-    };
-};
-
 struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
@@ -272,11 +260,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     {
         case ASTExplainQuery::ParsedAST:
         {
-            auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
-            if (settings.graph)
-                dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
-            else
-                dumpAST(*ast.getExplainedQuery(), buf);
+            if (ast.getSettings())
+                throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
+
+            dumpAST(*ast.getExplainedQuery(), buf);
             break;
         }
         case ASTExplainQuery::AnalyzedSyntax:

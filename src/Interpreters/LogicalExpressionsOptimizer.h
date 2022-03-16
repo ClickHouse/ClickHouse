@@ -29,7 +29,7 @@ class LogicalExpressionsOptimizer final
     {
         const UInt64 optimize_min_equality_disjunction_chain_length;
 
-        explicit ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
+        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
         :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
         {}
     };
@@ -68,6 +68,7 @@ private:
     using DisjunctiveEqualityChainsMap = std::map<OrWithExpression, Equalities>;
     using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
+private:
     /** Collect information about all the equations in the OR chains (not necessarily homogeneous).
       * This information is grouped by the expression that is on the left side of the equation.
       */
@@ -91,10 +92,12 @@ private:
     /// Restore the original column order after optimization.
     void reorderColumns();
 
+private:
     using ParentNodes = std::vector<IAST *>;
     using FunctionParentMap = std::unordered_map<const IAST *, ParentNodes>;
     using ColumnToPosition = std::unordered_map<const IAST *, size_t>;
 
+private:
     ASTSelectQuery * select_query;
     const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.

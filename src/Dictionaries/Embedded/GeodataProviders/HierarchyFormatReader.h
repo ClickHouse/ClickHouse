@@ -11,7 +11,7 @@ private:
     DB::ReadBufferPtr input;
 
 public:
-    explicit RegionsHierarchyFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
+    RegionsHierarchyFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
 
     bool readNext(RegionEntry & entry) override;
 };

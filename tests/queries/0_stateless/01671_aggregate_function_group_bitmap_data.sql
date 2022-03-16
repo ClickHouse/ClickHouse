@@ -1,5 +1,3 @@
-SET group_by_two_level_threshold = 10000;
-
 CREATE TABLE group_bitmap_data_test
 (
     `pickup_date` Date,

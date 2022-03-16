@@ -61,11 +61,11 @@ protected:
         const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
         : IStorage(table_id_)
     {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description_);
-        storage_metadata.setConstraints(constraints_);
-        storage_metadata.setComment(comment);
-        setInMemoryMetadata(storage_metadata);
+        StorageInMemoryMetadata metadata_;
+        metadata_.setColumns(columns_description_);
+        metadata_.setConstraints(constraints_);
+        metadata_.setComment(comment);
+        setInMemoryMetadata(metadata_);
     }
 };
 

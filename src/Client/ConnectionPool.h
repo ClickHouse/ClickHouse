@@ -25,11 +25,12 @@ class IConnectionPool : private boost::noncopyable
 public:
     using Entry = PoolBase<Connection>::Entry;
 
+public:
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
-    virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
+    virtual Entry get(const ConnectionTimeouts & timeouts,
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
@@ -75,7 +76,7 @@ public:
     {
     }
 
-    Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
+    Entry get(const ConnectionTimeouts & timeouts,
               const Settings * settings = nullptr,
               bool force_connected = true) override
     {

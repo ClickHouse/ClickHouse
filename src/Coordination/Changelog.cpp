@@ -293,8 +293,6 @@ Changelog::Changelog(
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
-
-    clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -583,17 +581,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            /// If failed to push to queue for background removing, then we will remove it now
-            if (!log_files_to_delete_queue.tryPush(itr->second.path, 1))
-            {
-                std::error_code ec;
-                std::filesystem::remove(itr->second.path, ec);
-                if (ec)
-                    LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", itr->second.path, ec.message());
-                else
-                    LOG_INFO(log, "Removed changelog {} because of compaction", itr->second.path);
-            }
-
+            std::filesystem::remove(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
         else /// Files are ordered, so all subsequent should exist
@@ -717,29 +705,10 @@ Changelog::~Changelog()
     try
     {
         flush();
-        log_files_to_delete_queue.finish();
-        if (clean_log_thread.joinable())
-            clean_log_thread.join();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void Changelog::cleanLogThread()
-{
-    while (!log_files_to_delete_queue.isFinishedAndEmpty())
-    {
-        std::string path;
-        if (log_files_to_delete_queue.pop(path))
-        {
-            std::error_code ec;
-            if (std::filesystem::remove(path, ec))
-                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
-            else
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
-        }
     }
 }
 

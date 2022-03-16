@@ -34,58 +34,46 @@ namespace
         }
 
         String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        String value_prefix;
-        std::optional<String> value;
-        const boost::container::flat_set<String> * values = nullptr;
+        String by_keyword = "BY";
+        std::optional<String> by_value;
 
-        if (show_password ||
+        if (
+            show_password ||
             auth_type == AuthenticationType::LDAP ||
-            auth_type == AuthenticationType::KERBEROS ||
-            auth_type == AuthenticationType::SSL_CERTIFICATE)
+            auth_type == AuthenticationType::KERBEROS
+        )
         {
             switch (auth_type)
             {
                 case AuthenticationType::PLAINTEXT_PASSWORD:
                 {
-                    value_prefix = "BY";
-                    value = auth_data.getPassword();
+                    by_value = auth_data.getPassword();
                     break;
                 }
                 case AuthenticationType::SHA256_PASSWORD:
                 {
                     auth_type_name = "sha256_hash";
-                    value_prefix = "BY";
-                    value = auth_data.getPasswordHashHex();
+                    by_value = auth_data.getPasswordHashHex();
                     break;
                 }
                 case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 {
                     auth_type_name = "double_sha1_hash";
-                    value_prefix = "BY";
-                    value = auth_data.getPasswordHashHex();
+                    by_value = auth_data.getPasswordHashHex();
                     break;
                 }
                 case AuthenticationType::LDAP:
                 {
-                    value_prefix = "SERVER";
-                    value = auth_data.getLDAPServerName();
+                    by_keyword = "SERVER";
+                    by_value = auth_data.getLDAPServerName();
                     break;
                 }
                 case AuthenticationType::KERBEROS:
                 {
+                    by_keyword = "REALM";
                     const auto & realm = auth_data.getKerberosRealm();
                     if (!realm.empty())
-                    {
-                        value_prefix = "REALM";
-                        value = realm;
-                    }
-                    break;
-                }
-
-                case AuthenticationType::SSL_CERTIFICATE:
-                {
-                    value_prefix = "CN";
-                    values = &auth_data.getSSLCertificateCommonNames();
+                        by_value = realm;
                     break;
                 }
 
@@ -98,26 +86,10 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << auth_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
 
-        if (!value_prefix.empty())
+        if (by_value)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << value_prefix
-                          << (settings.hilite ? IAST::hilite_none : "");
-        }
-
-        if (value)
-        {
-            settings.ostr << " " << quoteString(*value);
-        }
-        else if (values)
-        {
-            settings.ostr << " ";
-            bool need_comma = false;
-            for (const auto & item : *values)
-            {
-                if (std::exchange(need_comma, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(item);
-            }
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << by_keyword << " "
+                          << (settings.hilite ? IAST::hilite_none : "") << quoteString(*by_value);
         }
     }
 

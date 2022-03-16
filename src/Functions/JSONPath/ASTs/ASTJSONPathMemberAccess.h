@@ -11,6 +11,7 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTJSONPathMemberAccess>(*this); }
 
+public:
     /// Member name to lookup in json document (in path: $.some_key.another_key. ...)
     String member_name;
 };

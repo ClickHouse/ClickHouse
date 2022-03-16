@@ -68,14 +68,14 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
 
 std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     const Names & column_names,
-    const ColumnsDescription & columns_description,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
     String query = transformQueryForExternalDatabase(query_info,
-        columns_description.getOrdinary(),
+        metadata_snapshot->getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,
@@ -85,7 +85,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     NamesAndTypesList cols;
     for (const String & name : column_names)
     {
-        auto column_data = columns_description.getPhysical(name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
 
@@ -114,7 +114,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
@@ -138,11 +138,6 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
         chooseCompressionMethod(uri, compression_method));
-}
-
-bool StorageXDBC::isColumnOriented() const
-{
-    return true;
 }
 
 Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const

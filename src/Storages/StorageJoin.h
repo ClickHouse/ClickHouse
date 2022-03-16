@@ -6,7 +6,6 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/join_common.h>
 
 
 namespace DB
@@ -60,22 +59,6 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
-
-    Block getRightSampleBlock() const
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock().sortColumns();
-        if (use_nulls && isLeftOrFull(kind))
-        {
-            for (auto & col : block)
-            {
-                JoinCommon::convertColumnToNullable(col);
-            }
-        }
-        return block;
-    }
-
-    bool useNulls() const { return use_nulls; }
 
 private:
     Block sample_block;

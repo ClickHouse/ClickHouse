@@ -13,7 +13,6 @@
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
 #include <base/scope_guard.h>
-#include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
@@ -34,6 +33,11 @@
 
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
+
+#if defined(OS_LINUX)
+#    include <unistd.h>
+#    include <sys/syscall.h>
+#endif
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -121,6 +125,18 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
         throw;
     }
     return socket_address;
+}
+
+[[noreturn]] void forceShutdown()
+{
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
+    /// while connection handling threads are still run.
+    (void)syscall(SYS_exit_group, 0);
+    __builtin_unreachable();
+#else
+    _exit(0);
+#endif
 }
 
 std::string getUserName(uid_t user_id)
@@ -270,8 +286,15 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     LOG_WARNING(log, "Keeper was built with sanitizer. It will work slowly.");
 #endif
 
+    auto shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::KEEPER);
+
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
+
 
     std::string path;
 
@@ -341,13 +364,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context.initializeKeeperDispatcher(/* start_async = */false);
-    FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
-
-    auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
-    {
-        return tiny_context.getConfigRef();
-    };
+    global_context->initializeKeeperDispatcher(/* start_async = */false);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -364,10 +382,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                 port_name,
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
-                    new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context.getKeeperDispatcher(),
-                            config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
-                            config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), false), server_pool, socket));
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -383,10 +398,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                 secure_port_name,
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
-                    new KeeperTCPHandlerFactory(
-                        config_getter, tiny_context.getKeeperDispatcher(),
-                        config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
-                        config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), true), server_pool, socket));
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -413,13 +425,17 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             if (config->has("keeper_server"))
-                tiny_context.updateKeeperConfiguration(*config);
+                global_context->updateKeeperConfiguration(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
         main_config_reloader.reset();
+
+        global_context->shutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         int current_connections = 0;
@@ -442,17 +458,23 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        tiny_context.shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
+
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context.reset();
+        shared_context.reset();
 
         LOG_DEBUG(log, "Destroyed global context.");
 
         if (current_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
-            safeExit(0);
+            forceShutdown();
         }
     });
 

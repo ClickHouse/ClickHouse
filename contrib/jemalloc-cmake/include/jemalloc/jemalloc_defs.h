@@ -9,16 +9,10 @@
 #define JEMALLOC_HAVE_ATTR_FORMAT_ARG
 
 /* Defined if format(gnu_printf, ...) attribute is supported. */
-/* #undef JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF */
+#define JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF
 
 /* Defined if format(printf, ...) attribute is supported. */
 #define JEMALLOC_HAVE_ATTR_FORMAT_PRINTF
-
-/* Defined if fallthrough attribute is supported. */
-#define JEMALLOC_HAVE_ATTR_FALLTHROUGH
-
-/* Defined if cold attribute is supported. */
-#define JEMALLOC_HAVE_ATTR_COLD
 
 /*
  * Define overrides for non-standard allocator-related functions if they are

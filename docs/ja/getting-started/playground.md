@@ -5,11 +5,10 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-!!! warning "Warning"
-    This service is deprecated and will be replaced in foreseeable future.
-
 [ClickHouse Playground](https://play.clickhouse.com) では、サーバーやクラスタを設定することなく、即座にクエリを実行して ClickHouse を試すことができます。
 いくつかの例のデータセットは、Playground だけでなく、ClickHouse の機能を示すサンプルクエリとして利用可能です. また、 ClickHouse の LTS リリースで試すこともできます。
+
+ClickHouse Playground は、[Yandex.Cloud](https://cloud.yandex.com/)にホストされている m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) インスタンス(4 vCPU, 32 GB RAM) で提供されています。クラウドプロバイダの詳細情報については[こちら](../commercial/cloud.md)。
 
 任意の HTTP クライアントを使用してプレイグラウンドへのクエリを作成することができます。例えば[curl](https://curl.haxx.se)、[wget](https://www.gnu.org/software/wget/)、[JDBC](../interfaces/jdbc.md)または[ODBC](../interfaces/odbc.md)ドライバを使用して接続を設定します。
 ClickHouse をサポートするソフトウェア製品の詳細情報は[こちら](../interfaces/index.md)をご覧ください。
@@ -60,3 +59,14 @@ curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&us
 ``` bash
 clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
+
+## 実装の詳細 {#implementation-details}
+
+ClickHouse PlaygroundのWebインタフェースは、ClickHouse [HTTP API](../interfaces/http.md)を介してリクエストを行います。
+Playgroundのバックエンドは、追加のサーバーサイドのアプリケーションを伴わない、ただのClickHouseクラスタです。
+上記のように, ClickHouse HTTPSとTCP/TLSのエンドポイントは Playground の一部としても公開されており、
+いずれも、上記の保護とよりよいグローバルな接続のためのレイヤを追加するために、[Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) を介してプロキシされています。
+
+!!! warning "注意"
+    いかなる場合においても、インターネットにClickHouseサーバを公開することは **非推奨です**。
+    プライベートネットワーク上でのみ接続を待機し、適切に設定されたファイアウォールによって保護されていることを確認してください。

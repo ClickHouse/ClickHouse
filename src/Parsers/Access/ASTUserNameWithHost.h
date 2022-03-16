@@ -23,7 +23,7 @@ public:
     void concatParts();
 
     ASTUserNameWithHost() = default;
-    explicit ASTUserNameWithHost(const String & name_) : base_name(name_) {}
+    ASTUserNameWithHost(const String & name_) : base_name(name_) {}
     String getID(char) const override { return "UserNameWithHost"; }
     ASTPtr clone() const override { return std::make_shared<ASTUserNameWithHost>(*this); }
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -39,7 +39,7 @@ public:
     auto begin() const { return names.begin(); }
     auto end() const { return names.end(); }
     auto front() const { return *begin(); }
-    void push_back(const String & name_) { names.push_back(std::make_shared<ASTUserNameWithHost>(name_)); } /// NOLINT
+    void push_back(const String & name_) { names.push_back(std::make_shared<ASTUserNameWithHost>(name_)); }
 
     Strings toStrings() const;
     void concatParts();

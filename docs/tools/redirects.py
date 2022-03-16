@@ -31,12 +31,7 @@ def build_redirect_html(args, base_prefix, lang, output_dir, from_path, to_path)
         from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
     )
     target_path = to_path.replace('/index.md', '/').replace('.md', '/')
-
-    if target_path[0:7] != 'http://' and target_path[0:8] != 'https://':
-        to_url = f'/{base_prefix}/{lang}/{target_path}'
-    else:
-        to_url = target_path
-
+    to_url = f'/{base_prefix}/{lang}/{target_path}'
     to_url = to_url.strip()
     write_redirect_html(out_path, to_url)
 

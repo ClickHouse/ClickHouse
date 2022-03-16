@@ -210,7 +210,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
-void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
+void RemoteQueryExecutor::sendQuery()
 {
     if (sent_query)
         return;
@@ -237,7 +237,13 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
-    modified_client_info.query_kind = query_kind;
+    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    /// Set initial_query_id to query_id for the clickhouse-benchmark.
+    ///
+    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
+    ///  due to it executes queries via RemoteBlockInputStream)
+    if (modified_client_info.initial_query_id.empty())
+        modified_client_info.initial_query_id = query_id;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;

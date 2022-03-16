@@ -8,7 +8,6 @@ from typing import Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
-from env_helper import RUNNER_TEMP
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
@@ -20,7 +19,7 @@ def getenv(name: str, default: str = None):
     raise KeyError(f"Necessary {name} environment is not set")
 
 
-TEMP_PATH = os.path.join(RUNNER_TEMP, "push_to_artifactory")
+TEMP_PATH = getenv("TEMP_PATH", ".")
 # One of the following ENVs is necessary
 JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
@@ -33,6 +32,7 @@ class Packages:
         ("clickhouse-common-static", "amd64"),
         ("clickhouse-common-static-dbg", "amd64"),
         ("clickhouse-server", "all"),
+        ("clickhouse-test", "all"),
     )
 
     def __init__(self, version: str):
@@ -46,11 +46,11 @@ class Packages:
             for name, arch in self.packages
         )
 
-        self.tgz = tuple(f"{name}-{version}.tgz" for name, _ in self.packages)
+        self.tgz = tuple("{}-{}.tgz".format(name, version) for name, _ in self.packages)
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:
-            raise ValueError(f"{deb_pkg} not in {self.deb}")
+            raise ValueError("{} not in {}".format(deb_pkg, self.deb))
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
     @staticmethod
@@ -254,21 +254,15 @@ def parse_args() -> argparse.Namespace:
         default="https://clickhousedb.jfrog.io/artifactory",
         help="SaaS Artifactory url",
     )
-    parser.add_argument("--artifactory", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "-n",
         "--no-artifactory",
-        action="store_false",
-        dest="artifactory",
-        default=argparse.SUPPRESS,
+        action="store_true",
         help="do not push packages to artifactory",
     )
-    parser.add_argument("--force-download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-force-download",
-        action="store_false",
-        dest="force_download",
-        default=argparse.SUPPRESS,
+        action="store_true",
         help="do not download packages again if they exist already",
     )
 
@@ -310,10 +304,10 @@ def main():
         args.commit,
         args.check_name,
         args.release.version,
-        args.force_download,
+        not args.no_force_download,
     )
     art_client = None
-    if args.artifactory:
+    if not args.no_artifactory:
         art_client = Artifactory(args.artifactory_url, args.release.type)
 
     if args.deb:

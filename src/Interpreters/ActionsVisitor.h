@@ -72,7 +72,7 @@ struct ScopeStack : WithContext
         NameSet inputs;
 
         Level();
-        Level(Level &&) noexcept;
+        Level(Level &&);
         ~Level();
     };
 

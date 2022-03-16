@@ -13,7 +13,7 @@ Syntax:
 DateTime([timezone])
 ```
 
-Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
+Supported range of values: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
 
 Resolution: 1 second.
 
@@ -40,7 +40,7 @@ When inserting data into ClickHouse, you can use different formats of date and t
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime('Asia/Istanbul'),
+    `timestamp` DateTime('Europe/Moscow'),
     `event_id` UInt8
 )
 ENGINE = TinyLog;
@@ -61,13 +61,13 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
+-   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+-   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
 ```
 
 ``` text
@@ -91,12 +91,12 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 **3.** Getting a time zone for a `DateTime`-type column:
 
 ``` sql
-SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
+SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────column─┬─x─────────────────────────┐
-│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
+│ 2019-10-16 04:12:04 │ DateTime('Europe/Moscow') │
 └─────────────────────┴───────────────────────────┘
 ```
 
@@ -105,7 +105,7 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ``` sql
 SELECT
 toDateTime(timestamp, 'Europe/London') as lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') as mos_time
+toDateTime(timestamp, 'Europe/Moscow') as mos_time
 FROM dt
 ```
 

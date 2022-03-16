@@ -13,7 +13,7 @@ TEST(StrongTypedefSuite, TypedefsOfTheSameType)
     STRONG_TYPEDEF(int, Int)
     STRONG_TYPEDEF(int, AnotherInt)
 
-    EXPECT_TRUE(!(std::is_same_v<Int, AnotherInt>));
+    EXPECT_TRUE(!(std::is_same<Int, AnotherInt>::value));
 }
 
 TEST(StrongTypedefSuite, Map)

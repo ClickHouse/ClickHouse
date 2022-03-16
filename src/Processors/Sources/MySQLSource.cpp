@@ -225,10 +225,6 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 read_bytes_size += 2;
                 break;
-            case ValueType::vtDate32:
-                assert_cast<ColumnInt32 &>(column).insertValue(Int32(value.getDate().getExtenedDayNum()));
-                read_bytes_size += 4;
-                break;
             case ValueType::vtDateTime:
             {
                 ReadBufferFromString in(value);

@@ -37,12 +37,12 @@
   */
 struct RadixSortAllocator
 {
-    static void * allocate(size_t size)
+    void * allocate(size_t size)
     {
         return ::operator new(size);
     }
 
-    static void deallocate(void * ptr, size_t size)
+    void deallocate(void * ptr, size_t size)
     {
         ::operator delete(ptr, size);
     }

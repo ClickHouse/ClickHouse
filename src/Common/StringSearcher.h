@@ -137,7 +137,7 @@ public:
         patu = _mm_set1_epi8(u);
         /// lower and uppercase vectors of first 16 octets of `needle`
 
-        const auto * needle_pos = needle;
+        auto needle_pos = needle;
 
         for (size_t i = 0; i < n;)
         {
@@ -158,8 +158,8 @@ public:
                 int c_l_u32 = Poco::Unicode::toLower(*c_u32);
                 int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
 
-                size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq));
-                size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq));
+                uint8_t dst_l_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq)));
+                uint8_t dst_u_len = static_cast<uint8_t>(UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq)));
 
                 /// @note Unicode standard states it is a rare but possible occasion
                 if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
@@ -251,7 +251,7 @@ public:
         if (*pos == l || *pos == u)
         {
             pos += first_needle_symbol_is_ascii;
-            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+            auto needle_pos = needle + first_needle_symbol_is_ascii;
 
             if (compareTrivial(pos, haystack_end, needle_pos))
                 return true;
@@ -325,7 +325,7 @@ public:
             if (*haystack == l || *haystack == u)
             {
                 auto haystack_pos = haystack + first_needle_symbol_is_ascii;
-                const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+                auto needle_pos = needle + first_needle_symbol_is_ascii;
 
                 if (compareTrivial(haystack_pos, haystack_end, needle_pos))
                     return haystack;
@@ -381,7 +381,7 @@ public:
         patl = _mm_set1_epi8(l);
         patu = _mm_set1_epi8(u);
 
-        const auto * needle_pos = needle;
+        auto needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
         {
@@ -416,7 +416,7 @@ public:
                 if (mask == cachemask)
                 {
                     pos += n;
-                    const auto * needle_pos = needle + n;
+                    auto needle_pos = needle + n;
 
                     while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
@@ -438,7 +438,7 @@ public:
         if (*pos == l || *pos == u)
         {
             ++pos;
-            const auto * needle_pos = needle + 1;
+            auto needle_pos = needle + 1;
 
             while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
@@ -492,8 +492,8 @@ public:
                     {
                         if (mask_offset == cachemask)
                         {
-                            const auto * haystack_pos = haystack + n;
-                            const auto * needle_pos = needle + n;
+                            auto haystack_pos = haystack + n;
+                            auto needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -520,8 +520,8 @@ public:
 
             if (*haystack == l || *haystack == u)
             {
-                const auto * haystack_pos = haystack + 1;
-                const auto * needle_pos = needle + 1;
+                auto haystack_pos = haystack + 1;
+                auto needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -580,7 +580,7 @@ public:
 #ifdef __SSE4_1__
         pattern = _mm_set1_epi8(first);
 
-        const auto * needle_pos = needle;
+        auto needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
         {
@@ -611,7 +611,7 @@ public:
                 if (mask == cachemask)
                 {
                     pos += n;
-                    const auto * needle_pos = needle + n;
+                    auto needle_pos = needle + n;
 
                     while (needle_pos < needle_end && *pos == *needle_pos)
                         ++pos, ++needle_pos;
@@ -630,7 +630,7 @@ public:
         if (*pos == first)
         {
             ++pos;
-            const auto * needle_pos = needle + 1;
+            auto needle_pos = needle + 1;
 
             while (needle_pos < needle_end && *pos == *needle_pos)
                 ++pos, ++needle_pos;
@@ -680,8 +680,8 @@ public:
                     {
                         if (mask_offset == cachemask)
                         {
-                            const auto * haystack_pos = haystack + n;
-                            const auto * needle_pos = needle + n;
+                            auto haystack_pos = haystack + n;
+                            auto needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    *haystack_pos == *needle_pos)
@@ -705,8 +705,8 @@ public:
 
             if (*haystack == first)
             {
-                const auto * haystack_pos = haystack + 1;
-                const auto * needle_pos = needle + 1;
+                auto haystack_pos = haystack + 1;
+                auto needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        *haystack_pos == *needle_pos)
@@ -796,7 +796,10 @@ public:
 
     ALWAYS_INLINE static bool isTokenSeparator(const uint8_t c)
     {
-        return !(isAlphaNumericASCII(c) || !isASCII(c));
+        if (isAlphaNumericASCII(c) || !isASCII(c))
+            return false;
+
+        return true;
     }
 };
 
@@ -826,7 +829,7 @@ struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
-        const auto * res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
+        auto res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
         if (!res)
             return haystack_end;
         return reinterpret_cast<const CharT *>(res);
@@ -850,7 +853,7 @@ struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
-        const auto * res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
+        auto res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
         if (!res)
             return haystack_end;
         return reinterpret_cast<const CharT *>(res);

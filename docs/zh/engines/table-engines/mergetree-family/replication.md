@@ -7,7 +7,7 @@
 -   ReplicatedReplacingMergeTree
 -   ReplicatedAggregatingMergeTree
 -   ReplicatedCollapsingMergeTree
--   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergetree
 -   ReplicatedGraphiteMergeTree
 
 副本是表级别的，不是整个服务器级的。所以，服务器里可以同时有复制表和非复制表。

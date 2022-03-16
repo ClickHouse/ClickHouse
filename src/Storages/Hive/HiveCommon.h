@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <Common/config.h>
 
 #if USE_HIVE
@@ -11,32 +10,12 @@
 
 #include <base/types.h>
 #include <Common/LRUCache.h>
-#include <Common/PoolBase.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 
 namespace DB
 {
 
-using ThriftHiveMetastoreClientBuilder = std::function<std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>()>;
-
-class ThriftHiveMetastoreClientPool : public PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>
-{
-public:
-    using Object = Apache::Hadoop::Hive::ThriftHiveMetastoreClient;
-    using ObjectPtr = std::shared_ptr<Object>;
-    using Entry = PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>::Entry;
-    explicit ThriftHiveMetastoreClientPool(ThriftHiveMetastoreClientBuilder builder_);
-
-protected:
-    ObjectPtr allocObject() override
-    {
-        return builder();
-    }
-
-private:
-    ThriftHiveMetastoreClientBuilder builder;
-};
 class HiveMetastoreClient : public WithContext
 {
 public:
@@ -47,9 +26,7 @@ public:
         UInt64 last_modify_time; /// In ms
         size_t size;
 
-        explicit FileInfo() = default;
-        FileInfo & operator = (const FileInfo &) = default;
-        FileInfo(const FileInfo &) = default;
+        FileInfo() = default;
         FileInfo(const String & path_, UInt64 last_modify_time_, size_t size_)
             : path(path_), last_modify_time(last_modify_time_), size(size_)
         {
@@ -117,18 +94,17 @@ public:
 
     using HiveTableMetadataPtr = std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>;
 
-    explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_, ContextPtr context_)
-        : WithContext(context_)
-        , table_metadata_cache(1000)
-        , client_pool(builder_)
+    explicit HiveMetastoreClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_, ContextPtr context_)
+        : WithContext(context_), client(client_), table_metadata_cache(1000)
     {
     }
 
-
     HiveTableMetadataPtr getTableMetadata(const String & db_name, const String & table_name);
-    // Access hive table information by hive client
-    std::shared_ptr<Apache::Hadoop::Hive::Table> getHiveTable(const String & db_name, const String & table_name);
     void clearTableMetadata(const String & db_name, const String & table_name);
+    void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
+    bool isExpired() const { return expired; }
+    void setExpired() { expired = true; }
+    void clearExpired() { expired = false; }
 
 private:
     static String getCacheKey(const String & db_name, const String & table_name)  { return db_name + "." + table_name; }
@@ -136,10 +112,10 @@ private:
     bool shouldUpdateTableMetadata(
         const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions);
 
-    void tryCallHiveClient(std::function<void(ThriftHiveMetastoreClientPool::Entry &)> func);
-
+    std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client;
     LRUCache<String, HiveTableMetadata> table_metadata_cache;
-    ThriftHiveMetastoreClientPool client_pool;
+    mutable std::mutex mutex;
+    std::atomic<bool> expired{false};
 
     Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
 };
@@ -152,11 +128,13 @@ public:
 
     HiveMetastoreClientPtr getOrCreate(const String & name, ContextPtr context);
 
-    static std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> createThriftHiveMetastoreClient(const String & name);
-
 private:
     std::mutex mutex;
     std::map<String, HiveMetastoreClientPtr> clients;
+
+    const int conn_timeout_ms = 10000;
+    const int recv_timeout_ms = 10000;
+    const int send_timeout_ms = 10000;
 };
 
 }

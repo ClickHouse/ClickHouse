@@ -14,7 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <base/range.h>
-#include <base/insertAtEnd.h>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -43,8 +43,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
 
-    insertAtEnd(names_and_types, extra_names_and_types);
-
+    boost::range::push_back(names_and_types, std::move(extra_names_and_types));
     return names_and_types;
 }
 

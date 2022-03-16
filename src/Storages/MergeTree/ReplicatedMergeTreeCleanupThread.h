@@ -24,7 +24,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeCleanupThread
 {
 public:
-    explicit ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 

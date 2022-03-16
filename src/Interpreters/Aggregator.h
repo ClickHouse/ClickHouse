@@ -184,9 +184,7 @@ struct AggregationMethodOneNumber
     AggregationMethodOneNumber() = default;
 
     template <typename Other>
-    explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodOneNumber(const Other & other) : data(other.data) {}
 
     /// To use one `Method` in different threads, use different `State`.
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
@@ -221,9 +219,7 @@ struct AggregationMethodString
     AggregationMethodString() = default;
 
     template <typename Other>
-    explicit AggregationMethodString(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodString(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
@@ -251,9 +247,7 @@ struct AggregationMethodStringNoCache
     AggregationMethodStringNoCache() = default;
 
     template <typename Other>
-    explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
 
@@ -281,9 +275,7 @@ struct AggregationMethodFixedString
     AggregationMethodFixedString() = default;
 
     template <typename Other>
-    explicit AggregationMethodFixedString(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodFixedString(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
 
@@ -310,9 +302,7 @@ struct AggregationMethodFixedStringNoCache
     AggregationMethodFixedStringNoCache() = default;
 
     template <typename Other>
-    explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
 
@@ -383,9 +373,7 @@ struct AggregationMethodKeysFixed
     AggregationMethodKeysFixed() = default;
 
     template <typename Other>
-    explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodKeysFixed<
         typename Data::value_type,
@@ -474,9 +462,7 @@ struct AggregationMethodSerialized
     AggregationMethodSerialized() = default;
 
     template <typename Other>
-    explicit AggregationMethodSerialized(const Other & other) : data(other.data)
-    {
-    }
+    AggregationMethodSerialized(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
@@ -660,7 +646,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: break;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: (NAME) = std::make_unique<decltype(NAME)::element_type>(); break;
+            case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -677,7 +663,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return (NAME)->data.size() + (without_key != nullptr);
+            case Type::NAME: return NAME->data.size() + (without_key != nullptr);
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -694,7 +680,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
             #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return (NAME)->data.size();
+            case Type::NAME: return NAME->data.size();
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
         }
@@ -753,7 +739,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
-    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
@@ -767,7 +752,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
-    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
         APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -789,7 +773,6 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     void convertToTwoLevel();
 
-    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
         M(key32_two_level)            \
         M(key64_two_level)            \
@@ -1344,7 +1327,7 @@ private:
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
 
 #define M(NAME, IS_TWO_LEVEL) \
-    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; } /// NOLINT
+    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
 
 APPLY_FOR_AGGREGATED_VARIANTS(M)
 

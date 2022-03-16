@@ -19,12 +19,6 @@
 #if defined(__SSE4_2__)
     #include <smmintrin.h>
     #include <nmmintrin.h>
-    #define CRC_INT _mm_crc32_u64
-#endif
-
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    #include <arm_acle.h>
-    #define CRC_INT __crc32cd
 #endif
 
 
@@ -46,9 +40,9 @@ struct StringRef
 
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
-    StringRef(const std::string & s) : data(s.data()), size(s.size()) {} /// NOLINT
+    StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
     constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
+    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
     constexpr StringRef() = default;
 
     std::string toString() const { return std::string(data, size); }
@@ -211,7 +205,7 @@ struct StringRefHash64
     }
 };
 
-#if defined(CRC_INT)
+#if defined(__SSE4_2__)
 
 /// Parts are taken from CityHash.
 
@@ -287,13 +281,13 @@ struct CRC32Hash
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = CRC_INT(res, word);
+            res = _mm_crc32_u64(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = CRC_INT(res, word);
+        res = _mm_crc32_u64(res, word);
 
         return res;
     }

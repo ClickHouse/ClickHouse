@@ -172,7 +172,7 @@ ColumnPtr fillColumnWithRandomData(
 
             auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length, max_string_length, rng, context);
 
-            return ColumnArray::create(data_column, std::move(offsets_column));
+            return ColumnArray::create(std::move(data_column), std::move(offsets_column));
         }
 
         case TypeIndex::Tuple:
@@ -198,7 +198,7 @@ ColumnPtr fillColumnWithRandomData(
             for (UInt64 i = 0; i < limit; ++i)
                 null_map[i] = rng() % 16 == 0; /// No real motivation for this.
 
-            return ColumnNullable::create(nested_column, std::move(null_map_column));
+            return ColumnNullable::create(std::move(nested_column), std::move(null_map_column));
         }
 
         case TypeIndex::UInt8:
@@ -395,7 +395,7 @@ protected:
         for (const auto & elem : block_to_fill)
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        columns = Nested::flatten(block_to_fill.cloneWithColumns(columns)).getColumns();
+        columns = Nested::flatten(block_to_fill.cloneWithColumns(std::move(columns))).getColumns();
         return {std::move(columns), block_size};
     }
 

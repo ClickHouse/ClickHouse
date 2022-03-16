@@ -53,7 +53,7 @@ struct SortCursorImpl
       */
     IColumn::Permutation * permutation = nullptr;
 
-    SortCursorImpl() = default;
+    SortCursorImpl() {}
 
     SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
@@ -140,7 +140,7 @@ struct SortCursorHelper
 
     const Derived & derived() const { return static_cast<const Derived &>(*this); }
 
-    explicit SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
+    SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
 
@@ -245,7 +245,7 @@ public:
     SortingHeap() = default;
 
     template <typename Cursors>
-    explicit SortingHeap(Cursors & cursors)
+    SortingHeap(Cursors & cursors)
     {
         size_t size = cursors.size();
         queue.reserve(size);

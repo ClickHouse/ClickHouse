@@ -20,15 +20,9 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
     const StorageMetadataPtr & metadata_snapshot_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_)
-    : IMergeTreeReader(
-        data_part_,
-        columns_,
-        metadata_snapshot_,
-        nullptr,
-        nullptr,
-        mark_ranges_,
-        settings_,
-        {})
+    : IMergeTreeReader(data_part_, std::move(columns_), metadata_snapshot_,
+        nullptr, nullptr, std::move(mark_ranges_),
+        std::move(settings_), {})
     , part_in_memory(std::move(data_part_))
 {
     for (const auto & name_and_type : columns)

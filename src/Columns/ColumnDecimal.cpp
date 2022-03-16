@@ -122,89 +122,28 @@ void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int, IColumn::Permutation & res) const
+void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
-    auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
-    auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
-    {
-        if (unlikely(data[lhs] == data[rhs]))
-            return lhs < rhs;
-
-        return data[lhs] < data[rhs];
-    };
-    auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
-    auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
-    {
-        if (unlikely(data[lhs] == data[rhs]))
-            return lhs < rhs;
-
-        return data[lhs] > data[rhs];
-    };
-
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, comparator_ascending, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        this->getPermutationImpl(limit, res, comparator_ascending_stable, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, comparator_descending, DefaultSort(), DefaultPartialSort());
-    else
-        this->getPermutationImpl(limit, res, comparator_descending_stable, DefaultSort(), DefaultPartialSort());
+    permutation(reverse, limit, res);
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                        size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
-    auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
-    {
-        if (unlikely(data[lhs] == data[rhs]))
-            return lhs < rhs;
-
-        return data[lhs] > data[rhs];
-    };
-
-    auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
-    auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
-    {
-        if (unlikely(data[lhs] == data[rhs]))
-            return lhs < rhs;
-
-        return data[lhs] < data[rhs];
-    };
-    auto equals_comparator = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
+    auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
     auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-    {
+    if (reverse)
         this->updatePermutationImpl(
             limit, res, equal_ranges,
-            comparator_ascending,
-            equals_comparator, sort, partial_sort);
-    }
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-    {
-        this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            comparator_ascending_stable,
-            equals_comparator, sort, partial_sort);
-    }
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-    {
-        this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            comparator_descending,
-            equals_comparator, sort, partial_sort);
-    }
+            [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; },
+            equals, sort, partial_sort);
     else
-    {
         this->updatePermutationImpl(
             limit, res, equal_ranges,
-            comparator_descending_stable,
-            equals_comparator, sort, partial_sort);
-    }
+            [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; },
+            equals, sort, partial_sort);
 }
 
 template <is_decimal T>

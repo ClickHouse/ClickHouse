@@ -10,7 +10,7 @@ class Increment
 {
 public:
     /// path - the name of the file, including the path
-    explicit Increment(const std::string & path_) : counter(path_) {}
+    Increment(const std::string & path_) : counter(path_) {}
 
     /** Get the next number.
       * If the `create_if_need` parameter is not set to true, then

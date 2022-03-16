@@ -802,7 +802,7 @@ Configuration markup:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
@@ -856,7 +856,7 @@ S3 disk can be configured as `main` or `cold` storage:
     <disks>
         <s3>
             <type>s3</type>
-            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
         </s3>
@@ -886,57 +886,6 @@ S3 disk can be configured as `main` or `cold` storage:
 ```
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
-
-## Using Azure Blob Storage for Data Storage {#table_engine-mergetree-azure-blob-storage}
-
-`MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
-
-As of February 2022, this feature is still a fresh addition, so expect that some Azure Blob Storage functionalities might be unimplemented.
-
-Configuration markup:
-``` xml
-<storage_configuration>
-    ...
-    <disks>
-        <blob_storage_disk>
-            <type>azure_blob_storage</type>
-            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
-            <container_name>container</container_name>
-            <account_name>account</account_name>
-            <account_key>pass123</account_key>
-            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
-            <skip_access_check>false</skip_access_check>
-        </blob_storage_disk>
-    </disks>
-    ...
-</storage_configuration>
-```
-
-Connection parameters:
-* `storage_account_url` - **Required**, Azure Blob Storage account URL, like `http://account.blob.core.windows.net` or `http://azurite1:10000/devstoreaccount1`.
-* `container_name` - Target container name, defaults to `default-container`.
-* `container_already_exists` - If set to `false`, a new container `container_name` is created in the storage account, if set to `true`, disk connects to the container directly, and if left unset, disk connects to the account, checks if the container `container_name` exists, and creates it if it doesn't exist yet.
-
-Authentication parameters (the disk will try all available methods **and** Managed Identity Credential):
-* `connection_string` - For authentication using a connection string.
-* `account_name` and `account_key` - For authentication using Shared Key.
-
-Limit parameters (mainly for internal usage):
-* `max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
-* `min_bytes_for_seek` - Limits the size of a seekable region.
-* `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
-* `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
-* `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
-
-Other parameters:
-* `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-* `cache_enabled` - Allows to cache mark and index files on local FS. Default value is `true`.
-* `cache_path` - Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
-* `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
-
-Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
 ## Virtual Columns {#virtual-columns}
 

@@ -96,10 +96,6 @@ private:
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
-    /// Update create query with columns description from storage if query doesn't have it.
-    /// It's used to prevent automatic schema inference while table creation on each server startup.
-    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
-
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.

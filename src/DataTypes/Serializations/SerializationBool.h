@@ -10,7 +10,7 @@ namespace DB
 class SerializationBool final : public SerializationWrapper
 {
 public:
-    explicit SerializationBool(const SerializationPtr & nested_);
+    SerializationBool(const SerializationPtr & nested_);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 

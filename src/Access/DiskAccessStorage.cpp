@@ -48,7 +48,7 @@ namespace
         }
         catch (...)
         {
-            tryLogCurrentException(&log);
+            tryLogCurrentException(&log, "Could not parse " + file_path);
             return nullptr;
         }
     }

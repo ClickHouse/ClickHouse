@@ -133,7 +133,7 @@ public:
         , process_list(process_list_)
         , processes_to_stop(std::move(processes_to_stop_))
         , processes_block(std::move(processes_block_))
-        , res_sample_block(res_sample_block_)
+        , res_sample_block(std::move(res_sample_block_))
     {
         addTotalRowsApprox(processes_to_stop.size());
     }

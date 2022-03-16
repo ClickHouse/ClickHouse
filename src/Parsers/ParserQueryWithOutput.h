@@ -15,7 +15,7 @@ protected:
     const char * getName() const override { return "Query with output"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    explicit ParserQueryWithOutput(const char * end_) : end(end_) {}
+    ParserQueryWithOutput(const char * end_) : end(end_) {}
 };
 
 }

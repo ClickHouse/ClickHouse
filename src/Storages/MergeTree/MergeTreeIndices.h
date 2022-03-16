@@ -29,7 +29,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    operator bool() const { return version != 0; } /// NOLINT
+    operator bool() const { return version != 0; }
 };
 
 /// Stores some info about a single block of data.
@@ -122,7 +122,7 @@ using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedConditio
 
 struct IMergeTreeIndex
 {
-    explicit IMergeTreeIndex(const IndexDescription & index_)
+    IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
     }
@@ -164,7 +164,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
+    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

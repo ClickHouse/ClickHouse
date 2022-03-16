@@ -20,7 +20,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -126,7 +125,7 @@ DistributedSink::DistributedSink(
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
     context->getClientInfo().distributed_depth += 1;
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
@@ -332,13 +331,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         const Settings & settings = context->getSettingsRef();
 
         /// Do not initiate INSERT for empty block.
-        size_t rows = shard_block.rows();
-        if (rows == 0)
+        if (shard_block.rows() == 0)
             return;
-
-        OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-        span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-        span.addAttribute("clickhouse.written_rows", rows);
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -412,15 +406,13 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         job.blocks_written += 1;
-        job.rows_written += rows;
+        job.rows_written += shard_block.rows();
     };
 }
 
 
 void DistributedSink::writeSync(const Block & block)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     Block block_to_send = removeSuperfluousColumns(block);
@@ -464,10 +456,6 @@ void DistributedSink::writeSync(const Block & block)
 
     size_t num_shards = end - start;
 
-    span.addAttribute("clickhouse.start_shard", start);
-    span.addAttribute("clickhouse.end_shard", end);
-    span.addAttribute("db.statement", this->query_string);
-
     if (num_shards > 1)
     {
         auto current_selector = createSelector(block);
@@ -501,7 +489,6 @@ void DistributedSink::writeSync(const Block & block)
     catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription());
-        span.addAttribute(exception);
         throw;
     }
 
@@ -610,14 +597,9 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
-    OpenTelemetrySpanHolder span("DistributedBlockOutputStream::writeAsyncImpl()");
-
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
     Block block_to_send = removeSuperfluousColumns(block);
-
-    span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-    span.addAttribute("clickhouse.written_rows", block.rows());
 
     if (shard_info.hasInternalReplication())
     {
@@ -652,9 +634,6 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
 void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-    span.addAttribute("db.statement", this->query_string);
-
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
@@ -668,8 +647,6 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 
 void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
@@ -736,19 +713,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
-
-            if (context->getClientInfo().client_trace_context.trace_id != UUID() && CurrentThread::isInitialized())
-            {
-                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
-                auto client_info = context->getClientInfo();
-                client_info.client_trace_context = CurrentThread::get().thread_trace_context;
-                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
-            }
-            else
-            {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
-            }
-
+            context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             writeVarUInt(block.rows(), header_buf);
             writeVarUInt(block.bytes(), header_buf);
             writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf); /// obsolete

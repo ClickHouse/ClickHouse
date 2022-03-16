@@ -15,7 +15,7 @@ toc_title: DateTime
 DateTime([timezone])
 ```
 
-サポートされる値の範囲: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
+サポートされる値の範囲: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
 
 解像度:1秒.
 
@@ -40,7 +40,7 @@ ClickHouseにデータを挿入するときは、データの値に応じて、�
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime('Asia/Istanbul'),
+    `timestamp` DateTime('Europe/Moscow'),
     `event_id` UInt8
 )
 ENGINE = TinyLog;
@@ -61,13 +61,13 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   Datetimeを整数として挿入する場合は、Unix Timestamp(UTC)として扱われます。 `1546300800` を表す `'2019-01-01 00:00:00'` UTC しかし、 `timestamp` 列は `Asia/Istanbul` (UTC+3)タイムゾーンが指定されている場合、文字列として出力すると、値は次のように表示されます `'2019-01-01 03:00:00'`
--   文字列値をdatetimeとして挿入すると、列タイムゾーンにあるものとして扱われます。 `'2019-01-01 00:00:00'` であるとして扱われます `Asia/Istanbul` タイムゾーンとして保存 `1546290000`.
+-   Datetimeを整数として挿入する場合は、Unix Timestamp(UTC)として扱われます。 `1546300800` を表す `'2019-01-01 00:00:00'` UTC しかし、 `timestamp` 列は `Europe/Moscow` (UTC+3)タイムゾーンが指定されている場合、文字列として出力すると、値は次のように表示されます `'2019-01-01 03:00:00'`
+-   文字列値をdatetimeとして挿入すると、列タイムゾーンにあるものとして扱われます。 `'2019-01-01 00:00:00'` であるとして扱われます `Europe/Moscow` タイムゾーンとして保存 `1546290000`.
 
 **2.** フィルタリング `DateTime` 値
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
 ```
 
 ``` text
@@ -91,12 +91,12 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 **3.** Aのタイムゾーンの取得 `DateTime`-タイプ列:
 
 ``` sql
-SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
+SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────column─┬─x─────────────────────────┐
-│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
+│ 2019-10-16 04:12:04 │ DateTime('Europe/Moscow') │
 └─────────────────────┴───────────────────────────┘
 ```
 
@@ -105,7 +105,7 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ``` sql
 SELECT
 toDateTime(timestamp, 'Europe/London') as lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') as mos_time
+toDateTime(timestamp, 'Europe/Moscow') as mos_time
 FROM dt
 ```
 

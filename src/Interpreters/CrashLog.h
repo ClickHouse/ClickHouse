@@ -41,7 +41,7 @@ class CrashLog : public SystemLog<CrashLogElement>
 public:
     static void initialize(std::shared_ptr<CrashLog> crash_log_)
     {
-        crash_log = crash_log_;
+        crash_log = std::move(crash_log_);
     }
 };
 

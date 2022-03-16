@@ -13,7 +13,7 @@ class FieldVisitorHash : public StaticVisitor<>
 private:
     SipHash & hash;
 public:
-    explicit FieldVisitorHash(SipHash & hash_);
+    FieldVisitorHash(SipHash & hash_);
 
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;

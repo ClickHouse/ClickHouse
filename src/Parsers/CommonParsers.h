@@ -33,8 +33,7 @@ class ParserToken : public IParserBase
 private:
     TokenType token_type;
 public:
-    ParserToken(TokenType token_type_) : token_type(token_type_) {} /// NOLINT
-
+    ParserToken(TokenType token_type_) : token_type(token_type_) {}
 protected:
     const char * getName() const override { return "token"; }
 

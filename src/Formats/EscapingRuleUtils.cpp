@@ -262,7 +262,7 @@ static bool evaluateConstantExpressionFromString(const StringRef & field, DataTy
 
     /// FIXME: Our parser cannot parse maps in the form of '{key : value}' that is used in text formats.
     bool parsed = parser.parse(token_iterator, ast, expected);
-    if (!parsed || !token_iterator->isEnd())
+    if (!parsed)
         return false;
 
     try

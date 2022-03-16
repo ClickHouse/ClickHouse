@@ -17,7 +17,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    explicit DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypePtr & nested_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 

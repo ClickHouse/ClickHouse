@@ -90,22 +90,6 @@ public:
         return getDictionary(dict_name_col->getValue<String>());
     }
 
-    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
-    {
-        const auto & dictionary_structure = dictionary->getStructure();
-        auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
-
-        if (!dictionary->hasHierarchy() || !hierarchical_attribute_index_optional.has_value())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Dictionary {} does not support hierarchy",
-                dictionary->getFullName());
-
-        size_t hierarchical_attribute_index = *hierarchical_attribute_index_optional;
-        const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
-
-        return hierarchical_attribute;
-    }
-
     bool isDictGetFunctionInjective(const Block & sample_columns)
     {
         /// Assume non-injective by default
@@ -897,9 +881,7 @@ private:
                 result = std::move(dictionary_get_result_column);
             }
             else
-            {
-                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
-            }
+                result = ColumnNullable::create(std::move(dictionary_get_result_column), std::move(is_key_in_dictionary_column_mutable));
         }
 
         return result;
@@ -957,24 +939,25 @@ private:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
-    bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        String dictionary_name;
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-            dictionary_name = name_col->getValue<String>();
-        else
+        if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a const string.",
-                arguments[0].type->getName(),
-                getName());
+                "Illegal type of first argument of function {}. Expected String. Actual type {}",
+                getName(),
+                arguments[0]->getName());
 
-        auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function {}. Expected UInt64. Actual type {}",
+                getName(),
+                arguments[1]->getName());
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
+
+    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -982,13 +965,13 @@ private:
             return result_type->createColumn();
 
         auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary {} does not support hierarchy",
+                dictionary->getFullName());
 
-        ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
-
+        ColumnPtr result = dictionary->getHierarchy(arguments[1].column, std::make_shared<DataTypeUInt64>());
         return result;
     }
 
@@ -1026,6 +1009,18 @@ private:
                 getName(),
                 arguments[0]->getName());
 
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function {}. Expected UInt64. Actual type {}",
+                getName(),
+                arguments[1]->getName());
+
+        if (!WhichDataType(arguments[2]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of third argument of function {}. Expected UInt64. Actual type {}",
+                getName(),
+                arguments[2]->getName());
+
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -1036,18 +1031,16 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+        auto dict = helper.getDictionary(arguments[0].column);
 
-        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[2].name};
-        auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
+        if (!dict->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary {} does not support hierarchy",
+                dict->getFullName());
 
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
-        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute.type);
+        ColumnPtr res = dict->isInHierarchy(arguments[1].column, arguments[2].column, std::make_shared<DataTypeUInt64>());
 
-        ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
-
-        return result;
+        return res;
     }
 
     mutable FunctionDictHelper helper;
@@ -1076,18 +1069,21 @@ private:
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0].type))
+        if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of first argument of function {}. Expected String. Actual type {}",
                 getName(),
-                arguments[0].type->getName());
+                arguments[0]->getName());
 
-        auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function {}. Expected UInt64. Actual type {}",
+                getName(),
+                arguments[1]->getName());
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1096,12 +1092,13 @@ private:
             return result_type->createColumn();
 
         auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary {} does not support hierarchy",
+                dictionary->getFullName());
 
-        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, 1);
+        ColumnPtr result = dictionary->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), 1);
 
         return result;
     }
@@ -1129,11 +1126,12 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t arguments_size = arguments.size();
         if (arguments_size < 2 || arguments_size > 3)
@@ -1144,24 +1142,27 @@ private:
                 arguments_size);
         }
 
-        if (!isString(arguments[0].type))
+        if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of first argument of function {}. Expected const String. Actual type {}",
                 getName(),
-                arguments[0].type->getName());
+                arguments[0]->getName());
 
-        if (arguments.size() == 3 && !isInteger(arguments[2].type))
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function {}. Expected UInt64. Actual type {}",
+                getName(),
+                arguments[1]->getName());
+
+        if (arguments.size() == 3 && !isUnsignedInteger(arguments[2]))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of third argument of function {}. Expected const unsigned integer. Actual type {}",
                 getName(),
-                arguments[2].type->getName());
+                arguments[2]->getName());
         }
 
-        auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
-
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1170,7 +1171,6 @@ private:
             return result_type->createColumn();
 
         auto dictionary = helper.getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
         size_t level = 0;
 
@@ -1181,21 +1181,17 @@ private:
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
                     getName());
 
-            auto value = static_cast<Int64>(arguments[2].column->getInt(0));
-            if (value < 0)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type of third argument of function {}. Expected const unsigned integer.",
-                    getName());
-
-            level = static_cast<size_t>(value);
+            level = static_cast<size_t>(arguments[2].column->get64(0));
         }
 
-        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary {} does not support hierarchy",
+                dictionary->getFullName());
 
-        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level);
+        ColumnPtr res = dictionary->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), level);
 
-        return result;
+        return res;
     }
 
     mutable FunctionDictHelper helper;

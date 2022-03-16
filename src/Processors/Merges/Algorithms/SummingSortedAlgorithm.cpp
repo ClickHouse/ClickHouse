@@ -457,7 +457,7 @@ static void postprocessChunk(
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            res_columns[desc.column_numbers[0]] = recursiveTypeConversion(column, from_type, to_type);
+            res_columns[desc.column_numbers[0]] = recursiveTypeConversion(std::move(column), from_type, to_type);
         }
         else
             res_columns[desc.column_numbers[0]] = std::move(column);

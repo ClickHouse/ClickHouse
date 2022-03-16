@@ -165,9 +165,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
+    pool.scheduleOrThrowOnError([=, data = std::make_shared<InsertDataPtr>(std::move(data))]
     {
-        processData(key, std::move(*data), std::move(global_context));
+        processData(std::move(key), std::move(*data), std::move(global_context));
     });
 }
 
@@ -184,10 +184,7 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
-    /// For table functions we check access while executing
-    /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
-    if (insert_query.table_id)
-        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+    query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
     String bytes;
     {
@@ -414,7 +411,7 @@ try
     };
 
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
-    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields && insert_query.table_id)
+    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();

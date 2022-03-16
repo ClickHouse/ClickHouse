@@ -18,7 +18,7 @@ struct SettingsProfilesInfo;
 class SettingsProfilesCache
 {
 public:
-    explicit SettingsProfilesCache(const AccessControl & access_control_);
+    SettingsProfilesCache(const AccessControl & access_control_);
     ~SettingsProfilesCache();
 
     void setDefaultProfileName(const String & default_profile_name);

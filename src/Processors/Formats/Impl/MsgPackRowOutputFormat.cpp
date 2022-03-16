@@ -199,7 +199,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                     writeBinaryBigEndian(value.toUnderType().items[0], buf);
                     writeBinaryBigEndian(value.toUnderType().items[1], buf);
                     StringRef uuid_ext = buf.stringRef();
-                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUIDType));
+                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUID));
                     packer.pack_ext_body(uuid_ext.data, uuid_ext.size);
                     return;
                 }
@@ -213,8 +213,8 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t columns_size = columns.size();
-    for (size_t i = 0; i < columns_size; ++i)
+    size_t num_columns = columns.size();
+    for (size_t i = 0; i < num_columns; ++i)
     {
         serializeField(*columns[i], types[i], row_num);
     }

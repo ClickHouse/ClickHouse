@@ -26,10 +26,10 @@ public:
 
     ASTPtr & refSelect() { return getExpression(Expression::SELECT); }
 
-    ASTPtr with() const { return getExpression(Expression::WITH); }
-    ASTPtr select() const { return getExpression(Expression::SELECT); }
-    ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
-    ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
+    const ASTPtr with() const { return getExpression(Expression::WITH); }
+    const ASTPtr select() const { return getExpression(Expression::SELECT); }
+    const ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
+    const ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
 
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);

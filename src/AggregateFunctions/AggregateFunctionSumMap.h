@@ -489,15 +489,15 @@ public:
                 "Aggregate function '{}' requires exactly one parameter "
                 "of Array type", getName());
 
-        Array keys_to_keep_values;
-        if (!params_.front().tryGet<Array>(keys_to_keep_values))
+        Array keys_to_keep_;
+        if (!params_.front().tryGet<Array>(keys_to_keep_))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_values.size());
+        keys_to_keep.reserve(keys_to_keep_.size());
 
-        for (const Field & f : keys_to_keep_values)
+        for (const Field & f : keys_to_keep_)
             keys_to_keep.emplace(f.safeGet<T>());
     }
 

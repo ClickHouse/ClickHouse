@@ -26,7 +26,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);
+    StorageSystemDataSkippingIndices(const StorageID & table_id_);
 };
 
 }

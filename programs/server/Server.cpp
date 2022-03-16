@@ -22,8 +22,6 @@
 #include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
-#include <base/getFQDNOrHostName.h>
-#include <base/safeExit.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -33,6 +31,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -96,6 +95,8 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <unistd.h>
+#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -503,6 +504,19 @@ void checkForUsersNotInMainConfig(
             users_config_path, config_path);
     }
 }
+
+[[noreturn]] void forceShutdown()
+{
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
+    /// while connection handling threads are still run.
+    (void)syscall(SYS_exit_group, 0);
+    __builtin_unreachable();
+#else
+    _exit(0);
+#endif
+}
+
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
@@ -995,11 +1009,6 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
-        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
-        {
-            return global_context->getConfigRef();
-        };
-
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1018,11 +1027,7 @@ if (ThreadFuzzer::instance().isEffective())
                         port_name,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout,
-                                false), server_pool, socket));
+                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1041,10 +1046,7 @@ if (ThreadFuzzer::instance().isEffective())
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(
-                                config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
+                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -1067,9 +1069,7 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
-    ///set the allow_plaintext_and_no_password setting in context.
-    access_control.setPlaintextPasswordSetting(config().getBool("allow_plaintext_password", true));
-    access_control.setNoPasswordSetting(config().getBool("allow_no_password", true));
+
     /// Initialize access storages.
     try
     {
@@ -1317,7 +1317,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
@@ -1527,7 +1527,7 @@ if (ThreadFuzzer::instance().isEffective())
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                safeExit(0);
+                forceShutdown();
             }
         });
 

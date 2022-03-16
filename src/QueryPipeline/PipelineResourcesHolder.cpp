@@ -5,10 +5,10 @@ namespace DB
 {
 
 PipelineResourcesHolder::PipelineResourcesHolder() = default;
-PipelineResourcesHolder::PipelineResourcesHolder(PipelineResourcesHolder &&) noexcept = default;
+PipelineResourcesHolder::PipelineResourcesHolder(PipelineResourcesHolder &&) = default;
 PipelineResourcesHolder::~PipelineResourcesHolder() = default;
 
-PipelineResourcesHolder & PipelineResourcesHolder::operator=(PipelineResourcesHolder && rhs) noexcept
+PipelineResourcesHolder & PipelineResourcesHolder::operator=(PipelineResourcesHolder && rhs)
 {
     table_locks.insert(table_locks.end(), rhs.table_locks.begin(), rhs.table_locks.end());
     storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());

@@ -105,9 +105,9 @@ public:
     IHints() = default;
 
     IHints(const IHints &) = default;
-    IHints(IHints &&) noexcept = default;
+    IHints(IHints &&) = default;
     IHints & operator=(const IHints &) = default;
-    IHints & operator=(IHints &&) noexcept = default;
+    IHints & operator=(IHints &&) = default;
 
     virtual ~IHints() = default;
 

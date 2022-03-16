@@ -10,6 +10,7 @@ clickhouse-common-static/
 clickhouse-server-base/
 clickhouse-server-common/
 clickhouse-server/
+clickhouse-test/
 debhelper-build-stamp
 files
 *.debhelper.log

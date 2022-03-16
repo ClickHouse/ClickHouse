@@ -147,7 +147,7 @@ struct Params
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
 
-Graphite::RollupRule selectPatternForPath(const Graphite::Params & params, StringRef path);
+Graphite::RollupRule selectPatternForPath(const Graphite::Params & params, const StringRef path);
 
 void setGraphitePatternsFromConfig(ContextPtr context, const String & config_element, Graphite::Params & params);
 

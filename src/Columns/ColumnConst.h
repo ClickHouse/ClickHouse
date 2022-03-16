@@ -163,7 +163,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        auto res = data->deserializeAndInsertFromArena(pos);
         data->popBack(1);
         ++s;
         return res;
@@ -192,10 +192,8 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res) const override;
-    void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     size_t byteSize() const override
     {
@@ -242,7 +240,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
+        if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }

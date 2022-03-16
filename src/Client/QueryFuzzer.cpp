@@ -546,7 +546,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
  * small probability. Do this after we add this fuzzer to CI and fix all the
  * problems it can routinely find even in this boring version.
  */
-void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
 
@@ -569,7 +569,7 @@ void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addTableLike(ASTPtr ast)
+void QueryFuzzer::addTableLike(const ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
@@ -583,7 +583,7 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addColumnLike(ASTPtr ast)
+void QueryFuzzer::addColumnLike(const ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
@@ -606,7 +606,7 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     }
 }
 
-void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {

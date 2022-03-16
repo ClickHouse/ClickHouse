@@ -1,11 +1,11 @@
 ---
 toc_priority: 59
-toc_title: Embedded Dictionaries
+toc_title: Yandex.Metrica Dictionaries
 ---
 
-# Functions for Working with Embedded Dictionaries
+# Functions for Working with Yandex.Metrica Dictionaries {#functions-for-working-with-yandex-metrica-dictionaries}
 
-In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
+In order for the functions below to work, the server config must specify the paths and addresses for getting all the Yandex.Metrica dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
 
 For information about creating reference lists, see the section “Dictionaries”.
 
@@ -33,7 +33,7 @@ regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/g
 
 ### regionToCity(id\[, geobase\]) {#regiontocityid-geobase}
 
-Accepts a UInt32 number – the region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
+Accepts a UInt32 number – the region ID from the Yandex geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
 ### regionToArea(id\[, geobase\]) {#regiontoareaid-geobase}
 
@@ -117,7 +117,7 @@ regionToTopContinent(id[, geobase])
 
 **Arguments**
 
--   `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `id` — Region ID from the Yandex geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
 -   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
 
 **Returned value**
@@ -132,7 +132,7 @@ Type: `UInt32`.
 Gets the population for a region.
 The population can be recorded in files with the geobase. See the section “External dictionaries”.
 If the population is not recorded for the region, it returns 0.
-In the geobase, the population might be recorded for child regions, but not for parent regions.
+In the Yandex geobase, the population might be recorded for child regions, but not for parent regions.
 
 ### regionIn(lhs, rhs\[, geobase\]) {#regioninlhs-rhs-geobase}
 
@@ -141,12 +141,12 @@ The relationship is reflexive – any region also belongs to itself.
 
 ### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
 
-Accepts a UInt32 number – the region ID from the geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
+Accepts a UInt32 number – the region ID from the Yandex geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
 

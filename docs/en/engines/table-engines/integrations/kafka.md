@@ -186,7 +186,6 @@ Example:
 -   `_key` — Key of the message.
 -   `_offset` — Offset of the message.
 -   `_timestamp` — Timestamp of the message.
--   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
 
 **See Also**

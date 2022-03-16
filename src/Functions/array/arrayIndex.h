@@ -432,7 +432,7 @@ public:
                 const auto & map_array_column = map_column.getNestedColumn();
                 auto offsets = map_array_column.getOffsetsPtr();
                 auto keys = map_column.getNestedData().getColumnPtr(0);
-                auto array_column = ColumnArray::create(keys, offsets);
+                auto array_column = ColumnArray::create(std::move(keys), std::move(offsets));
 
                 const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
                 auto array_type = std::make_shared<DataTypeArray>(type_map.getKeyType());

@@ -83,7 +83,7 @@ struct CountSubstringsImpl
     {
         res = 0;
 
-        if (needle.empty())
+        if (needle.size() == 0)
             return;
 
         auto start = std::max(start_pos, UInt64(1));

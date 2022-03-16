@@ -375,7 +375,7 @@ Q3: 0.051 sec.
 Q4: 0.072 sec.
 
 In this case, the query processing time is determined above all by network latency.
-We ran queries using a client located in a different datacenter than where the cluster was located, which added about 20 ms of latency.
+We ran queries using a client located in a Yandex datacenter in Finland on a cluster in Russia, which added about 20 ms of latency.
 
 ## Summary {#summary}
 

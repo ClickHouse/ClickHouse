@@ -181,7 +181,7 @@ if __name__ == '__main__':
 
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,ru,zh,ja')
-    arg_parser.add_argument('--blog-lang', default='en')
+    arg_parser.add_argument('--blog-lang', default='en,ru')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)

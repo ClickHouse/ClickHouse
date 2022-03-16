@@ -156,7 +156,7 @@ namespace
     }
 
 
-    void throwIfNotGrantable(AccessRightsElements & elements)
+    void eraseNonGrantable(AccessRightsElements & elements)
     {
         boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
         {
@@ -303,12 +303,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     if (!is_revoke)
-    {
-        if (attach_mode)
-            elements.eraseNonGrantable();
-        else
-            throwIfNotGrantable(elements);
-    }
+        eraseNonGrantable(elements);
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;

@@ -6,7 +6,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=["configs/first.crt", "configs/first.key",
                                                   "configs/second.crt", "configs/second.key",
-                                                  "configs/ECcert.crt", "configs/ECcert.key",
                                                   "configs/cert.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
@@ -64,30 +63,6 @@ def test_first_than_second_cert():
 
     # Command with correct certificate
     assert node.exec_in_container(['curl', '--silent', '--cacert', '/etc/clickhouse-server/config.d/{cur_name}.crt'.format(cur_name='second'),
-                            'https://localhost:8443/']) == 'Ok.\n'
-
-    # Command with wrong certificate
-    # Same as previous
-    try:
-        node.exec_in_container(['curl', '--silent', '--cacert', '/etc/clickhouse-server/config.d/{cur_name}.crt'.format(cur_name='first'),
-                            'https://localhost:8443/'])
-        assert False
-    except:
-        assert True
-
-def test_ECcert_reload():
-    # Set first key
-    change_config_to_key('first')
-
-    # Command with correct certificate
-    assert node.exec_in_container(['curl', '--silent', '--cacert', '/etc/clickhouse-server/config.d/{cur_name}.crt'.format(cur_name='first'),
-                            'https://localhost:8443/']) == 'Ok.\n'
-    
-    # Change to other key
-    change_config_to_key('ECcert')
-
-    # Command with correct certificate
-    assert node.exec_in_container(['curl', '--silent', '--cacert', '/etc/clickhouse-server/config.d/{cur_name}.crt'.format(cur_name='ECcert'),
                             'https://localhost:8443/']) == 'Ok.\n'
 
     # Command with wrong certificate

@@ -38,18 +38,6 @@ Alternatively you can perform benchmark in the following steps.
 wget https://builds.clickhouse.com/master/amd64/clickhouse
 # For aarch64:
 wget https://builds.clickhouse.com/master/aarch64/clickhouse
-# For powerpc64le:
-wget https://builds.clickhouse.com/master/powerpc64le/clickhouse
-# For freebsd:
-wget https://builds.clickhouse.com/master/freebsd/clickhouse
-# For freebsd-aarch64:
-wget https://builds.clickhouse.com/master/freebsd-aarch64/clickhouse
-# For freebsd-powerpc64le:
-wget https://builds.clickhouse.com/master/freebsd-powerpc64le/clickhouse
-# For macos:
-wget https://builds.clickhouse.com/master/macos/clickhouse
-# For macos-aarch64:
-wget https://builds.clickhouse.com/master/macos-aarch64/clickhouse
 # Then do:
 chmod a+x clickhouse
 ```
@@ -59,7 +47,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/cl
 chmod a+x benchmark-new.sh
 wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 ```
-3.  Download the [web analytics dataset](../getting-started/example-datasets/metrica.md) (“hits” table containing 100 million rows).
+3.  Download test data according to the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 ```bash
 wget https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz
 tar xvf hits_100m_obfuscated_v1.tar.xz -C .
@@ -78,6 +66,6 @@ mv hits_100m_obfuscated_v1/* .
 ```bash
 ./benchmark-new.sh hits_100m_obfuscated
 ```
-7.  Send the numbers and the info about your hardware configuration to feedback@clickhouse.com
+7.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
 All the results are published here: https://clickhouse.com/benchmark/hardware/

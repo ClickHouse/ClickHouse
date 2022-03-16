@@ -45,7 +45,7 @@ public:
 
 private:
     friend class DirectoryWatcherBase;
-    /// Here must pass by value, otherwise will lead to stack-use-of-scope.
+    /// Here must pass by value, otherwise will lead to stack-use-of-scope
     void onItemAdded(DirectoryWatcherBase::DirectoryEvent ev);
     void onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev);
     void onItemModified(DirectoryWatcherBase::DirectoryEvent ev);

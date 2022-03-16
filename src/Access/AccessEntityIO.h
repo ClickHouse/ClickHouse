@@ -10,6 +10,6 @@ using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 String serializeAccessEntity(const IAccessEntity & entity);
 
-AccessEntityPtr deserializeAccessEntity(const String & definition, const String & file_path = "");
+AccessEntityPtr deserializeAccessEntity(const String & definition, const String & path);
 
 }

@@ -23,7 +23,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install the latest clang (recommended)
+### Install clang-13 (recommended) {#install-clang-13}
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
@@ -33,14 +33,12 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use the latest clang for Builds
+#### Use clang-13 for Builds
 
 ``` bash
-$ export CC=clang-14
-$ export CXX=clang++-14
+$ export CC=clang-13
+$ export CXX=clang++-13
 ```
-
-In this example we use version 14 that is the latest as of Feb 2022.
 
 Gcc can also be used though it is discouraged.
 
@@ -78,6 +76,7 @@ The build requires the following components:
 -   Ninja
 -   C++ compiler: clang-13 or newer
 -   Linker: lld
+-   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
 
@@ -110,29 +109,6 @@ cmake ../ClickHouse
 make -j $(nproc)
 ```
 
-Here is an example of how to build `clang` and all the llvm infrastructure from sources:
-
-```
- git clone git@github.com:llvm/llvm-project.git
- mkdir llvm-build && cd llvm-build
- cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all ../llvm-project/llvm/
- make -j16
- sudo make install
- hash clang
- clang --version
-```
-
-You can install the older clang like clang-11 from packages and then use it to build the new clang from sources.
-
-Here is an example of how to install the new `cmake` from the official website:
-
-```
-wget https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.sh
-chmod +x cmake-3.22.2-linux-x86_64.sh
-./cmake-3.22.2-linux-x86_64.sh 
-export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
-hash cmake
-```
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
@@ -156,6 +132,14 @@ $ cd ClickHouse
 $ ./release
 ```
 
+## Faster builds for development
+
+Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. One common way to improve build time is to use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable this tweak, pass the following flags to `cmake`:
+
+```
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+```
+
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
@@ -164,9 +148,9 @@ They are built for stable, prestable and testing releases as long as for every c
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
 
-## Faster builds for development: Split build configuration {#split-build}
+## Split build configuration {#split-build}
 
-Normally, ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary needs to be linked, which is slow and may be inconvenient for development. There is an alternative configuration which instead creates dynamically loaded shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+Normally ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary is linked again, which is slow and may be inconvenient for development. There is an alternative configuration which creates dynamically loaded shared libraries instead, allowing faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```

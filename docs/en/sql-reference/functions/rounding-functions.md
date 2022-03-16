@@ -189,11 +189,11 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundDuration(num) {#rounddurationnum}
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function was specifically implemented for a web analytics use case for reporting on session lengths. 
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length.
 
 ## roundAge(num) {#roundagenum}
 
-Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. 
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
 ## roundDown(num, arr) {#rounddownnum-arr}
 

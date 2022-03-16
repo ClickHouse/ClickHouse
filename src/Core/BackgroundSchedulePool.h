@@ -161,7 +161,7 @@ public:
             task_info->deactivate();
     }
 
-    operator bool() const { return task_info != nullptr; } /// NOLINT
+    operator bool() const { return task_info != nullptr; }
 
     BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
     const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }

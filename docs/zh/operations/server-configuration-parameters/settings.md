@@ -668,7 +668,7 @@ SSL客户端/服务器配置。
 **示例**
 
 ``` xml
-<timezone>Asia/Istanbul</timezone>
+<timezone>Europe/Moscow</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}

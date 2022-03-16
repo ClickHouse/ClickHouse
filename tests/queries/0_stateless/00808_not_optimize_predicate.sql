@@ -1,5 +1,4 @@
 SET send_logs_level = 'fatal';
-SET convert_query_to_cnf = 0;
 
 DROP TABLE IF EXISTS test_00808;
 CREATE TABLE test_00808(date Date, id Int8, name String, value Int64, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY (id, date);

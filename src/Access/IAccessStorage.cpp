@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -441,9 +440,9 @@ void IAccessStorage::notify(const Notifications & notifications)
 UUID IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const
+    const ExternalAuthenticators & external_authenticators) const
 {
-    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password);
+    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true);
 }
 
 
@@ -451,9 +450,9 @@ std::optional<UUID> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const
+    bool throw_if_user_not_exists) const
 {
-    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
+    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists);
 }
 
 
@@ -461,7 +460,7 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const
+    bool throw_if_user_not_exists) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -469,8 +468,6 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
         {
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
-            if (isNoPasswordAllowed(*user, allow_no_password) || isPlaintextPasswordAllowed(*user, allow_plaintext_password))
-                throwPasswordTypeNotAllowed();
 
             if (!areCredentialsValid(*user, credentials, external_authenticators))
                 throwInvalidCredentials();
@@ -506,15 +503,6 @@ bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddr
     return user.allowed_client_hosts.contains(address);
 }
 
-bool IAccessStorage::isPlaintextPasswordAllowed(const User & user, bool allow_plaintext_password)
-{
-    return !allow_plaintext_password && user.auth_data.getType() == AuthenticationType::PLAINTEXT_PASSWORD;
-}
-
-bool IAccessStorage::isNoPasswordAllowed(const User & user, bool allow_no_password)
-{
-    return !allow_no_password && user.auth_data.getType() == AuthenticationType::NO_PASSWORD;
-}
 
 UUID IAccessStorage::generateRandomID()
 {
@@ -610,12 +598,6 @@ void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address
     throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 }
 
-void IAccessStorage::throwPasswordTypeNotAllowed()
-{
-    throw Exception(
-        "Authentication denied for users configured with AuthType PLAINTEXT_PASSWORD and NO_PASSWORD. Please check with Clickhouse admin to allow allow  PLAINTEXT_PASSWORD and NO_PASSWORD through server configuration ",
-        ErrorCodes::AUTHENTICATION_FAILED);
-}
 void IAccessStorage::throwInvalidCredentials()
 {
     throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);

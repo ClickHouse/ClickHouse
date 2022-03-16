@@ -12,7 +12,7 @@ namespace DB
 class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit WriteBufferFromOStream(
+    WriteBufferFromOStream(
         std::ostream & ostr_,
         size_t size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -21,7 +21,7 @@ public:
     ~WriteBufferFromOStream() override;
 
 protected:
-    explicit WriteBufferFromOStream(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0);
+    WriteBufferFromOStream(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0);
 
     void nextImpl() override;
 

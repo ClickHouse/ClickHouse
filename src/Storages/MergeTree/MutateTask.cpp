@@ -520,6 +520,7 @@ struct MutationContext
     DiskPtr disk;
     String new_part_tmp_path;
 
+    SyncGuardPtr sync_guard;
     IMergedBlockOutputStreamPtr out{nullptr};
 
     String mrk_extension;
@@ -632,7 +633,12 @@ public:
                 projection_future_part,
                 projection.metadata,
                 ctx->mutate_entry,
-                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, settings),
+                std::make_unique<MergeListElement>(
+                    (*ctx->mutate_entry)->table_id,
+                    projection_future_part,
+                    settings.memory_profiler_step,
+                    settings.memory_profiler_sample_probability,
+                    settings.max_untracked_memory),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
@@ -1303,6 +1309,9 @@ bool MutateTask::prepare()
 
     ctx->disk = ctx->new_data_part->volume->getDisk();
     ctx->new_part_tmp_path = ctx->new_data_part->getFullRelativePath();
+
+    if (ctx->data->getSettings()->fsync_part_directory)
+        ctx->sync_guard = ctx->disk->getDirectorySyncGuard(ctx->new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())

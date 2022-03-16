@@ -358,13 +358,13 @@ Query with timezone:
 
 ``` sql
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
+SELECT toStartOfSecond(dt64, 'Europe/Moscow');
 ```
 
 Result:
 
 ``` text
-┌─toStartOfSecond(dt64, 'Asia/Istanbul')─┐
+┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
 │                2020-01-01 13:20:30.000 │
 └────────────────────────────────────────┘
 ```
@@ -560,13 +560,13 @@ Result:
 Query with the specified timezone:
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
+SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 ```
 
 Result:
 
 ```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Asia/Istanbul')─┐
+┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
 │ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
 └─────────────────────┴────────────────────────────────────────────┘
 ```
@@ -871,13 +871,13 @@ Result:
 Query with the specified timezone:
 
 ``` sql
-SELECT now('Asia/Istanbul');
+SELECT now('Europe/Moscow');
 ```
 
 Result:
 
 ``` text
-┌─now('Asia/Istanbul')─┐
+┌─now('Europe/Moscow')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
 ```
@@ -895,6 +895,7 @@ The same as ‘today() - 1’.
 ## timeSlot {#timeslot}
 
 Rounds the time to the half hour.
+This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user’s consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ## toYYYYMM {#toyyyymm}
 

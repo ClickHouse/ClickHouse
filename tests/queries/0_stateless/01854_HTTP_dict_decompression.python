@@ -158,7 +158,7 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
 
         COMPRESS_METHOD = requests[i]
         print(i, COMPRESS_METHOD, ADDING_ENDING, SEND_ENCODING)
-        check_answers("SELECT * FROM {} ORDER BY word".format(dict_name), answers[i])
+        check_answers("select * from {}".format(dict_name), answers[i])
 
 def main():
     # first three for encoding, second three for url
@@ -171,7 +171,7 @@ def main():
     ]
 
     # This answers got experemently in non compressed mode and they are correct
-    answers = ['''Hello	1\nThis	152\nWorld	2\ndata	555\nis	9283\ntesting	2313213'''] * 5
+    answers = ['''This	152\nHello	1\nis	9283\ndata	555\nWorld	2\ntesting	2313213'''] * 5
 
     t = start_server(len(insert_requests))
     t.start()

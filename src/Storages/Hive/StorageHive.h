@@ -36,7 +36,7 @@ public:
         ContextPtr /* query_context */,
         const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return true;
+        return false;
     }
 
 
@@ -52,8 +52,6 @@ public:
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    bool isColumnOriented() const override;
 
 protected:
     friend class StorageHiveSource;
@@ -90,16 +88,11 @@ private:
     HiveFilePtr
     createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
-
     String hive_metastore_url;
 
     /// Hive database and table
     String hive_database;
     String hive_table;
-
-    std::mutex init_mutex;
-    bool has_initialized = false;
 
     /// Hive table meta
     std::vector<Apache::Hadoop::Hive::FieldSchema> table_schema;
@@ -123,8 +116,6 @@ private:
     std::shared_ptr<HiveSettings> storage_settings;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
-
-    void lazyInitialize();
 };
 }
 

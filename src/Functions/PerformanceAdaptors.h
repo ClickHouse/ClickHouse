@@ -72,7 +72,7 @@ namespace detail
             return size() == 0;
         }
 
-        void emplace_back() /// NOLINT
+        void emplace_back()
         {
             data.emplace_back();
         }
@@ -198,7 +198,7 @@ class ImplementationSelector : WithContext
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    explicit ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
+    ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called

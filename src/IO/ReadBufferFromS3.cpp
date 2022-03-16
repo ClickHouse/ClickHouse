@@ -42,8 +42,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
-    size_t read_until_position_,
-    bool restricted_seek_)
+    size_t read_until_position_)
     : SeekableReadBufferWithSize(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -52,7 +51,6 @@ ReadBufferFromS3::ReadBufferFromS3(
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
-    , restricted_seek(restricted_seek_)
 {
 }
 
@@ -154,14 +152,10 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (offset_ == offset && whence == SEEK_SET)
-        return offset;
+    bool restricted_seek = read_type == SeekableReadBufferWithSize::ReadType::DISK_READ;
 
     if (impl && restricted_seek)
-        throw Exception(
-            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer (current offset: {}, new offset: {}, reading until position: {}, available: {})",
-            offset, offset_, read_until_position, available());
+        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
@@ -225,15 +219,6 @@ off_t ReadBufferFromS3::getPosition()
     return offset - available();
 }
 
-void ReadBufferFromS3::setReadUntilPosition(size_t position)
-{
-    if (position != static_cast<size_t>(read_until_position))
-    {
-        read_until_position = position;
-        impl.reset();
-    }
-}
-
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     Aws::S3::Model::GetObjectRequest req;
@@ -264,9 +249,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-
-        size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
-        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), read_settings.remote_fs_buffer_size);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

@@ -89,7 +89,7 @@ Poco::JSON::Object SerializationInfoTuple::toJSON() const
     for (const auto & elem : elems)
         subcolumns.add(elem->toJSON());
 
-    object.set("subcolumns", subcolumns);
+    object.set("subcolumns", std::move(subcolumns));
     return object;
 }
 

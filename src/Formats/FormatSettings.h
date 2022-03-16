@@ -32,16 +32,14 @@ struct FormatSettings
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
-    bool use_lowercase_column_name = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
     enum class DateTimeInputFormat
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort  /// Use sophisticated rules to parse whatever possible.
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;

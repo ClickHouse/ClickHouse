@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <boost/container/flat_set.hpp>
 #include <vector>
 
 namespace DB
@@ -28,10 +27,6 @@ enum class AuthenticationType
     /// Kerberos authentication performed through GSS-API negotiation loop.
     KERBEROS,
 
-    /// Authentication is done in SSL by checking user certificate.
-    /// Certificates may only be trusted if 'strict' SSL mode is enabled.
-    SSL_CERTIFICATE,
-
     MAX,
 };
 
@@ -54,7 +49,7 @@ class AuthenticationData
 public:
     using Digest = std::vector<uint8_t>;
 
-    explicit AuthenticationData(AuthenticationType type_ = AuthenticationType::NO_PASSWORD) : type(type_) {}
+    AuthenticationData(AuthenticationType type_ = AuthenticationType::NO_PASSWORD) : type(type_) {}
     AuthenticationData(const AuthenticationData & src) = default;
     AuthenticationData & operator =(const AuthenticationData & src) = default;
     AuthenticationData(AuthenticationData && src) = default;
@@ -84,9 +79,6 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
-    void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
-
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
@@ -105,7 +97,6 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    boost::container::flat_set<String> ssl_certificate_common_names;
 };
 
 }

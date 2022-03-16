@@ -49,6 +49,7 @@ public:
 private:
     ClientFactory();
 
+private:
     Aws::SDKOptions aws_options;
 };
 

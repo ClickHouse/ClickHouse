@@ -451,7 +451,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
         /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0);
+        clearOldTemporaryDirectories(merger_mutator, 0);
         clearOldWriteAheadLogs();
     }
 
@@ -3065,8 +3065,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         desired_mutation_version->second,
                         merge_pred.getVersion());
 
-                    if (create_result == CreateMergeEntryResult::Ok ||
-                        create_result == CreateMergeEntryResult::LogUpdated)
+                    if (create_result == CreateMergeEntryResult::Ok)
                         break;
                 }
             }
@@ -7149,9 +7148,9 @@ void StorageReplicatedMergeTree::createTableSharedID()
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
         UUID table_id_candidate;
-        auto local_storage_id = getStorageID();
-        if (local_storage_id.uuid != UUIDHelpers::Nil)
-            table_id_candidate = local_storage_id.uuid;
+        auto storage_id = getStorageID();
+        if (storage_id.uuid != UUIDHelpers::Nil)
+            table_id_candidate = storage_id.uuid;
         else
             table_id_candidate = UUIDHelpers::generateV4();
 

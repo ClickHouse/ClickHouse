@@ -25,7 +25,7 @@ public:
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0; /// NOLINT
+    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0;
 
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 

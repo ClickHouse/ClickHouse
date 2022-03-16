@@ -66,7 +66,6 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
-        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
     };
 
@@ -93,6 +92,7 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
+public:
     int64_t session_id_counter{1};
 
     SessionAndAuth session_and_auth;
@@ -132,6 +132,7 @@ public:
 
     const String superdigest;
 
+public:
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
 
     /// Allocate new session id with the specified timeouts
@@ -152,17 +153,16 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
 
     void finalize();
 
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version)
+    void enableSnapshotMode(size_t up_to_size)
     {
-        container.enableSnapshotMode(up_to_version);
-
+        container.enableSnapshotMode(up_to_size);
     }
 
     /// Turn off snapshot mode.
@@ -189,7 +189,7 @@ public:
     }
 
     /// Get all dead sessions
-    std::vector<int64_t> getDeadSessions() const
+    std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
     }

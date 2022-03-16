@@ -33,8 +33,8 @@ namespace
 DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & default_type)
 {
-    auto name = config.getString(config_prefix + ".name", "");
-    auto expression = config.getString(config_prefix + ".expression", "");
+    const auto name = config.getString(config_prefix + ".name", "");
+    const auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");

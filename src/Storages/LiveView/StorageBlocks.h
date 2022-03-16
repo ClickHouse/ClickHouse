@@ -18,9 +18,9 @@ public:
         QueryProcessingStage::Enum to_stage_)
         : IStorage(table_id_), pipes(std::move(pipes_)), to_stage(to_stage_)
     {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_);
-        setInMemoryMetadata(storage_metadata);
+        StorageInMemoryMetadata metadata_;
+        metadata_.setColumns(columns_);
+        setInMemoryMetadata(metadata_);
     }
     static StoragePtr createStorage(const StorageID & table_id,
         const ColumnsDescription & columns, Pipes pipes, QueryProcessingStage::Enum to_stage)

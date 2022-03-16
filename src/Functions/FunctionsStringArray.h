@@ -93,7 +93,7 @@ public:
     }
 
     /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 0;
     }
@@ -152,7 +152,7 @@ public:
     }
 
     /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 0;
     }
@@ -211,7 +211,7 @@ public:
     }
 
     /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 0;
     }
@@ -328,7 +328,7 @@ public:
     }
 
     /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 1;
     }
@@ -399,7 +399,7 @@ public:
     }
 
     /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 1;
     }
@@ -482,7 +482,7 @@ public:
     }
 
     /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 1;
     }
@@ -567,7 +567,7 @@ public:
     }
 
     /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
+    size_t getStringsArgumentPosition()
     {
         return 0;
     }

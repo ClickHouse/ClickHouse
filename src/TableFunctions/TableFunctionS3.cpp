@@ -168,8 +168,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     ColumnsDescription columns;
     if (s3_configuration->structure != "auto")
         columns = parseColumnsListFromString(s3_configuration->structure, context);
-    else if (!structure_hint.empty())
-        columns = structure_hint;
 
     StoragePtr storage = StorageS3::create(
         s3_uri,
@@ -183,7 +181,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         upload_part_size_multiply_parts_count_threshold,
         max_single_part_upload_size,
         max_connections,
-        columns,
+        getActualTableStructure(context),
         ConstraintsDescription{},
         String{},
         context,

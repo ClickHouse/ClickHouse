@@ -11,7 +11,7 @@ private:
     SerializationPtr nested;
 
 public:
-    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
     void enumerateStreams(
         SubstreamPath & path,
@@ -96,7 +96,7 @@ private:
     {
         const ColumnPtr null_map;
 
-        explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+        SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;

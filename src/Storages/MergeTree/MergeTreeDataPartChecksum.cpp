@@ -231,10 +231,8 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_s
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
 {
-    for (auto && checksum : rhs_checksums.files)
-    {
-        files[checksum.first] = std::move(checksum.second);
-    }
+    for (auto & checksum : rhs_checksums.files)
+        files[std::move(checksum.first)] = std::move(checksum.second);
 
     rhs_checksums.files.clear();
 }

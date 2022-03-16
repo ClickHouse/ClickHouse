@@ -83,17 +83,17 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if constexpr (std::is_same_v<Method, FuncLinearRegression>)
+        if (std::is_same<Method, FuncLinearRegression>::value)
         {
             gradient_computer = std::make_unique<LinearRegression>();
         }
-        else if constexpr (std::is_same_v<Method, FuncLogisticRegression>)
+        else if (std::is_same<Method, FuncLogisticRegression>::value)
         {
             gradient_computer = std::make_unique<LogisticRegression>();
         }
         else
         {
-            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_asssert in constexpr if until template instantiation
+            throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<Method>(

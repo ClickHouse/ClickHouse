@@ -448,7 +448,7 @@ KeyCondition::KeyCondition(
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
-        const auto & name = key_column_names[i];
+        std::string name = key_column_names[i];
         if (!key_columns.count(name))
             key_columns[name] = i;
     }
@@ -1999,7 +1999,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }

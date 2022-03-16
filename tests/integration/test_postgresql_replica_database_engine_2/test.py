@@ -114,8 +114,6 @@ def test_add_new_table_to_replication(started_cluster):
     assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
     assert(result[-222:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4,postgresql_replica_5,postgresql_replica_6,postgresql_replica_7\\'\n")
 
-    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(10000, 10000)")
-
     result = instance.query("SHOW TABLES FROM test_database")
     assert(result == "postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\npostgresql_replica_5\npostgresql_replica_6\npostgresql_replica_7\n")
     check_several_tables_are_synchronized(instance, NUM_TABLES + 3)
@@ -135,7 +133,7 @@ def test_remove_table_from_replication(started_cluster):
     assert(result[-59:] == "\\'postgres_database\\', \\'postgres\\', \\'mysecretpassword\\')\n")
 
     table_name = 'postgresql_replica_4'
-    instance.query(f'DETACH TABLE test_database.{table_name} PERMANENTLY');
+    instance.query(f'DETACH TABLE test_database.{table_name}');
     result = instance.query_and_get_error(f'SELECT * FROM test_database.{table_name}')
     assert("doesn't exist" in result)
 
@@ -149,15 +147,13 @@ def test_remove_table_from_replication(started_cluster):
     instance.query(f'ATTACH TABLE test_database.{table_name}');
     check_tables_are_synchronized(instance, table_name);
     check_several_tables_are_synchronized(instance, NUM_TABLES)
-    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(10000, 10000)")
-    check_tables_are_synchronized(instance, table_name);
 
     result = instance.query('SHOW CREATE DATABASE test_database')
     assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
     assert(result[-159:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n")
 
     table_name = 'postgresql_replica_1'
-    instance.query(f'DETACH TABLE test_database.{table_name} PERMANENTLY');
+    instance.query(f'DETACH TABLE test_database.{table_name}');
     result = instance.query('SHOW CREATE DATABASE test_database')
     assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
     assert(result[-138:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n")
@@ -166,7 +162,7 @@ def test_remove_table_from_replication(started_cluster):
     cursor.execute(f'drop table if exists postgresql_replica_0;')
 
     # Removing from replication table which does not exist in PostgreSQL must be ok.
-    instance.query('DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY');
+    instance.query('DETACH TABLE test_database.postgresql_replica_0');
     assert instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
 
 
@@ -240,7 +236,7 @@ def test_database_with_single_non_default_schema(started_cluster):
 
     print('DETACH-ATTACH')
     detached_table_name = "postgresql_replica_1"
-    instance.query(f"DETACH TABLE {materialized_db}.{detached_table_name} PERMANENTLY")
+    instance.query(f"DETACH TABLE {materialized_db}.{detached_table_name}")
     assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.{detached_table_name}")
     check_tables_are_synchronized(instance, detached_table_name, postgres_database=clickhouse_postgres_db);
@@ -310,7 +306,7 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
 
     print('DETACH-ATTACH')
     detached_table_name = "postgresql_replica_1"
-    instance.query(f"DETACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}` PERMANENTLY")
+    instance.query(f"DETACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
     assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
     assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
@@ -389,7 +385,7 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     detached_table_name = "postgresql_replica_1"
     detached_table_schema = "schema0"
     clickhouse_postgres_db = f'clickhouse_postgres_db0'
-    instance.query(f"DETACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}` PERMANENTLY")
+    instance.query(f"DETACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
     assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
     assert_show_tables("schema0.postgresql_replica_0\nschema0.postgresql_replica_1\nschema1.postgresql_replica_0\nschema1.postgresql_replica_1\n")
@@ -403,7 +399,7 @@ def test_table_override(started_cluster):
     create_postgres_table(cursor, table_name, template=postgres_table_template_5);
     instance.query(f"create table {table_name}(key Int32, value UUID) engine = PostgreSQL (postgres1, table={table_name})")
     instance.query(f"insert into {table_name} select number, generateUUIDv4() from numbers(10)")
-    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID) PARTITION BY key)"
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID))"
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
         settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
@@ -411,7 +407,7 @@ def test_table_override(started_cluster):
     assert_nested_table_is_created(instance, table_name, materialized_database)
     result = instance.query(f"show create table {materialized_database}.{table_name}")
     print(result)
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nORDER BY tuple(key)"
     assert(result.strip() == expected)
     time.sleep(5)
     query = f"select * from {materialized_database}.{table_name} order by key"

@@ -1,8 +1,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionFactory.h>
-
 #include "FunctionArrayMapped.h"
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -21,9 +20,6 @@ enum class ArrayFirstLastIndexStrategy
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

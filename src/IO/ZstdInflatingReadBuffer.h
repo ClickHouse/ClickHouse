@@ -16,7 +16,7 @@ namespace ErrorCodes
 class ZstdInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit ZstdInflatingReadBuffer(
+    ZstdInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,

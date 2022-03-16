@@ -42,8 +42,8 @@ public:
 
         explicit Finalizer(std::unique_ptr<Impl> impl_);
         ~Finalizer();
-        Finalizer(Finalizer &&) noexcept;
-        Finalizer & operator=(Finalizer &&) noexcept;
+        Finalizer(Finalizer &&);
+        Finalizer & operator=(Finalizer &&);
 
         void finish();
     };

@@ -1,11 +1,11 @@
 ---
 toc_priority: 15
-toc_title: Web Analytics Data
+toc_title: Yandex.Metrica Data
 ---
 
-# Anonymized Web Analytics Data {#anonymized-web-analytics-data}
+# Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
 
-Dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
+Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
 
 The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
@@ -73,6 +73,6 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 ## Example Queries {#example-queries}
 
-[The ClickHouse tutorial](../../getting-started/tutorial.md) is based on this web analytics dataset, and the recommended way to get started with this dataset is to go through the tutorial.
+[ClickHouse tutorial](../../getting-started/tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
 
 Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) of ClickHouse (they are named `test.hits` and `test.visits` there).

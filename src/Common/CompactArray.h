@@ -28,6 +28,7 @@ public:
     class Reader;
     class Locus;
 
+public:
     CompactArray() = default;
 
     UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
@@ -66,7 +67,7 @@ template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray<BucketIndex, content_width, bucket_count>::Reader final
 {
 public:
-    explicit Reader(ReadBuffer & in_)
+    Reader(ReadBuffer & in_)
         : in(in_)
     {
     }
@@ -159,7 +160,7 @@ class CompactArray<BucketIndex, content_width, bucket_count>::Locus final
     friend class CompactArray::Reader;
 
 public:
-    ALWAYS_INLINE operator UInt8() const /// NOLINT
+    ALWAYS_INLINE operator UInt8() const
     {
         if (content_l == content_r)
             return read(*content_l);
@@ -193,7 +194,7 @@ public:
 private:
     Locus() = default;
 
-    explicit Locus(BucketIndex bucket_index)
+    Locus(BucketIndex bucket_index)
     {
         init(bucket_index);
     }
@@ -229,6 +230,7 @@ private:
             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
     }
 
+private:
     size_t index_l;
     size_t offset_l;
     size_t index_r;

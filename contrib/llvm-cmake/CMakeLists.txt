@@ -1,8 +1,4 @@
-# During cross-compilation in our CI we have to use llvm-tblgen and other building tools
-# tools to be build for host architecture and everything else for target architecture (e.g. AArch64)
-# Possible workaround is to use llvm-tblgen from some package...
-# But lets just enable LLVM for native builds
-if (CMAKE_CROSSCOMPILING OR SANITIZE STREQUAL "undefined")
+if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
@@ -10,7 +6,7 @@ endif()
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
-    message(STATUS "Not using LLVM")
+    set (USE_EMBEDDED_COMPILER 0)
     return()
 endif()
 
@@ -26,6 +22,9 @@ set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
 set (REQUIRED_LLVM_LIBRARIES
     LLVMExecutionEngine
     LLVMRuntimeDyld
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
     LLVMAsmPrinter
     LLVMDebugInfoDWARF
     LLVMGlobalISel
@@ -56,12 +55,6 @@ set (REQUIRED_LLVM_LIBRARIES
     LLVMSupport
     LLVMDemangle
 )
-
-if (ARCH_AMD64)
-    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
-elseif (ARCH_AARCH64)
-    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
-endif ()
 
 #function(llvm_libs_all REQUIRED_LLVM_LIBRARIES)
 #    llvm_map_components_to_libnames (result all)

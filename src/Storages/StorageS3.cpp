@@ -233,7 +233,7 @@ StorageS3Source::StorageS3Source(
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
-    String compression_hint_,
+    const String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
@@ -245,7 +245,7 @@ StorageS3Source::StorageS3Source(
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
     , max_single_read_retries(max_single_read_retries_)
-    , compression_hint(std::move(compression_hint_))
+    , compression_hint(compression_hint_)
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
@@ -615,11 +615,6 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     }
 }
 
-bool StorageS3::isColumnOriented() const
-{
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
-}
-
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -644,20 +639,6 @@ Pipe StorageS3::read(
 
     std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context);
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (isColumnOriented())
-    {
-        columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
-    }
-
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -665,10 +646,10 @@ Pipe StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            block_for_format,
+            metadata_snapshot->getSampleBlock(),
             local_context,
             format_settings,
-            columns_description,
+            metadata_snapshot->getColumns(),
             max_block_size,
             max_single_read_retries,
             compression_method,
@@ -907,44 +888,23 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     ContextPtr ctx)
 {
     std::vector<String> keys = {client_auth.uri.key};
-    auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
-
-    std::string current_key;
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    do
+    auto read_buffer_creator = [&]()
     {
-        current_key = (*file_iterator)();
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            if (current_key.empty())
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-                    "table structure manually",
-                    format);
+        auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
+        String current_key = (*file_iterator)();
+        if (current_key.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
+                "table structure manually",
+                format);
 
-            return wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadBufferFromS3>(
-                    client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
-                chooseCompressionMethod(current_key, compression_method));
-        };
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromS3>(client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
+            chooseCompressionMethod(current_key, compression_method));
+    };
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, ctx);
-        }
-        catch (...)
-        {
-            if (!is_key_with_globs || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    } while (!current_key.empty());
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from s3 files failed. Errors:\n{}", exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_creator, ctx);
 }
 
 

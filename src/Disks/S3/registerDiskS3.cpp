@@ -19,7 +19,6 @@
 #include "Disks/DiskRestartProxy.h"
 #include "Disks/DiskLocal.h"
 #include "Disks/RemoteDisksCommon.h"
-#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -179,21 +178,18 @@ void registerDiskS3(DiskFactory & factory)
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
 
         if (uri.key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
+            throw Exception("Empty S3 path specified in disk configuration", ErrorCodes::BAD_ARGUMENTS);
 
         if (uri.key.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
+            throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
-
-        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
             metadata_disk,
-            std::move(cache),
             context,
             getSettings(config, config_prefix, context),
             getSettings);

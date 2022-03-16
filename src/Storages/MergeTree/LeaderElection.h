@@ -1,13 +1,11 @@
 #pragma once
 
-#include <filesystem>
 #include <base/logger_useful.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 
-namespace fs = std::filesystem;
 
 namespace zkutil
 {

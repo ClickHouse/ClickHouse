@@ -22,7 +22,7 @@ public:
     StorageMongoDB(
         const StorageID & table_id_,
         const std::string & host_,
-        uint16_t port_,
+        short unsigned int port_,
         const std::string & database_name_,
         const std::string & collection_name_,
         const std::string & username_,
@@ -49,7 +49,7 @@ private:
     void connectIfNotConnected();
 
     const std::string host;
-    const uint16_t port; /// NOLINT
+    const short unsigned int port;
     const std::string database_name;
     const std::string collection_name;
     const std::string username;

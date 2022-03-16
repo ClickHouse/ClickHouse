@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
-
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
 
 function insert1()
 {
@@ -24,14 +21,6 @@ function insert2()
     url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
     while true; do
         ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT JSONEachRow {"id": 5, "s": "e"} {"id": 6, "s": "f"}'
-    done
-}
-
-function insert3()
-{
-    url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
-    while true; do
-        ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO FUNCTION remote('127.0.0.1', $CLICKHOUSE_DATABASE, async_inserts) VALUES (7, 'g') (8, 'h')"
     done
 }
 
@@ -64,7 +53,6 @@ TIMEOUT=10
 
 export -f insert1
 export -f insert2
-export -f insert3
 export -f select1
 export -f select2
 export -f truncate1
@@ -72,7 +60,6 @@ export -f truncate1
 for _ in {1..5}; do
     timeout $TIMEOUT bash -c insert1 &
     timeout $TIMEOUT bash -c insert2 &
-    timeout $TIMEOUT bash -c insert3 &
 done
 
 timeout $TIMEOUT bash -c select1 &

@@ -562,8 +562,6 @@ public:
     /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
-    virtual bool isColumnOriented() const { return false; }
-
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
     /// - Simple count() optimization
@@ -599,6 +597,10 @@ public:
     ///
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
+
+    /// Should table->drop be called at once or with delay (in case of atomic database engine).
+    /// Needed for integration engines, when there must be no delay for calling drop() method.
+    virtual bool dropTableImmediately() { return false; }
 
 private:
     /// Lock required for alter queries (lockForAlter).

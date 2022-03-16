@@ -7,13 +7,12 @@
 #include <map>
 #include <unordered_map>
 
+#include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
-#include <base/argsToConfig.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
-#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
@@ -36,8 +35,6 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <Client/ClientBaseHelpers.h>
-#include <Client/TestHint.h>
-#include "TestTags.h"
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -123,7 +120,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (!dst)
     {
-        dst = src.cloneEmpty();
+        dst = src;
+        return;
     }
 
     assertBlocksHaveEqualStructure(src, dst, "ProfileEvents");
@@ -144,7 +142,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
     const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
-    // const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
     const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
     const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
 
@@ -152,11 +150,12 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     {
         StringRef name;
         StringRef host_name;
+        UInt64 thread_id;
 
         bool operator<(const Id & rhs) const
         {
-            return std::tie(name, host_name)
-                 < std::tie(rhs.name, rhs.host_name);
+            return std::tie(name, host_name, thread_id)
+                 < std::tie(rhs.name, rhs.host_name, rhs.thread_id);
         }
     };
     std::map<Id, UInt64> rows_by_name;
@@ -165,6 +164,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             src_column_name.getDataAt(src_row),
             src_column_host_name.getDataAt(src_row),
+            src_array_thread_id[src_row],
         };
         rows_by_name[id] = src_row;
     }
@@ -175,6 +175,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         Id id{
             dst_column_name.getDataAt(dst_row),
             dst_column_host_name.getDataAt(dst_row),
+            dst_array_thread_id[dst_row],
         };
 
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
@@ -205,18 +206,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
-    /// Filter out snapshots
-    std::set<size_t> thread_id_filter_mask;
-    for (size_t i = 0; i < dst_array_thread_id.size(); ++i)
-    {
-        if (dst_array_thread_id[i] != 0)
-        {
-            thread_id_filter_mask.emplace(i);
-        }
-    }
-
     dst.setColumns(std::move(mutable_columns));
-    dst.erase(thread_id_filter_mask);
 }
 
 
@@ -232,11 +222,11 @@ public:
     static bool cancelled() { return exit_on_signal.test(); }
 };
 
-/// This signal handler is set only for SIGINT.
+/// This signal handler is set only for sigint.
 void interruptSignalHandler(int signum)
 {
     if (exit_on_signal.test_and_set())
-        safeExit(128 + signum);
+        _exit(signum);
 }
 
 
@@ -246,22 +236,22 @@ ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
-    exit_on_signal.test_and_set();
+     exit_on_signal.test_and_set();
 
-    struct sigaction new_act;
-    memset(&new_act, 0, sizeof(new_act));
+     struct sigaction new_act;
+     memset(&new_act, 0, sizeof(new_act));
 
-    new_act.sa_handler = interruptSignalHandler;
-    new_act.sa_flags = 0;
+     new_act.sa_handler = interruptSignalHandler;
+     new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
     sigemptyset(&new_act.sa_mask);
 #else
-    if (sigemptyset(&new_act.sa_mask))
+     if (sigemptyset(&new_act.sa_mask))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 #endif
 
-    if (sigaction(SIGINT, &new_act, nullptr))
+     if (sigaction(SIGINT, &new_act, nullptr))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
@@ -705,6 +695,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
+    bool cancelled = false;
     QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
@@ -775,7 +766,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 /// Receive a part of the result, or progress info or an exception and process it.
 /// Returns true if one should continue receiving packets.
 /// Output of result is suppressed if query was cancelled.
-bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
+bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
 {
     Packet packet = connection->receivePacket();
 
@@ -785,7 +776,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::Data:
-            if (!cancelled_)
+            if (!cancelled)
                 onData(packet.block, parsed_query);
             return true;
 
@@ -798,12 +789,12 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::Totals:
-            if (!cancelled_)
+            if (!cancelled)
                 onTotals(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Extremes:
-            if (!cancelled_)
+            if (!cancelled)
                 onExtremes(packet.block, parsed_query);
             return true;
 
@@ -869,7 +860,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1267,7 +1258,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 {
     resetOutput();
     have_error = false;
-    cancelled = false;
     client_exception.reset();
     server_exception.reset();
 
@@ -1395,9 +1385,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
     std::optional<Exception> & current_exception)
 {
-    if (!is_interactive && cancelled)
-        return MultiQueryProcessingStage::QUERIES_END;
-
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
@@ -1482,219 +1469,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // server log.
     adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
     return MultiQueryProcessingStage::EXECUTE_QUERY;
-}
-
-
-bool ClientBase::executeMultiQuery(const String & all_queries_text)
-{
-    // It makes sense not to base any control flow on this, so that it is
-    // the same in tests and in normal usage. The only difference is that in
-    // normal mode we ignore the test hints.
-    const bool test_mode = config().has("testmode");
-    if (test_mode)
-    {
-        /// disable logs if expects errors
-        TestHint test_hint(test_mode, all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-    }
-
-    bool echo_query = echo_queries;
-
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
-    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
-
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end;
-    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
-
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
-    ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
-
-    while (true)
-    {
-        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
-        switch (stage)
-        {
-            case MultiQueryProcessingStage::QUERIES_END:
-            case MultiQueryProcessingStage::PARSING_FAILED:
-            {
-                return true;
-            }
-            case MultiQueryProcessingStage::CONTINUE_PARSING:
-            {
-                continue;
-            }
-            case MultiQueryProcessingStage::PARSING_EXCEPTION:
-            {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
-                // Try to find test hint for syntax error. We don't know where
-                // the query ends because we failed to parse it, so we consume
-                // the entire line.
-                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.serverError())
-                {
-                    // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
-                    current_exception->rethrow();
-                }
-
-                if (hint.clientError() != current_exception->code())
-                {
-                    if (hint.clientError())
-                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
-
-                    current_exception->rethrow();
-                }
-
-                /// It's expected syntax error, skip the line
-                this_query_begin = this_query_end;
-                current_exception.reset();
-
-                continue;
-            }
-            case MultiQueryProcessingStage::EXECUTE_QUERY:
-            {
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-                if (query_fuzzer_runs)
-                {
-                    if (!processWithFuzzing(full_query))
-                        return false;
-
-                    this_query_begin = this_query_end;
-                    continue;
-                }
-
-                // Now we know for sure where the query ends.
-                // Look for the hint in the text of query + insert data + trailing
-                // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
-                // Use the updated query boundaries we just calculated.
-                TestHint test_hint(test_mode, full_query);
-
-                // Echo all queries if asked; makes for a more readable reference file.
-                echo_query = test_hint.echoQueries().value_or(echo_query);
-
-                try
-                {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
-                }
-                catch (...)
-                {
-                    // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-
-                // Check whether the error (or its absence) matches the test hints
-                // (or their absence).
-                bool error_matches_hint = true;
-                if (have_error)
-                {
-                    if (test_hint.serverError())
-                    {
-                        if (!server_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverError(), full_query);
-                        }
-                        else if (server_exception->code() != test_hint.serverError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverError(), server_exception->code(), full_query);
-                        }
-                    }
-                    if (test_hint.clientError())
-                    {
-                        if (!client_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientError(), full_query);
-                        }
-                        else if (client_exception->code() != test_hint.clientError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientError(), client_exception->code(), full_query);
-                        }
-                    }
-                    if (!test_hint.clientError() && !test_hint.serverError())
-                    {
-                        // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
-                        // diagnostics.
-                        error_matches_hint = false;
-                    }
-                }
-                else
-                {
-                    if (test_hint.clientError())
-                    {
-                        error_matches_hint = false;
-                        fmt::print(stderr,
-                                   "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientError(), full_query);
-                    }
-                    if (test_hint.serverError())
-                    {
-                        error_matches_hint = false;
-                        fmt::print(stderr,
-                                   "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverError(), full_query);
-                    }
-                }
-
-                // If the error is expected, force reconnect and ignore it.
-                if (have_error && error_matches_hint)
-                {
-                    client_exception.reset();
-                    server_exception.reset();
-
-                    have_error = false;
-
-                    if (!connection->checkConnected())
-                        connect();
-                }
-
-                // For INSERTs with inline data: use the end of inline data as
-                // reported by the format parser (it is saved in sendData()).
-                // This allows us to handle queries like:
-                //   insert into t values (1); select 1
-                // , where the inline data is delimited by semicolon and not by a
-                // newline.
-                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
-                {
-                    this_query_end = insert_ast->end;
-                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
-                }
-
-                // Report error.
-                if (have_error)
-                    processError(full_query);
-
-                // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
-
-                this_query_begin = this_query_end;
-                break;
-            }
-        }
-    }
 }
 
 
@@ -2087,8 +1861,6 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
-            else if (arg == "--allow_repeated_settings"sv)
-                allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }
@@ -2101,10 +1873,7 @@ void ClientBase::readArguments(
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
-    else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+    cmd_settings.addProgramOptions(options_description.main_description.value());
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
@@ -2181,8 +1950,6 @@ void ClientBase::init(int argc, char ** argv)
 
         ("suggestion_limit", po::value<int>()->default_value(10000),
             "Suggestion limit for how many databases, tables and columns to fetch.")
-
-        ("testmode,T", "enable test hints in comments")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
@@ -2289,8 +2056,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("interactive", true);
     if (options.count("pager"))
         config().setString("pager", options["pager"].as<std::string>());
-    if (options.count("testmode"))
-        config().setBool("testmode", true);
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

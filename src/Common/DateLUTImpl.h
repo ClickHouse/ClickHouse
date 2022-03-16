@@ -52,10 +52,10 @@ private:
     friend class DateLUT;
     explicit DateLUTImpl(const std::string & time_zone);
 
-    DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
-    DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
-    DateLUTImpl(const DateLUTImpl &&) = delete; /// NOLINT
-    DateLUTImpl & operator=(const DateLUTImpl &&) = delete; /// NOLINT
+    DateLUTImpl(const DateLUTImpl &) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
+    DateLUTImpl(const DateLUTImpl &&) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
 
     // Normalized and bound-checked index of element in lut,
     // has to be a separate type to support overloading
@@ -149,12 +149,12 @@ public:
         Int8 amount_of_offset_change_value; /// Usually -4 or 4, but look at Lord Howe Island. Multiply by OffsetChangeFactor
         UInt8 time_at_offset_change_value; /// In seconds from beginning of the day. Multiply by OffsetChangeFactor
 
-        inline Int32 amount_of_offset_change() const /// NOLINT
+        inline Int32 amount_of_offset_change() const
         {
             return static_cast<Int32>(amount_of_offset_change_value) * OffsetChangeFactor;
         }
 
-        inline UInt32 time_at_offset_change() const /// NOLINT
+        inline UInt32 time_at_offset_change() const
         {
             return static_cast<UInt32>(time_at_offset_change_value) * OffsetChangeFactor;
         }
@@ -230,12 +230,12 @@ private:
         return LUTIndex(guess ? guess - 1 : 0);
     }
 
-    static inline LUTIndex toLUTIndex(DayNum d)
+    inline LUTIndex toLUTIndex(DayNum d) const
     {
         return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
     }
 
-    static inline LUTIndex toLUTIndex(ExtendedDayNum d)
+    inline LUTIndex toLUTIndex(ExtendedDayNum d) const
     {
         return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
     }
@@ -245,7 +245,7 @@ private:
         return findIndex(t);
     }
 
-    static inline LUTIndex toLUTIndex(LUTIndex i)
+    inline LUTIndex toLUTIndex(LUTIndex i) const
     {
         return i;
     }
@@ -793,7 +793,7 @@ public:
     }
 
     /// Check and change mode to effective.
-    inline UInt8 check_week_mode(UInt8 mode) const /// NOLINT
+    inline UInt8 check_week_mode(UInt8 mode) const
     {
         UInt8 week_format = (mode & 7);
         if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
@@ -805,7 +805,7 @@ public:
       * Returns 0 for monday, 1 for tuesday...
       */
     template <typename DateOrTime>
-    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
+    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const
     {
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
@@ -815,7 +815,7 @@ public:
     }
 
     /// Calculate days in one year.
-    inline unsigned calc_days_in_year(Int32 year) const /// NOLINT
+    inline unsigned calc_days_in_year(Int32 year) const
     {
         return ((year & 3) == 0 && (year % 100 || (year % 400 == 0 && year)) ? 366 : 365);
     }
@@ -852,7 +852,7 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    inline Time toRelativeMinuteNum(Time t) const /// NOLINT
+    inline Time toRelativeMinuteNum(Time t) const
     {
         return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
@@ -1001,12 +1001,8 @@ public:
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
-
-        if (unlikely(year > DATE_LUT_MAX_YEAR))
-            return LUTIndex(DATE_LUT_SIZE - 1);
-
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
         /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
@@ -1016,7 +1012,7 @@ public:
     /// Create DayNum from year, month, day of month.
     inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
@@ -1057,12 +1053,12 @@ public:
         return values.year * 10000 + values.month * 100 + values.day_of_month;
     }
 
-    inline Time YYYYMMDDToDate(UInt32 num) const /// NOLINT
+    inline Time YYYYMMDDToDate(UInt32 num) const
     {
         return makeDate(num / 10000, num / 100 % 100, num % 100);
     }
 
-    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const /// NOLINT
+    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const
     {
         return makeDayNum(num / 10000, num / 100 % 100, num % 100);
     }
@@ -1143,7 +1139,7 @@ public:
             + UInt64(components.date.year) * 10000000000;
     }
 
-    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const /// NOLINT
+    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const
     {
         return makeDateTime(
             num / 10000000000,

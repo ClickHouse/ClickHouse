@@ -20,7 +20,7 @@
 class LocalDate
 {
 private:
-    unsigned short m_year; /// NOLINT
+    unsigned short m_year;
     unsigned char m_month;
     unsigned char m_day;
 
@@ -61,7 +61,7 @@ public:
         init(time);
     }
 
-    LocalDate(DayNum day_num) /// NOLINT
+    LocalDate(DayNum day_num)
     {
         const auto & values = DateLUT::instance().getValues(day_num);
         m_year  = values.year;
@@ -77,7 +77,7 @@ public:
         m_day   = values.day_of_month;
     }
 
-    LocalDate(unsigned short year_, unsigned char month_, unsigned char day_) /// NOLINT
+    LocalDate(unsigned short year_, unsigned char month_, unsigned char day_)
         : m_year(year_), m_month(month_), m_day(day_)
     {
     }
@@ -111,16 +111,16 @@ public:
         return ExtendedDayNum (lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
-    operator DayNum() const /// NOLINT
+    operator DayNum() const
     {
         return getDayNum();
     }
 
-    unsigned short year() const { return m_year; } /// NOLINT
+    unsigned short year() const { return m_year; }
     unsigned char month() const { return m_month; }
     unsigned char day() const { return m_day; }
 
-    void year(unsigned short x) { m_year = x; } /// NOLINT
+    void year(unsigned short x) { m_year = x; }
     void month(unsigned char x) { m_month = x; }
     void day(unsigned char x) { m_day = x; }
 

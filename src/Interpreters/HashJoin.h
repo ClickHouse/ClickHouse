@@ -360,6 +360,8 @@ private:
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
+    bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
+    bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;

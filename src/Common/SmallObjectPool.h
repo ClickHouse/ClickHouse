@@ -18,7 +18,7 @@ private:
     char * free_list = nullptr;
 
 public:
-    explicit SmallObjectPool(size_t object_size_)
+    SmallObjectPool(size_t object_size_)
         : object_size{std::max(object_size_, sizeof(char *))}
     {
     }

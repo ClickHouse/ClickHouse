@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-cpu-aarch64
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
 
 
 SELECT addressToLineWithInlines(1); -- { serverError 446 }

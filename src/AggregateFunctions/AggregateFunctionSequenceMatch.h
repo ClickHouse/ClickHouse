@@ -37,7 +37,7 @@ struct ComparePairFirst final
     }
 };
 
-static constexpr size_t max_events = 32;
+static constexpr auto max_events = 32;
 
 template <typename T>
 struct AggregateFunctionSequenceMatchData final
@@ -187,7 +187,7 @@ private:
         std::uint64_t extra;
 
         PatternAction() = default;
-        explicit PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
+        PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
     };
 
     using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
@@ -246,7 +246,7 @@ private:
                         throw_exception("Unknown time condition");
 
                     UInt64 duration = 0;
-                    const auto * prev_pos = pos;
+                    auto prev_pos = pos;
                     pos = tryReadIntText(duration, pos, end);
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
@@ -262,7 +262,7 @@ private:
                 else
                 {
                     UInt64 event_number = 0;
-                    const auto * prev_pos = pos;
+                    auto prev_pos = pos;
                     pos = tryReadIntText(event_number, pos, end);
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
@@ -580,7 +580,7 @@ private:
 
     struct DFAState
     {
-        explicit DFAState(bool has_kleene_ = false)
+        DFAState(bool has_kleene_ = false)
             : has_kleene{has_kleene_}, event{0}, transition{DFATransition::None}
         {}
 

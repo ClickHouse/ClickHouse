@@ -198,7 +198,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }
@@ -298,7 +298,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }

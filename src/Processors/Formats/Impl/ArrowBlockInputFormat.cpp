@@ -114,7 +114,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
     if (is_stopped)
         return nullptr;
 
-    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file);
+    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(std::move(arrow_file));
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
             "Error while opening a table: {}", file_reader_status.status().ToString());

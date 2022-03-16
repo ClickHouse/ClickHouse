@@ -695,7 +695,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
             return Status::Ready;
 
         if (any_exception)
-            output.pushException(any_exception);
+            output.pushException(std::move(any_exception));
 
         output.finish();
         return Status::Finished;
@@ -708,7 +708,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 {
     try
     {
-        std::rethrow_exception(ptr);
+        std::rethrow_exception(std::move(ptr));
     }
     catch (DB::Exception & exception)
     {
@@ -736,7 +736,7 @@ void FinalizingViewsTransform::work()
             if (!any_exception)
                 any_exception = status.exception;
 
-            view.setException(addStorageToException(status.exception, view.table_id));
+            view.setException(addStorageToException(std::move(status.exception), view.table_id));
         }
         else
         {

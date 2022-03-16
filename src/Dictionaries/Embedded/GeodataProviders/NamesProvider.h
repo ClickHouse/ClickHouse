@@ -39,7 +39,7 @@ private:
     std::string directory;
 
 public:
-    explicit RegionsNamesDataProvider(const std::string & directory_);
+    RegionsNamesDataProvider(const std::string & directory_);
 
     ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const override;
 

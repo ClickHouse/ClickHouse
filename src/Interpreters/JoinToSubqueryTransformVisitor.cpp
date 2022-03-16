@@ -576,7 +576,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
     for (const auto & expr : alias_pushdown[table_pos])
-        expression_list->children.emplace_back(expr);
+        expression_list->children.emplace_back(std::move(expr));
 
     return expression_list;
 }

@@ -10,7 +10,7 @@ namespace DB
 class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit BrotliReadBuffer(
+    BrotliReadBuffer(
             std::unique_ptr<ReadBuffer> in_,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
             char * existing_memory = nullptr,

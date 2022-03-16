@@ -69,7 +69,6 @@ TRUSTED_CONTRIBUTORS = {
         "s-mx",  # Maxim Sabyanin, former employee, present contributor
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
-        "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",

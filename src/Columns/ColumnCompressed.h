@@ -107,10 +107,8 @@ public:
     {
         throwMustBeDecompressed();
     }
-    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
-                        size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
-    void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
-                        size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
+    void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
     MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
@@ -126,7 +124,7 @@ protected:
     Lazy lazy;
 
 private:
-    [[noreturn]] static void throwMustBeDecompressed()
+    [[noreturn]] void throwMustBeDecompressed() const
     {
         throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
     }

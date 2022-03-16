@@ -68,6 +68,7 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
+    mutable std::mutex keeper_stats_mutex;
     KeeperConnectionStats keeper_stats;
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
@@ -77,6 +78,7 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
+private:
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -157,8 +159,9 @@ public:
     uint64_t getSnapDirSize() const;
 
     /// Request statistics such as qps, latency etc.
-    KeeperConnectionStats & getKeeperConnectionStats()
+    KeeperConnectionStats getKeeperConnectionStats() const
     {
+        std::lock_guard lock(keeper_stats_mutex);
         return keeper_stats;
     }
 
@@ -176,16 +179,19 @@ public:
 
     void incrementPacketsSent()
     {
+        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.incrementPacketsSent();
     }
 
     void incrementPacketsReceived()
     {
+        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.incrementPacketsReceived();
     }
 
     void resetConnectionStats()
     {
+        std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.reset();
     }
 };

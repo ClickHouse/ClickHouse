@@ -19,14 +19,6 @@
                 <type>local</type>
                 <path>/</path>
             </hdd>
-            <s3_with_cache>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-                <data_cache_enabled>1</data_cache_enabled>
-            </s3_with_cache>
         </disks>
         <policies>
             <s3>
@@ -46,13 +38,6 @@
                     </main>
                 </volumes>
             </unstable_s3>
-            <s3_cache>
-                <volumes>
-                    <main>
-                        <disk>s3_with_cache</disk>
-                    </main>
-                </volumes>
-            </s3_cache>
         </policies>
     </storage_configuration>
 

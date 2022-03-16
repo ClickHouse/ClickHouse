@@ -240,7 +240,7 @@ public:
             WriteBufferFromString wb(serialized_keys[rows_processed]);
             key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
-            slices_keys[rows_processed] = serialized_keys[rows_processed];
+            slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
 
             ++it;
             ++rows_processed;

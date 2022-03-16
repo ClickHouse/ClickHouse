@@ -89,7 +89,6 @@ String toString(TargetArch arch);
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-/// NOLINTNEXTLINE
 #define USE_MULTITARGET_CODE 1
 
 #if defined(__clang__)
@@ -184,7 +183,6 @@ namespace TargetSpecific::Default { \
     __VA_ARGS__ \
 }
 
-/// NOLINTNEXTLINE
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
 DECLARE_SSE42_SPECIFIC_CODE  (__VA_ARGS__) \
@@ -193,23 +191,23 @@ DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
-    constexpr auto BuildArch = TargetArch::Default; /// NOLINT
+    constexpr auto BuildArch = TargetArch::Default;
 ) // DECLARE_DEFAULT_CODE
 
 DECLARE_SSE42_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::SSE42; /// NOLINT
+    constexpr auto BuildArch = TargetArch::SSE42;
 ) // DECLARE_SSE42_SPECIFIC_CODE
 
 DECLARE_AVX_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX; /// NOLINT
+    constexpr auto BuildArch = TargetArch::AVX;
 ) // DECLARE_AVX_SPECIFIC_CODE
 
 DECLARE_AVX2_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX2; /// NOLINT
+    constexpr auto BuildArch = TargetArch::AVX2;
 ) // DECLARE_AVX2_SPECIFIC_CODE
 
 DECLARE_AVX512F_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512F; /// NOLINT
+    constexpr auto BuildArch = TargetArch::AVX512F;
 ) // DECLARE_AVX512F_SPECIFIC_CODE
 
 }

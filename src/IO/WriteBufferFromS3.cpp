@@ -116,14 +116,7 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    finalize();
 }
 
 void WriteBufferFromS3::preFinalize()
@@ -159,10 +152,6 @@ void WriteBufferFromS3::createMultipartUpload()
     Aws::S3::Model::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-
-    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
-    req.SetContentType("binary/octet-stream");
-
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
@@ -171,7 +160,7 @@ void WriteBufferFromS3::createMultipartUpload()
     if (outcome.IsSuccess())
     {
         multipart_upload_id = outcome.GetResult().GetUploadId();
-        LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
+        LOG_DEBUG(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -181,7 +170,7 @@ void WriteBufferFromS3::writePart()
 {
     auto size = temporary_buffer->tellp();
 
-    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
+    LOG_DEBUG(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
 
     if (size < 0)
     {
@@ -191,7 +180,7 @@ void WriteBufferFromS3::writePart()
 
     if (size == 0)
     {
-        LOG_TRACE(log, "Skipping writing part. Buffer is empty.");
+        LOG_DEBUG(log, "Skipping writing part. Buffer is empty.");
         return;
     }
 
@@ -253,9 +242,6 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     req.SetUploadId(multipart_upload_id);
     req.SetContentLength(temporary_buffer->tellp());
     req.SetBody(temporary_buffer);
-
-    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
-    req.SetContentType("binary/octet-stream");
 }
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
@@ -265,7 +251,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     if (outcome.IsSuccess())
     {
         task.tag = outcome.GetResult().GetETag();
-        LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, task.tag, part_tags.size());
+        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, task.tag, part_tags.size());
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -275,7 +261,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 
 void WriteBufferFromS3::completeMultipartUpload()
 {
-    LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
 
     if (part_tags.empty())
         throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
@@ -297,7 +283,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
+        LOG_DEBUG(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
     else
     {
         throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}",
@@ -311,7 +297,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto size = temporary_buffer->tellp();
     bool with_pool = bool(schedule);
 
-    LOG_TRACE(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
+    LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
     if (size < 0)
     {
@@ -321,7 +307,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
     if (size == 0)
     {
-        LOG_TRACE(log, "Skipping single part upload. Buffer is empty.");
+        LOG_DEBUG(log, "Skipping single part upload. Buffer is empty.");
         return;
     }
 
@@ -368,9 +354,6 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
     req.SetBody(temporary_buffer);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
-
-    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
-    req.SetContentType("binary/octet-stream");
 }
 
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
@@ -379,7 +362,7 @@ void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
     bool with_pool = bool(schedule);
 
     if (outcome.IsSuccess())
-        LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
@@ -393,7 +376,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
             while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
             {
                 auto & task = upload_object_tasks.front();
-                auto exception = task.exception;
+                auto exception = std::move(task.exception);
                 auto tag = std::move(task.tag);
                 upload_object_tasks.pop_front();
 
@@ -420,7 +403,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
         {
             auto & task = upload_object_tasks.front();
             if (task.exception)
-                std::rethrow_exception(task.exception);
+                std::rethrow_exception(std::move(task.exception));
 
             part_tags.push_back(task.tag);
 
@@ -431,7 +414,7 @@ void WriteBufferFromS3::waitForAllBackGroundTasks()
         {
             bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
             if (put_object_task->exception)
-                std::rethrow_exception(put_object_task->exception);
+                std::rethrow_exception(std::move(put_object_task->exception));
         }
     }
 }

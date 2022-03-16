@@ -17,7 +17,6 @@ set (SRCS
     terminalColors.cpp
     errnoToString.cpp
     StringRef.cpp
-    safeExit.cpp
 )
 
 if (ENABLE_REPLXX)

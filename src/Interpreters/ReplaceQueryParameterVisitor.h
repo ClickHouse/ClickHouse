@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB

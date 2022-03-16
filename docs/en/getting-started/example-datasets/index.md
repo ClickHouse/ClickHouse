@@ -11,7 +11,7 @@ This section describes how to obtain example datasets and import them into Click
 The list of documented datasets:
 
 -   [GitHub Events](../../getting-started/example-datasets/github-events.md)
--   [Anonymized Web Analytics Dataset](../../getting-started/example-datasets/metrica.md)
+-   [Anonymized Yandex.Metrica Dataset](../../getting-started/example-datasets/metrica.md)
 -   [Recipes](../../getting-started/example-datasets/recipes.md)
 -   [Star Schema Benchmark](../../getting-started/example-datasets/star-schema.md)
 -   [WikiStat](../../getting-started/example-datasets/wikistat.md)

@@ -105,4 +105,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     keys = main(args.token, args.organization, args.team)
 
-    print(f"# Just shoing off the keys:\n{keys}")
+    print(f"Just shoing off the keys:\n{keys}")

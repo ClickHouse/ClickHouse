@@ -21,7 +21,7 @@ public:
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
 
-#if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_GRPC
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
 #endif
 
@@ -52,7 +52,7 @@ private:
     class Impl
     {
     public:
-        virtual ~Impl() = default;
+        virtual ~Impl() {}
         virtual void start() = 0;
         virtual void stop() = 0;
         virtual bool isStopping() const = 0;

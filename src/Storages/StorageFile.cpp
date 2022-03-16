@@ -273,38 +273,22 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    for (const auto & path : paths)
+    auto read_buffer_creator = [&]()
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
+        String path;
+        auto it = std::find_if(paths.begin(), paths.end(), [](const String & p){ return std::filesystem::exists(p); });
+        if (it == paths.end())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+                "table structure manually",
+                format);
 
-            if (!std::filesystem::exists(path))
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-                    "table structure manually",
-                    format);
+        path = *it;
+        return createReadBuffer(path, false, "File", -1, compression_method, context);
+    };
 
-            return createReadBuffer(path, false, "File", -1, compression_method, context);
-        };
-
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (paths.size() == 1 || !read_buffer_creator_was_used)
-                throw;
-
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    }
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:\n{}", exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
 }
 
 bool StorageFile::isColumnOriented() const

@@ -55,11 +55,11 @@ inline size_t seqLength(const UInt8 first_octet)
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
     size_t res = 0;
-    const auto * end = data + size;
+    const auto end = data + size;
 
 #ifdef __SSE2__
     constexpr auto bytes_sse = sizeof(__m128i);
-    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
+    const auto src_end_sse = data + size / bytes_sse * bytes_sse;
 
     const auto threshold = _mm_set1_epi8(0xBF);
 
@@ -76,7 +76,7 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
 
 
 template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_length)
+size_t convertCodePointToUTF8(uint32_t code_point, CharT * out_bytes, size_t out_length)
 {
     static const Poco::UTF8Encoding utf8;
     int res = utf8.convert(code_point, reinterpret_cast<uint8_t *>(out_bytes), out_length);

@@ -15,6 +15,7 @@ namespace ErrorCodes
 class Credentials;
 class ExternalAuthenticators;
 
+
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {

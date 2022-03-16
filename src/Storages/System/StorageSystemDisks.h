@@ -32,7 +32,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    explicit StorageSystemDisks(const StorageID & table_id_);
+    StorageSystemDisks(const StorageID & table_id_);
 };
 
 }

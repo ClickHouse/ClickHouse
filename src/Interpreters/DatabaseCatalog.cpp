@@ -103,13 +103,13 @@ TemporaryTableHolder::TemporaryTableHolder(
 {
 }
 
-TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
+TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
         : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
 
-TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && rhs) noexcept
+TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder && rhs)
 {
     id = rhs.id;
     rhs.id = UUIDHelpers::Nil;

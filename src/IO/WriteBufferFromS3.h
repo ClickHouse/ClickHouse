@@ -6,7 +6,6 @@
 
 #    include <memory>
 #    include <vector>
-#    include <list>
 #    include <base/logger_useful.h>
 #    include <base/types.h>
 
@@ -14,6 +13,8 @@
 #    include <IO/WriteBuffer.h>
 
 #    include <aws/core/utils/memory/stl/AWSStringStream.h>
+
+#    include <Common/ThreadPool.h>
 
 namespace Aws::S3
 {

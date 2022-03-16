@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {

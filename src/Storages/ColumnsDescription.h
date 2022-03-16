@@ -104,7 +104,6 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
-    void resetColumnTTLs();
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;

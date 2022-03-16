@@ -123,11 +123,12 @@ private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
 
 public:
-    Denominator(DenominatorType initial_value) /// NOLINT
+    Denominator(DenominatorType initial_value)
         : denominator(initial_value)
     {
     }
 
+public:
     inline void update(UInt8 cur_rank, UInt8 new_rank)
     {
         denominator -= static_cast<T>(1.0) / (1ULL << cur_rank);
@@ -163,7 +164,7 @@ class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType
     std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
 {
 public:
-    Denominator(DenominatorType initial_value) /// NOLINT
+    Denominator(DenominatorType initial_value)
     {
         rank_count[0] = initial_value;
     }
@@ -320,7 +321,7 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
+        return static_cast<UInt64>(final_estimate + 0.5);
     }
 
     void merge(const HyperLogLogCounter & rhs)
@@ -512,6 +513,7 @@ private:
         return fixed_estimate;
     }
 
+private:
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
     RankStore rank_store;

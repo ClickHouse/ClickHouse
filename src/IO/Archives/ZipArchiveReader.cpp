@@ -42,12 +42,12 @@ public:
         }
     }
 
-    HandleHolder(HandleHolder && src) noexcept
+    HandleHolder(HandleHolder && src)
     {
         *this = std::move(src);
     }
 
-    HandleHolder & operator=(HandleHolder && src) noexcept
+    HandleHolder & operator =(HandleHolder && src)
     {
         reader = std::exchange(src.reader, nullptr);
         raw_handle = std::exchange(src.raw_handle, nullptr);

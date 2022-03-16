@@ -36,18 +36,6 @@ chmod a+x ./hardware.sh
 wget https://builds.clickhouse.com/master/amd64/clickhouse
 # For aarch64:
 wget https://builds.clickhouse.com/master/aarch64/clickhouse
-# For powerpc64le:
-wget https://builds.clickhouse.com/master/powerpc64le/clickhouse
-# For freebsd:
-wget https://builds.clickhouse.com/master/freebsd/clickhouse
-# For freebsd-aarch64:
-wget https://builds.clickhouse.com/master/freebsd-aarch64/clickhouse
-# For freebsd-powerpc64le:
-wget https://builds.clickhouse.com/master/freebsd-powerpc64le/clickhouse
-# For macos:
-wget https://builds.clickhouse.com/master/macos/clickhouse
-# For macos-aarch64:
-wget https://builds.clickhouse.com/master/macos-aarch64/clickhouse
 # Then do:
 chmod a+x clickhouse
 ```

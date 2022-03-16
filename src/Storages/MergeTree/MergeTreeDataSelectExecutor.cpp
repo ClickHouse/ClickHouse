@@ -822,7 +822,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
                 if (inserted)
-                    it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                    it->second.condition = index_helper->createIndexMergedCondtition(query_info, metadata_snapshot);
 
                 it->second.addIndex(index_helper);
             }
@@ -1751,6 +1751,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     PartFilterCounters & counters,
     Poco::Logger * log)
 {
+    const Settings & settings = query_context->getSettings();
+
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
@@ -1805,11 +1807,14 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_granules_after_partition_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))
+            if (part->uuid != UUIDHelpers::Nil)
             {
-                auto result = temp_part_uuids.insert(part->uuid);
-                if (!result.second)
-                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                if (settings.experimental_query_deduplication_send_all_part_uuids || pinned_part_uuids->contains(part->uuid))
+                {
+                    auto result = temp_part_uuids.insert(part->uuid);
+                    if (!result.second)
+                        throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                }
             }
 
             selected_parts.push_back(part_or_projection);

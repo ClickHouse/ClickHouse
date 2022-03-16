@@ -75,12 +75,12 @@ public:
         return "retention";
     }
 
-    explicit AggregateFunctionRetention(const DataTypes & arguments)
+    AggregateFunctionRetention(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
         for (const auto i : collections::range(0, arguments.size()))
         {
-            const auto * cond_arg = arguments[i].get();
+            auto cond_arg = arguments[i].get();
             if (!isUInt8(cond_arg))
                 throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i) + " of aggregate function "
                         + getName() + ", must be UInt8",

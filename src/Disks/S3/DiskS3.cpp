@@ -153,11 +153,10 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     DiskPtr metadata_disk_,
-    FileCachePtr cache_,
     ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
+    : IDiskRemote(name_, s3_root_path_, metadata_disk_, "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -224,18 +223,17 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    ReadSettings disk_read_settings{read_settings};
-    if (cache)
-        disk_read_settings.remote_fs_cache = cache;
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        path, settings->client, bucket, metadata,
-        settings->s3_max_single_read_retries, disk_read_settings);
+        path,
+        settings->client, bucket, metadata,
+        settings->s3_max_single_read_retries, read_settings, threadpool_read);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    if (threadpool_read)
     {
         auto reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(s3_impl));
     }
     else
     {
@@ -264,20 +262,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
-    ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
-    {
-        pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
-        {
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
+    /// FIXME -- thread pool lead to obscure segfaults
+    /// ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
+    /// {
+    ///     pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
+    ///     {
+    ///         if (thread_group)
+    ///             CurrentThread::attachTo(thread_group);
 
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-            callback();
-        });
-    };
+    ///         SCOPE_EXIT_SAFE(
+    ///             if (thread_group)
+    ///                 CurrentThread::detachQueryIfNotDetached();
+    ///         );
+    ///         callback();
+    ///     });
+    /// };
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
@@ -288,14 +287,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size, std::move(schedule));
+        buf_size /*, std::move(schedule) */);
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_name, count] (Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(create_metadata_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(create_metadata_callback), path);
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)

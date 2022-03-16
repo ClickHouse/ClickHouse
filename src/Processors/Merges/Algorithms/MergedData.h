@@ -1,11 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Core/Types.h>
-#include <Columns/IColumn.h>
-#include <Processors/Chunk.h>
-
-
 namespace DB
 {
 

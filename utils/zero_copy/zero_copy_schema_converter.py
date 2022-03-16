@@ -4,7 +4,6 @@ import socket
 import uuid
 from kazoo.client import KazooClient
 
-
 def parse_args():
     """
     Parse command-line arguments.
@@ -18,7 +17,7 @@ def parse_args():
     parser.add_argument('-u', '--user', default='', help='ZooKeeper ACL user')
     parser.add_argument('-p', '--password', default='', help='ZooKeeper ACL password')
     parser.add_argument('-r', '--root', default='/clickhouse', help='ZooKeeper root path for ClickHouse')
-    parser.add_argument('-z', '--zcroot', default='clickhouse/zero_copy', help='ZooKeeper node for new zero-copy data')
+    parser.add_argument('-z', '--zcroot', default='zero_copy', help='ZooKeeper node for new zero-copy data')
     parser.add_argument('--dryrun', default=False, action='store_true', help='Do not perform any actions')
     parser.add_argument('--cleanup', default=False, action='store_true', help='Clean old nodes')
     parser.add_argument('-v', '--verbose', action='store_true', default=False, help='Verbose mode')
@@ -35,7 +34,7 @@ zc_nodes = ['zero_copy_s3', 'zero_copy_hdfs']
 def convert_node(client, args, path, zc_node):
     base_path = f'{path}/{zc_node}/shared'
     parts = client.get_children(base_path)
-    table_id_path = f'{path}/table_shared_id'
+    table_id_path = f'{path}/table_id'
     table_id = ''
     if client.exists(table_id_path):
         table_id = client.get(table_id_path)[0].decode('UTF-8')

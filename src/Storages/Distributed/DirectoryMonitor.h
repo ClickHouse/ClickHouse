@@ -52,7 +52,7 @@ public:
 
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
-    /// For scheduling via DistributedBlockOutputStream.
+    /// For scheduling via DistributedBlockOutputStream
     bool addAndSchedule(size_t file_size, size_t ms);
 
     struct InternalStatus

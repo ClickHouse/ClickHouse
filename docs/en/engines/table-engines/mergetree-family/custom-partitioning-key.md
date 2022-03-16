@@ -55,28 +55,27 @@ WHERE table = 'visits'
 ```
 
 ``` text
-┌─partition─┬─name──────────────┬─active─┐
-│ 201901    │ 201901_1_3_1      │      0 │
-│ 201901    │ 201901_1_9_2_11   │      1 │
-│ 201901    │ 201901_8_8_0      │      0 │
-│ 201901    │ 201901_9_9_0      │      0 │
-│ 201902    │ 201902_4_6_1_11   │      1 │
-│ 201902    │ 201902_10_10_0_11 │      1 │
-│ 201902    │ 201902_11_11_0_11 │      1 │
-└───────────┴───────────────────┴────────┘
+┌─partition─┬─name───────────┬─active─┐
+│ 201901    │ 201901_1_3_1   │      0 │
+│ 201901    │ 201901_1_9_2   │      1 │
+│ 201901    │ 201901_8_8_0   │      0 │
+│ 201901    │ 201901_9_9_0   │      0 │
+│ 201902    │ 201902_4_6_1   │      1 │
+│ 201902    │ 201902_10_10_0 │      1 │
+│ 201902    │ 201902_11_11_0 │      1 │
+└───────────┴────────────────┴────────┘
 ```
 
 The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER … PARTITION](../../../sql-reference/statements/alter/partition.md) queries.
 
 The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
 
-Let’s break down the name of the part: `201901_1_9_2_11`:
+Let’s break down the name of the first part: `201901_1_3_1`:
 
 -   `201901` is the partition name.
 -   `1` is the minimum number of the data block.
--   `9` is the maximum number of the data block.
--   `2` is the chunk level (the depth of the merge tree it is formed from).
--   `11` is the mutation version (if a part mutated)
+-   `3` is the maximum number of the data block.
+-   `1` is the chunk level (the depth of the merge tree it is formed from).
 
 !!! info "Info"
     The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
@@ -90,16 +89,16 @@ OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
 ``` text
-┌─partition─┬─name─────────────┬─active─┐
-│ 201901    │ 201901_1_3_1     │      0 │
-│ 201901    │ 201901_1_9_2_11  │      1 │
-│ 201901    │ 201901_8_8_0     │      0 │
-│ 201901    │ 201901_9_9_0     │      0 │
-│ 201902    │ 201902_4_6_1     │      0 │
-│ 201902    │ 201902_4_11_2_11 │      1 │
-│ 201902    │ 201902_10_10_0   │      0 │
-│ 201902    │ 201902_11_11_0   │      0 │
-└───────────┴──────────────────┴────────┘
+┌─partition─┬─name───────────┬─active─┐
+│ 201901    │ 201901_1_3_1   │      0 │
+│ 201901    │ 201901_1_9_2   │      1 │
+│ 201901    │ 201901_8_8_0   │      0 │
+│ 201901    │ 201901_9_9_0   │      0 │
+│ 201902    │ 201902_4_6_1   │      0 │
+│ 201902    │ 201902_4_11_2  │      1 │
+│ 201902    │ 201902_10_10_0 │      0 │
+│ 201902    │ 201902_11_11_0 │      0 │
+└───────────┴────────────────┴────────┘
 ```
 
 Inactive parts will be deleted approximately 10 minutes after merging.
@@ -110,12 +109,12 @@ Another way to view a set of parts and partitions is to go into the directory of
 /var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
-drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_8_8_0
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_9_9_0
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_10_10_0
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_11_11_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:19 201902_4_11_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:19 201902_4_11_2
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```

@@ -34,11 +34,13 @@ def build_for_lang(lang, args):
         # the following list of languages is sorted according to
         # https://en.wikipedia.org/wiki/List_of_languages_by_total_number_of_speakers
         languages = {
-            'en': 'English'
+            'en': 'English',
+            'ru': 'Русский'
         }
 
         site_names = {
-            'en': 'ClickHouse Blog'
+            'en': 'ClickHouse Blog',
+            'ru': 'Блог ClickHouse'
         }
 
         assert len(site_names) == len(languages)

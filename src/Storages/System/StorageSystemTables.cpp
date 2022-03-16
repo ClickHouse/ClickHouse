@@ -509,8 +509,8 @@ protected:
                     loading_dependencies_tables.reserve(info.dependencies.size());
                     for (auto && dependency : info.dependencies)
                     {
-                        loading_dependencies_databases.push_back(dependency.database);
-                        loading_dependencies_tables.push_back(dependency.table);
+                        loading_dependencies_databases.push_back(std::move(dependency.database));
+                        loading_dependencies_tables.push_back(std::move(dependency.table));
                     }
 
                     Array loading_dependent_databases;
@@ -519,8 +519,8 @@ protected:
                     loading_dependent_tables.reserve(info.dependencies.size());
                     for (auto && dependent : info.dependent_database_objects)
                     {
-                        loading_dependent_databases.push_back(dependent.database);
-                        loading_dependent_tables.push_back(dependent.table);
+                        loading_dependent_databases.push_back(std::move(dependent.database));
+                        loading_dependent_tables.push_back(std::move(dependent.table));
                     }
 
                     if (columns_mask[src_index++])

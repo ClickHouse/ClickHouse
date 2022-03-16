@@ -694,7 +694,7 @@ UTCタイムゾーンまたは地理的位置(たとえば、Africa/Abidjan)のI
 **例**
 
 ``` xml
-<timezone>Asia/Istanbul</timezone>
+<timezone>Europe/Moscow</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}

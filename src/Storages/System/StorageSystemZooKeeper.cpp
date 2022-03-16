@@ -16,8 +16,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <algorithm>
-#include <deque>
 
 
 namespace DB
@@ -49,23 +47,14 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
     };
 }
 
-/// Type of path to be fetched
-enum class ZkPathType
-{
-    Exact,   /// Fetch all nodes under this path
-    Prefix,  /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
-    Recurse, /// Fatch all nodes under this path, recursively
-};
-
-/// List of paths to be feched from zookeeper
-using Paths = std::deque<std::pair<String, ZkPathType>>;
+using Paths = Strings;
 
 static String pathCorrected(const String & path)
 {
     String path_corrected;
     /// path should starts with '/', otherwise ZBADARGUMENTS will be thrown in
     /// ZooKeeper::sendThread and the session will fail.
-    if (path.empty() || path[0] != '/')
+    if (path[0] != '/')
         path_corrected = '/';
     path_corrected += path;
     /// In all cases except the root, path must not end with a slash.
@@ -75,7 +64,7 @@ static String pathCorrected(const String & path)
 }
 
 
-static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, bool allow_unrestricted)
+static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context)
 {
     const auto * function = elem.as<ASTFunction>();
     if (!function)
@@ -84,7 +73,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
     if (function->name == "and")
     {
         for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context, allow_unrestricted))
+            if (extractPathImpl(*child, res, context))
                 return true;
 
         return false;
@@ -121,7 +110,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
             set.checkColumnsNumber(1);
             const auto & set_column = *set.getSetElements()[0];
             for (size_t row = 0; row < set_column.size(); ++row)
-                res.emplace_back(set_column[row].safeGet<String>(), ZkPathType::Exact);
+                res.emplace_back(set_column[row].safeGet<String>());
         }
         else
         {
@@ -132,12 +121,12 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
             if (String str; literal->value.tryGet(str))
             {
-                res.emplace_back(str, ZkPathType::Exact);
+                res.emplace_back(str);
             }
             else if (Tuple tuple; literal->value.tryGet(tuple))
             {
                 for (auto element : tuple)
-                    res.emplace_back(element.safeGet<String>(), ZkPathType::Exact);
+                    res.emplace_back(element.safeGet<String>());
             }
             else
                 return false;
@@ -167,61 +156,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
         if (literal->value.getType() != Field::Types::String)
             return false;
 
-        res.emplace_back(literal->value.safeGet<String>(), ZkPathType::Exact);
-        return true;
-    }
-    else if (allow_unrestricted && function->name == "like")
-    {
-        const ASTIdentifier * ident;
-        ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
-        else
-            return false;
-
-        if (ident->name() != "path")
-            return false;
-
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal)
-            return false;
-
-        if (literal->value.getType() != Field::Types::String)
-            return false;
-
-        String pattern = literal->value.safeGet<String>();
-        bool has_metasymbol = false;
-        String prefix; // pattern prefix before the first metasymbol occurrence
-        for (size_t i = 0; i < pattern.size(); i++)
-        {
-            char c = pattern[i];
-            // Handle escaping of metasymbols
-            if (c == '\\' && i + 1 < pattern.size())
-            {
-                char c2 = pattern[i + 1];
-                if (c2 == '_' || c2 == '%')
-                {
-                    prefix.append(1, c2);
-                    i++; // to skip two bytes
-                    continue;
-                }
-            }
-
-            // Stop prefix on the first metasymbols occurrence
-            if (c == '_' || c == '%')
-            {
-                has_metasymbol = true;
-                break;
-            }
-
-            prefix.append(1, c);
-        }
-
-        res.emplace_back(prefix, has_metasymbol ? ZkPathType::Prefix : ZkPathType::Exact);
-
+        res.emplace_back(literal->value.safeGet<String>());
         return true;
     }
 
@@ -231,59 +166,38 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
-static Paths extractPath(const ASTPtr & query, ContextPtr context, bool allow_unrestricted)
+static Paths extractPath(const ASTPtr & query, ContextPtr context)
 {
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where())
-        return allow_unrestricted ? Paths{{"/", ZkPathType::Recurse}} : Paths();
+        return Paths();
 
     Paths res;
-    return extractPathImpl(*select.where(), res, context, allow_unrestricted) ? res : Paths();
+    return extractPathImpl(*select.where(), res, context) ? res : Paths();
 }
 
 
 void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
-    Paths paths = extractPath(query_info.query, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    const Paths & paths = extractPath(query_info.query, context);
+    if (paths.empty())
+        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
-    if (paths.empty())
-        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.", ErrorCodes::BAD_ARGUMENTS);
-
-    std::unordered_set<String> added;
-    while (!paths.empty())
+    std::unordered_set<String> paths_corrected;
+    for (const auto & path : paths)
     {
-        auto [path, path_type] = std::move(paths.front());
-        paths.pop_front();
+        const String & path_corrected = pathCorrected(path);
+        auto [it, inserted] = paths_corrected.emplace(path_corrected);
+        if (!inserted) /// Do not repeat processing.
+            continue;
 
-        String prefix;
-        if (path_type == ZkPathType::Prefix)
-        {
-            prefix = path;
-            size_t last_slash = prefix.rfind('/');
-            path = prefix.substr(0, last_slash == String::npos ? 0 : last_slash);
-        }
-
-        String path_corrected = pathCorrected(path);
-
-        /// Node can be deleted concurrently. It's Ok, we don't provide any
-        /// consistency guarantees for system.zookeeper table.
-        zkutil::Strings nodes;
-        zookeeper->tryGetChildren(path_corrected, nodes);
+        zkutil::Strings nodes = zookeeper->getChildren(path_corrected);
 
         String path_part = path_corrected;
         if (path_part == "/")
             path_part.clear();
-
-        if (!prefix.empty())
-        {
-            // Remove nodes that do not match specified prefix
-            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node)
-            {
-                return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            }), nodes.end());
-        }
 
         std::vector<std::future<Coordination::GetResponse>> futures;
         futures.reserve(nodes.size());
@@ -295,11 +209,6 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
             auto res = futures[i].get();
             if (res.error == Coordination::Error::ZNONODE)
                 continue; /// Node was deleted meanwhile.
-
-            // Deduplication
-            String key = path_part + '/' + nodes[i];
-            if (auto [it, inserted] = added.emplace(key); !inserted)
-                continue;
 
             const Coordination::Stat & stat = res.stat;
 
@@ -319,11 +228,6 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(stat.pzxid);
             res_columns[col_num++]->insert(
                 path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
-
-            if (path_type != ZkPathType::Exact && res.stat.numChildren > 0)
-            {
-                paths.emplace_back(key, ZkPathType::Recurse);
-            }
         }
     }
 }

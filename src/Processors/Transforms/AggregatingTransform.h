@@ -12,7 +12,7 @@ class AggregatedArenasChunkInfo : public ChunkInfo
 {
 public:
     Arenas arenas;
-    explicit AggregatedArenasChunkInfo(Arenas arenas_)
+    AggregatedArenasChunkInfo(Arenas arenas_)
         : arenas(std::move(arenas_))
     {}
 };

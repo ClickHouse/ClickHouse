@@ -72,7 +72,7 @@ namespace CurrentMetrics
         }
 
     public:
-        explicit Increment(Metric metric, Value amount_ = 1)
+        Increment(Metric metric, Value amount_ = 1)
             : Increment(&values[metric], amount_) {}
 
         ~Increment()
@@ -81,12 +81,12 @@ namespace CurrentMetrics
                 what->fetch_sub(amount, std::memory_order_relaxed);
         }
 
-        Increment(Increment && old) noexcept
+        Increment(Increment && old)
         {
             *this = std::move(old);
         }
 
-        Increment & operator=(Increment && old) noexcept
+        Increment & operator= (Increment && old)
         {
             what = old.what;
             amount = old.amount;

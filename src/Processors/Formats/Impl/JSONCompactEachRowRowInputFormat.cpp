@@ -27,7 +27,7 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
     : RowInputFormatWithNamesAndTypes(
         header_,
         in_,
-        params_,
+        std::move(params_),
         with_names_,
         with_types_,
         format_settings_,

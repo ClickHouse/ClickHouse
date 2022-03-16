@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 
 #include <boost/program_options.hpp>
 #include <re2/re2.h>

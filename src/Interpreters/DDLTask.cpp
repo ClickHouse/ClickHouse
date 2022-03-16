@@ -259,17 +259,13 @@ bool DDLTask::tryFindHostInCluster()
                          * */
                         is_circular_replicated = true;
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
-
-                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
-                        if (query_with_table)
+                        if (!query_with_table || !query_with_table->database)
                         {
-                            if (!query_with_table->database)
-                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
-
-                            if (default_database == query_with_table->getDatabase())
-                                return true;
+                            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                            "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
                         }
+                        if (default_database == query_with_table->getDatabase())
+                            return true;
                     }
                 }
                 found_exact_match = true;

@@ -442,9 +442,9 @@ namespace
                 pattern_list_args->children = {
                     std::make_shared<ASTLiteral>("^["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]+|["),
+                    std::make_shared<ASTLiteral>("]*|["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]+$")
+                    std::make_shared<ASTLiteral>("]*$")
                 };
                 func_name = "replaceRegexpAll";
             }
@@ -455,7 +455,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("^["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]+")
+                        std::make_shared<ASTLiteral>("]*")
                     };
                 }
                 else
@@ -464,7 +464,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]+$")
+                        std::make_shared<ASTLiteral>("]*$")
                     };
                 }
                 func_name = "replaceRegexpOne";

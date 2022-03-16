@@ -240,8 +240,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     KeeperStorage::RequestForSession request_info;
     request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
     std::lock_guard lock(push_request_mutex);
@@ -402,8 +400,6 @@ void KeeperDispatcher::sessionCleanerTask()
                     request->xid = Coordination::CLOSE_XID;
                     KeeperStorage::RequestForSession request_info;
                     request_info.request = request;
-                    using namespace std::chrono;
-                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
@@ -437,7 +433,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & [session_id, time, request] : requests_for_sessions)
+    for (const auto & [session_id, request] : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
         auto response = request->makeResponse();
@@ -481,8 +477,6 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     request->server_id = server->getServerID();
 
     request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = -1;
 
     auto promise = std::make_shared<std::promise<int64_t>>();
@@ -594,6 +588,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
+    std::lock_guard lock(keeper_stats_mutex);
     keeper_stats.updateLatency(process_time_ms);
 }
 

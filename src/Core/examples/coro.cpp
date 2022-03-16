@@ -84,7 +84,7 @@ struct Task
         std::cout << "    Task " << tag << std::endl;
     }
     Task(Task &) = delete;
-    Task(Task &&rhs) noexcept : my(rhs.my), tag(rhs.tag)
+    Task(Task &&rhs) : my(rhs.my), tag(rhs.tag)
     {
         rhs.my = {};
         std::cout << "    Task&& " << tag << std::endl;

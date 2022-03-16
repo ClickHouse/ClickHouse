@@ -12,8 +12,11 @@ dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-
-ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+if [[ -n "$TEST_CASES_FROM_DEB" ]] && [[ "$TEST_CASES_FROM_DEB" -eq 1 ]]; then
+    dpkg -i package_folder/clickhouse-test_*.deb
+else
+    ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+fi
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh

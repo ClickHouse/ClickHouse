@@ -104,30 +104,3 @@ def test_executable_function_non_direct_bash(started_cluster):
 
     assert node.query("SELECT test_function_non_direct_pool_bash(toUInt64(1))") == 'Key 1\n'
     assert node.query("SELECT test_function_non_direct_pool_bash(1)") == 'Key 1\n'
-
-def test_executable_function_sum_json_python(started_cluster):
-    skip_test_msan(node)
-
-    node.query("CREATE TABLE test_table (lhs UInt64, rhs UInt64) ENGINE=TinyLog;")
-    node.query("INSERT INTO test_table VALUES (0, 0), (1, 1), (2, 2);")
-
-    assert node.query("SELECT test_function_sum_json_unnamed_args_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_unnamed_args_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    assert node.query("SELECT test_function_sum_json_partially_named_args_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_partially_named_args_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    assert node.query("SELECT test_function_sum_json_named_args_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_named_args_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    assert node.query("SELECT test_function_sum_json_unnamed_args_pool_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_unnamed_args_pool_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    assert node.query("SELECT test_function_sum_json_partially_named_args_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_partially_named_args_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    assert node.query("SELECT test_function_sum_json_named_args_pool_python(1, 2);") == '3\n'
-    assert node.query("SELECT test_function_sum_json_named_args_pool_python(lhs, rhs) FROM test_table;") == '0\n2\n4\n'
-
-    node.query("DROP TABLE test_table;")
-

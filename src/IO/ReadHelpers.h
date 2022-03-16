@@ -106,7 +106,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
+    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
 }
 
 template <typename T>
@@ -611,7 +611,7 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void push_back(char) {} /// NOLINT
+    void push_back(char) {}
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
@@ -686,16 +686,6 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         return readDateTextFallback<ReturnType>(date, buf);
 }
 
-inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
-{
-    if (unlikely(from < 0))
-        date = 0;
-    else if (unlikely(from > 0xFFFF))
-        date = 0xFFFF;
-    else
-        date = from;
-}
-
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
 {
@@ -708,8 +698,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
-    ExtendedDayNum ret = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
-    convertToDayNum(date,ret);
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
     return ReturnType(true);
 }
 
@@ -1278,6 +1267,7 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         default:
             return;
     }
+    return;
 }
 
 /// Read something from text format and trying to parse the suffix.

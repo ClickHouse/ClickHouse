@@ -2,9 +2,6 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 
 namespace DB
 {

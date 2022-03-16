@@ -6,7 +6,7 @@
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <Poco/TemporaryFile.h>
 #include <boost/algorithm/string/join.hpp>
 

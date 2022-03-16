@@ -47,7 +47,7 @@ public:
     /// then we can cache the scalars forever (for any query that doesn't use the virtual storage either), but if it does use the virtual
     /// storage then we can only keep the scalar result around while we are working with that source block
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
-    bool usesViewSource() const { return uses_view_source; }
+    bool usesViewSource() { return uses_view_source; }
 
 protected:
     ASTPtr query_ptr;

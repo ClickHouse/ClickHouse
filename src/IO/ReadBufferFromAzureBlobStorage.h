@@ -33,8 +33,6 @@ public:
 
     bool nextImpl() override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return offset; }
-
 private:
 
     void initialize();

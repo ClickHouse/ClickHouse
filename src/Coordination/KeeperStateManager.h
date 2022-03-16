@@ -71,9 +71,9 @@ public:
 
     int32_t server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; } /// NOLINT
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; }
 
-    void system_exit(const int exit_code) override; /// NOLINT
+    void system_exit(const int /* exit_code */) override {}
 
     int getPort() const
     {

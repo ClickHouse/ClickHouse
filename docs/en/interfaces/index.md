@@ -12,7 +12,7 @@ ClickHouse provides three network interfaces (they can be optionally wrapped in 
 -   [Native TCP](../interfaces/tcp.md), which has less overhead.
 -   [gRPC](grpc.md).
 
-In most cases it is recommended to use an appropriate tool or library instead of interacting with those directly. The following are officially supported by ClickHouse:
+In most cases it is recommended to use appropriate tool or library instead of interacting with those directly. Officially supported by Yandex are the following:
 
 -   [Command-line client](../interfaces/cli.md)
 -   [JDBC driver](../interfaces/jdbc.md)

@@ -16,7 +16,7 @@ using RolePtr = std::shared_ptr<const Role>;
 class RoleCache
 {
 public:
-    explicit RoleCache(const AccessControl & access_control_);
+    RoleCache(const AccessControl & access_control_);
     ~RoleCache();
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(

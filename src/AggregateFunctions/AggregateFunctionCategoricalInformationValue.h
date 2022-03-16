@@ -63,12 +63,12 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto * y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
+        auto y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
 
         for (size_t i : collections::range(0, category_count))
         {
-            const auto * x_col = static_cast<const ColumnUInt8 *>(columns[i]);
+            auto x_col = static_cast<const ColumnUInt8 *>(columns[i]);
             bool x = x_col->getData()[row_num];
 
             if (x)
@@ -104,7 +104,7 @@ public:
         );
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override /// NOLINT
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & col = static_cast<ColumnArray &>(to);
         auto & data_col = static_cast<ColumnFloat64 &>(col.getData());

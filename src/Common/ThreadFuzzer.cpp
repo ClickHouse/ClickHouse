@@ -25,28 +25,6 @@
     #define THREAD_FUZZER_WRAP_PTHREAD 0
 #endif
 
-/// Starting from glibc 2.34 there are no internal symbols without version,
-/// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX)
-    /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
-    #if defined(__amd64__)
-    #    define GLIBC_SYMVER "GLIBC_2.2.5"
-    #elif defined(__aarch64__)
-    #    define GLIBC_SYMVER "GLIBC_2.17"
-    #elif defined(__riscv) && (__riscv_xlen == 64)
-    #    define GLIBC_SYMVER "GLIBC_2.27"
-    #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    #    define GLIBC_SYMVER "GLIBC_2.17"
-    #else
-    #    error Your platform is not supported.
-    #endif
-
-    #define GLIBC_COMPAT_SYMBOL(func) __asm__(".symver " #func "," #func "@" GLIBC_SYMVER);
-
-    GLIBC_COMPAT_SYMBOL(__pthread_mutex_unlock)
-    GLIBC_COMPAT_SYMBOL(__pthread_mutex_lock)
-#endif
-
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define FOR_EACH_WRAPPED_FUNCTION(M) \
         M(int, pthread_mutex_lock, pthread_mutex_t * arg) \

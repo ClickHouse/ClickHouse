@@ -54,7 +54,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         std::move(settings));
     version = index_format.version;
 
-    stream->adjustRightMark(getLastMark(all_mark_ranges_));
+    stream->adjustForRange(MarkRange(0, getLastMark(all_mark_ranges_)));
     stream->seekToStart();
 }
 

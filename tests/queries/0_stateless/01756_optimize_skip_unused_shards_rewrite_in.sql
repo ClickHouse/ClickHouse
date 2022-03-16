@@ -9,7 +9,6 @@ drop table if exists dist_01756;
 drop table if exists dist_01756_str;
 drop table if exists dist_01756_column;
 drop table if exists data_01756_str;
-drop table if exists data_01756_signed;
 
 -- SELECT
 --     intHash64(0) % 2,
@@ -84,20 +83,6 @@ select query from system.query_log where
     type = 'QueryFinish'
 order by query;
 
--- signed column
-select 'signed column';
-create table data_01756_signed (key Int) engine=Null;
-with (select currentDatabase()) as key_signed select *, ignore(key_signed) from cluster(test_cluster_two_shards, currentDatabase(), data_01756_signed, key) where key in (-1, -2);
-system flush logs;
-select query from system.query_log where
-    event_date >= yesterday() and
-    event_time > now() - interval 1 hour and
-    not is_initial_query and
-    query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `key_signed` %') and
-    type = 'QueryFinish'
-order by query;
-
 -- not tuple
 select * from dist_01756 where dummy in (0);
 select * from dist_01756 where dummy in ('0');
@@ -154,4 +139,3 @@ drop table dist_01756;
 drop table dist_01756_str;
 drop table dist_01756_column;
 drop table data_01756_str;
-drop table data_01756_signed;

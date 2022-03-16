@@ -12,13 +12,13 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
-        /// Attach to Ordinary database.
+        /// Attach to Ordinary database
         auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
         system_database.attachTable(context, table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...));
     }
     else
     {
-        /// Attach to Atomic database.
+        /// Attach to Atomic database
         /// NOTE: UUIDs are not persistent, but it's ok since no data are stored on disk for these storages
         /// and path is actually not used
         auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
