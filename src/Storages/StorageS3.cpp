@@ -4,6 +4,7 @@
 #if USE_AWS_S3
 
 #include <Common/isValidUTF8.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <Functions/FunctionsConversion.h>
 
@@ -374,6 +375,16 @@ static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & clien
     return false;
 }
 
+// TODO: common thread pool for IO must be used instead after PR #35150
+static ThreadPool & getThreadPoolStorageS3()
+{
+    constexpr size_t pool_size = 100;
+    constexpr size_t queue_size = 1000000;
+    static ThreadPool pool(pool_size, pool_size, queue_size);
+    return pool;
+}
+
+
 class StorageS3Sink : public SinkToStorage
 {
 public:
@@ -398,7 +409,7 @@ public:
             std::make_unique<WriteBufferFromS3>(
                 client, bucket, key, min_upload_part_size,
                 upload_part_size_multiply_factor, upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size), compression_method, 3);
+                max_single_part_upload_size, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, threadPoolCallbackRunner(getThreadPoolStorageS3())), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
