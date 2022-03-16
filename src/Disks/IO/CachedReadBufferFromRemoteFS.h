@@ -97,7 +97,9 @@ private:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
     }
+
     size_t first_offset = 0;
+    String nextimpl_step_log_info;
 };
 
 }

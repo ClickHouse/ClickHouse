@@ -315,7 +315,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     const Key & key, size_t offset, size_t size, FileSegment::State state,
-    std::lock_guard<std::mutex> & /* cache_lock */)
+    std::lock_guard<std::mutex> & cache_lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
 
@@ -323,8 +323,10 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
         return nullptr; /// Empty files are not cached.
 
     if (files[key].contains(offset))
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-            "Cache already exists for key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache already exists for key: `{}`, offset: {}, size: {}, current cache structure: {}",
+            keyToStr(key), offset, size, dumpStructureImpl(key, cache_lock));
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
     FileSegmentCell cell(std::move(file_segment), queue);
@@ -340,8 +342,10 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Failed to insert into cache key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to insert into cache key: `{}`, offset: {}, size: {}",
+            keyToStr(key), offset, size);
 
     return &(it->second);
 }
@@ -688,6 +692,12 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
 }
 
 String LRUFileCache::dumpStructure(const Key & key_)
+{
+    std::lock_guard cache_lock(mutex);
+    return dumpStructureImpl(key_, cache_lock);
+}
+
+String LRUFileCache::dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     std::lock_guard cache_lock(mutex);
 
