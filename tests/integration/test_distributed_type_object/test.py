@@ -14,8 +14,8 @@ def started_cluster():
         cluster.start()
 
         for node in (node1, node2):
-            node.query("CREATE TABLE local_table(id UInt32, data JSON) ENGINE = MergeTree ORDER BY id")
-            node.query("CREATE TABLE dist_table AS local_table ENGINE = Distributed(test_cluster, default, local_table)")
+            node.query("CREATE TABLE local_table(id UInt32, data JSON) ENGINE = MergeTree ORDER BY id", settings={"allow_experimental_object_type": 1})
+            node.query("CREATE TABLE dist_table AS local_table ENGINE = Distributed(test_cluster, default, local_table)", settings={"allow_experimental_object_type": 1})
 
         yield cluster
 

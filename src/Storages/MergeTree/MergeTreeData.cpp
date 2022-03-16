@@ -6131,7 +6131,8 @@ ColumnsDescription MergeTreeData::getObjectColumns(
 
 void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lock*/)
 {
-    const auto & columns = getInMemoryMetadataPtr()->getColumns();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & columns = metadata_snapshot->getColumns();
     if (!hasObjectColumns(columns))
         return;
 
@@ -6141,7 +6142,8 @@ void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lo
 
 void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPartsLock & /*lock*/)
 {
-    const auto & columns = getInMemoryMetadataPtr()->getColumns();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & columns = metadata_snapshot->getColumns();
     if (!hasObjectColumns(columns))
         return;
 
