@@ -27,7 +27,8 @@ def check_query(clickhouse_node, query, result_set, retry_count=10, interval_sec
             logging.debug(f"check_query retry {i+1} exception {e}")
             time.sleep(interval_seconds)
     else:
-        assert clickhouse_node.query(query) == result_set
+        result_got = clickhouse_node.query(query)
+        assert result_got == result_set, f"Got result {result_got}, while expected result {result_set}"
 
 
 def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -1229,17 +1230,14 @@ def materialized_database_mysql_date_type_to_date32(clickhouse_node, mysql_node,
     # can't support date that less than 1925 year for now
     mysql_node.query("INSERT INTO test_database.a VALUES(1, '1900-04-16')")
     # test date that is older than 1925
-    mysql_node.query("INSERT INTO test_database.a VALUES(2, '1925-03-16')")
     mysql_node.query("INSERT INTO test_database.a VALUES(3, '1971-02-16')")
     mysql_node.query("INSERT INTO test_database.a VALUES(4, '2101-05-16')")
 
     clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
-    check_query(clickhouse_node, "SELECT b from test_database.a order by a FORMAT TSV", "1970-01-01\n1925-03-16\n1971-02-16\n2101-05-16\n")
+    check_query(clickhouse_node, "SELECT b from test_database.a order by a FORMAT TSV", "1970-01-01\n1971-02-16\n2101-05-16\n")
 
-    mysql_node.query("INSERT INTO test_database.a VALUES(5, '1925-04-16')")
     mysql_node.query("INSERT INTO test_database.a VALUES(6, '2022-02-16')")
-    mysql_node.query("INSERT INTO test_database.a VALUES(7, '2283-11-11')")
+    mysql_node.query("INSERT INTO test_database.a VALUES(7, '2104-06-06')")
 
-    check_query(clickhouse_node, "SELECT b from test_database.a order by a FORMAT TSV", "1970-01-01\n1925-03-16\n1971-02-16\n2101-05-16\n1925-04-16\n2022-02-16\n" + 
-    "2283-11-11\n")
-
+    check_query(clickhouse_node, "SELECT b from test_database.a order by a FORMAT TSV", "1970-01-01\n1971-02-16\n2101-05-16\n2022-02-16\n" +
+    "2104-06-06\n")

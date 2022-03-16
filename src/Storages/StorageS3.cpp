@@ -233,7 +233,7 @@ StorageS3Source::StorageS3Source(
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
-    const String compression_hint_,
+    String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
@@ -245,7 +245,7 @@ StorageS3Source::StorageS3Source(
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
     , max_single_read_retries(max_single_read_retries_)
-    , compression_hint(compression_hint_)
+    , compression_hint(std::move(compression_hint_))
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)

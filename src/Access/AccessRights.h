@@ -15,7 +15,7 @@ class AccessRights
 {
 public:
     AccessRights();
-    AccessRights(const AccessFlags & access);
+    explicit AccessRights(const AccessFlags & access);
     ~AccessRights();
     AccessRights(const AccessRights & src);
     AccessRights & operator =(const AccessRights & src);

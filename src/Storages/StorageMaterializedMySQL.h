@@ -38,7 +38,7 @@ public:
     void drop() override { nested_storage->drop(); }
 
 private:
-    [[noreturn]] void throwNotAllowed() const
+    [[noreturn]] static void throwNotAllowed()
     {
         throw Exception("This method is not allowed for MaterializedMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }

@@ -269,7 +269,7 @@ namespace
                             read_settings,
                             headers,
                             ReadWriteBufferFromHTTP::Range{},
-                            context->getRemoteHostFilter(),
+                            &context->getRemoteHostFilter(),
                             delay_initialization,
                             /* use_external_buffer */false,
                             /* skip_url_not_found_error */skip_url_not_found_error),
