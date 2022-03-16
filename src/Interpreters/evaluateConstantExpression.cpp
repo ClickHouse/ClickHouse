@@ -33,9 +33,8 @@ namespace ErrorCodes
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
-    if (ASTLiteral * literal = node->as<ASTLiteral>()) {
+    if (ASTLiteral * literal = node->as<ASTLiteral>())
         return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
-    }
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();

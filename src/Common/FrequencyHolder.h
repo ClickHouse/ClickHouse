@@ -79,7 +79,8 @@ public:
 
 private:
 
-    FrequencyHolder() {
+    FrequencyHolder()
+    {
         loadEmotionalDict();
         loadEncodingsFrequency();
         loadProgrammingFrequency();
