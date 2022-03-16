@@ -80,7 +80,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, nullptr);
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
     future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
     future_mutated_part->name = entry.new_part_name;
@@ -126,7 +126,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, fake_query_context, nullptr, reserved_space, table_lock_holder);
+            entry.create_time, fake_query_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
@@ -145,7 +145,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 {
     new_part = mutate_task->getFuture().get();
 
-    storage.renameTempPartAndReplace(new_part, nullptr, nullptr, transaction_ptr.get());
+    storage.renameTempPartAndReplace(new_part, NO_TRANSACTION_RAW, nullptr, transaction_ptr.get());
 
     try
     {

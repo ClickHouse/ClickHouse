@@ -3035,8 +3035,7 @@ void Context::resetZooKeeperMetadataTransaction()
 
 void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
 {
-    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0);
-    if (enable_mvcc_test_helper == 42)
+    if (getConfigRef().getInt("allow_experimental_transactions", 0))
         return;
 
     if (explicit_tcl_query)

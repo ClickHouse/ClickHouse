@@ -54,7 +54,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
     TransactionLog::instance().commitTransaction(txn);
-    session_context->setCurrentTransaction(nullptr);
+    session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }
 
@@ -68,7 +68,7 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
 
     if (txn->getState() == MergeTreeTransaction::RUNNING)
         TransactionLog::instance().rollbackTransaction(txn);
-    session_context->setCurrentTransaction(nullptr);
+    session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }
 

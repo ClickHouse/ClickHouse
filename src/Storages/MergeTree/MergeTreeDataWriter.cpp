@@ -547,7 +547,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         compression_codec,
-        nullptr);
+        NO_TRANSACTION_PTR);
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);

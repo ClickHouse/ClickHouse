@@ -26,8 +26,8 @@ function thread_insert()
         fi
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO src VALUES ($val, 1);
-        INSERT INTO src VALUES ($val, 2);
+        INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
+        INSERT INTO src VALUES /* ($val, 2) */ ($val, 2);
         COMMIT;"
         val=$((val+1))
         sleep 0.$RANDOM;
@@ -47,7 +47,7 @@ function thread_partition_src_to_dst()
         out=$(
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO src VALUES ($i, 3);
+        INSERT INTO src VALUES /* ($i, 3) */ ($i, 3);
         INSERT INTO dst SELECT * FROM src;
         ALTER TABLE src DROP PARTITION ID 'all';
         SET throw_on_unsupported_query_inside_transaction=0;
@@ -72,7 +72,7 @@ function thread_partition_dst_to_src()
         SYSTEM STOP MERGES dst;
         ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
         BEGIN TRANSACTION;
-        INSERT INTO dst VALUES ($i, 4);
+        INSERT INTO dst VALUES /* ($i, 4) */ ($i, 4);
         INSERT INTO src SELECT * FROM dst;
         ALTER TABLE dst DROP PARTITION ID 'all';
         SET throw_on_unsupported_query_inside_transaction=0;

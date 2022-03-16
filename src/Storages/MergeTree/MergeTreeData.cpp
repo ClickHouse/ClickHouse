@@ -3897,7 +3897,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
             disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             part->loadColumnsChecksumsIndexes(false, true);
-            renameTempPartAndAdd(part, nullptr, increment);
+            renameTempPartAndAdd(part, NO_TRANSACTION_RAW, increment);
         };
 
         restore_tasks.emplace_back(std::move(restore_task));

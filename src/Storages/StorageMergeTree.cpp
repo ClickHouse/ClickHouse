@@ -773,7 +773,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
     {
         if (tx)
         {
-            /// Cannot merge parts if some of them is not visible in current snapshot
+            /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
             if (left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;

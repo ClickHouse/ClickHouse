@@ -1503,10 +1503,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
-            Transaction transaction(*this, nullptr);
+            Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-            renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
+            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
@@ -1796,7 +1796,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     DataPartsVector parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range_info, true, data_parts_lock);
+        parts_to_remove = removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range_info, true, data_parts_lock);
         if (parts_to_remove.empty())
         {
             if (!drop_range_info.isFakeDropRangePart())
@@ -1929,7 +1929,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         if (parts_to_add.empty() && replace)
         {
-            parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, true, data_parts_lock);
             String parts_to_remove_str;
             for (const auto & part : parts_to_remove)
             {
@@ -2109,7 +2109,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
             part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, nullptr);
+                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR);
         }
         else if (!part_desc->replica.empty())
         {
@@ -2149,12 +2149,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         /// Commit parts
         auto zookeeper = getZooKeeper();
-        Transaction transaction(*this, nullptr);
+        Transaction transaction(*this, NO_TRANSACTION_RAW);
 
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, nullptr, nullptr, &transaction);
+            renameTempPartAndReplace(part_desc->res_part, NO_TRANSACTION_RAW, nullptr, &transaction);
             getCommitPartOps(ops, part_desc->res_part);
         }
 
@@ -2167,7 +2167,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             transaction.commit(&data_parts_lock);
             if (replace)
             {
-                parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, true, data_parts_lock);
                 String parts_to_remove_str;
                 for (const auto & part : parts_to_remove)
                 {
@@ -3030,7 +3030,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 future_merged_part->uuid = UUIDHelpers::generateV4();
 
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr, nullptr) == SelectPartsDecision::SELECTED)
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, NO_TRANSACTION_PTR, nullptr) == SelectPartsDecision::SELECTED)
             {
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
@@ -3884,8 +3884,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
         if (!to_detached)
         {
-            Transaction transaction(*this, nullptr);
-            renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
+            Transaction transaction(*this, NO_TRANSACTION_RAW);
+            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, nullptr, &transaction);
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part);
 
@@ -4397,12 +4397,12 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 select_decision = merger_mutator.selectPartsToMerge(
                     future_merged_part, /* aggressive */ true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool,
-                    can_merge, /* merge_with_ttl_allowed */ false, nullptr, &disable_reason);
+                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, &disable_reason);
             }
             else
             {
                 select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    future_merged_part, can_merge, partition_id, final, metadata_snapshot, nullptr,
+                    future_merged_part, can_merge, partition_id, final, metadata_snapshot, NO_TRANSACTION_PTR,
                     &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
             }
 
@@ -6291,7 +6291,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             UInt64 index = lock->getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, nullptr);
+            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
@@ -6374,7 +6374,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
                 transaction.commit(&data_parts_lock);
                 if (replace)
-                    parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, data_parts_lock);
+                    parts_to_remove = removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, true, data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -6502,7 +6502,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             UInt64 index = lock->getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, nullptr);
+            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
@@ -6581,7 +6581,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_to_remove = removePartsInRangeFromWorkingSet(nullptr, drop_range, true, lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, true, lock);
                 transaction.commit(&lock);
             }
 
@@ -7630,8 +7630,8 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     try
     {
-        MergeTreeData::Transaction transaction(*this, nullptr);
-        auto replaced_parts = renameTempPartAndReplace(new_data_part, nullptr, nullptr, &transaction);
+        MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, NO_TRANSACTION_RAW, nullptr, &transaction);
 
         if (!replaced_parts.empty())
         {

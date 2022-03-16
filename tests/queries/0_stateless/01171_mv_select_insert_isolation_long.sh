@@ -26,9 +26,9 @@ function thread_insert_commit()
     for i in {1..100}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO src VALUES ($i, $1);
+        INSERT INTO src VALUES /* ($i, $1) */ ($i, $1);
         SELECT throwIf((SELECT sum(nm) FROM mv) != $(($i * $1))) FORMAT Null;
-        INSERT INTO src VALUES (-$i, $1);
+        INSERT INTO src VALUES /* (-$i, $1) */ (-$i, $1);
         COMMIT;" 2>&1| grep -Fv "is violated at row" | grep -Fv "Transaction is not in RUNNING state" | grep -F "Received from " ||:
     done
 }
@@ -39,7 +39,7 @@ function thread_insert_rollback()
     for _ in {1..100}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        INSERT INTO src VALUES (42, $1);
+        INSERT INTO src VALUES /* (42, $1) */ (42, $1);
         SELECT throwIf((SELECT count() FROM src WHERE n=42 AND m=$1) != 1) FORMAT Null;
         ROLLBACK;"
     done
@@ -89,7 +89,7 @@ function thread_select()
         SELECT throwIf((SELECT (sum(nm), count() % 2) FROM dst) != (0, 1)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(nm)) FROM dst)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(n*m)) FROM src)) FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT -q "SELECT 'src', arraySort(groupArray(n*m)) FROM src UNION ALL SELECT 'mv', arraySort(groupArray(nm)) FROM mv"
+        COMMIT;" || $CLICKHOUSE_CLIENT -q "SELECT 'src', arraySort(groupArray(n*m)), arraySort(groupArray((n*m, _part))) FROM src UNION ALL SELECT 'mv', arraySort(groupArray(nm)), arraySort(groupArray((nm, _part))) FROM mv"
     done
 }
 

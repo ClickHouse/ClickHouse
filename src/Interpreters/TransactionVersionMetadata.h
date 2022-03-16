@@ -10,10 +10,15 @@ class Logger;
 namespace DB
 {
 
+/// This structure allows to pass more information about a part that transaction is trying to create/remove.
+/// It's useful for logging and for exception messages.
 struct TransactionInfoContext
 {
+    /// To which table a part belongs
     StorageID table = StorageID::createEmpty();
+    /// Name of a part that transaction is trying to create/remove
     String part_name;
+    /// Optional: name of part that covers `part_name` if transaction is trying to remove `part_name`
     String covering_part;
 
     TransactionInfoContext(StorageID id, String part) : table(std::move(id)), part_name(std::move(part)) {}

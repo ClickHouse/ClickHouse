@@ -122,7 +122,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
             auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
             MergedBlockOutputStream projection_out(
                 projection_data_part, desc.metadata, projection_part->columns, projection_indices,
-                projection_compression_codec, nullptr);
+                projection_compression_codec, NO_TRANSACTION_PTR);
 
             projection_out.write(projection_part->block);
             projection_out.finalizePart(projection_data_part, false);

@@ -1185,7 +1185,10 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
         return;
     }
 
-    LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+    if (clear)
+        LOG_TEST(storage.log, "Clearing removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+    else
+        LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
 
     String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
     DiskPtr disk = volume->getDisk();
