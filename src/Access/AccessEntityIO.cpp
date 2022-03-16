@@ -28,6 +28,8 @@
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -38,10 +40,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
+    extern const int RBAC_VERSION_IS_TOO_NEW;
 }
 
 namespace
 {
+    constexpr const char RBAC_VERSION_SETTING_NAME[] = "rbac_version";
+    constexpr const Int64 LATEST_RBAC_VERSION = 1;
+
     /// Special parser for the 'ATTACH access entity' queries.
     class ParserAttachAccessEntity : public IParserBase
     {
@@ -56,6 +62,7 @@ namespace
             ParserCreateQuotaQuery create_quota_p;
             ParserCreateSettingsProfileQuery create_profile_p;
             ParserGrantQuery grant_p;
+            ParserSetQuery set_p;
 
             create_user_p.useAttachMode();
             create_role_p.useAttachMode();
@@ -66,7 +73,8 @@ namespace
 
             return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
                 || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
-                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
+                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected)
+                || set_p.parse(pos, node, expected);
         }
     };
 
@@ -75,8 +83,15 @@ namespace
 
 String serializeAccessEntity(const IAccessEntity & entity)
 {
-    /// Build list of ATTACH queries.
     ASTs queries;
+    {
+        /// Prepend the list with "SET rbac_version = ..." query.
+        auto set_rbac_version_query = std::make_shared<ASTSetQuery>();
+        set_rbac_version_query->changes.emplace_back(RBAC_VERSION_SETTING_NAME, LATEST_RBAC_VERSION);
+        queries.push_back(set_rbac_version_query);
+    }
+
+    /// Build list of ATTACH queries.
     queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
     if ((entity.getType() == AccessEntityType::USER) || (entity.getType() == AccessEntityType::ROLE))
         boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
@@ -105,6 +120,12 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             ++pos;
     }
 
+    /// Number of queries interpreted.
+    size_t query_index = 0;
+
+    /// If there is no "SET rbac_version = ..." query we assume that it's the first version.
+    UInt64 rbac_version = 1;
+
     /// Interpret the AST to build an access entity.
     std::shared_ptr<User> user;
     std::shared_ptr<Role> role;
@@ -115,12 +136,24 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 
     for (const auto & query : queries)
     {
-        if (auto * create_user_query = query->as<ASTCreateUserQuery>())
+        if (auto * set_query = query->as<ASTSetQuery>())
+        {
+            if ((set_query->changes.size() != 1) || (set_query->changes[0].name != RBAC_VERSION_SETTING_NAME))
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "SET query in this file is only allowed to set {}", RBAC_VERSION_SETTING_NAME);
+            if (query_index != 0)
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "SET {} should be the first query in the file", RBAC_VERSION_SETTING_NAME);
+            rbac_version = set_query->changes[0].value.safeGet<UInt64>();
+            if (rbac_version < 1)
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "{} must be >= 1", RBAC_VERSION_SETTING_NAME);
+            if (rbac_version > LATEST_RBAC_VERSION)
+                throw Exception(ErrorCodes::RBAC_VERSION_IS_TOO_NEW, "{} {} is too new", RBAC_VERSION_SETTING_NAME, rbac_version);
+        }
+        else if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
                 throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
@@ -161,6 +194,8 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
         }
         else
             throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+
+        ++query_index;
     }
 
     if (!res)
