@@ -233,7 +233,7 @@ StorageS3Source::StorageS3Source(
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
-    const String compression_hint_,
+    String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
@@ -245,7 +245,7 @@ StorageS3Source::StorageS3Source(
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
     , max_single_read_retries(max_single_read_retries_)
-    , compression_hint(compression_hint_)
+    , compression_hint(std::move(compression_hint_))
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
@@ -615,6 +615,11 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     }
 }
 
+bool StorageS3::isColumnOriented() const
+{
+    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+}
+
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -639,6 +644,20 @@ Pipe StorageS3::read(
 
     std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, local_context);
 
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (isColumnOriented())
+    {
+        columns_description = ColumnsDescription{
+            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = metadata_snapshot->getColumns();
+        block_for_format = metadata_snapshot->getSampleBlock();
+    }
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -646,10 +665,10 @@ Pipe StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            metadata_snapshot->getSampleBlock(),
+            block_for_format,
             local_context,
             format_settings,
-            metadata_snapshot->getColumns(),
+            columns_description,
             max_block_size,
             max_single_read_retries,
             compression_method,

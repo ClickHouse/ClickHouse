@@ -61,7 +61,6 @@ protected:
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -77,6 +76,7 @@ protected:
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
+    bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
@@ -103,7 +103,6 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-protected:
     bool processQueryText(const String & text);
 
 private:
@@ -219,6 +218,7 @@ protected:
 
     ProgressIndication progress_indication;
     bool need_render_progress = true;
+    bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
 
@@ -255,10 +255,12 @@ protected:
     struct HostAndPort
     {
         String host;
-        UInt16 port;
+        std::optional<UInt16> port;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};
+
+    bool allow_repeated_settings = false;
 
     bool cancelled = false;
 };
