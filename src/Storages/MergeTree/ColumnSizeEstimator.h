@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 
 
 namespace DB

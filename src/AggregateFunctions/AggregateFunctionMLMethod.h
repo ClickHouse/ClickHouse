@@ -333,7 +333,7 @@ public:
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    void create(AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
         if (weights_updater_name == "SGD")
