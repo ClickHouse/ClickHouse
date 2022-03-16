@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-enum class IPStringToNumExceptionMode
+enum class IPStringToNumExceptionMode : uint8_t
 {
     Throw,
     Default,
@@ -186,11 +186,18 @@ ColumnPtr convertToIPv4(ColumnPtr column)
         if (!parse_result)
         {
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
                 throw Exception("Invalid IPv4 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+            }
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
+            {
                 vec_res[i] = 0;
+            }
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+            {
                 (*vec_null_map_to)[i] = true;
+                vec_res[i] = 0;
+            }
         }
 
         prev_offset = offsets_src[i];
