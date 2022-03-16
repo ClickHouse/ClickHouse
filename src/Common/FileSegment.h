@@ -95,7 +95,7 @@ public:
 
     bool reserve(size_t size);
 
-    void write(const char * from, size_t size, size_t offset);
+    void write(const char * from, size_t size, size_t offset_);
 
     RemoteFileReaderPtr getRemoteFileReader();
 
@@ -129,8 +129,6 @@ private:
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     static String getCallerIdImpl(bool allow_non_strict_checking = false);
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
-    size_t getDownloadedSize() const;
-    size_t getDownloadOffsetImpl(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     const Range segment_range;
@@ -145,15 +143,7 @@ private:
     size_t reserved_size = 0;
 
     mutable std::mutex mutex;
-    mutable std::condition_variable cv;
-
-    /// Protects downloaded_size access with actual write into fs.
-    /// downloaded_size is not protected by download_mutex in methods which
-    /// can never be run in parallel to FileSegment::write() method
-    /// as downloaded_size is updated only in FileSegment::write() method.
-    /// Such methods are identified by isDownloader() check at their start,
-    /// e.g. they are executed strictly by the same thread, sequentially.
-    mutable std::mutex download_mutex;
+    std::condition_variable cv;
 
     Key file_key;
     IFileCache * cache;
