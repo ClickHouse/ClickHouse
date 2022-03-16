@@ -322,6 +322,8 @@ then
                -e "DirectoryMonitor" \
                -e "TABLE_IS_READ_ONLY" \
                -e "Code: 1000, e.code() = 111, Connection refused" \
+               -e "UNFINISHED" \
+               -e "Renaming unexpected part" \
         /var/log/clickhouse-server/clickhouse-server.log | zgrep -Fa "<Error>" > /dev/null \
         && echo -e 'Error message in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
         || echo -e 'No Error messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
