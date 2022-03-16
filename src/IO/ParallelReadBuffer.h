@@ -67,18 +67,12 @@ private:
     };
 
 public:
-    struct Range
-    {
-        size_t from;
-        size_t to;
-    };
-
-    using ReaderWithRange = std::pair<ReadBufferPtr, Range>;
+    SeekableReadBufferPtr read_buffer;
 
     class ReadBufferFactory
     {
     public:
-        virtual std::optional<ReaderWithRange> getReader() = 0;
+        virtual SeekableReadBufferPtr getReader() = 0;
         virtual ~ReadBufferFactory() = default;
         virtual off_t seek(off_t off, int whence) = 0;
         virtual std::optional<size_t> getTotalSize() = 0;
@@ -96,9 +90,10 @@ private:
     /// Reader in progress with a list of read segments
     struct ReadWorker
     {
-        explicit ReadWorker(ReadBufferPtr reader_, const Range & range_)
-            : reader(reader_), range(range_), bytes_left(range_.to - range_.from)
+        explicit ReadWorker(SeekableReadBufferPtr reader_) : reader(std::move(reader_)), range(reader->getRemainingReadRange())
         {
+            assert(range.right);
+            bytes_left = *range.right - range.left + 1;
         }
 
         Segment nextSegment()
@@ -106,14 +101,14 @@ private:
             assert(!segments.empty());
             auto next_segment = std::move(segments.front());
             segments.pop_front();
-            range.from += next_segment.size();
+            range.left += next_segment.size();
             return next_segment;
         }
 
-        ReadBufferPtr reader;
+        SeekableReadBufferPtr reader;
         std::deque<Segment> segments;
         bool finished{false};
-        Range range;
+        SeekableReadBuffer::Range range;
         size_t bytes_left{0};
     };
 
@@ -124,7 +119,7 @@ private:
     /// First worker in deque processed and flushed all data
     bool currentWorkerCompleted() const;
 
-    [[noreturn]] void handleEmergencyStop();
+    void handleEmergencyStop();
 
     void addReaders(std::unique_lock<std::mutex> & buffer_lock);
     bool addReaderToPool(std::unique_lock<std::mutex> & buffer_lock);

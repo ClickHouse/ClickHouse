@@ -31,7 +31,7 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
         return false;
     }
 
-    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader->first), reader->second));
+    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
         ? CurrentThread::get().getThreadGroup()
@@ -87,7 +87,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
     std::unique_lock lock{mutex};
     const auto offset_is_in_range
-        = [&](const auto & range) { return static_cast<size_t>(offset) >= range.from && static_cast<size_t>(offset) < range.to; };
+        = [&](const auto & range) { return static_cast<size_t>(offset) >= range.left && static_cast<size_t>(offset) <= *range.right; };
 
     while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
     {
@@ -98,7 +98,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     {
         auto & front_worker = read_workers.front();
         auto & segments = front_worker->segments;
-        current_position = front_worker->range.from;
+        current_position = front_worker->range.left;
         while (true)
         {
             next_condvar.wait(lock, [&] { return emergency_stop || !segments.empty(); });
@@ -151,20 +151,22 @@ off_t ParallelReadBuffer::getPosition()
 
 bool ParallelReadBuffer::currentWorkerReady() const
 {
-    return !read_workers.empty() && (read_workers.front()->finished || !read_workers.front()->segments.empty());
+    assert(!read_workers.empty());
+    return read_workers.front()->finished || !read_workers.front()->segments.empty();
 }
 
 bool ParallelReadBuffer::currentWorkerCompleted() const
 {
-    return !read_workers.empty() && read_workers.front()->finished && read_workers.front()->segments.empty();
+    assert(!read_workers.empty());
+    return read_workers.front()->finished && read_workers.front()->segments.empty();
 }
 
 void ParallelReadBuffer::handleEmergencyStop()
 {
+    // this can only be called from the main thread when there is an exception
+    assert(background_exception);
     if (background_exception)
         std::rethrow_exception(background_exception);
-    else
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Emergency stop");
 }
 
 bool ParallelReadBuffer::nextImpl()
@@ -183,16 +185,16 @@ bool ParallelReadBuffer::nextImpl()
                 return emergency_stop || currentWorkerReady();
             });
 
-        if (emergency_stop)
-            handleEmergencyStop();
-
         bool worker_removed = false;
         /// Remove completed units
-        while (!read_workers.empty() && currentWorkerCompleted())
+        while (!read_workers.empty() && currentWorkerCompleted() && !emergency_stop)
         {
             read_workers.pop_front();
             worker_removed = true;
         }
+
+        if (emergency_stop)
+            handleEmergencyStop();
 
         if (worker_removed)
             addReaders(lock);

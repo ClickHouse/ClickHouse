@@ -207,19 +207,7 @@ namespace detail
             {
                 try
                 {
-                    call(response, Poco::Net::HTTPRequest::HTTP_HEAD);
-
-                    while (isRedirect(response.getStatus()))
-                    {
-                        Poco::URI uri_redirect(response.get("Location"));
-                        if (remote_host_filter)
-                            remote_host_filter->checkURL(uri_redirect);
-
-                        session->updateSession(uri_redirect);
-
-                        istr = callImpl(uri_redirect, response, method);
-                    }
-
+                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
                     break;
                 }
                 catch (const Poco::Exception & e)
@@ -324,7 +312,36 @@ namespace detail
             }
         }
 
-        void call(Poco::Net::HTTPResponse & response, const String & method_)
+        static bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
+        {
+            constexpr std::array non_retriable_errors{
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
+
+            return std::all_of(
+                non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
+        }
+
+        void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
+        {
+            call(response, method_, throw_on_all_errors);
+
+            while (isRedirect(response.getStatus()))
+            {
+                Poco::URI uri_redirect(response.get("Location"));
+                if (remote_host_filter)
+                    remote_host_filter->checkURL(uri_redirect);
+
+                session->updateSession(uri_redirect);
+
+                istr = callImpl(uri_redirect, response, method);
+            }
+        }
+
+        void call(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             try
             {
@@ -332,18 +349,18 @@ namespace detail
             }
             catch (...)
             {
+                if (throw_on_all_errors)
+                {
+                    throw;
+                }
+
                 auto http_status = response.getStatus();
 
-                if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
-                    && http_skip_not_found_url)
+                if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND && http_skip_not_found_url)
                 {
                     initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
                 }
-                else if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST
-                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
-                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND
-                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN
-                    || http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED)
+                else if (!isRetriableError(http_status))
                 {
                     initialization_error = InitializeError::NON_RETRIABLE_ERROR;
                     exception = std::current_exception();
@@ -579,6 +596,8 @@ namespace detail
             return offset_;
         }
 
+        SeekableReadBuffer::Range getRemainingReadRange() const override { return {getOffset(), read_range.end}; }
+
         std::string getResponseCookie(const std::string & name, const std::string & def) const
         {
             for (const auto & cookie : cookies)
@@ -620,35 +639,35 @@ class RangeGenerator
 {
 public:
     explicit RangeGenerator(size_t total_size_, size_t range_step_, size_t range_start = 0)
-        : from_range(range_start), range_step(range_step_), total_size(total_size_)
+        : from(range_start), range_step(range_step_), total_size(total_size_)
     {
     }
 
-    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size - from_range) / range_step)); }
+    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size - from) / range_step)); }
 
     using Range = std::pair<size_t, size_t>;
 
     // return upper exclusive range of values, i.e. [from_range, to_range>
     std::optional<Range> nextRange()
     {
-        if (from_range >= total_size)
+        if (from >= total_size)
         {
             return std::nullopt;
         }
 
-        auto to_range = from_range + range_step;
-        if (to_range >= total_size)
+        auto to = from + range_step;
+        if (to >= total_size)
         {
-            to_range = total_size;
+            to = total_size;
         }
 
-        Range range{from_range, to_range};
-        from_range = to_range;
+        Range range{from, to};
+        from = to;
         return std::move(range);
     }
 
 private:
-    size_t from_range;
+    size_t from;
     size_t range_step;
     size_t total_size;
 };
@@ -731,34 +750,30 @@ public:
     {
     }
 
-    using Range = ParallelReadBuffer::Range;
-    using ReaderWithRange = ParallelReadBuffer::ReaderWithRange;
-    std::optional<ReaderWithRange> getReader() override
+    SeekableReadBufferPtr getReader() override
     {
         const auto next_range = range_generator.nextRange();
         if (!next_range)
         {
-            return std::nullopt;
+            return nullptr;
         }
 
-        return std::pair{
-            std::make_shared<ReadWriteBufferFromHTTP>(
-                uri,
-                method,
-                out_stream_callback,
-                timeouts,
-                credentials,
-                max_redirects,
-                buffer_size,
-                settings,
-                http_header_entries,
-                // HTTP Range has inclusive bounds, i.e. [from, to]
-                ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
-                remote_host_filter,
-                delay_initialization,
-                use_external_buffer,
-                skip_not_found_url),
-            Range{next_range->first, next_range->second}};
+        return std::make_shared<ReadWriteBufferFromHTTP>(
+            uri,
+            method,
+            out_stream_callback,
+            timeouts,
+            credentials,
+            max_redirects,
+            buffer_size,
+            settings,
+            http_header_entries,
+            // HTTP Range has inclusive bounds, i.e. [from, to]
+            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
+            remote_host_filter,
+            delay_initialization,
+            use_external_buffer,
+            skip_not_found_url);
     }
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override
@@ -767,10 +782,7 @@ public:
         return off;
     }
 
-    std::optional<size_t> getTotalSize() override
-    {
-        return total_object_size;
-    }
+    std::optional<size_t> getTotalSize() override { return total_object_size; }
 
 private:
     RangeGenerator range_generator;
