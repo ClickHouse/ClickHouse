@@ -595,14 +595,14 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
-        QueryPlanStepPtr read_from_cache_step = std::make_unique<ReadFromCacheStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+        auto read_from_cache_step = std::make_unique<ReadFromCacheStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
         return;
     }
     executeImpl(query_plan, std::move(input_pipe));
 
-    QueryPlanStepPtr caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+    auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
     caching_step->setStepDescription("Cache query result");
     query_plan.addStep(std::move(caching_step));
 
