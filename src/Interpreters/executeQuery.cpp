@@ -665,7 +665,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             {
                 std::unique_ptr<OpenTelemetrySpanHolder> span;
-                if (context->query_trace_context.trace_id != UUID())
+                if (query_span->isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
