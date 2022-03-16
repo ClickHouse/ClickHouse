@@ -32,7 +32,33 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
     }
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader->first), reader->second));
-    pool->scheduleOrThrow([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
+
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+        ? CurrentThread::get().getThreadGroup()
+        : MainThreadStatus::getInstance().getThreadGroup();
+
+    ContextPtr query_context;
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().getQueryContext();
+
+    pool->scheduleOrThrow(
+        [&, this, running_group = std::move(running_group), query_context = std::move(query_context), worker = std::move(worker)]() mutable
+        {
+            ThreadStatus thread_status;
+
+            /// Save query context if any, because cache implementation needs it.
+            if (query_context)
+                thread_status.attachQueryContext(query_context);
+
+            /// To be able to pass ProfileEvents.
+            if (running_group)
+                thread_status.attachQuery(running_group);
+
+            readerThreadFunction(std::move(worker));
+
+            if (running_group)
+                thread_status.detachQuery(false);
+        });
     return true;
 }
 
@@ -87,6 +113,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
                 working_buffer = internal_buffer = Buffer(current_segment.data(), current_segment.data() + current_segment.size());
                 current_position += current_segment.size();
                 pos = working_buffer.end() - (current_position - offset);
+                addReaders(lock);
                 return offset;
             }
 
