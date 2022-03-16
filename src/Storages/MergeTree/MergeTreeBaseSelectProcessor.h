@@ -86,7 +86,6 @@ protected:
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 
-protected:
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 

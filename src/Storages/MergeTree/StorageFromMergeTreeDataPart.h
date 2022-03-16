@@ -79,7 +79,7 @@ public:
 
 protected:
     /// Used in part mutation.
-    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
         , storage(part_->storage)

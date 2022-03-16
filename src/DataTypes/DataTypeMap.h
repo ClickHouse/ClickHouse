@@ -23,7 +23,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeMap(const DataTypes & elems);
+    explicit DataTypeMap(const DataTypes & elems);
     DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }

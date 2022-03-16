@@ -51,7 +51,6 @@ public:
 private:
     const Value & findCreatorByName(const String & family_name) const;
 
-private:
     DataTypesDictionary data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.

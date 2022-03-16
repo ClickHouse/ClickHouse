@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace
@@ -692,7 +693,7 @@ void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
         num_rows = new_size;
     else if (new_size != num_rows)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Requiered size of subcolumn {} ({}) is inconsistent with column size ({})",
+            "Required size of subcolumn {} ({}) is inconsistent with column size ({})",
             key.getPath(), new_size, num_rows);
 }
 
