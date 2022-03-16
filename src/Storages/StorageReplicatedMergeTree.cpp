@@ -7715,7 +7715,12 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
     {
         try
         {
-            zookeeper->createAncestors(zookeeper_node);
+            /// Ephemeral locks can be created only when we fetch shared data.
+            /// So it never require to create ancestors. If we create them
+            /// race condition with source replica drop is possible.
+            if (mode == zkutil::CreateMode::Persistent)
+                zookeeper->createAncestors(zookeeper_node);
+
             if (replace_existing_lock && zookeeper->exists(zookeeper_node))
             {
                 Coordination::Requests ops;
