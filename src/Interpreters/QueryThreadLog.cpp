@@ -68,6 +68,7 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"revision", std::make_shared<DataTypeUInt32>()},
 

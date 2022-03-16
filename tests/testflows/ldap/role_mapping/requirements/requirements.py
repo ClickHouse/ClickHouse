@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210505.1133630.
+# document by TestFlows v1.7.220210.1155232.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -913,6 +913,75 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithS
     level=4,
     num='4.8.8.5')
 
+RQ_SRS_014_LDAP_ClusterWithAndWithoutSecret_DistributedTable = Requirement(
+    name='RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support propagating query user roles and their corresponding privileges\n'
+        'when using `Distributed` table to the remote servers for the users that are authenticated\n'
+        'using LDAP either via external user directory or defined in `users.xml` when\n'
+        'cluster is configured with and without `<secret>`.\n'
+        '\n'
+        'For example,\n'
+        '\n'
+        '```xml\n'
+        '<clickhouse>\n'
+        '    <remote_servers>\n'
+        '        <cluster>\n'
+        '            <secret>qwerty123</secret>\n'
+        '            <shard>\n'
+        '                <internal_replication>true</internal_replication>\n'
+        '                <replica>\n'
+        '                    <default_database>dwh</default_database>\n'
+        '                    <host>host1</host>\n'
+        '                </replica>\n'
+        '            </shard>\n'
+        '            <shard>\n'
+        '                <internal_replication>true</internal_replication>\n'
+        '                <replica>\n'
+        '                    <default_database>dwh</default_database>\n'
+        '                    <host>host2</host>\n'
+        '                </replica>\n'
+        '            </shard>\n'
+        '        </cluster>\n'
+        '    </remote_servers>\n'
+        '</clickhouse>\n'
+        '```\n'
+        '\n'
+        'or \n'
+        '\n'
+        '```xml\n'
+        '<clickhouse>\n'
+        '    <remote_servers>\n'
+        '        <cluster>\n'
+        '            <shard>\n'
+        '                <internal_replication>true</internal_replication>\n'
+        '                <replica>\n'
+        '                    <default_database>dwh</default_database>\n'
+        '                    <host>host1</host>\n'
+        '                </replica>\n'
+        '            </shard>\n'
+        '            <shard>\n'
+        '                <internal_replication>true</internal_replication>\n'
+        '                <replica>\n'
+        '                    <default_database>dwh</default_database>\n'
+        '                    <host>host2</host>\n'
+        '                </replica>\n'
+        '            </shard>\n'
+        '        </cluster>\n'
+        '    </remote_servers>\n'
+        '</clickhouse>\n'
+        '```\n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.9.8.1')
+
 SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
     name='SRS-014 ClickHouse LDAP Role Mapping', 
     description=None,
@@ -1003,6 +1072,8 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithUTF8Characters', level=4, num='4.8.8.3'),
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialXMLCharacters', level=4, num='4.8.8.4'),
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialRegexCharacters', level=4, num='4.8.8.5'),
+        Heading(name='Cluster With And Without Secret', level=2, num='4.9'),
+        Heading(name='RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable', level=4, num='4.9.8.1'),
         Heading(name='References', level=1, num='5'),
         ),
     requirements=(
@@ -1056,6 +1127,7 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithUTF8Characters,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithSpecialXMLCharacters,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithSpecialRegexCharacters,
+        RQ_SRS_014_LDAP_ClusterWithAndWithoutSecret_DistributedTable,
         ),
     content='''
 # SRS-014 ClickHouse LDAP Role Mapping
@@ -1136,6 +1208,8 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
       * 4.8.8.3 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithUTF8Characters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithutf8characters)
       * 4.8.8.4 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialXMLCharacters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithspecialxmlcharacters)
       * 4.8.8.5 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialRegexCharacters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithspecialregexcharacters)
+  * 4.9 [Cluster With And Without Secret](#cluster-with-and-without-secret)
+      * 4.9.8.1 [RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable](#rqsrs-014ldapclusterwithandwithoutsecretdistributedtable)
 * 5 [References](#references)
 
 ## Revision History
@@ -1607,6 +1681,67 @@ version: 1.0
 
 [ClickHouse] SHALL support regex special characters as the value of the `<prefix>` parameter in
 the `<user directories><ldap><role_mapping>` section of the `config.xml`.
+
+### Cluster With And Without Secret
+
+##### RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable
+version: 1.0
+
+[ClickHouse] SHALL support propagating query user roles and their corresponding privileges
+when using `Distributed` table to the remote servers for the users that are authenticated
+using LDAP either via external user directory or defined in `users.xml` when
+cluster is configured with and without `<secret>`.
+
+For example,
+
+```xml
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <secret>qwerty123</secret>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host1</host>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host2</host>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>
+```
+
+or 
+
+```xml
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host1</host>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host2</host>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>
+```
 
 ## References
 
