@@ -715,16 +715,14 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
             if (is_valid_chain)
             {
-                /// Here we cast constant to the input type.
-                /// It is not clear, why this works in general.
-                /// I can imagine the case when expression like `column < const` is legal,
-                /// but `type(column)` and `type(const)` are of different types,
-                /// and const cannot be casted to column type.
-                /// (There could be `superType(type(column), type(const))` which is used for comparison).
-                ///
-                /// However, looks like this case newer happenes (I could not find such).
-                /// Let's assume that any two comparable types are castable to each other.
                 auto const_type = cur_node->result_type;
+
+                /// Try cast constant to the least super type of out_type and const_type. If there
+                /// is no super type, monotonic chains can be broken. Return false immediately.
+                const_type = tryGetLeastSupertype({out_type, const_type});
+                if (!const_type)
+                    return false;
+
                 auto const_column = out_type->createColumnConst(1, out_value);
                 auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
 
