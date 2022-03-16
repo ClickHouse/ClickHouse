@@ -96,7 +96,10 @@ private:
     /// Reader in progress with a list of read segments
     struct ReadWorker
     {
-        explicit ReadWorker(ReadBufferPtr reader_, const Range & range_) : reader(reader_), range(range_) { }
+        explicit ReadWorker(ReadBufferPtr reader_, const Range & range_)
+            : reader(reader_), range(range_), bytes_left(range_.to - range_.from)
+        {
+        }
 
         Segment nextSegment()
         {
@@ -111,6 +114,7 @@ private:
         std::deque<Segment> segments;
         bool finished{false};
         Range range;
+        size_t bytes_left{0};
     };
 
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;

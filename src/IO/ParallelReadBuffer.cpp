@@ -209,6 +209,11 @@ bool ParallelReadBuffer::nextImpl()
         if (!front_worker->segments.empty())
         {
             current_segment = front_worker->nextSegment();
+            if (currentWorkerCompleted())
+            {
+                read_workers.pop_front();
+                all_completed = !addReaderToPool(lock) && read_workers.empty();
+            }
             break;
         }
     }
@@ -238,25 +243,28 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
         while (!emergency_stop)
         {
             if (!read_worker->reader->next())
-            {
-                std::lock_guard lock(mutex);
-                read_worker->finished = true;
-                next_condvar.notify_all();
-                break;
-            }
+                throw Exception("Failed to read all the data from the reader", ErrorCodes::LOGICAL_ERROR);
 
             if (emergency_stop)
                 break;
 
             Buffer buffer = read_worker->reader->buffer();
-            Segment new_segment(buffer.size(), &arena);
-            memcpy(new_segment.data(), buffer.begin(), buffer.size());
-            read_worker->reader->ignore(buffer.size());
+            size_t bytes_to_copy = std::min(buffer.size(), read_worker->bytes_left);
+            Segment new_segment(bytes_to_copy, &arena);
+            memcpy(new_segment.data(), buffer.begin(), bytes_to_copy);
+            read_worker->reader->ignore(bytes_to_copy);
+            read_worker->bytes_left -= bytes_to_copy;
             {
                 /// New data ready to be read
                 std::lock_guard lock(mutex);
                 read_worker->segments.emplace_back(std::move(new_segment));
+                read_worker->finished = read_worker->bytes_left == 0;
                 next_condvar.notify_all();
+            }
+
+            if (read_worker->finished)
+            {
+                break;
             }
         }
     }

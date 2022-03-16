@@ -279,7 +279,7 @@ namespace
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 read_settings,
                                 headers,
-                                ReadWriteBufferFromHTTP::Range{},
+                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
                                 &context->getRemoteHostFilter(),
                                 true,
                                 /* use_external_buffer */ false,
@@ -294,7 +294,7 @@ namespace
                                 fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
 
 
-                            if (supports_ranges && res.hasContentLength())
+                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT && res.hasContentLength())
                             {
                                 LOG_TRACE(
                                     &Poco::Logger::get("StorageURLSource"),

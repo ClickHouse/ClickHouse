@@ -93,7 +93,7 @@ namespace detail
         /// HTTP range, including right bound [begin, end].
         struct Range
         {
-            size_t begin = 0;
+            std::optional<size_t> begin;
             std::optional<size_t> end;
         };
 
@@ -138,7 +138,9 @@ namespace detail
             return read_range.begin || read_range.end || retry_with_range_header;
         }
 
-        size_t getOffset() const { return read_range.begin + offset_from_begin_pos; }
+        size_t getRangeBegin() const { return read_range.begin.value_or(0); }
+
+        size_t getOffset() const { return getRangeBegin() + offset_from_begin_pos; }
 
         std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
@@ -198,7 +200,7 @@ namespace detail
         std::optional<size_t> getTotalSize() override
         {
             if (read_range.end)
-                return *read_range.end - read_range.begin;
+                return *read_range.end - getRangeBegin();
 
             Poco::Net::HTTPResponse response;
             for (size_t i = 0; i < 10; ++i)
@@ -227,7 +229,7 @@ namespace detail
             }
 
             if (response.hasContentLength())
-                read_range.end = read_range.begin + response.getContentLength();
+                read_range.end = getRangeBegin() + response.getContentLength();
 
             return read_range.end;
         }
@@ -381,13 +383,13 @@ namespace detail
             if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
-                if (read_range.begin)
+                if (read_range.begin && *read_range.begin != 0)
                 {
                     if (!exception)
                         exception = std::make_exception_ptr(Exception(
                             ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                             "Cannot read with range: [{}, {}]",
-                            read_range.begin,
+                            *read_range.begin,
                             read_range.end ? *read_range.end : '-'));
 
                     initialization_error = InitializeError::NON_RETRIABLE_ERROR;
@@ -397,12 +399,12 @@ namespace detail
                 {
                     /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
                     /// will affect only performance, so a warning is enough.
-                    LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin, *read_range.end);
+                    LOG_WARNING(log, "Unable to read with range header: [{}, {}]", getRangeBegin(), *read_range.end);
                 }
             }
 
             if (!offset_from_begin_pos && !read_range.end && response.hasContentLength())
-                read_range.end = read_range.begin + response.getContentLength();
+                read_range.end = getRangeBegin() + response.getContentLength();
 
             try
             {
