@@ -286,7 +286,23 @@ namespace
                                 /* skip_url_not_found_error */ skip_url_not_found_error);
 
                             Poco::Net::HTTPResponse res;
-                            buffer.call(res, Poco::Net::HTTPRequest::HTTP_HEAD);
+
+                            for (size_t i = 0; i < settings.http_max_tries; ++i)
+                            {
+                                try
+                                {
+                                    buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
+                                    break;
+                                }
+                                catch (...)
+                                {
+                                    if (!ReadWriteBufferFromHTTP::isRetriableError(res.getStatus()))
+                                    {
+                                        throw;
+                                    }
+                                }
+                            }
+
                             // to check if Range header is supported, we need to send a request with it set
                             const bool supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
                             LOG_TRACE(
@@ -294,7 +310,8 @@ namespace
                                 fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
 
 
-                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT && res.hasContentLength())
+                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
+                                && res.hasContentLength())
                             {
                                 LOG_TRACE(
                                     &Poco::Logger::get("StorageURLSource"),
@@ -324,11 +341,13 @@ namespace
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
-                        catch (...)
+                        catch (const Exception & e)
                         {
                             LOG_TRACE(
                                 &Poco::Logger::get(__PRETTY_FUNCTION__),
-                                "Failed to setup ParallelReadBuffer. Falling back to the single-threaded buffer");
+                                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\nFalling back to the single-threaded "
+                                "buffer",
+                                e.what());
                         }
                     }
 
@@ -611,15 +630,9 @@ Pipe IStorageURLBase::read(
         Pipes pipes;
         pipes.reserve(num_streams);
 
-        size_t remaining_download_threads = max_download_threads;
-
+        size_t download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
         for (size_t i = 0; i < num_streams; ++i)
         {
-            size_t current_need_download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
-            size_t current_download_threads = std::min(current_need_download_threads, remaining_download_threads);
-            remaining_download_threads -= current_download_threads;
-            current_download_threads = std::max(static_cast<size_t>(1), current_download_threads);
-
             pipes.emplace_back(std::make_shared<StorageURLSource>(
                 uri_info,
                 getReadMethod(),
@@ -633,7 +646,7 @@ Pipe IStorageURLBase::read(
                 max_block_size,
                 ConnectionTimeouts::getHTTPTimeouts(local_context),
                 compression_method,
-                current_download_threads,
+                download_threads,
                 headers,
                 params,
                 /* glob_url */ true));
