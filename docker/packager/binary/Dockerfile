@@ -105,4 +105,4 @@ RUN arch=${TARGETARCH:-amd64} \
   && rm /tmp/nfpm.deb
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["bash", "-c", "/build.sh 2>&1"]
