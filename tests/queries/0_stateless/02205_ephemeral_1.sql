@@ -12,6 +12,9 @@ SELECT * FROM t_ephemeral_02205_1;
 TRUNCATE TABLE t_ephemeral_02205_1;
 
 INSERT INTO t_ephemeral_02205_1 VALUES (DEFAULT, 2);
+SELECT * FROM t_ephemeral_02205_1;
+
+TRUNCATE TABLE t_ephemeral_02205_1;
 
 # Test INSERT using ephemerals default
 INSERT INTO t_ephemeral_02205_1 (x, y) VALUES (DEFAULT, DEFAULT);
