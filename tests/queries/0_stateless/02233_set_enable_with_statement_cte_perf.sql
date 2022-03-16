@@ -3,21 +3,17 @@ DROP TABLE IF EXISTS idx;
 
 CREATE TABLE ev (a Int32, b Int32) Engine=MergeTree() ORDER BY a;
 CREATE TABLE idx (a Int32) Engine=MergeTree() ORDER BY a;
-INSERT INTO ev SELECT number, number FROM numbers(100000000);
+INSERT INTO ev SELECT number, number FROM numbers(10000000);
 INSERT INTO idx SELECT number*5 FROM numbers(1000);
 
-SET enable_global_with_statement = 1;
-
 -- test_enable_global_with_statement_performance_1
-WITH 'test' AS u SELECT count()FROM ev WHERE a IN (SELECT a FROM idx);
+WITH 'test' AS u SELECT count()FROM ev WHERE a IN (SELECT a FROM idx) SETTINGS enable_global_with_statement = 1;
 
 -- test_enable_global_with_statement_performance_2
-SELECT count() FROM ev WHERE a IN (SELECT a FROM idx);
-
-SET enable_global_with_statement = 0;
+SELECT count() FROM ev WHERE a IN (SELECT a FROM idx) SETTINGS enable_global_with_statement = 1;
 
 -- test_enable_global_with_statement_performance_3
-WITH 'test' AS u SELECT count() FROM ev WHERE a IN (SELECT a FROM idx);
+WITH 'test' AS u SELECT count() FROM ev WHERE a IN (SELECT a FROM idx) SETTINGS enable_global_with_statement = 0;
 
 SYSTEM FLUSH LOGS;
 
