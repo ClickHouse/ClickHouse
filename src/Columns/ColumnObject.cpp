@@ -303,9 +303,9 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     }
 
     if (type_changed || info.need_convert)
-        field = convertFieldToTypeOrThrow(std::move(field), *value_type);
+        field = convertFieldToTypeOrThrow(field, *value_type);
 
-    data.back()->insert(std::move(field));
+    data.back()->insert(field);
 }
 
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
@@ -765,7 +765,7 @@ void ColumnObject::finalize()
             continue;
 
         entry->data.finalize();
-        new_subcolumns.add(entry->path, std::move(entry->data));
+        new_subcolumns.add(entry->path, entry->data);
     }
 
     /// If all subcolumns were skipped add a dummy subcolumn,
