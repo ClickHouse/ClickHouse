@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+exec &> >(ts)
 set -x -e
 
 cache_status () {
