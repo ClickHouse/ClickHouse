@@ -26,8 +26,6 @@ set_target_properties(clickhouse-library-bridge PROPERTIES RUNTIME_OUTPUT_DIRECT
 
 if (INSTALL_STRIPPED_BINARIES)
     clickhouse_strip_binary(TARGET clickhouse-library-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT} BINARY_PATH ../clickhouse-library-bridge)
-endif()
-
-if (NOT INSTALL_STRIPPED_BINARIES)
+else()
     install(TARGETS clickhouse-library-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
