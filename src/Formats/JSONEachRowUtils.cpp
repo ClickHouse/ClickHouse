@@ -169,6 +169,10 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
 
             value_type = type;
         }
+
+        if (!value_type)
+            return nullptr;
+
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
     }
 

@@ -76,7 +76,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         read_settings,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
         range,
-        context->getRemoteHostFilter(),
+        &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
 }
