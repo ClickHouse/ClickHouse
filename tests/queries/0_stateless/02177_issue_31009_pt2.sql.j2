@@ -25,7 +25,7 @@ FROM (
 ) GROUP BY key HAVING count(1) > 1
 ;
 
-SELECT count() == (SELECT count() from left) AND min(key == promo.key) == 1
+SELECT count() == (SELECT count() FROM left) AND min(key == promo.key) == 1
 FROM ( SELECT key FROM left AS s ) AS data
 ALL LEFT JOIN ( SELECT key FROM right GROUP BY key ) AS promo ON promo.key = data.key
 ;
