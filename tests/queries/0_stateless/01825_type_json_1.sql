@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET allow_experimental_object_type = 1;
+
 DROP TABLE IF EXISTS t_json;
 
 CREATE TABLE t_json(id UInt64, data Object('JSON'))
@@ -79,3 +81,5 @@ WHERE table = 't_json' AND database = currentDatabase() AND active AND column = 
 ORDER BY name;
 
 DROP TABLE IF EXISTS t_json;
+
+CREATE TABLE t_json(id UInt64, data Object('JSON')) ENGINE = Log; -- { serverError 44 }
