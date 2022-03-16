@@ -4,7 +4,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -242,15 +241,16 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
 
     std::unordered_map<String, DataTypePtr> names_and_types;
     StringRef name_ref;
-    String name_tmp;
+    String name;
     String value;
     do
     {
-        bool has_value = readName(in, name_ref, name_tmp);
+        bool has_value = readName(in, name_ref, name);
+        name = String(name_ref);
         if (has_value)
         {
             readEscapedString(value, in);
-            names_and_types[String(name_ref)] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
+            names_and_types[name] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
         }
         else
         {
