@@ -460,10 +460,6 @@ else ()
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
     endif ()
 
-    if (NOT INSTALL_STRIPPED_BINARIES)
-        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-    endif()
-
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
     if (USE_GDB_ADD_INDEX)
@@ -476,9 +472,17 @@ else ()
 
     if (INSTALL_STRIPPED_BINARIES)
         clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT} BINARY_PATH clickhouse)
+    else()
+        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()
 
+if (NOT INSTALL_STRIPPED_BINARIES)
+    # Install dunny debug directory
+    # TODO: move logic to every place where clickhouse_strip_binary is used
+    add_custom_command(TARGET clickhouse POST_BUILD COMMAND echo > .empty )
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/.empty" DESTINATION ${CMAKE_INSTALL_LIBDIR}/debug/.empty)
+endif()
 
 
 if (ENABLE_TESTS)
