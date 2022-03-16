@@ -1979,9 +1979,8 @@ void ClientBase::readArguments(
         }
         /// Options with value after equal sign.
         else if (in_external_group
-            && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
-                || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
-                || 0 == strncmp(arg, "--types=", strlen("--types="))))
+            && (arg == "--file="sv || arg == "--name="sv || arg == "--format="sv
+                || arg == "--structure="sv || arg == "--types="sv))
         {
             external_tables_arguments.back().emplace_back(arg);
         }
