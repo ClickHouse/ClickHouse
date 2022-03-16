@@ -932,6 +932,8 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
+            global_context->setRemoteHostFilter(*config);
+
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
                 global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
@@ -1067,9 +1069,10 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
-    ///set the allow_plaintext_and_no_password setting in context.
-    access_control.setPlaintextPasswordSetting(config().getBool("allow_plaintext_password", true));
-    access_control.setNoPasswordSetting(config().getBool("allow_no_password", true));
+
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
+
     /// Initialize access storages.
     try
     {

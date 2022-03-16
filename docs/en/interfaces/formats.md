@@ -64,7 +64,7 @@ The supported formats are:
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✔      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 | [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
