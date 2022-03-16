@@ -151,6 +151,7 @@ public:
     explicit LocalExecutor(QueryContext& _query_context);
     void execute(QueryPlanPtr query_plan);
     local_engine::SparkRowInfoPtr next();
+    Block& nextColumnar();
     bool hasNext();
     ~LocalExecutor()
     {
@@ -170,6 +171,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
     std::unique_ptr<local_engine::CHColumnToSparkRow> ch_column_to_spark_row;
+    std::unique_ptr<Block> columnar_batch;
     std::unique_ptr<Block> current_chunk;
     std::unique_ptr<SparkBuffer> spark_buffer;
 };

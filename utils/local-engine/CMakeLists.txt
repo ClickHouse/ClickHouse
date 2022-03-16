@@ -15,6 +15,7 @@ add_headers_and_sources(parser Parser)
 add_headers_and_sources(storages Storages)
 add_headers_and_sources(common Common)
 add_headers_and_sources(external External)
+add_headers_and_sources(shuffle Shuffle)
 
 include_directories(
         ${JNI_INCLUDE_DIRS}
@@ -31,6 +32,7 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${storages_sources}
         ${common_sources}
         ${external_sources}
+        ${shuffle_sources}
         local_engine_jni.cpp
         )
 

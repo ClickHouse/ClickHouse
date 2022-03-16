@@ -560,6 +560,13 @@ local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
     this->spark_buffer->size = row_info->getTotalBytes();
     return row_info;
 }
+
+Block& dbms::LocalExecutor::nextColumnar()
+{
+    this->columnar_batch = std::move(this->current_chunk);
+    return * this->columnar_batch;
+}
+
 DB::Block & dbms::LocalExecutor::getHeader()
 {
     return header;
