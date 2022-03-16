@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -309,8 +310,12 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
 }
 
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
+}
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, const String & table_name)
+void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
@@ -360,11 +365,6 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, cons
         }
 
         materialized_tables.erase(table_name);
-        return nullptr;
-    }
-    else
-    {
-        return DatabaseAtomic::detachTable(context_, table_name);
     }
 }
 
