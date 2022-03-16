@@ -2,8 +2,8 @@
 
 #### Backward Incompatible Change
 
-* Make arrayCompact behave as other higher-order functions: perform compaction not of lambda function results but on original array. If you using nontrivial lambda functions in arrayCompact you may restore old behaviour by wrapping arrayCompact arguments into arrayMap. Closes [#34010](https://github.com/ClickHouse/ClickHouse/issues/34010) [#18535](https://github.com/ClickHouse/ClickHouse/issues/18535) [#14778](https://github.com/ClickHouse/ClickHouse/issues/14778). [#34795](https://github.com/ClickHouse/ClickHouse/pull/34795) ([Alexandre Snarskii](https://github.com/snar)).
-* Fix the bug that the toDatetime function overflows. When the date string is very large, it will be converted to 1970. [#32898](https://github.com/ClickHouse/ClickHouse/pull/32898) ([HaiBo Li](https://github.com/marising)).
+* Make `arrayCompact` function behave as other higher-order functions: perform compaction not of lambda function results but on the original array. If you're using nontrivial lambda functions in arrayCompact you may restore old behaviour by wrapping `arrayCompact` arguments into `arrayMap`. Closes [#34010](https://github.com/ClickHouse/ClickHouse/issues/34010) [#18535](https://github.com/ClickHouse/ClickHouse/issues/18535) [#14778](https://github.com/ClickHouse/ClickHouse/issues/14778). [#34795](https://github.com/ClickHouse/ClickHouse/pull/34795) ([Alexandre Snarskii](https://github.com/snar)).
+* Change implementation specific behavior on overflow of function `toDatetime`. It will be saturated to the min/max supported instant of datetime instead of wraparound. This change is highlighted as "backward incompatible" because someone may unintentionally rely on the old behavior. [#32898](https://github.com/ClickHouse/ClickHouse/pull/32898) ([HaiBo Li](https://github.com/marising)).
 
 #### New Feature
 
