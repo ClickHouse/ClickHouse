@@ -1,4 +1,4 @@
-### ClickHouse release master FIXME as compared to v22.2.3.5-stable
+### ClickHouse release v22.3-lts, 2022-03-17
 
 #### Backward Incompatible Change
 
