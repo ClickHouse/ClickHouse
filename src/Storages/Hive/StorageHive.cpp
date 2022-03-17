@@ -590,7 +590,7 @@ void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & hea
 }
 Pipe StorageHive::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -654,7 +654,7 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    const auto & header_block = metadata_snapshot->getSampleBlock();
+    const auto & header_block = storage_snapshot->metadata->getSampleBlock();
     Block sample_block;
     for (const auto & column : column_names)
     {
