@@ -19,6 +19,7 @@
 
 #### Experimental Feature
 
+* New data type `Object(<schema_format>)`, which supports storing of semi-structured data (for now JSON only). Data is written to such types as string. Then all paths are extracted according to format of semi-structured data and written as separate columns in most optimal types, that can store all their values. Those columns can be queried by names that match paths in source data. E.g `data.key1.key2` or with cast operator `data.key1.key2::Int64`.
 * Add `database_replicated_allow_only_replicated_engine` setting. When enabled, it only allowed to only create `Replicated` tables or tables with stateless engines in `Replicated` databases. [#35214](https://github.com/ClickHouse/ClickHouse/pull/35214) ([Nikolai Kochetov](https://github.com/KochetovNicolai)). Note that `Replicated` database is still an experimental feature.
 
 #### Performance Improvement
@@ -26,7 +27,7 @@
 * Improve performance of insertion into `MergeTree` tables by optimizing sorting. Up to 2x improvement is observed on realistic benchmarks. [#34750](https://github.com/ClickHouse/ClickHouse/pull/34750) ([Maksim Kita](https://github.com/kitaisreal)).
 * Columns pruning when reading Parquet, ORC and Arrow files from URL and S3. Closes [#34163](https://github.com/ClickHouse/ClickHouse/issues/34163). [#34849](https://github.com/ClickHouse/ClickHouse/pull/34849) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Columns pruning when reading Parquet, ORC and Arrow files from Hive. [#34954](https://github.com/ClickHouse/ClickHouse/pull/34954) ([lgbo](https://github.com/lgbo-ustc)).
-* A bunch of performance optimizations from a performance superhero. Improve performance of processing queries with large `IN` section. Improve performance of `DirectDictionary` if dictionary source is `ClickHouse`. Improve performance of `detectCharset `, `detectLanguageUnknown ` functions. [#34888](https://github.com/ClickHouse/ClickHouse/pull/34888) ([Maksim Kita](https://github.com/kitaisreal)).
+* A bunch of performance optimizations from a performance superhero. Improve performance of processing queries with large `IN` section. Improve performance of `direct` dictionary if its source is `ClickHouse`. Improve performance of `detectCharset `, `detectLanguageUnknown ` functions. [#34888](https://github.com/ClickHouse/ClickHouse/pull/34888) ([Maksim Kita](https://github.com/kitaisreal)).
 * Improve performance of `any` aggregate function by using more batching. [#34760](https://github.com/ClickHouse/ClickHouse/pull/34760) ([Raúl Marín](https://github.com/Algunenano)).
 * Multiple improvements for performance of `clickhouse-keeper`: less locking [#35010](https://github.com/ClickHouse/ClickHouse/pull/35010) ([zhanglistar](https://github.com/zhanglistar)), lower memory usage by streaming reading and writing of snapshot instead of full copy. [#34584](https://github.com/ClickHouse/ClickHouse/pull/34584) ([zhanglistar](https://github.com/zhanglistar)), optimizing compaction of log store in the RAFT implementation. [#34534](https://github.com/ClickHouse/ClickHouse/pull/34534) ([zhanglistar](https://github.com/zhanglistar)), versioning of the internal data structure [#34486](https://github.com/ClickHouse/ClickHouse/pull/34486) ([zhanglistar](https://github.com/zhanglistar)).
 
@@ -71,6 +72,7 @@
 
 #### Build/Testing/Packaging Improvement
 
+* Package repository is migrated to JFrog Artifactory (**Mikhail f. Shiryaev**).
 * Randomize some settings in functional tests, so more possible combinations of settings will be tested. This is yet another fuzzing method to ensure better test coverage. This closes [#32268](https://github.com/ClickHouse/ClickHouse/issues/32268). [#34092](https://github.com/ClickHouse/ClickHouse/pull/34092) ([Kruglov Pavel](https://github.com/Avogar)).
 * Drop PVS-Studio from our CI. [#34680](https://github.com/ClickHouse/ClickHouse/pull/34680) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 * Add an ability to build stripped binaries with CMake. In previous versions it was performed by dh-tools. [#35196](https://github.com/ClickHouse/ClickHouse/pull/35196) ([alesapin](https://github.com/alesapin)).
