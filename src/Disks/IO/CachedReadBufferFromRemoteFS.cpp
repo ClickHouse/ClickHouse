@@ -96,13 +96,20 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
 
             if (remote_fs_segment_reader)
             {
-                if (remote_fs_segment_reader->hasPendingData())
-                {
-                    remote_fs_segment_reader = remote_file_reader_creator();
-                    file_segment->setRemoteFileReader(remote_fs_segment_reader);
-                }
+                /// There might be pending data if some previous downloader has downloaded the data, but
+                /// failed to fully write it.
+                if (!remote_fs_segment_reader->hasPendingData())
+                    return remote_fs_segment_reader;
 
-                return remote_fs_segment_reader;
+                /// TODO: Finish this.
+                // if (remote_fs_segment_reader->getPosition() >= file_offset_of_buffer_end)
+                // {
+                //     auto to_ignore = remote_fs_segment_reader->getFileOffsetOfBufferEnd() - file_offset_of_buffer_end;
+                //     remote_fs_segment_reader->ignore(to_ignore);
+                //     return remote_fs_segment_reader;
+                // }
+
+                file_segment->resetRemoteFileReader();
             }
 
             remote_fs_segment_reader = remote_file_reader_creator();
