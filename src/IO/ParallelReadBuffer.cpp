@@ -44,11 +44,25 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
         [&, this, worker = std::move(worker)]() mutable
         {
             ThreadStatus thread_status;
+
+            {
+                std::lock_guard lock{mutex};
+                ++active_working_reader;
+            }
+
+            SCOPE_EXIT({
+                worker_cleanup(thread_status);
+
+                std::lock_guard lock{mutex};
+                --active_working_reader;
+                if (active_working_reader == 0)
+                {
+                    readers_done.notify_all();
+                }
+            });
             worker_setup(thread_status);
 
             readerThreadFunction(std::move(worker));
-
-            worker_cleanup(thread_status);
         });
     return true;
 }
@@ -217,20 +231,6 @@ bool ParallelReadBuffer::nextImpl()
 
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
-    {
-        std::lock_guard lock{mutex};
-        ++active_working_reader;
-    }
-
-    SCOPE_EXIT({
-        std::lock_guard lock{mutex};
-        --active_working_reader;
-        if (active_working_reader == 0)
-        {
-            readers_done.notify_all();
-        }
-    });
-
     try
     {
         while (!emergency_stop)

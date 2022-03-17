@@ -67,8 +67,6 @@ private:
     };
 
 public:
-    SeekableReadBufferPtr read_buffer;
-
     class ReadBufferFactory
     {
     public:
