@@ -93,7 +93,6 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
-public:
     int64_t session_id_counter{1};
 
     SessionAndAuth session_and_auth;
@@ -133,7 +132,6 @@ public:
 
     const String superdigest;
 
-public:
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
 
     /// Allocate new session id with the specified timeouts
@@ -191,7 +189,7 @@ public:
     }
 
     /// Get all dead sessions
-    std::vector<int64_t> getDeadSessions()
+    std::vector<int64_t> getDeadSessions() const
     {
         return session_expiry_queue.getExpiredSessions();
     }

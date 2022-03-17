@@ -932,6 +932,8 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->loadOrReloadModels(*config);
             global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
+            global_context->setRemoteHostFilter(*config);
+
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
                 global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
@@ -995,6 +997,11 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
+        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        {
+            return global_context->getConfigRef();
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1013,7 +1020,11 @@ if (ThreadFuzzer::instance().isEffective())
                         port_name,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout,
+                                global_context->getSettingsRef().send_timeout,
+                                false), server_pool, socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1032,7 +1043,10 @@ if (ThreadFuzzer::instance().isEffective())
                         secure_port_name,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout,
+                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -1055,6 +1069,9 @@ if (ThreadFuzzer::instance().isEffective())
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
 
     /// Initialize access storages.
     try

@@ -183,7 +183,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         upload_part_size_multiply_parts_count_threshold,
         max_single_part_upload_size,
         max_connections,
-        getActualTableStructure(context),
+        columns,
         ConstraintsDescription{},
         String{},
         context,

@@ -55,9 +55,9 @@ void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
     writeChar('\n', out);
-    size_t num_columns = columns.size();
+    size_t columns_size = columns.size();
     writeRowStartDelimiter();
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < columns_size; ++i)
     {
         if (i != 0)
             writeFieldDelimiter();

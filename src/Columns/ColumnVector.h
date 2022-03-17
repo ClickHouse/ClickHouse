@@ -117,7 +117,9 @@ private:
     friend class COWHelper<ColumnVectorHelper, Self>;
 
     struct less;
+    struct less_stable;
     struct greater;
+    struct greater_stable;
     struct equals;
 
 public:
@@ -125,8 +127,8 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() {}
-    ColumnVector(const size_t n) : data(n) {}
+    ColumnVector() = default;
+    explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
@@ -228,9 +230,11 @@ public:
         return this->template hasEqualValuesImpl<Self>();
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
     void reserve(size_t n) override
     {

@@ -226,6 +226,10 @@ def test_predefined_connection_configuration(started_cluster):
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
+
+    result = node1.query("select create_table_query from system.tables where database ='postgres_database'")
+    assert(result.strip().endswith("ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"))
+
     node1.query("INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)")
     assert (node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip() == '100')
 
