@@ -69,8 +69,7 @@ public:
 
         if (!isFloat(arguments[4].type))
         {
-            throw Exception{
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The fifth argument {} of function {} should be a float,",
                 arguments[4].type->getName(),
                 getName()};
@@ -79,8 +78,7 @@ public:
         /// There is an additional check for constancy in ExecuteImpl
         if (!isString(arguments[5].type) || !arguments[5].column)
         {
-            throw Exception{
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The sixth argument {} of function {} should be a constant string",
                 arguments[5].type->getName(),
                 getName()};
@@ -119,8 +117,7 @@ public:
         String usevar = checkAndGetColumnConst<ColumnString>(arguments[5].column.get())->getValue<String>();
 
         if (usevar != UNPOOLED && usevar != POOLED)
-            throw Exception{
-                ErrorCodes::BAD_ARGUMENTS,
+            throw Exception{ErrorCodes::BAD_ARGUMENTS,
                 "The sixth argument {} of function {} must be equal to `pooled` or `unpooled`",
                 arguments[5].type->getName(),
                 getName()};
