@@ -10,6 +10,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/ASTOrderByElement.h>
 
 
 namespace DB
@@ -59,12 +60,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows("ROWS");
     ParserKeyword s_first("FIRST");
     ParserKeyword s_next("NEXT");
+    ParserKeyword s_interpolate("INTERPOLATE");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
+    ParserInterpolateExpressionList interpolate_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -78,6 +81,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr having_expression;
     ASTPtr window_list;
     ASTPtr order_expression_list;
+    ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
     ASTPtr limit_by_offset;
     ASTPtr limit_by_expression_list;
@@ -239,6 +243,21 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!order_list.parse(pos, order_expression_list, expected))
             return false;
+
+        /// if any WITH FILL parse possible INTERPOLATE list
+        if ( std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }) )
+        {
+            if (s_interpolate.ignore(pos, expected))
+            {
+                if (!open_bracket.ignore(pos, expected))
+                    return false;
+                if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                    return false;
+                if (!close_bracket.ignore(pos, expected))
+                    return false;
+            }
+        }
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
@@ -430,6 +449,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
+    select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;
 }
 

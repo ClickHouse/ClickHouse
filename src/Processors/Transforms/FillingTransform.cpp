@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description)
+Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description/*, const InterpolateDescription & interpolate_description*/)
 {
     NameSet sort_keys;
     for (const auto & key : sort_description)
@@ -140,12 +140,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, bool on_totals_)
-        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
+        const Block & header_, const SortDescription & sort_description_, const InterpolateDescription & interpolate_description_, bool on_totals_)
+        : ISimpleTransform(header_, transformHeader(header_, sort_description_/*, interpolate_description_*/), true)
         , sort_description(sort_description_)
+        , interpolate_description(interpolate_description_)
         , on_totals(on_totals_)
-        , filling_row(sort_description_)
-        , next_row(sort_description_)
+        , filling_row(sort_description_, interpolate_description_)
+        , next_row(sort_description_, interpolate_description_)
 {
     if (on_totals)
         return;
@@ -173,6 +174,29 @@ FillingTransform::FillingTransform(
         }
     }
 
+    for (size_t i = 0, size = interpolate_description.size(); i < size; ++i)
+    {
+        size_t block_position = header_.getPositionByName(interpolate_description[i].column.name);
+        is_fill_column[block_position] = true;
+        fill_column_positions.push_back(block_position);
+/* TODO JOO check types?
+        auto & descr = filling_row.getFillDescription(i);
+        const auto & type = header_.getByPosition(block_position).type;
+
+        if (!tryConvertFields(descr, type))
+            throw Exception("Incompatible types of WITH FILL expression values with column type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (type->isValueRepresentedByUnsignedInteger() &&
+            ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
+                (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
+        {
+            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+*/        
+    }
+
     std::set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
         if (!unique_positions.insert(pos).second)
@@ -189,8 +213,8 @@ IProcessor::Status FillingTransform::prepare()
     {
         should_insert_first = next_row < filling_row || first;
 
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-            next_row[i] = filling_row.getFillDescription(i).fill_to;
+        for (size_t i = 0, size = filling_row.sort.size(); i < size; ++i)
+            next_row.sort[i] = filling_row.getFillDescription(i).fill_to;
 
         if (first || filling_row < next_row)
         {
@@ -251,7 +275,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (first)
     {
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0; i < filling_row.sort.size(); ++i)
         {
             auto current_value = (*old_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
@@ -272,7 +296,7 @@ void FillingTransform::transform(Chunk & chunk)
     {
         should_insert_first = next_row < filling_row;
 
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0; i < filling_row.sort.size(); ++i)
         {
             auto current_value = (*old_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
@@ -288,9 +312,23 @@ void FillingTransform::transform(Chunk & chunk)
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
+        /// Update interpolate fields
+        for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
+            filling_row.getInterpolateDescription(i - filling_row.sort.size()).interpolate(next_row[i]);
+
         /// Insert generated filling row to block, while it is less than current row in block.
         while (filling_row.next(next_row))
+        {
+            /// Update interpolate fields
+            for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
+                filling_row.getInterpolateDescription(i - filling_row.sort.size()).interpolate(next_row[i]);
+
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
+        }
+
+        /// Reset interpolate fields
+        for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
+            next_row[i] = (*old_fill_columns[i])[row_ind];
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
         copyRowFromColumns(res_other_columns, old_other_columns, row_ind);

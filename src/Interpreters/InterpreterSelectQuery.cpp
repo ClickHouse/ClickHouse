@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -825,6 +826,23 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     }
 
     return order_descr;
+}
+
+static InterpolateDescription getInterpolateDescription(const ASTSelectQuery & query, Block block, ContextPtr context)
+{
+    InterpolateDescription interpolate_descr;
+    interpolate_descr.reserve(query.interpolate()->children.size());
+
+    for (const auto & elem : query.interpolate()->children)
+    {
+        auto interpolate = elem->as<ASTInterpolateElement &>();
+        auto syntax_result = TreeRewriter(context).analyze(interpolate.expr, block.getNamesAndTypesList());
+        ExpressionAnalyzer analyzer(interpolate.expr, syntax_result, context);
+        ExpressionActionsPtr actions = analyzer.getActions(true, true, CompileExpressions::yes);
+        interpolate_descr.emplace_back(block.findByName(interpolate.column->getColumnName())->cloneEmpty(), actions);
+    }
+
+    return interpolate_descr;
 }
 
 static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
@@ -2498,7 +2516,8 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         if (fill_descr.empty())
             return;
 
-        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr));
+        InterpolateDescription interpolate_descr = getInterpolateDescription(query, source_header, context);
+        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), std::move(interpolate_descr));
         query_plan.addStep(std::move(filling_step));
     }
 }

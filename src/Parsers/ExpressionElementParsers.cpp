@@ -16,6 +16,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -2308,6 +2309,32 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);
+
+    node = elem;
+
+    return true;
+}
+
+bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword as("AS");
+    ParserExpression element_p;
+    ParserIdentifier ident_p;
+
+    ASTPtr ident;
+    if (!ident_p.parse(pos, ident, expected))
+        return false;
+
+    if (!as.ignore(pos, expected))
+        return false;
+
+    ASTPtr expr;
+    if (!element_p.parse(pos, expr, expected))
+        return false;
+    
+    auto elem = std::make_shared<ASTInterpolateElement>();
+    elem->column = ident;
+    elem->expr = expr;
 
     node = elem;
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/SortDescription.h>
+#include <Core/InterpolateDescription.h>
 #include <Columns/IColumn.h>
 
 
@@ -17,7 +18,23 @@ bool equals(const Field & lhs, const Field & rhs);
 class FillingRow
 {
 public:
-    FillingRow(const SortDescription & sort_description);
+    struct {
+        FillingRow & filling_row;
+
+        Field & operator[](size_t index) { return filling_row.row[index]; }
+        const Field & operator[](size_t index) const { return filling_row.row[index]; }
+        size_t size() const { return filling_row.sort_description.size(); }
+    } sort;
+
+    struct {
+        FillingRow & filling_row;
+
+        Field & operator[](size_t index) { return filling_row.row[filling_row.sort_description.size() + index]; }
+        const Field & operator[](size_t index) const { return filling_row.row[filling_row.sort_description.size() + index]; }
+        size_t size() const { return filling_row.interpolate_description.size(); }
+    } interpolate;
+public:
+    FillingRow(const SortDescription & sort_description, const InterpolateDescription & interpolate_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
     bool next(const FillingRow & to_row);
@@ -30,12 +47,14 @@ public:
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
 
-    int getDirection(size_t index) const { return description[index].direction; }
-    FillColumnDescription & getFillDescription(size_t index) { return description[index].fill_description; }
+    int getDirection(size_t index) const { return sort_description[index].direction; }
+    FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
+    InterpolateColumnDescription & getInterpolateDescription(size_t index) { return interpolate_description[index]; }
 
 private:
     Row row;
-    SortDescription description;
+    SortDescription sort_description;
+    InterpolateDescription interpolate_description;
 };
 
 void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & other_columns, const FillingRow & filling_row);
