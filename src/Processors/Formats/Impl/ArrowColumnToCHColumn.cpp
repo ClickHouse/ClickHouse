@@ -32,6 +32,7 @@
 #include <arrow/builder.h>
 #include <arrow/array.h>
 
+
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
@@ -65,8 +66,8 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
+
 
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
@@ -531,9 +532,6 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
 
 void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
-    if (unlikely(name_to_column_ptr.empty()))
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
-
     Columns columns_list;
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.rows());
