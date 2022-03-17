@@ -33,22 +33,13 @@ struct InterpolateColumnDescription
 
     ColumnWithTypeAndName column;
     ExpressionActionsPtr actions;
-  //  ExecutableFunctionExpression interpolate_func;
-   // std::string column_name; /// The name of the column.
- //   size_t column_number;    /// Column number (used if no name is given).
-
-
 
     explicit InterpolateColumnDescription(const ColumnWithTypeAndName & column_, ExpressionActionsPtr actions_) :
         column(column_), actions(actions_) {}
 
-  //  explicit InterpolateColumnDescription(size_t column_number_, const ASTInterpolateElement & /*ast*/) : column_number(column_number_) {}
-
- //   explicit InterpolateColumnDescription(const std::string & column_name_, const ASTInterpolateElement & /*ast*/) : column_name(column_name_), column_number(0) {}
-
     bool operator == (const InterpolateColumnDescription & other) const
     {
-        return column == other.column;// && column_number == other.column_number;
+        return column == other.column;
     }
 
     bool operator != (const InterpolateColumnDescription & other) const

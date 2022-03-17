@@ -7,9 +7,9 @@
 namespace DB
 {
 
+/// TODO JOO
 void ASTInterpolateElement::formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
 {
-    
 }
 
 }
