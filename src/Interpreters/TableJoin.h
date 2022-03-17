@@ -109,7 +109,7 @@ private:
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
-    JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
+    MultiEnum<JoinAlgorithm> join_algorithm = MultiEnum<JoinAlgorithm>(JoinAlgorithm::AUTO);
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -193,13 +193,18 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
-    bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
-    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
-    bool allowParallelHashJoin() const;
+
+    bool isAllowedAlgorithm(JoinAlgorithm val) const { return join_algorithm.isSet(val) || join_algorithm.isSet(JoinAlgorithm::AUTO); }
+    bool isForcedAlgorithm(JoinAlgorithm val) const { return join_algorithm == MultiEnum<JoinAlgorithm>(val); }
+
+    bool preferMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PREFER_PARTIAL_MERGE); }
+    bool forceMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARTIAL_MERGE); }
     bool forceHashJoin() const
     {
         /// HashJoin always used for DictJoin
-        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH || join_algorithm == JoinAlgorithm::PARALLEL_HASH;
+        return dictionary_reader
+            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::HASH)
+            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
     }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
