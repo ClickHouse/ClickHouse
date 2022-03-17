@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import re
-from typing import Tuple
+from typing import List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
@@ -283,21 +283,21 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_deb(s3: S3, art_client: Artifactory):
+def process_deb(s3: S3, art_clients: List[Artifactory]):
     s3.download_deb()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_deb(s3.packages)
 
 
-def process_rpm(s3: S3, art_client: Artifactory):
+def process_rpm(s3: S3, art_clients: List[Artifactory]):
     s3.download_rpm()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_rpm(s3.packages)
 
 
-def process_tgz(s3: S3, art_client: Artifactory):
+def process_tgz(s3: S3, art_clients: List[Artifactory]):
     s3.download_tgz()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_tgz(s3.packages)
 
 
@@ -313,16 +313,18 @@ def main():
         args.release.version,
         args.force_download,
     )
-    art_client = None
+    art_clients = []
     if args.artifactory:
-        art_client = Artifactory(args.artifactory_url, args.release.type)
+        art_clients.append(Artifactory(args.artifactory_url, args.release.type))
+        if args.release.type == "lts":
+            art_clients.append(Artifactory(args.artifactory_url, "stable"))
 
     if args.deb:
-        process_deb(s3, art_client)
+        process_deb(s3, art_clients)
     if args.rpm:
-        process_rpm(s3, art_client)
+        process_rpm(s3, art_clients)
     if args.tgz:
-        process_tgz(s3, art_client)
+        process_tgz(s3, art_clients)
 
 
 if __name__ == "__main__":
