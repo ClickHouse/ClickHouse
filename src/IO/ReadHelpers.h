@@ -602,6 +602,12 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+/// Reads chunk of data between {} in that way,
+/// that it has balanced parentheses sequence of {}.
+/// So, it may form a JSON object, but it can be incorrenct.
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
@@ -967,8 +973,8 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+requires is_arithmetic_v<T>
+inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -983,8 +989,8 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
 
@@ -999,8 +1005,8 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 }
 
 template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+requires is_big_int_v<T>
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
@@ -1035,8 +1041,8 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
@@ -1064,8 +1070,8 @@ inline void readQuoted(UUID & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
+requires is_arithmetic_v<T>
+inline void readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
@@ -1102,7 +1108,8 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void> readCSV(T & x, ReadBuffer & buf)
+requires is_arithmetic_v<T>
+inline void readCSV(T & x, ReadBuffer & buf)
 {
     readCSVSimple(x, buf);
 }

@@ -129,6 +129,7 @@ private:
         MergeTreeDataMergerMutator * mutator{nullptr};
         ActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
+        StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
