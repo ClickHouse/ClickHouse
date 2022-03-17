@@ -174,16 +174,23 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
 
+    if (downloaded_size == range().size())
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                        "Attempt to write {} bytes to offset: {}, but current file segment is already fully downloaded",
+                        size, offset_);
+
     auto download_offset = range().left + downloaded_size;
     if (offset_ != download_offset)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                        "Attempt to write {} bytes to offset: {}, but current download offset is {} ({})",
+                        "Attempt to write {} bytes to offset: {}, but current download offset is {}",
                         size, offset_, download_offset);
 
     if (!cache_writer)
     {
         if (downloaded_size > 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer should be finalized (downloaded size: {})", downloaded_size);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cache writer should be finalized (downloaded size: {}, state: {})",
+                            downloaded_size, stateToString(download_state));
 
         auto download_path = cache->getPathInLocalCache(key(), offset());
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
@@ -201,7 +208,9 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     }
     catch (...)
     {
-        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLog());
+        std::lock_guard segment_lock(mutex);
+
+        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLogImpl(segment_lock));
 
         download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
