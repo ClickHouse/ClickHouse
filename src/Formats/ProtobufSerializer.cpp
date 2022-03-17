@@ -2399,7 +2399,7 @@ namespace
     };
 
     /// Serializes a top-level envelope message in the protobuf schema.
-    /// "Envelope" means that the contained subtree of serializers is encosed in a message just once,
+    /// "Envelope" means that the contained subtree of serializers is enclosed in a message just once,
     /// i.e. only when the first and the last row read/write trigger a read/write of the msg header.
     class ProtobufSerializerEnvelope : public ProtobufSerializer
     {
@@ -2455,7 +2455,7 @@ namespace
             }
 
             int field_tag;
-            bool ret = reader->readFieldNumber(field_tag);
+            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
             assert(ret);
 
             serializer->readRow(row_num);
