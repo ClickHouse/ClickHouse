@@ -1143,6 +1143,34 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     return joined_plan;
 }
 
+std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
+{
+    if (!isInnerOrLeft(analyzed_join->kind()))
+        return nullptr;
+
+    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All)
+        return nullptr;
+
+    auto storage = analyzed_join->getStorageKeyValue();
+    if (!storage)
+        return nullptr;
+
+    const auto & clauses = analyzed_join->getClauses();
+    bool only_one_key = clauses.size() == 1 &&
+        clauses[0].key_names_left.size() == 1 &&
+        clauses[0].key_names_right.size() == 1 &&
+        !clauses[0].on_filter_condition_left &&
+        !clauses[0].on_filter_condition_right;
+
+    if (!only_one_key)
+        return nullptr;
+
+    if (storage->getPrimaryKey() != clauses[0].key_names_right[0])
+        return nullptr;
+
+    return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
+}
+
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     const ASTTablesInSelectQueryElement & join_element,
     const ColumnsWithTypeAndName & left_columns,
@@ -1176,12 +1204,10 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    if (auto storage = analyzed_join->getStorageKeyValue())
+    if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
     {
-        Block rblock = right_sample_block;
         joined_plan.reset();
-        /// TODO: (vdimir@) check that we can perform this join (keys and so on)
-        return std::make_shared<DirectKeyValueJoin>(analyzed_join, rblock, storage);
+        return kvjoin;
     }
 
     JoinPtr join = chooseJoinAlgorithm(analyzed_join, right_sample_block, getContext());
