@@ -1,7 +1,9 @@
 #include <Interpreters/RowRefs.h>
 
-#include <base/types.h>
+#include <AggregateFunctions/Helpers.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -18,27 +20,21 @@ namespace
 
 /// maps enum values to types
 template <typename F>
-void callWithType(TypeIndex which, F && f)
+void callWithType(TypeIndex type, F && f)
 {
-    switch (which)
-    {
-        case TypeIndex::UInt8:  return f(UInt8());
-        case TypeIndex::UInt16: return f(UInt16());
-        case TypeIndex::UInt32: return f(UInt32());
-        case TypeIndex::UInt64: return f(UInt64());
-        case TypeIndex::Int8:   return f(Int8());
-        case TypeIndex::Int16:  return f(Int16());
-        case TypeIndex::Int32:  return f(Int32());
-        case TypeIndex::Int64:  return f(Int64());
-        case TypeIndex::Float32: return f(Float32());
-        case TypeIndex::Float64: return f(Float64());
-        case TypeIndex::Decimal32: return f(Decimal32());
-        case TypeIndex::Decimal64: return f(Decimal64());
-        case TypeIndex::Decimal128: return f(Decimal128());
-        case TypeIndex::DateTime64: return f(DateTime64());
-        default:
-            break;
-    }
+    WhichDataType which(type);
+
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return f(TYPE());
+
+    FOR_NUMERIC_TYPES(DISPATCH)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
+    DISPATCH(Decimal256)
+    DISPATCH(DateTime64)
+#undef DISPATCH
 
     __builtin_unreachable();
 }
@@ -209,55 +205,22 @@ AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality)
 
 std::optional<TypeIndex> SortedLookupVectorBase::getTypeSize(const IColumn & asof_column, size_t & size)
 {
-    TypeIndex idx = asof_column.getDataType();
-
-    switch (idx)
-    {
-        case TypeIndex::UInt8:
-            size = sizeof(UInt8);
-            return idx;
-        case TypeIndex::UInt16:
-            size = sizeof(UInt16);
-            return idx;
-        case TypeIndex::UInt32:
-            size = sizeof(UInt32);
-            return idx;
-        case TypeIndex::UInt64:
-            size = sizeof(UInt64);
-            return idx;
-        case TypeIndex::Int8:
-            size = sizeof(Int8);
-            return idx;
-        case TypeIndex::Int16:
-            size = sizeof(Int16);
-            return idx;
-        case TypeIndex::Int32:
-            size = sizeof(Int32);
-            return idx;
-        case TypeIndex::Int64:
-            size = sizeof(Int64);
-            return idx;
-        case TypeIndex::Float32:
-            size = sizeof(Float32);
-            return idx;
-        case TypeIndex::Float64:
-            size = sizeof(Float64);
-            return idx;
-        case TypeIndex::Decimal32:
-            size = sizeof(Decimal32);
-            return idx;
-        case TypeIndex::Decimal64:
-            size = sizeof(Decimal64);
-            return idx;
-        case TypeIndex::Decimal128:
-            size = sizeof(Decimal128);
-            return idx;
-        case TypeIndex::DateTime64:
-            size = sizeof(DateTime64);
-            return idx;
-        default:
-            break;
+    WhichDataType which(asof_column.getDataType());
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+    { \
+        size = sizeof(TYPE); \
+        return asof_column.getDataType(); \
     }
+
+
+    FOR_NUMERIC_TYPES(DISPATCH)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
+    DISPATCH(Decimal256)
+    DISPATCH(DateTime64)
+#undef DISPATCH
 
     throw Exception("ASOF join not supported for type: " + std::string(asof_column.getFamilyName()), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
