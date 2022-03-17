@@ -44,7 +44,7 @@ struct RowRefList : RowRef
         Batch * next;
         RowRef row_refs[MAX_SIZE];
 
-        Batch(Batch * parent)
+        explicit Batch(Batch * parent)
             : next(parent)
         {}
 
@@ -54,7 +54,7 @@ struct RowRefList : RowRef
         {
             if (full())
             {
-                auto batch = pool.alloc<Batch>();
+                auto * batch = pool.alloc<Batch>();
                 *batch = Batch(this);
                 batch->insert(std::move(row_ref), pool);
                 return batch;
@@ -68,7 +68,7 @@ struct RowRefList : RowRef
     class ForwardIterator
     {
     public:
-        ForwardIterator(const RowRefList * begin)
+        explicit ForwardIterator(const RowRefList * begin)
             : root(begin)
             , first(true)
             , batch(root->next)
@@ -117,7 +117,7 @@ struct RowRefList : RowRef
         size_t position;
     };
 
-    RowRefList() {}
+    RowRefList() {} /// NOLINT
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }

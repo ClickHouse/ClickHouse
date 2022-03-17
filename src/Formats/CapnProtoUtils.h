@@ -18,14 +18,14 @@ struct DestructorCatcher
 {
     T impl;
     template <typename ... Arg>
-    DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
+    explicit DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
     ~DestructorCatcher() noexcept try { } catch (...) { return; }
 };
 
 class CapnProtoSchemaParser : public DestructorCatcher<capnp::SchemaParser>
 {
 public:
-    CapnProtoSchemaParser() {}
+    CapnProtoSchemaParser() = default;
 
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };

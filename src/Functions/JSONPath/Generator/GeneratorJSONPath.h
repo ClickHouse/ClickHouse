@@ -25,7 +25,7 @@ public:
      * Traverses children ASTs of ASTJSONPathQuery and creates a vector of corresponding visitors
      * @param query_ptr_ pointer to ASTJSONPathQuery
      */
-    GeneratorJSONPath(ASTPtr query_ptr_)
+    explicit GeneratorJSONPath(ASTPtr query_ptr_)
     {
         query_ptr = query_ptr_;
         const auto * path = query_ptr->as<ASTJSONPath>();

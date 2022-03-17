@@ -4,6 +4,8 @@
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <boost/container/flat_set.hpp>
+#include <Access/UsersConfigAccessStorage.h>
+
 #include <memory>
 
 
@@ -72,7 +74,6 @@ public:
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();
     void stopPeriodicReloadingUsersConfigs();
-
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
     void addDiskStorage(const String & directory_, bool readonly_ = false);
@@ -110,8 +111,16 @@ public:
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
     void setCustomSettingsPrefixes(const String & comma_separated_prefixes);
-    bool isSettingNameAllowed(const std::string_view & name) const;
-    void checkSettingNameIsAllowed(const std::string_view & name) const;
+    bool isSettingNameAllowed(const std::string_view name) const;
+    void checkSettingNameIsAllowed(const std::string_view name) const;
+
+    /// Allows users without password (by default it's allowed).
+    void setNoPasswordAllowed(const bool allow_no_password_);
+    bool isNoPasswordAllowed() const;
+
+    /// Allows users with plaintext password (by default it's allowed).
+    void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
+    bool isPlaintextPasswordAllowed() const;
 
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
@@ -167,6 +176,8 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
+    std::atomic_bool allow_plaintext_password = true;
+    std::atomic_bool allow_no_password = true;
 };
 
 }

@@ -48,6 +48,11 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , must_read_until_position(settings_.must_read_until_position)
+#ifndef NDEBUG
+    , log(&Poco::Logger::get("AsynchronousBufferFromRemoteFS"))
+#else
+    , log(&Poco::Logger::get("AsyncBuffer(" + impl->getFileName() + ")"))
+#endif
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
@@ -56,6 +61,12 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
 String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 {
     return impl->getFileName();
+}
+
+
+String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
+{
+    return impl->getInfoForLog();
 }
 
 
@@ -76,8 +87,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
             return false;
 
         if (file_offset_of_buffer_end > *read_until_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, *read_until_position);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}, info: {})",
+                            file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
     }
     else if (must_read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -125,8 +136,11 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
     if (prefetch_future.valid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
-    read_until_position = position;
-    impl->setReadUntilPosition(*read_until_position);
+    if (position > read_until_position)
+    {
+        read_until_position = position;
+        impl->setReadUntilPosition(*read_until_position);
+    }
 }
 
 
@@ -157,8 +171,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             auto result = prefetch_future.get();
             size = result.size;
             offset = result.offset;
+            LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
+
             /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset < size && size > 0);
+            assert(offset < size);
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -173,7 +189,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto result = readInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
-        assert(offset < size || size == 0);
+
+        LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
+        assert(offset < size);
+
         if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
@@ -181,7 +200,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
     }
 
-    file_offset_of_buffer_end = impl->offset();
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
+
     prefetch_future = {};
     return size;
 }

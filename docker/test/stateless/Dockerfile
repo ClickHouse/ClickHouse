@@ -60,6 +60,7 @@ RUN arch=${TARGETARCH:-amd64} \
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
+ENV EXPORT_S3_STORAGE_POLICIES=1
 
 COPY run.sh /
 COPY setup_minio.sh /

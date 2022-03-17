@@ -127,10 +127,10 @@ public:
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0;
+    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0;
+    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -174,7 +174,7 @@ public:
     /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
       *  and do a single call to "addBatch" for devirtualization and inlining.
       */
-    virtual void addBatch(
+    virtual void addBatch( /// NOLINT
         size_t batch_size,
         AggregateDataPtr * places,
         size_t place_offset,
@@ -198,7 +198,7 @@ public:
 
     /** The same for single place.
       */
-    virtual void addBatchSinglePlace(
+    virtual void addBatchSinglePlace( /// NOLINT
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
     /// The version of "addBatchSinglePlace", that handle sparse columns as arguments.
@@ -208,7 +208,7 @@ public:
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
       */
-    virtual void addBatchSinglePlaceNotNull(
+    virtual void addBatchSinglePlaceNotNull( /// NOLINT
         size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,
@@ -216,7 +216,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
-    virtual void addBatchSinglePlaceFromInterval(
+    virtual void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
         const = 0;
 
@@ -354,7 +354,7 @@ public:
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
-    void addBatch(
+    void addBatch( /// NOLINT
         size_t batch_size,
         AggregateDataPtr * places,
         size_t place_offset,
@@ -407,7 +407,7 @@ public:
                 static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
-    void addBatchSinglePlace(
+    void addBatchSinglePlace( /// NOLINT
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
@@ -439,7 +439,7 @@ public:
             static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
     }
 
-    void addBatchSinglePlaceNotNull(
+    void addBatchSinglePlaceNotNull( /// NOLINT
         size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,
@@ -462,7 +462,7 @@ public:
         }
     }
 
-    void addBatchSinglePlaceFromInterval(
+    void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
         const override
     {
@@ -586,7 +586,7 @@ public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr place) const override /// NOLINT
     {
         new (place) Data;
     }

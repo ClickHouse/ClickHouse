@@ -263,7 +263,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 
 Pipe StorageKafka::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -291,7 +291,7 @@ Pipe StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
+        pipes.emplace_back(std::make_shared<KafkaSource>(*this, storage_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -405,7 +405,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
+ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
@@ -614,7 +614,8 @@ bool StorageKafka::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -640,7 +641,7 @@ bool StorageKafka::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
