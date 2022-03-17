@@ -489,7 +489,7 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = static_cast<UInt16>(ConnectionParameters::getPortFromConfig(config()));
+        UInt16 port = ConnectionParameters::getPortFromConfig(config());
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
@@ -1051,7 +1051,7 @@ void Client::addOptions(OptionsDescription & options_description)
          "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
          "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
          "if there is no such host, the port will be attached to the next first host or to default host.")
-         ("port", po::value<UInt16>()->default_value(DBMS_DEFAULT_PORT), "server ports")
+         ("port", po::value<UInt16>(), "server ports")
     ;
 }
 
@@ -1099,8 +1099,11 @@ void Client::processOptions(const OptionsDescription & options_description,
             = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
         po::variables_map host_and_port_options;
         po::store(parsed_hosts_and_ports, host_and_port_options);
-        hosts_and_ports.emplace_back(
-            HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
+        std::string host = host_and_port_options["host"].as<std::string>();
+        std::optional<UInt16> port = !host_and_port_options["port"].empty()
+                                     ? std::make_optional(host_and_port_options["port"].as<UInt16>())
+                                     : std::nullopt;
+        hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
     send_external_tables = true;

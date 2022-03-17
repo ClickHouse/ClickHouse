@@ -255,7 +255,7 @@ protected:
     struct HostAndPort
     {
         String host;
-        UInt16 port;
+        std::optional<UInt16> port;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};
