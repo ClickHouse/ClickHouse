@@ -20,7 +20,6 @@
 
 #include <type_traits>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -263,6 +262,11 @@ private:
         static void second(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToSecondImpl::execute(source, timezone));
+        }
+
+        static void sFraction(char * target, Time source, const DateLUTImpl & timezone)
+        {
+            writeNumber3(target, ToSecondImpl::execute(source, timezone));
         }
 
         static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
@@ -656,6 +660,12 @@ public:
                     case 'S':
                         add_instruction_or_shift(&Action<T>::second, 2);
                         result.append("00");
+                        break;
+
+                    // Fractions of a Second (ms)
+                    case 'f':
+                        add_instruction_or_shift(&Action<T>::sFraction, 3);
+                        result.append(".000");
                         break;
 
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
