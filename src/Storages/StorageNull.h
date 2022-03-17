@@ -23,7 +23,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo &,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
@@ -31,7 +31,7 @@ public:
         unsigned) override
     {
         return Pipe(
-            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 
     bool supportsParallelInsert() const override { return true; }
