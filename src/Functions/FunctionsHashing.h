@@ -599,7 +599,7 @@ struct ImplBLAKE3
     //static inline Hasher_shim blake3_hasher = new_hasher();
 
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
-    {   
+    {
         #if defined(MEMORY_SANITIZER)
             auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
         #else
