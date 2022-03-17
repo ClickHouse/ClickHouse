@@ -883,8 +883,8 @@ public:
             return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfQuarterInterval(Date d, UInt64 quarters) const
     {
         if (quarters == 1)
@@ -892,8 +892,8 @@ public:
         return toStartOfMonthInterval(d, quarters * 3);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfMonthInterval(Date d, UInt64 months) const
     {
         if (months == 1)
@@ -906,8 +906,8 @@ public:
             return toDayNum(years_months_lut[month_total_index / months * months]);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
@@ -920,8 +920,8 @@ public:
             return ExtendedDayNum(4 + (d - 4) / days * days);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline Time toStartOfDayInterval(Date d, UInt64 days) const
     {
         if (days == 1)
@@ -1219,10 +1219,8 @@ public:
 
     /// If resulting month has less deys than source month, then saturation can happen.
     /// Example: 31 Aug + 1 month = 30 Sep.
-    template <
-        typename DateTime,
-        typename
-        = std::enable_if_t<std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>>>
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     inline Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
         const auto result_day = addMonthsIndex(t, delta);
@@ -1247,8 +1245,8 @@ public:
             return res;
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto NO_SANITIZE_UNDEFINED addMonths(Date d, Int64 delta) const
     {
         if constexpr (std::is_same_v<Date, DayNum>)
@@ -1280,10 +1278,8 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    template <
-        typename DateTime,
-        typename
-        = std::enable_if_t<std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>>>
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     inline Time addYears(DateTime t, Int64 delta) const
     {
         auto result_day = addYearsIndex(t, delta);
@@ -1308,8 +1304,8 @@ public:
             return res;
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto addYears(Date d, Int64 delta) const
     {
         if constexpr (std::is_same_v<Date, DayNum>)
