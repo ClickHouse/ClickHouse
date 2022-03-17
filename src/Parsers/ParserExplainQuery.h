@@ -14,7 +14,7 @@ protected:
     const char * getName() const override { return "EXPLAIN"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    ParserExplainQuery(const char* end_) : end(end_) {}
+    explicit ParserExplainQuery(const char* end_) : end(end_) {}
 };
 
 }

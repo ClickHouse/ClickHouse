@@ -26,7 +26,7 @@ struct AccessRightsElement
     AccessRightsElement(AccessRightsElement &&) = default;
     AccessRightsElement & operator=(AccessRightsElement &&) = default;
 
-    AccessRightsElement(AccessFlags access_flags_) : access_flags(access_flags_) {}
+    explicit AccessRightsElement(AccessFlags access_flags_) : access_flags(access_flags_) {}
 
     AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_);
     AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_);
