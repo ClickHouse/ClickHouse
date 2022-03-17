@@ -486,19 +486,19 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
+    const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

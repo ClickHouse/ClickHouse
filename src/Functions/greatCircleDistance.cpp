@@ -179,7 +179,7 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// Why comparing only difference in longitude?
         /// If longitudes are different enough, there is a big difference between great circle line and a line with constant latitude.
-        ///  (Remember how a plane flies from Moscow to New York)
+        ///  (Remember how a plane flies from Amsterdam to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
         float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
@@ -326,4 +326,3 @@ void registerFunctionGeoDistance(FunctionFactory & factory)
 }
 
 }
-

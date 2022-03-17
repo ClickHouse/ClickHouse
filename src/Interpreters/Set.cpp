@@ -165,7 +165,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);

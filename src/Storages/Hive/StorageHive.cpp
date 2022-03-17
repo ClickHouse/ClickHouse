@@ -170,9 +170,13 @@ public:
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
                         buff_size = DBMS_DEFAULT_BUFFER_SIZE;
-                    remote_read_buf = RemoteReadBuffer::create(getContext(),
-                        std::make_shared<StorageHiveMetadata>("Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
-                        std::move(raw_read_buf), buff_size);
+                    remote_read_buf = RemoteReadBuffer::create(
+                        getContext(),
+                        std::make_shared<StorageHiveMetadata>(
+                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
+                        std::move(raw_read_buf),
+                        buff_size,
+                        format == "Parquet" || format == "ORC");
                 }
                 else
                     remote_read_buf = std::move(raw_read_buf);
@@ -586,7 +590,7 @@ void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & hea
 }
 Pipe StorageHive::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -650,7 +654,7 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    const auto & header_block = metadata_snapshot->getSampleBlock();
+    const auto & header_block = storage_snapshot->metadata->getSampleBlock();
     Block sample_block;
     for (const auto & column : column_names)
     {
