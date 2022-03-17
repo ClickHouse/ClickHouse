@@ -144,15 +144,15 @@ public:
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return null_map->getRatioOfDefaultRows(sample_ratio);
+        return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        null_map->getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }

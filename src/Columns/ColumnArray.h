@@ -169,6 +169,8 @@ public:
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
+    size_t getNumberOfDimensions() const;
+
 private:
     WrappedPtr data;
     WrappedPtr offsets;
