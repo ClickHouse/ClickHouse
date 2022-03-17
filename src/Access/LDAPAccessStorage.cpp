@@ -482,8 +482,8 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
-    bool allow_no_password __attribute__((unused)),
-    bool allow_plaintext_password __attribute__((unused))) const
+    bool /* allow_no_password */,
+    bool /* allow_plaintext_password */) const
 {
     std::scoped_lock lock(mutex);
     auto id = memory_storage.find<User>(credentials.getUserName());
