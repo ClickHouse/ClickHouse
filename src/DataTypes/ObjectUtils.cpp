@@ -618,7 +618,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
             });
     }
 
-    const auto & [column, type, _] = createTypeFromNode(tree.getRoot());
+    auto [column, type, _] = createTypeFromNode(tree.getRoot());
     return std::make_pair(std::move(column), std::move(type));
 }
 
