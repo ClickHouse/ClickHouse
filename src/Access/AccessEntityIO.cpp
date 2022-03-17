@@ -120,7 +120,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             if (res)
                 throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {

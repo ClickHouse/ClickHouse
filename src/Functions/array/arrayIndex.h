@@ -474,7 +474,7 @@ private:
         auto arg_decayed = removeNullable(removeLowCardinality(arg));
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
-            || getLeastSupertype({inner_type_decayed, arg_decayed});
+            || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
     /**
@@ -1045,7 +1045,7 @@ private:
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
 
-        DataTypePtr common_type = getLeastSupertype({array_elements_type, index_type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
 
         ColumnPtr col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
 

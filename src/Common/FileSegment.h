@@ -129,6 +129,7 @@ private:
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
     static String getCallerIdImpl(bool allow_non_strict_checking = false);
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
+    size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
 
     const Range segment_range;
 
@@ -143,6 +144,14 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable cv;
+
+    /// Protects downloaded_size access with actual write into fs.
+    /// downloaded_size is not protected by download_mutex in methods which
+    /// can never be run in parallel to FileSegment::write() method
+    /// as downloaded_size is updated only in FileSegment::write() method.
+    /// Such methods are identified by isDownloader() check at their start,
+    /// e.g. they are executed strictly by the same thread, sequentially.
+    mutable std::mutex download_mutex;
 
     Key file_key;
     IFileCache * cache;
