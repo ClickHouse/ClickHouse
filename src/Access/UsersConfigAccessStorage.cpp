@@ -28,8 +28,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-
 }
 
 namespace
@@ -50,7 +48,7 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, bool allow_no_password, bool allow_plaintext_password)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
@@ -128,6 +126,15 @@ namespace
                     throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
             }
             user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
+        }
+
+        auto auth_type = user->auth_data.getType();
+        if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+            ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                            toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -225,24 +232,18 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Fn<bool()> auto && is_no_password_allowed_function, Fn<bool()> auto && is_plaintext_password_allowed_function)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, bool allow_no_password, bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
 
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
-        bool allow_plaintext_password = is_plaintext_password_allowed_function();
-        bool allow_no_password = is_no_password_allowed_function();
         for (const auto & user_name : user_names)
         {
             try
             {
-                String user_config = "users." + user_name;
-                if ((config.has(user_config + ".password") && !allow_plaintext_password) || (config.has(user_config + ".no_password") && !allow_no_password))
-                    throw Exception("Incorrect User configuration. User is not allowed to configure PLAINTEXT_PASSWORD or NO_PASSWORD. Please configure User with authtype SHA256_PASSWORD_HASH, SHA256_PASSWORD, DOUBLE_SHA1_PASSWORD OR enable setting allow_plaintext_and_no_password in server configuration to configure user with plaintext and no password Auth_Type"
-                            " Though it is not recommended to use plaintext_password and No_password for user authentication.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                users.push_back(parseUser(config, user_name));
+                users.push_back(parseUser(config, user_name, allow_no_password, allow_plaintext_password));
             }
             catch (Exception & e)
             {
@@ -562,8 +563,10 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
 {
     try
     {
+        bool no_password_allowed = is_no_password_allowed_function();
+        bool plaintext_password_allowed = is_plaintext_password_allowed_function();
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config,is_no_password_allowed_function, is_plaintext_password_allowed_function))
+        for (const auto & entity : parseUsers(config, no_password_allowed, plaintext_password_allowed))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
