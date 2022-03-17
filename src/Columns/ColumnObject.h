@@ -66,7 +66,7 @@ public:
         size_t byteSize() const;
         size_t allocatedBytes() const;
 
-        bool isFinalized() const { return data.size() == 1 && num_of_defaults_in_prefix == 0; }
+        bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type; }
 
         /// Checks the consistency of column's parts stored in @data.
