@@ -101,6 +101,8 @@ public:
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
+    void resetRemoteFileReader();
+
     String getOrSetDownloader();
 
     String getDownloader() const;
@@ -123,14 +125,28 @@ public:
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
-    bool lastFileSegmentHolder() const;
-    void complete();
-    void completeImpl(bool allow_non_strict_checking = false);
-    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
-    static String getCallerIdImpl(bool allow_non_strict_checking = false);
-    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
-    String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
+
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
+
+    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
+
+    bool lastFileSegmentHolder() const;
+
+    /// complete() without any completion state is called from destructor of
+    /// FileSegmentsHolder. complete() might check if the caller of the method
+    /// is the last alive holder of the segment. Therefore, complete() and destruction
+    /// of the file segment pointer must be done under the same cache mutex.
+    void complete(std::lock_guard<std::mutex> & cache_lock);
+
+    void completeImpl(
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock, bool allow_non_strict_checking = false);
+
+    static String getCallerIdImpl(bool allow_non_strict_checking = false);
+
+    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
+
+    String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     const Range segment_range;
 
@@ -169,28 +185,7 @@ struct FileSegmentsHolder : private boost::noncopyable
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
     FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
 
-    ~FileSegmentsHolder()
-    {
-        /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
-        /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
-        /// remain only uncompleted file segments.
-
-        for (auto & segment : file_segments)
-        {
-            try
-            {
-                segment->complete();
-            }
-            catch (...)
-            {
-#ifndef NDEBUG
-                throw;
-#else
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-#endif
-            }
-        }
-    }
+    ~FileSegmentsHolder();
 
     FileSegments file_segments{};
 

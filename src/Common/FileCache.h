@@ -25,6 +25,7 @@ namespace DB
 class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
+friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
