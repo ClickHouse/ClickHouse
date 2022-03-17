@@ -41,7 +41,7 @@ public:
         /// TODO: Find a way to support projections for StorageProxy
         info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata), info);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
 
     Pipe watch(

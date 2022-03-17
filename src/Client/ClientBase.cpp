@@ -1096,7 +1096,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 storage->read(
                         sample.getNames(),
-                        storage->getStorageSnapshot(metadata),
+                        storage->getStorageSnapshot(metadata, global_context),
                         query_info,
                         global_context,
                         {},

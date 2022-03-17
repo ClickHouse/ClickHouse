@@ -175,6 +175,8 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
+    void setMutationCSN(const String & mutation_id, CSN csn) override;
+
 
     friend struct CurrentlyMergingPartsTagger;
 

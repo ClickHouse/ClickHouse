@@ -615,7 +615,7 @@ bool StorageKafka::streamToViews()
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();

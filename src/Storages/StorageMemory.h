@@ -36,7 +36,7 @@ public:
         std::shared_ptr<const Blocks> blocks;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     Pipe read(
         const Names & column_names,

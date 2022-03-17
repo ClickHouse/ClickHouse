@@ -1396,7 +1396,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
 
         /// Sanity checks
-        bool csn_order = !version.removal_csn || version.creation_csn <= version.removal_csn;
+        bool csn_order = !version.removal_csn || version.creation_csn <= version.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
         bool min_start_csn_order = version.creation_tid.start_csn <= version.creation_csn;
         bool max_start_csn_order = version.removal_tid.start_csn <= version.removal_csn;
         bool creation_csn_known = version.creation_csn;
@@ -4039,6 +4039,21 @@ DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_contex
     return res;
 }
 
+DataPartsVector MergeTreeData::getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const
+{
+    DataPartsVector res;
+    if (const auto * txn = local_context->getCurrentTransaction().get())
+    {
+        res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, lock);
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+    }
+    else
+    {
+        res = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    }
+    return res;
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const
 {
     DataPartsVector res;
@@ -6420,12 +6435,12 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
     DB::updateObjectColumns(object_columns, part->getColumns());
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
 
     auto lock = lockParts();
-    snapshot_data->parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 

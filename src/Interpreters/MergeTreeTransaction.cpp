@@ -65,8 +65,10 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
     else
     {
         /// Lock part for removal with special TID, so transactions will not try to remove it concurrently.
-        /// We lock it only in memory.
+        /// We lock it only in memory if part was not involved in any transactions.
         part_to_remove->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+        if (part_to_remove->wasInvolvedInTransaction())
+            part_to_remove->appendRemovalTIDToVersionMetadata();
     }
 }
 
@@ -189,6 +191,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         part->version.removal_csn.store(csn);
         part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }
+
+    for (const auto & storage_and_mutation : mutations)
+        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, csn);
 }
 
 bool MergeTreeTransaction::rollback() noexcept
@@ -220,7 +225,11 @@ bool MergeTreeTransaction::rollback() noexcept
 
     /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : parts_to_remove)
+    {
         part->version.creation_csn.store(Tx::RolledBackCSN);
+        /// Write special RolledBackCSN, so we will be able to cleanup transaction log
+        part->appendCSNToVersionMetadata(VersionMetadata::CREATION);
+    }
 
     for (const auto & part : parts_to_activate)
     {

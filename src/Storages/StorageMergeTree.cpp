@@ -539,6 +539,18 @@ void StorageMergeTree::waitForMutation(const String & mutation_id)
     LOG_INFO(log, "Mutation {} done", mutation_id);
 }
 
+void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
+{
+    LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
+    UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    auto it = current_mutations_by_version.find(version);
+    if (it == current_mutations_by_version.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find mutation {}", mutation_id);
+    it->second.writeCSN(csn);
+}
+
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Validate partition IDs (if any) before starting mutation
@@ -718,9 +730,13 @@ void StorageMergeTree::loadMutations()
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
 
-                if (!entry.tid.isPrehistoric())
+                if (!entry.tid.isPrehistoric() && !entry.csn)
                 {
-                    if (!TransactionLog::getCSN(entry.tid))
+                    if (auto csn = TransactionLog::getCSN(entry.tid))
+                    {
+                        entry.writeCSN(csn);
+                    }
+                    else
                     {
                         TransactionLog::assertTIDIsNotOutdated(entry.tid);
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",

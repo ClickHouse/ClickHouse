@@ -62,7 +62,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands.writeText(*out);
         *out << "\n";
-        if (!tid.isPrehistoric())
+        if (tid.isPrehistoric())
+        {
+            csn = Tx::PrehistoricCSN;
+        }
+        else
         {
             *out << "tid: ";
             TransactionID::write(tid, *out);
@@ -99,6 +103,14 @@ void MergeTreeMutationEntry::removeFile()
     }
 }
 
+void MergeTreeMutationEntry::writeCSN(CSN csn_)
+{
+    csn = csn_;
+    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
+    *out << "csn: " << csn << "\n";
+    out->finalize();
+}
+
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -120,11 +132,21 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     commands.readText(*buf);
     *buf >> "\n";
 
-    if (!buf->eof())
+    if (buf->eof())
+    {
+        tid = Tx::PrehistoricTID;
+        csn = Tx::PrehistoricCSN;
+    }
+    else
     {
         *buf >> "tid: ";
         tid = TransactionID::read(*buf);
         *buf >> "\n";
+
+        if (!buf->eof())
+        {
+            *buf >> "csn: " >> csn >> "\n";
+        }
     }
 
     assertEOF(*buf);
