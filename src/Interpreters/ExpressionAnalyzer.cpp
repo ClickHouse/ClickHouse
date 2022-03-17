@@ -43,7 +43,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <Core/SettingsEnums.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -85,6 +85,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -1145,15 +1146,25 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
 {
-    if (!isInnerOrLeft(analyzed_join->kind()))
+    auto error_or_null = [&](const String & msg)
+    {
+        if (analyzed_join->isForcedAlgorithm(JoinAlgorithm::DIRECT))
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't use '{}' join algorithm: {}", JoinAlgorithm::DIRECT, msg);
         return nullptr;
+    };
 
-    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All)
+    if (!analyzed_join->isAllowedAlgorithm(JoinAlgorithm::DIRECT))
         return nullptr;
 
     auto storage = analyzed_join->getStorageKeyValue();
     if (!storage)
-        return nullptr;
+        return error_or_null("unsupported storage");
+
+    if (!isInnerOrLeft(analyzed_join->kind()))
+        return error_or_null("illegal kind");
+
+    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All)
+        return error_or_null("illegal strictness");
 
     const auto & clauses = analyzed_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
@@ -1163,10 +1174,10 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
         !clauses[0].on_filter_condition_right;
 
     if (!only_one_key)
-        return nullptr;
+        return error_or_null("multiple keys is not allowed");
 
     if (storage->getPrimaryKey() != clauses[0].key_names_right[0])
-        return nullptr;
+        return error_or_null("key doesn't match storage");
 
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
 }
