@@ -21,6 +21,7 @@
 
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
+#include "Common/ThreadStatus.h"
 #include <Common/parseRemoteDescription.h>
 #include "IO/HTTPCommon.h"
 #include "IO/ReadWriteBufferFromHTTP.h"
@@ -312,7 +313,8 @@ namespace
                             }
 
                             // to check if Range header is supported, we need to send a request with it set
-                            const bool supports_ranges = res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes";
+                            const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
+                                || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
                             LOG_TRACE(
                                 &Poco::Logger::get("StorageURLSource"),
                                 fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
@@ -343,9 +345,40 @@ namespace
                                     delay_initialization,
                                     /* use_external_buffer */ false,
                                     /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                                ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+                                    ? CurrentThread::get().getThreadGroup()
+                                    : MainThreadStatus::getInstance().getThreadGroup();
+
+                                ContextPtr query_context
+                                    = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+
+                                auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
+                                {
+                                    if (has_running_group)
+                                        thread_status.detachQuery(false);
+                                };
+
+                                auto worker_setup = [query_context = std::move(query_context),
+                                                     running_group = std::move(running_group)](ThreadStatus & thread_status)
+                                {
+                                    /// Save query context if any, because cache implementation needs it.
+                                    if (query_context)
+                                        thread_status.attachQueryContext(query_context);
+
+                                    /// To be able to pass ProfileEvents.
+                                    if (running_group)
+                                        thread_status.attachQuery(running_group);
+                                };
+
+
                                 return wrapReadBufferWithCompressionMethod(
                                     std::make_unique<ParallelReadBuffer>(
-                                        std::move(read_buffer_factory), &IOThreadPool::get(), download_threads),
+                                        std::move(read_buffer_factory),
+                                        &IOThreadPool::get(),
+                                        download_threads,
+                                        std::move(worker_setup),
+                                        std::move(worker_cleanup)),
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }

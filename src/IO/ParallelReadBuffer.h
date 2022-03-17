@@ -78,7 +78,14 @@ public:
         virtual std::optional<size_t> getTotalSize() = 0;
     };
 
-    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool, size_t max_working_readers);
+    using WorkerSetup = std::function<void(ThreadStatus &)>;
+    using WorkerCleanup = std::function<void(ThreadStatus &)>;
+    explicit ParallelReadBuffer(
+        std::unique_ptr<ReadBufferFactory> reader_factory_,
+        ThreadPool * pool,
+        size_t max_working_readers,
+        WorkerSetup worker_setup = {},
+        WorkerCleanup worker_cleanup = {});
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -141,6 +148,9 @@ private:
     std::condition_variable readers_done;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
+
+    WorkerSetup worker_setup;
+    WorkerCleanup worker_cleanup;
 
     /**
      * FIFO queue of readers.

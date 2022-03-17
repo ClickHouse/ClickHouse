@@ -13,11 +13,18 @@ namespace ErrorCodes
 
 }
 
-ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPool * pool_, size_t max_working_readers_)
+ParallelReadBuffer::ParallelReadBuffer(
+    std::unique_ptr<ReadBufferFactory> reader_factory_,
+    ThreadPool * pool_,
+    size_t max_working_readers_,
+    WorkerSetup worker_setup_,
+    WorkerCleanup worker_cleanup_)
     : SeekableReadBufferWithSize(nullptr, 0)
     , pool(pool_)
     , max_working_readers(max_working_readers_)
     , reader_factory(std::move(reader_factory_))
+    , worker_setup(std::move(worker_setup_))
+    , worker_cleanup(std::move(worker_cleanup_))
 {
     std::unique_lock<std::mutex> lock{mutex};
     addReaders(lock);
@@ -33,31 +40,15 @@ bool ParallelReadBuffer::addReaderToPool(std::unique_lock<std::mutex> & /*buffer
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-        ? CurrentThread::get().getThreadGroup()
-        : MainThreadStatus::getInstance().getThreadGroup();
-
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
     pool->scheduleOrThrow(
-        [&, this, running_group = std::move(running_group), query_context = std::move(query_context), worker = std::move(worker)]() mutable
+        [&, this, worker = std::move(worker)]() mutable
         {
             ThreadStatus thread_status;
-
-            /// Save query context if any, because cache implementation needs it.
-            if (query_context)
-                thread_status.attachQueryContext(query_context);
-
-            /// To be able to pass ProfileEvents.
-            if (running_group)
-                thread_status.attachQuery(running_group);
+            worker_setup(thread_status);
 
             readerThreadFunction(std::move(worker));
 
-            if (running_group)
-                thread_status.detachQuery(false);
+            worker_cleanup(thread_status);
         });
     return true;
 }
