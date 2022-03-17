@@ -25,7 +25,7 @@ void dumpInterpolateDescription(const InterpolateDescription & description, cons
 
 void InterpolateColumnDescription::interpolate(Field & field) const
 {
-    if(field.isNull())
+    if (field.isNull())
         return;
     Block expr_columns;
     expr_columns.insert({column.type->createColumnConst(1, field), column.type, column.name});

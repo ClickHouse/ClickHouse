@@ -245,8 +245,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         /// if any WITH FILL parse possible INTERPOLATE list
-        if ( std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }) )
+        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
         {
             if (s_interpolate.ignore(pos, expected))
             {

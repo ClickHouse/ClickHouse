@@ -18,7 +18,8 @@ bool equals(const Field & lhs, const Field & rhs);
 class FillingRow
 {
 public:
-    struct {
+    struct
+    {
         FillingRow & filling_row;
 
         Field & operator[](size_t index) { return filling_row.row[index]; }
@@ -26,7 +27,8 @@ public:
         size_t size() const { return filling_row.sort_description.size(); }
     } sort;
 
-    struct {
+    struct
+    {
         FillingRow & filling_row;
 
         Field & operator[](size_t index) { return filling_row.row[filling_row.sort_description.size() + index]; }

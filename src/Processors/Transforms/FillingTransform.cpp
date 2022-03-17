@@ -179,7 +179,7 @@ FillingTransform::FillingTransform(
         size_t block_position = header_.getPositionByName(interpolate_description[i].column.name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
-/* TODO JOO check types?
+        /* TODO JOO check types?
         auto & descr = filling_row.getFillDescription(i);
         const auto & type = header_.getByPosition(block_position).type;
 
@@ -193,8 +193,7 @@ FillingTransform::FillingTransform(
         {
             throw Exception("WITH FILL bound values cannot be negative for unsigned type "
                 + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-        }
-*/        
+        } */
     }
 
     std::set<size_t> unique_positions;

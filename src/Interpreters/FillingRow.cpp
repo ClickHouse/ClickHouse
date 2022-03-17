@@ -51,10 +51,8 @@ bool FillingRow::next(const FillingRow & to_row)
 {
     size_t pos = 0;
 
-    for(size_t i = 0; i < to_row.interpolate.size(); ++i) {
-        std::cout << to_row.interpolate[i] <<" : ";
+    for (size_t i = 0; i < to_row.interpolate.size(); ++i)
         interpolate[i] = to_row.interpolate[i];
-    }
 
     /// Find position we need to increment for generating next row.
     for (; pos < sort.size(); ++pos)
