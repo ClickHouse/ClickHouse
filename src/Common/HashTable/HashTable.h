@@ -1036,14 +1036,16 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x)
+    template <typename Grower_ = Grower>
+    requires (Grower_::performs_linear_probing_with_single_step)
+    bool ALWAYS_INLINE erase(const Key & x)
     {
         return erase(x, hash(x));
     }
 
-    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
+    template <typename Grower_ = Grower>
+    requires (Grower_::performs_linear_probing_with_single_step)
+    bool ALWAYS_INLINE erase(const Key & x, size_t hash_value)
     {
         /** Deletion from open addressing hash table without tombstones
           *
