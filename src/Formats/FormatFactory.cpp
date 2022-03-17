@@ -89,7 +89,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
-    format_settings.use_lowercase_column_name = settings.input_format_use_lowercase_column_name;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
