@@ -435,7 +435,7 @@ public:
         DataPartsVector parts;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -473,6 +473,7 @@ public:
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
+    DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
     DataPartsVector getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const;
 

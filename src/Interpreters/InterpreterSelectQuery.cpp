@@ -329,7 +329,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
-        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr);
+        storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
     if (has_input || !joined_tables.resolveTables())

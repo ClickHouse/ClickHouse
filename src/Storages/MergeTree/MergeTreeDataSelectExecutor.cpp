@@ -131,14 +131,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     const auto & settings = context->getSettingsRef();
 
-    auto parts_in_txn_snapshot = data.getVisibleDataPartsVector(context);
-
     const auto & metadata_for_reading = storage_snapshot->getMetadataForQuery();
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    /// FIXME: use one snapshot
-    const auto & parts = context->getCurrentTransaction() ? parts_in_txn_snapshot : snapshot_data.parts;
+    const auto & parts = snapshot_data.parts;
 
     if (!query_info.projection)
     {

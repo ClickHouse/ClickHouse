@@ -33,7 +33,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;

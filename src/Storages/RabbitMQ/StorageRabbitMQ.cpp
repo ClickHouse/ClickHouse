@@ -1024,7 +1024,7 @@ bool StorageRabbitMQ::streamToViews()
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 

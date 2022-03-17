@@ -284,7 +284,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     TemporaryPart temp_part;
     Block & block = block_with_partition.block;
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot);
+    auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot, context);
 
     if (!storage_snapshot->object_columns.empty())
     {

@@ -31,7 +31,7 @@ struct MergeTreeMutationEntry
 
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
-    CSN csn;
+    CSN csn = Tx::UnknownCSN;
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
@@ -44,6 +44,8 @@ struct MergeTreeMutationEntry
     void commit(UInt64 block_number_);
 
     void removeFile();
+
+    void writeCSN(CSN csn_);
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);
