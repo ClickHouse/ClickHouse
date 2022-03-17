@@ -294,8 +294,16 @@ namespace
                                     buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
                                     break;
                                 }
-                                catch (...)
+                                catch (const Poco::Exception & e)
                                 {
+                                    LOG_TRACE(
+                                        &Poco::Logger::get("StorageURLSource"),
+                                        "HTTP HEAD request to `{}` failed at try {}/{}. "
+                                        "Error: {}.",
+                                        request_uri.toString(),
+                                        i + 1,
+                                        settings.http_max_tries,
+                                        e.displayText());
                                     if (!ReadWriteBufferFromHTTP::isRetriableError(res.getStatus()))
                                     {
                                         throw;
@@ -341,13 +349,13 @@ namespace
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
-                        catch (const Exception & e)
+                        catch (const Poco::Exception & e)
                         {
                             LOG_TRACE(
-                                &Poco::Logger::get(__PRETTY_FUNCTION__),
+                                &Poco::Logger::get("StorageURLSource"),
                                 "Failed to setup ParallelReadBuffer because of an exception:\n{}.\nFalling back to the single-threaded "
                                 "buffer",
-                                e.what());
+                                e.displayText());
                         }
                     }
 
