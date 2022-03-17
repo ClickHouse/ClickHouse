@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
+#include <Core/InterpolateDescription.h>
 
 namespace DB
 {
@@ -9,7 +10,7 @@ namespace DB
 class FillingStep : public ITransformingStep
 {
 public:
-    FillingStep(const DataStream & input_stream_, SortDescription sort_description_);
+    FillingStep(const DataStream & input_stream_, SortDescription sort_description_, InterpolateDescription interpolate_description_);
 
     String getName() const override { return "Filling"; }
 
@@ -22,6 +23,7 @@ public:
 
 private:
     SortDescription sort_description;
+    InterpolateDescription interpolate_description;
 };
 
 }

@@ -19,26 +19,30 @@ bool equals(const Field & lhs, const Field & rhs)
 }
 
 
-FillingRow::FillingRow(const SortDescription & sort_description) : description(sort_description)
+FillingRow::FillingRow(const SortDescription & sort_description_, const InterpolateDescription & interpolate_description_)
+    : sort{*this}
+    , interpolate{*this}
+    , sort_description(sort_description_)
+    , interpolate_description(interpolate_description_)
 {
-    row.resize(description.size());
+    row.resize(sort_description.size() + interpolate_description.size());
 }
 
 bool FillingRow::operator<(const FillingRow & other) const
 {
-    for (size_t i = 0; i < size(); ++i)
+    for (size_t i = 0; i < sort.size(); ++i)
     {
-        if (row[i].isNull() || other[i].isNull() || equals(row[i], other[i]))
+        if (sort[i].isNull() || other.sort[i].isNull() || equals(sort[i], other.sort[i]))
             continue;
-        return less(row[i], other[i], getDirection(i));
+        return less(sort[i], other.sort[i], getDirection(i));
     }
     return false;
 }
 
 bool FillingRow::operator==(const FillingRow & other) const
 {
-    for (size_t i = 0; i < size(); ++i)
-        if (!equals(row[i], other[i]))
+    for (size_t i = 0; i < sort.size(); ++i)
+        if (!equals(sort[i], other.sort[i]))
             return false;
     return true;
 }
@@ -47,49 +51,54 @@ bool FillingRow::next(const FillingRow & to_row)
 {
     size_t pos = 0;
 
+    for(size_t i = 0; i < to_row.interpolate.size(); ++i) {
+        std::cout << to_row.interpolate[i] <<" : ";
+        interpolate[i] = to_row.interpolate[i];
+    }
+
     /// Find position we need to increment for generating next row.
-    for (; pos < row.size(); ++pos)
-        if (!row[pos].isNull() && !to_row[pos].isNull() && !equals(row[pos], to_row[pos]))
+    for (; pos < sort.size(); ++pos)
+        if (!sort[pos].isNull() && !to_row.sort[pos].isNull() && !equals(sort[pos], to_row.sort[pos]))
             break;
 
-    if (pos == row.size() || less(to_row[pos], row[pos], getDirection(pos)))
+    if (pos == sort.size() || less(to_row.sort[pos], sort[pos], getDirection(pos)))
         return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos',
     ///  we need to generate rows up to 'fill_to' value.
-    for (size_t i = row.size() - 1; i > pos; --i)
+    for (size_t i = sort.size() - 1; i > pos; --i)
     {
-        if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
+        if (getFillDescription(i).fill_to.isNull() || sort[i].isNull())
             continue;
 
-        auto next_value = row[i];
+        auto next_value = sort[i];
         getFillDescription(i).step_func(next_value);
         if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
         {
-            row[i] = next_value;
+            sort[i] = next_value;
             initFromDefaults(i + 1);
             return true;
         }
     }
 
-    auto next_value = row[pos];
+    auto next_value = sort[pos];
     getFillDescription(pos).step_func(next_value);
 
-    if (less(to_row[pos], next_value, getDirection(pos)))
+    if (less(to_row.sort[pos], next_value, getDirection(pos)))
         return false;
 
-    row[pos] = next_value;
-    if (equals(row[pos], to_row[pos]))
+    sort[pos] = next_value;
+    if (equals(sort[pos], to_row.sort[pos]))
     {
         bool is_less = false;
-        for (size_t i = pos + 1; i < size(); ++i)
+        for (size_t i = pos + 1; i < sort.size(); ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
             if (!fill_from.isNull())
-                row[i] = fill_from;
+                sort[i] = fill_from;
             else
-                row[i] = to_row[i];
-            is_less |= less(row[i], to_row[i], getDirection(i));
+                sort[i] = to_row.sort[i];
+            is_less |= less(sort[i], to_row.sort[i], getDirection(i));
         }
 
         return is_less;
@@ -101,8 +110,8 @@ bool FillingRow::next(const FillingRow & to_row)
 
 void FillingRow::initFromDefaults(size_t from_pos)
 {
-    for (size_t i = from_pos; i < row.size(); ++i)
-        row[i] = getFillDescription(i).fill_from;
+    for (size_t i = from_pos; i < sort.size(); ++i)
+        sort[i] = getFillDescription(i).fill_from;
 }
 
 
