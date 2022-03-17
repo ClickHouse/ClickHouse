@@ -46,6 +46,7 @@ protected:
     void transform(Chunk & chunk) override;
 
     bool finished_transform = false;
+    bool total_prepared = false;
     Chunk totals;
 
 private:

@@ -1,0 +1,30 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <test1>
+                <type>local</type>
+                <path>/path1/</path>
+            </test1>
+            <test2>
+                <type>local</type>
+                <path>/path2/</path>
+            </test2>
+        </disks>
+        <policies>
+            <test1>
+                <volumes>
+                    <main>
+                        <disk>test1</disk>
+                    </main>
+                </volumes>
+            </test1>
+            <test2>
+                <volumes>
+                    <main>
+                        <disk>test2</disk>
+                    </main>
+                </volumes>
+            </test2>
+        </policies>
+    </storage_configuration>
+</clickhouse>

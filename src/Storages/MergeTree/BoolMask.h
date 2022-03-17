@@ -6,7 +6,7 @@ struct BoolMask
     bool can_be_true = false;
     bool can_be_false = false;
 
-    BoolMask() {}
+    BoolMask() = default;
     BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
 
     BoolMask operator &(const BoolMask & m) const
