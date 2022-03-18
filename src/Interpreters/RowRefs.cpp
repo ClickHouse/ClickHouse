@@ -42,7 +42,6 @@ void callWithType(TypeIndex type, F && f)
 template <typename TKey, ASOF::Inequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
-public:
     struct Entry
     {
         /// We don't store a RowRef and instead keep it's members separately (and return a tuple) to reduce the memory usage.
@@ -57,7 +56,7 @@ public:
         bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
 
-    struct greaterEntryOperator
+    struct GreaterEntryOperator
     {
         bool operator()(Entry const & a, Entry const & b) const { return a.asof_value > b.asof_value; }
     };
@@ -164,7 +163,7 @@ private:
             if (!sorted.load(std::memory_order_relaxed))
             {
                 if constexpr (isDescending)
-                    ::sort(array.begin(), array.end(), greaterEntryOperator());
+                    ::sort(array.begin(), array.end(), GreaterEntryOperator());
                 else
                     ::sort(array.begin(), array.end());
                 sorted.store(true, std::memory_order_release);
