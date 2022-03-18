@@ -59,18 +59,18 @@ private:
     mutable std::mutex mutex;
     Stopwatch elapsed;
 
+    /// For now it's always equal to tid.start_csn, but it's possible to implement something like SET SNAPSHOT query for time-traveling
     CSN snapshot;
+    std::list<CSN>::iterator snapshot_in_use_it;
 
+    /// Lists of changes made by transaction
     std::unordered_set<StoragePtr> storages;
     DataPartsVector creating_parts;
     DataPartsVector removing_parts;
-
-    std::atomic<CSN> csn;
-
-    std::list<CSN>::iterator snapshot_in_use_it;
-
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
     RunningMutationsList mutations;
+
+    std::atomic<CSN> csn;
 };
 
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;

@@ -24,14 +24,21 @@ struct TransactionInfoContext
     TransactionInfoContext(StorageID id, String part) : table(std::move(id)), part_name(std::move(part)) {}
 };
 
+/// This structure contains metadata of an object (currently it's used for data parts in MergeTree only)
+/// that allows to determine when and by which transaction it has been created/removed
 struct VersionMetadata
 {
+    /// ID of transaction that has created/is trying to create this object
     TransactionID creation_tid = Tx::EmptyTID;
+    /// ID of transaction that has removed/is trying to remove this object
     TransactionID removal_tid = Tx::EmptyTID;
 
+    /// Hash of removal_tid, used to lock an object for removal
     std::atomic<TIDHash> removal_tid_lock = 0;
 
+    /// CSN of transaction that has created this object
     std::atomic<CSN> creation_csn = Tx::UnknownCSN;
+    /// CSN of transaction that has removed this object
     std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
     /// Checks if an object is visible for transaction or not.
@@ -41,8 +48,10 @@ struct VersionMetadata
     TransactionID getCreationTID() const { return creation_tid; }
     TransactionID getRemovalTID() const;
 
+    /// Looks an object for removal, throws if it's already locked by concurrent transaction
     bool tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id = nullptr);
     void lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
+    /// Unlocks an object for removal (when transaction is rolling back)
     void unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
 
     bool isRemovalTIDLocked() const;

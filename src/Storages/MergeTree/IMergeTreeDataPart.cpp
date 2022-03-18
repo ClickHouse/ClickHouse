@@ -1196,7 +1196,7 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     version.writeRemovalTID(*out, clear);
     out->finalize();
 
-    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metedata
+    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
     if (!clear)
         out->sync();
 }
@@ -1272,6 +1272,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 {
     /// We don't have many tests with server restarts and it's really inconvenient to write such tests.
     /// So we use debug assertions to ensure that part version is written correctly.
+    /// This method is not supposed to be called in release builds.
 
     if (isProjectionPart())
         return true;

@@ -10,6 +10,10 @@ class MergeTreeTransaction;
 /// TODO maybe replace with raw pointer? It should not be shared, only MergeTreeTransactionHolder can own a transaction object
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
+/// Owns a MergeTreeTransactionObject.
+/// Rolls back a transaction in dtor if it was not committed.
+/// If `autocommit` flag is true, then it commits transaction if dtor is called normally
+/// or rolls it back if dtor was called due to an exception.
 class MergeTreeTransactionHolder
 {
 public:

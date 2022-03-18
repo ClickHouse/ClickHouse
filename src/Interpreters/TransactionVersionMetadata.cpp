@@ -26,6 +26,10 @@ inline static CSN getCSNAndAssert(TIDHash tid_hash, std::atomic<CSN> & csn, cons
     if (maybe_csn)
         return maybe_csn;
 
+    /// Either transaction is not committed (yet) or it was committed and then the CSN entry was cleaned up from the log.
+    /// We should load CSN again to distinguish the second case.
+    /// If entry was cleaned up, then CSN is already stored in VersionMetadata and we will get it.
+    /// And for the first case we will get UnknownCSN again.
     maybe_csn = csn.load();
     if (maybe_csn)
         return maybe_csn;
@@ -212,7 +216,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     /// NOTE: Old enough committed parts always have written CSNs,
     /// so we can determine their visibility through fast path.
     /// But for long-running writing transactions we will always do
-    /// CNS lookup and get 0 (UnknownCSN) until the transaction is committer/rolled back.
+    /// CNS lookup and get 0 (UnknownCSN) until the transaction is committed/rolled back.
     creation = getCSNAndAssert(creation_tid.getHash(), creation_csn, &creation_tid);
     if (!creation)
     {

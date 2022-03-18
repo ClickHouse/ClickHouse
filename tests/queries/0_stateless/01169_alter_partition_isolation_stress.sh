@@ -20,10 +20,6 @@ function thread_insert()
     trap "exit 0" INT
     val=1
     while true; do
-        action="ROLLBACK"
-        if (( RANDOM % 2 )); then
-            action="COMMIT"
-        fi
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);

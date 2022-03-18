@@ -4078,30 +4078,28 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(CSN snap
 
 void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const
 {
-    if (maybe_visible_parts.empty())
-        return;
+    [[maybe_unused]] size_t total_size = maybe_visible_parts.size();
 
-    auto it = maybe_visible_parts.begin();
-    auto it_last = maybe_visible_parts.end() - 1;
-    String visible_parts_str;
-    while (it <= it_last)
+    auto need_remove_pred = [snapshot_version, &current_tid] (const DataPartPtr & part) -> bool
     {
-        if ((*it)->version.isVisible(snapshot_version, current_tid))
-        {
-            visible_parts_str += (*it)->name;
-            visible_parts_str += " ";
-            ++it;
-        }
-        else
-        {
-            std::swap(*it, *it_last);
-            --it_last;
-        }
-    }
+        return !part->version.isVisible(snapshot_version, current_tid);
+    };
 
-    size_t new_size = it_last - maybe_visible_parts.begin() + 1;
-    LOG_TEST(log, "Got {} parts visible in snapshot {} (TID {}): {}", new_size, snapshot_version, current_tid, visible_parts_str);
-    maybe_visible_parts.resize(new_size);
+    auto new_end_it = std::remove_if(maybe_visible_parts.begin(), maybe_visible_parts.end(), need_remove_pred);
+    maybe_visible_parts.erase(new_end_it, maybe_visible_parts.end());
+    [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
+
+
+    auto get_part_names = [&maybe_visible_parts]() -> Strings
+    {
+        Strings visible_part_names;
+        for (const auto & p : maybe_visible_parts)
+            visible_part_names.push_back(p->name);
+        return visible_part_names;
+    };
+
+    LOG_TEST(log, "Got {} parts (of {}) visible in snapshot {} (TID {}): {}",
+             visible_size, total_size, snapshot_version, current_tid, fmt::join(get_part_names(), ", "));
 }
 
 
