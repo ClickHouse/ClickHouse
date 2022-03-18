@@ -19,6 +19,7 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
+private:
     std::unordered_map<IAST::Hash, Data, ASTHash> & cache;
     ASTPtr query_ptr;
 };

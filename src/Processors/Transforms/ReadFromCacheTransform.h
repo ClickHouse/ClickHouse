@@ -14,6 +14,7 @@ public:
 
 protected:
     Chunk generate() override;
+private:
     std::unordered_map<IAST::Hash, Data, ASTHash> & cache;
     ASTPtr query_ptr;
     size_t chunks_read_count;
