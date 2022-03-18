@@ -487,9 +487,12 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, const Block * hint_header)
 {
     ColumnsWithTypeAndName sample_columns;
+    std::unordered_set<String> nested_table_names;
+    if (hint_header)
+        nested_table_names = Nested::getAllTableNames(*hint_header);
     for (const auto & field : schema.fields())
     {
-        if (hint_header && !hint_header->has(field->name()))
+        if (hint_header && !hint_header->has(field->name()) && !nested_table_names.contains(field->name()))
             continue;
 
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
