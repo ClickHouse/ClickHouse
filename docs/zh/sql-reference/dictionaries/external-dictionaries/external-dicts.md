@@ -11,17 +11,17 @@ toc_title: "\u6982\u8FF0"
 
 ClickHouse:
 
--   完全或部分存储在RAM中的字典。
+-   完全或部分存储在内存中的字典。
 -   定期更新字典并动态加载缺失的值。 换句话说，字典可以动态加载。
--   允许创建外部字典与xml文件或 [DDL查询](../../statements/create.md#create-dictionary-query).
+-   允许使用xml文件或数据库的DDL 查询来创建外部字典。 [DDL查询](../../statements/create.md#create-dictionary-query).
 
-外部字典的配置可以位于一个或多个xml文件中。 配置的路径在指定 [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
+外部字典的配置可以位于一个或多个xml文件中。 配置的路径位于 [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
 
 字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
 
-该 [字典](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) 系统表包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
+该 *[字典](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) 系统表* 包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
 
--   字典的状态。
+-   字典状态。
 -   配置参数。
 -   度量指标，如为字典分配的RAM量或自成功加载字典以来的查询数量。
 
@@ -38,14 +38,17 @@ ClickHouse:
     <dictionary>
         <!-- Dictionary configuration. -->
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
+        <!-- 可以在配置文件里面配置多个dictionary节. -->
+        
     </dictionary>
 
 </clickhouse>
 ```
 
-你可以 [配置](external-dicts-dict.md) 同一文件中的任意数量的字典。
+你可以在 同一文件中[配置](external-dicts-dict.md) 任意数量的字典。
 
-[字典的DDL查询](../../statements/create.md#create-dictionary-query) 在服务器配置中不需要任何其他记录。 它们允许使用字典作为一流的实体，如表或视图。
+[外部字典的DDL查询](../../statements/create.md#create-dictionary-query) 在服务器配置中不需要任何其他配置。 
+DDL类的外部字典使用的时候是系统的一等公民，如表或视图。
 
 !!! attention "注意"
     您可以通过在一个小字典中描述它来转换小字典的值 `SELECT` 查询（见 [变换](../../../sql-reference/functions/other-functions.md) 功能）。 此功能与外部字典无关。
