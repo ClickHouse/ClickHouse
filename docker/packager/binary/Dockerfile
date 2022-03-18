@@ -51,10 +51,23 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        rustc \
-        cargo \
         --yes --no-install-recommends \
     && apt-get clean
+
+# Rust toolchain and libraries
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup target add aarch64-unknown-linux-gnu && \
+        rustup target add x86_64-apple-darwin && \
+        rustup target add x86_64-unknown-freebsd && \
+        rustup target add aarch64-apple-darwin && \
+        rustup target add powerpc64le-unknown-linux-gnu
+RUN apt-get install \
+        gcc-aarch64-linux-gnu \
+        build-essential \
+        libc6 \
+        libc6-dev \
+        --yes
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
