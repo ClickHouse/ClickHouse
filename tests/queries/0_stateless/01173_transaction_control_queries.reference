@@ -6,3 +6,7 @@ on exception while processing	[1,4,10,40]
 on session close	[1,6,10,60]
 commit	[1,7,10,70]
 readonly	[1,7,10,70]
+snapshot	2	8
+snapshot1	0	0
+snapshot3	1
+snapshot100500	2	8

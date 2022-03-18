@@ -68,6 +68,19 @@ select 'readonly', arraySort(groupArray(n)) from (select n from mt1 union all se
 commit;
 
 begin transaction;
+select 'snapshot', count(), sum(n) from mt1;
+set transaction snapshot 1;
+select 'snapshot1', count(), sum(n) from mt1;
+set transaction snapshot 3;
+set throw_on_unsupported_query_inside_transaction=0;
+select 'snapshot3', count() = (select count() from system.parts where database=currentDatabase() and table='mt1' and _state in ('Active', 'Outdated')) from mt1;
+set throw_on_unsupported_query_inside_transaction=1;
+set transaction snapshot 1000000000000000;
+select 'snapshot100500', count(), sum(n) from mt1;
+set transaction snapshot 5; -- { serverError 646 }
+rollback;
+
+begin transaction;
 create table m (n int) engine=Memory; -- { serverError 48 }
 commit; -- { serverError 646 }
 rollback;

@@ -27,6 +27,7 @@ public:
     };
 
     CSN getSnapshot() const { return snapshot; }
+    void setSnapshot(CSN new_snapshot);
     State getState() const;
 
     const TransactionID tid;
@@ -59,7 +60,7 @@ private:
     mutable std::mutex mutex;
     Stopwatch elapsed;
 
-    /// For now it's always equal to tid.start_csn, but it's possible to implement something like SET SNAPSHOT query for time-traveling
+    /// Usually it's equal to tid.start_csn, but can be changed by SET SNAPSHOT query (for introspection purposes and time-traveling)
     CSN snapshot;
     std::list<CSN>::iterator snapshot_in_use_it;
 

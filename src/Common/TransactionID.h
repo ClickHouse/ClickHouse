@@ -34,6 +34,7 @@ namespace Tx
     const CSN PrehistoricCSN = 1;
     /// Special reserved values
     const CSN CommittingCSN = 2;
+    const CSN EverythingVisibleCSN = 3;
     const CSN MaxReservedCSN = 32;
 
     /// So far, that changes will never become visible

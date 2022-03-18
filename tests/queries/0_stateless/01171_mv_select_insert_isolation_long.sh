@@ -89,7 +89,12 @@ function thread_select()
         SELECT throwIf((SELECT (sum(nm), count() % 2) FROM dst) != (0, 1)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(nm)) FROM dst)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(n*m)) FROM src)) FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT -q "SELECT 'src', arraySort(groupArray(n*m)), arraySort(groupArray((n*m, _part))) FROM src UNION ALL SELECT 'mv', arraySort(groupArray(nm)), arraySort(groupArray((nm, _part))) FROM mv"
+        COMMIT;" || $CLICKHOUSE_CLIENT --multiquery --query "
+                          begin transaction;
+                          set transaction snapshot 3;
+                          select 'src', n, m, _part from src order by n, m;
+                          select 'dst', nm, _part from dst order by nm;
+                          rollback" ||:
     done
 }
 
@@ -110,7 +115,12 @@ function thread_select_insert()
         -- now check that all results are the same
         SELECT throwIf(1 != (SELECT countDistinct(arr) FROM (SELECT x, arraySort(groupArray(nm)) AS arr FROM tmp WHERE x!=4 GROUP BY x))) FORMAT Null;
         SELECT throwIf((SELECT count(), sum(nm) FROM tmp WHERE x=4) != (SELECT count(), sum(nm) FROM tmp WHERE x!=4)) FORMAT Null;
-        ROLLBACK;" || $CLICKHOUSE_CLIENT -q "SELECT x, arraySort(groupArray(nm)) AS arr FROM tmp GROUP BY x"
+        ROLLBACK;" || $CLICKHOUSE_CLIENT --multiquery --query "
+                            begin transaction;
+                            set transaction snapshot 3;
+                            select 'src', n, m, _part from src order by n, m;
+                            select 'dst', nm, _part from dst order by nm;
+                            rollback" ||:
     done
 }
 
