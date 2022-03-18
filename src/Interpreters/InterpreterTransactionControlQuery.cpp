@@ -28,6 +28,8 @@ BlockIO InterpreterTransactionControlQuery::execute()
             return executeCommit(session_context);
         case ASTTransactionControl::ROLLBACK:
             return executeRollback(session_context);
+        case ASTTransactionControl::SET_SNAPSHOT:
+            return executeSetSnapshot(session_context, tcl.snapshot);
     }
     assert(false);
     __builtin_unreachable();
@@ -69,6 +71,19 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
     if (txn->getState() == MergeTreeTransaction::RUNNING)
         TransactionLog::instance().rollbackTransaction(txn);
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+    return {};
+}
+
+BlockIO InterpreterTransactionControlQuery::executeSetSnapshot(ContextMutablePtr session_context, UInt64 snapshot)
+{
+    auto txn = session_context->getCurrentTransaction();
+    if (!txn)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
+
+    if (snapshot <= Tx::MaxReservedCSN && snapshot != Tx::PrehistoricCSN && snapshot != Tx::EverythingVisibleCSN)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot set snapshot to reserved CSN");
+
+    txn->setSnapshot(snapshot);
     return {};
 }
 

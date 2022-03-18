@@ -20,6 +20,11 @@ MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, U
 {
 }
 
+void MergeTreeTransaction::setSnapshot(CSN new_snapshot)
+{
+    snapshot = new_snapshot;
+}
+
 MergeTreeTransaction::State MergeTreeTransaction::getState() const
 {
     CSN c = csn.load();

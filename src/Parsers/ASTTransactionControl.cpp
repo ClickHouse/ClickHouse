@@ -18,6 +18,9 @@ void ASTTransactionControl::formatImpl(const FormatSettings & format /*state*/, 
         case ROLLBACK:
             format.ostr << (format.hilite ? hilite_keyword : "") << "ROLLBACK" << (format.hilite ? hilite_none : "");
             break;
+        case SET_SNAPSHOT:
+            format.ostr << (format.hilite ? hilite_keyword : "") << "SET TRANSACTION SNAPSHOT " << (format.hilite ? hilite_none : "") << snapshot;
+            break;
     }
 }
 

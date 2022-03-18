@@ -13,9 +13,12 @@ public:
         BEGIN,
         COMMIT,
         ROLLBACK,
+        SET_SNAPSHOT,
     };
 
     QueryType action;
+
+    UInt64 snapshot;    /// For SET TRANSACTION SNAPSHOT ...
 
     ASTTransactionControl(QueryType action_) : action(action_) {}
 

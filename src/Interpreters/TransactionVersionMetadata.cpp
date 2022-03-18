@@ -171,6 +171,10 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     assert(creation == Tx::UnknownCSN || creation == Tx::PrehistoricCSN || Tx::MaxReservedCSN < creation);
     assert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
 
+    /// Special snapshot for introspection purposes
+    if (unlikely(snapshot_version == Tx::EverythingVisibleCSN))
+        return true;
+
     /// Fast path:
 
     /// Part is definitely not visible if:

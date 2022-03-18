@@ -50,7 +50,12 @@ function thread_partition_src_to_dst()
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
-        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type" ||:
+        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
+                                                                                   begin transaction;
+                                                                                   set transaction snapshot 3;
+                                                                                   select $i, 'src', type, n, _part from src order by type, n;
+                                                                                   select $i, 'dst', type, n, _part from dst order by type, n;
+                                                                                   rollback" ||:
         echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || count=$((count+1))
         echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || sum=$((sum+i))
     done
@@ -74,7 +79,12 @@ function thread_partition_dst_to_src()
         SET throw_on_unsupported_query_inside_transaction=0;
         SYSTEM START MERGES dst;
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=4) != (toUInt8($i/2 + 1), (select sum(number) from numbers(1, $i) where number % 2 or number=$i))) FORMAT Null;
-        $action;" || $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type"
+        $action;" || $CLICKHOUSE_CLIENT --multiquery --query "
+                          begin transaction;
+                          set transaction snapshot 3;
+                          select $i, 'src', type, n, _part from src order by type, n;
+                          select $i, 'dst', type, n, _part from dst order by type, n;
+                          rollback" ||:
     done
 }
 
@@ -93,7 +103,12 @@ function thread_select()
         SELECT _table, throwIf(arraySort(groupArrayIf(n, type=1)) != arraySort(groupArrayIf(n, type=2))) FROM merge(currentDatabase(), '') GROUP BY _table FORMAT Null;
         -- all rows are inserted in insert_thread
         SELECT type, throwIf(count(n) != max(n)), throwIf(sum(n) != max(n)*(max(n)+1)/2) FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type"
+        COMMIT;" || $CLICKHOUSE_CLIENT --multiquery --query "
+                         begin transaction;
+                         set transaction snapshot 3;
+                         select $i, 'src', type, n, _part from src order by type, n;
+                         select $i, 'dst', type, n, _part from dst order by type, n;
+                         rollback" ||:
     done
 }
 
