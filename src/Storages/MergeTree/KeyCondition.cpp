@@ -716,15 +716,11 @@ bool KeyCondition::transformConstantWithValidFunctions(
             if (is_valid_chain)
             {
                 auto const_type = cur_node->result_type;
-
-                /// Try cast constant to the least super type of out_type and const_type. If there
-                /// is no super type, monotonic chains can be broken. Return false immediately.
-                const_type = tryGetLeastSupertype({out_type, const_type});
-                if (!const_type)
-                    return false;
-
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
+                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
+
+                if (const_value.isNull())
+                    return false;
 
                 while (!chain.empty())
                 {
