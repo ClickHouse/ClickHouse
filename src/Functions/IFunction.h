@@ -120,7 +120,7 @@ public:
 
     virtual ~IFunctionBase() = default;
 
-    virtual ColumnPtr execute(
+    virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
