@@ -17,11 +17,14 @@ from build_download_helper import download_all_deb_packages
 from download_previous_release import download_previous_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, get_commit, override_status
+from commit_status_helper import post_commit_status, get_commit, override_status, post_commit_status_to_file
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 from tee_popen import TeePopen
+
+NO_CHANGES_MSG = 'Nothing to run'
+
 
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
     result = []
@@ -135,6 +138,7 @@ def parse_args():
     parser.add_argument("check_name")
     parser.add_argument("kill_timeout", type=int)
     parser.add_argument("--validate-bugfix", action='store_true', help="Check that added tests failed on latest stable")
+    parser.add_argument("--post-commit-status", default='commit_status', choices=['commit_status', 'file'], help="Where to public post commit status")
     return parser.parse_args()
 
 
@@ -186,7 +190,11 @@ if __name__ == "__main__":
         if not tests_to_run:
             commit = get_commit(gh, pr_info.sha)
             state = override_status('success', check_name, validate_bugix_check)
-            commit.create_status(context=check_name_with_group, description='Not found changed stateless tests', state=state)
+            if args.post_commit_status == 'commit_status':
+                commit.create_status(context=check_name_with_group, description=NO_CHANGES_MSG, state=state)
+            elif args.post_commit_status == 'file':
+                fpath = os.path.join(temp_path, "post_commit_status.tsv")
+                post_commit_status_to_file(fpath, description=NO_CHANGES_MSG, state=state, report_url='null')
             sys.exit(0)
 
     image_name = get_image_name(check_name)
@@ -239,8 +247,13 @@ if __name__ == "__main__":
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, check_name_with_group)
 
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name_with_group, description, state, report_url)
+    print(f"::notice:: {check_name} Report url: {report_url}")
+    if args.post_commit_status == 'commit_status':
+        post_commit_status(gh, pr_info.sha, check_name_with_group, description, state, report_url)
+    elif args.post_commit_status == 'file':
+        post_commit_status_to_file(os.path.join(temp_path, "post_commit_status.tsv"), description, state, report_url)
+    else:
+        raise Exception(f'Unknown post_commit_status option "{args.post_commit_status}"')
 
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name_with_group)
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
