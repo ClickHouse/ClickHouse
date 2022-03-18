@@ -115,6 +115,7 @@ private:
         bool finished{false};
         SeekableReadBuffer::Range range;
         size_t bytes_left{0};
+        std::atomic_bool cancel{false};
     };
 
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
