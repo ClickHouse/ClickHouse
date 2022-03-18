@@ -304,6 +304,7 @@ def process_tgz(s3: S3, art_client: Artifactory):
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
+    os.makedirs(TEMP_PATH, exist_ok=True)
     s3 = S3(
         args.bucket_name,
         args.pull_request,
