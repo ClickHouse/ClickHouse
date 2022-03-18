@@ -17,7 +17,7 @@ CREATE TABLE t_01411(
 ) ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO t_01411 (str) SELECT concat('asdf', toString(number % 10000)) FROM numbers(1000000);
+INSERT INTO t_01411 (str) SELECT concat('asdf', toString(number % 10000)) FROM numbers(2000000);
 
 CREATE TABLE t_01411_num(
     num UInt8,
@@ -25,7 +25,7 @@ CREATE TABLE t_01411_num(
 ) ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(100000);
+INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(200000);
 
 """
 
