@@ -51,6 +51,7 @@ The supported formats are:
 | [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
 | [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
 | [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
+| [ProtobufList](#protobuflist)                                                           | ✔     | ✔      |
 | [Avro](#data-format-avro)                                                               | ✔     | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
@@ -1230,7 +1231,38 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## ProtobufSingle {#protobufsingle}
 
-Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
+Same as [Protobuf](#protobuf) but for storing/parsing a single Protobuf message without length delimiter.
+As a result, only a single table row can be written/read.
+
+## ProtobufList {#protobuflist}
+
+Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+
+Usage example:
+
+``` sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+``` bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+where the file `schemafile.proto` looks like this:
+
+``` capnp
+syntax = "proto3";
+
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
 
 ## Avro {#data-format-avro}
 
