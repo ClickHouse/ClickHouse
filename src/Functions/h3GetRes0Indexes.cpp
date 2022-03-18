@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -55,7 +56,7 @@ public:
         res_indexes.insert(res_indexes.end(), res0_indexes.begin(), res0_indexes.end());
         res->insert(res_indexes);
 
-        return res;
+        return result_type->createColumnConst(input_rows_count, res_indexes);
     }
 };
 

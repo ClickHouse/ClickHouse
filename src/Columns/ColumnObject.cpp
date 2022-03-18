@@ -2,6 +2,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -254,7 +255,7 @@ void ColumnObject::Subcolumn::insert(Field field)
 
 void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 {
-    auto base_type = info.scalar_type;
+    auto base_type = std::move(info.scalar_type);
 
     if (isNothing(base_type) && info.num_dimensions == 0)
     {
@@ -288,7 +289,8 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 
     if (data.empty())
     {
-        data.push_back(value_type->createColumn());
+        auto serialization = value_type->getSerialization(ISerialization::Kind::SPARSE);
+        data.push_back(value_type->createColumn(*serialization));
         least_common_type = value_type;
     }
     else if (!least_common_type->equals(*value_type))
@@ -297,7 +299,8 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         type_changed = true;
         if (!least_common_type->equals(*value_type))
         {
-            data.push_back(value_type->createColumn());
+            auto serialization = value_type->getSerialization(ISerialization::Kind::SPARSE);
+            data.push_back(value_type->createColumn(*serialization));
             least_common_type = value_type;
         }
     }
@@ -340,10 +343,22 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
     }
 }
 
+bool ColumnObject::Subcolumn::isFinalized() const
+{
+    return data.empty() ||
+        (data.size() == 1 && !data[0]->isSparse() && num_of_defaults_in_prefix == 0);
+}
+
 void ColumnObject::Subcolumn::finalize()
 {
-    if (isFinalized() || data.empty())
+    if (isFinalized())
         return;
+
+    if (data.size() == 1 && num_of_defaults_in_prefix == 0)
+    {
+        data[0] = data[0]->convertToFullColumnIfSparse();
+        return;
+    }
 
     const auto & to_type = least_common_type;
     auto result_column = to_type->createColumn();
@@ -353,6 +368,7 @@ void ColumnObject::Subcolumn::finalize()
 
     for (auto & part : data)
     {
+        part = part->convertToFullColumnIfSparse();
         auto from_type = getDataTypeByColumn(*part);
         size_t part_size = part->size();
 
