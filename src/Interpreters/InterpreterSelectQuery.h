@@ -32,7 +32,7 @@ class QueryPlan;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-using Data = std::vector<Chunk>;
+using Data = std::pair<Block, Chunks>;
 
 struct ASTHash
 {
@@ -164,6 +164,8 @@ private:
     executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
+
+    static Chunk create_single_chunk_from_many(Chunks chunks);
 
     enum class Modificator
     {

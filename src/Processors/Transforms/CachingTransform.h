@@ -14,6 +14,7 @@ public:
         : ISimpleTransform(header_, header_, false)
         , cache(cache_)
         , query_ptr(query_ptr_)
+        , header(header_)
     {}
     String getName() const override { return "CachingTransform"; }
 
@@ -22,6 +23,7 @@ protected:
 private:
     std::unordered_map<IAST::Hash, Data, ASTHash> & cache;
     ASTPtr query_ptr;
+    Block header;
 };
 
 }

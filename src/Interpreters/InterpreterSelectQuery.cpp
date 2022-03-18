@@ -595,7 +595,10 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
-        Pipe pipe(std::make_shared<ReadFromCacheTransform>(Block{}, cached_data, query_ptr));
+        auto& header= cached_data[query_ptr->getTreeHash()].first;
+        auto chunk = create_single_chunk_from_many(cached_data[query_ptr->getTreeHash()].second);
+
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk)));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
@@ -2634,6 +2637,17 @@ void InterpreterSelectQuery::initSettings()
         context->setSetting("group_by_two_level_threshold_bytes", Field(0));
 
     }
+}
+static Chunk InterpreterSelectQuery::create_single_chunk_from_many(Chunks chunks)
+{
+    std::vector<ColumnPtr> columns;
+    UInt64 num_rows = 0;
+    for (auto& c : chunks) {
+        num_rows = c.getNumRows();
+        auto cols = c.detachColumns();
+        columns.insert(columns.end(), cols.begin(), cols.end());
+    }
+    return Chunk(columns, num_rows);
 }
 
 }
