@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
     bool has_state_column = false;
     Names real_column_names;
