@@ -795,6 +795,12 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
                 return false;
             if (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
+
+            /// Do not try to merge parts that are locked for removal (merge will probably fail)
+            if (left && left->version.isRemovalTIDLocked())
+                return false;
+            if (right && right->version.isRemovalTIDLocked())
+                return false;
         }
 
         /// This predicate is checked for the first part of each range.
