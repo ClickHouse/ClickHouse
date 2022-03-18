@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-import os
-import logging
-import sys
-import json
-import subprocess
+import argparse
 import csv
+import json
+import logging
+import os
+import subprocess
+import sys
 
 from github import Github
 
-import argparse
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
