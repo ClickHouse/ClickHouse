@@ -125,7 +125,9 @@ public:
         for (const auto & name_type : source_info->partition_name_types)
         {
             if (to_read_block.has(name_type.name))
+            {
                 to_read_block.erase(name_type.name);
+            }
         }
 
         /// Initialize format settings
