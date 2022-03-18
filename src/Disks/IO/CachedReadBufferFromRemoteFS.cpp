@@ -95,22 +95,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
             auto remote_fs_segment_reader = file_segment->getRemoteFileReader();
 
             if (remote_fs_segment_reader)
-            {
-                /// There might be pending data if some previous downloader has downloaded the data, but
-                /// failed to fully write it.
-                if (!remote_fs_segment_reader->hasPendingData())
-                    return remote_fs_segment_reader;
-
-                /// TODO: Finish this.
-                // if (remote_fs_segment_reader->getPosition() >= file_offset_of_buffer_end)
-                // {
-                //     auto to_ignore = remote_fs_segment_reader->getFileOffsetOfBufferEnd() - file_offset_of_buffer_end;
-                //     remote_fs_segment_reader->ignore(to_ignore);
-                //     return remote_fs_segment_reader;
-                // }
-
-                file_segment->resetRemoteFileReader();
-            }
+                return remote_fs_segment_reader;
 
             remote_fs_segment_reader = remote_file_reader_creator();
             file_segment->setRemoteFileReader(remote_fs_segment_reader);
@@ -436,11 +421,6 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
             }
 
             size_t current_predownload_size = std::min(implementation_buffer->buffer().size(), bytes_to_predownload);
-            if (std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
-            {
-                size_t remaining_size_to_read = std::min(file_segment->range().right, read_until_position - 1) - file_offset_of_buffer_end + 1;
-                current_predownload_size = std::min(current_predownload_size, remaining_size_to_read);
-            }
 
             if (file_segment->reserve(current_predownload_size))
             {
@@ -676,14 +656,6 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     if (result)
     {
-        if (std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
-        {
-            size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
-            size = std::min(size, remaining_size_to_read);
-            assert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
-            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
-        }
-
         if (download_current_segment)
         {
             assert(file_offset_of_buffer_end + size - 1 <= file_segment->range().right);
@@ -723,6 +695,18 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                 ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
                 break;
             }
+        }
+
+        /// - If last file segment was read from remote fs, then we read up to segment->range().right, but
+        /// the requested right boundary cound be segment->range().left < requested_right_boundary <  segment->range().right.
+        /// Therefore need to resize to a smaller size. And resize must be done after write into cache.
+        /// - If last file segment was read from local fs, then we could read more than file_segemnt->range().right, so resize is also needed.
+        if (std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
+        {
+            size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            size = std::min(size, remaining_size_to_read);
+            assert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
+            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
         }
 
         file_offset_of_buffer_end += size;

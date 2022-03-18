@@ -200,7 +200,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     {
         if (downloaded_size > 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Cache writer should be finalized (downloaded size: {}, state: {})",
+                            "Cache writer was finalized (downloaded size: {}, state: {})",
                             downloaded_size, stateToString(download_state));
 
         auto download_path = cache->getPathInLocalCache(key(), offset());
