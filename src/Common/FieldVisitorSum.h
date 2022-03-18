@@ -25,6 +25,7 @@ public:
     bool operator() (Array &) const;
     bool operator() (Tuple &) const;
     bool operator() (Map &) const;
+    bool operator() (Object &) const;
     bool operator() (UUID &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (bool &) const;
