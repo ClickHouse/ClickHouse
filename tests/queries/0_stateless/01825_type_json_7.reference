@@ -1,0 +1,4 @@
+Tuple(categories Array(String), key String)
+v1	[]
+v2	['foo','bar']
+v3	[]

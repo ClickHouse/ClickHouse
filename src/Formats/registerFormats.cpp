@@ -74,6 +74,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 
 void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
+void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 
@@ -84,6 +85,7 @@ void registerInputFormatHiveText(FormatFactory & factory);
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
 void registerArrowSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory);
@@ -175,6 +177,7 @@ void registerFormats()
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
+    registerInputFormatJSONAsObject(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif
@@ -183,6 +186,7 @@ void registerFormats()
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
+    registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 
     registerArrowSchemaReader(factory);
     registerParquetSchemaReader(factory);

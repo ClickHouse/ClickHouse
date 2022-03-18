@@ -563,12 +563,13 @@ void RemoteQueryExecutor::sendExternalTables()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
+                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
                     Pipe pipe = cur->read(
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        metadata_snapshot, query_info, context,
+                        storage_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     if (pipe.empty())
