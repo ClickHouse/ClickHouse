@@ -25,9 +25,10 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 #if USE_CASSANDRA
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);
 
-    global_context->getRemoteHostFilter().checkHostAndPort(config.getString(config_prefix + ".host"), toString(config.getUInt(config_prefix + ".port", 0)));
+    auto source_config_prefix = config_prefix + ".cassandra";
+    global_context->getRemoteHostFilter().checkHostAndPort(config.getString(source_config_prefix + ".host"), toString(config.getUInt(source_config_prefix + ".port", 0)));
 
-    return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
+    return std::make_unique<CassandraDictionarySource>(dict_struct, config, source_config_prefix, sample_block);
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
