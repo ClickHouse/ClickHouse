@@ -96,6 +96,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
     while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
     {
+        read_workers.front()->cancel = true;
         read_workers.pop_front();
     }
 
@@ -233,12 +234,12 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
     try
     {
-        while (!emergency_stop)
+        while (!emergency_stop && !read_worker->cancel)
         {
             if (!read_worker->reader->next())
                 throw Exception("Failed to read all the data from the reader", ErrorCodes::LOGICAL_ERROR);
 
-            if (emergency_stop)
+            if (emergency_stop || read_worker->cancel)
                 break;
 
             Buffer buffer = read_worker->reader->buffer();
