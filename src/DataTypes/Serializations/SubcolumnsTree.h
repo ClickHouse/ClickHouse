@@ -3,7 +3,7 @@
 #include <DataTypes/Serializations/PathInData.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
-#include <unordered_map>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -31,7 +31,8 @@ public:
         Kind kind = TUPLE;
         const Node * parent = nullptr;
 
-        std::map<String, std::shared_ptr<Node>, std::less<>> children;
+        Arena strings_pool;
+        HashMapWithStackMemory<StringRef, std::shared_ptr<Node>, StringRefHash, 4> children;
 
         NodeData data;
         PathInData path;
@@ -39,10 +40,11 @@ public:
         bool isNested() const { return kind == NESTED; }
         bool isScalar() const { return kind == SCALAR; }
 
-        void addChild(const String & key, std::shared_ptr<Node> next_node)
+        void addChild(std::string_view key, std::shared_ptr<Node> next_node)
         {
             next_node->parent = this;
-            children[key] = std::move(next_node);
+            StringRef key_ref{strings_pool.insert(key.data(), key.length()), key.length()};
+            children[key_ref] = std::move(next_node);
         }
     };
 
@@ -83,10 +85,10 @@ public:
         {
             assert(current_node->kind != Node::SCALAR);
 
-            auto it = current_node->children.find(parts[i].key);
+            auto it = current_node->children.find(StringRef{parts[i].key});
             if (it != current_node->children.end())
             {
-                current_node = it->second.get();
+                current_node = it->getMapped().get();
                 node_creator(current_node->kind, true);
 
                 if (current_node->isNested() != parts[i].is_nested)
@@ -101,7 +103,7 @@ public:
             }
         }
 
-        auto it = current_node->children.find(parts.back().key);
+        auto it = current_node->children.find(StringRef{parts.back().key});
         if (it != current_node->children.end())
             return false;
 
@@ -192,11 +194,11 @@ private:
 
         for (const auto & part : parts)
         {
-            auto it = current_node->children.find(part.key);
+            auto it = current_node->children.find(StringRef{part.key});
             if (it == current_node->children.end())
                 return find_exact ? nullptr : current_node;
 
-            current_node = it->second.get();
+            current_node = it->getMapped().get();
         }
 
         return current_node;
