@@ -243,7 +243,7 @@
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile> -->
+            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>-->
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
@@ -367,6 +367,10 @@
 
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    
+    <!-- Disable AuthType plaintext_password and no_password for ACL. -->
+    <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
+    <!-- <allow_no_password>0</allow_no_password> -->`
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -569,9 +573,9 @@
          If not specified, system time zone at server startup is used.
 
          Please note, that server could display time zone alias instead of specified name.
-         Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
+         Example: Zulu is an alias for UTC.
     -->
-    <!-- <timezone>Europe/Moscow</timezone> -->
+    <!-- <timezone>UTC</timezone> -->
 
     <!-- You can specify umask here (see "man umask"). Server will apply it on startup.
          Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
