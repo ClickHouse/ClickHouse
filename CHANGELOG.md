@@ -1,4 +1,11 @@
-### ClickHouse release v22.3-lts, 2022-03-17
+### Table of Contents
+**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
+**[ClickHouse release v22.2, 2022-02-17](#222)**<br>
+**[ClickHouse release v22.1, 2022-01-18](#221)**<br>
+**[Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)**<br>
+
+
+## <a id="223"></a> ClickHouse release v22.3-lts, 2022-03-17
 
 #### Backward Incompatible Change
 
@@ -125,7 +132,7 @@
 * Fix inconsistency of `max_query_size` limitation in distributed subqueries. [#34078](https://github.com/ClickHouse/ClickHouse/pull/34078) ([Chao Ma](https://github.com/godliness)).
 
 
-### ClickHouse release v22.2, 2022-02-17
+### <a id="222"></a> ClickHouse release v22.2, 2022-02-17
 
 #### Upgrade Notes
 
@@ -301,7 +308,7 @@
 * This PR allows using multiple LDAP storages in the same list of user directories. It worked earlier but was broken because LDAP tests are disabled (they are part of the testflows tests). [#33574](https://github.com/ClickHouse/ClickHouse/pull/33574) ([Vitaly Baranov](https://github.com/vitlibar)).
 
 
-### ClickHouse release v22.1, 2022-01-18
+### <a id="221"></a> ClickHouse release v22.1, 2022-01-18
 
 #### Upgrade Notes
 
