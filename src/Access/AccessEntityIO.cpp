@@ -43,10 +43,12 @@ namespace ErrorCodes
     extern const int RBAC_VERSION_IS_TOO_NEW;
 }
 
+extern const UInt64 RBAC_INITIAL_VERSION;
+extern const UInt64 RBAC_LATEST_VERSION;
+
 namespace
 {
     constexpr const char RBAC_VERSION_SETTING_NAME[] = "rbac_version";
-    constexpr const Int64 LATEST_RBAC_VERSION = 1;
 
     /// Special parser for the 'ATTACH access entity' queries.
     class ParserAttachAccessEntity : public IParserBase
@@ -87,7 +89,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     {
         /// Prepend the list with "SET rbac_version = ..." query.
         auto set_rbac_version_query = std::make_shared<ASTSetQuery>();
-        set_rbac_version_query->changes.emplace_back(RBAC_VERSION_SETTING_NAME, LATEST_RBAC_VERSION);
+        set_rbac_version_query->changes.emplace_back(RBAC_VERSION_SETTING_NAME, RBAC_LATEST_VERSION);
         queries.push_back(set_rbac_version_query);
     }
 
@@ -123,8 +125,8 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     /// Number of queries interpreted.
     size_t query_index = 0;
 
-    /// If there is no "SET rbac_version = ..." query we assume that it's the first version.
-    UInt64 rbac_version = 1;
+    /// If there is no "SET rbac_version = ..." query we assume that it's the initial version.
+    UInt64 rbac_version = RBAC_INITIAL_VERSION;
 
     /// Interpret the AST to build an access entity.
     std::shared_ptr<User> user;
@@ -143,10 +145,10 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             if (query_index != 0)
                 throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "SET {} should be the first query in the file", RBAC_VERSION_SETTING_NAME);
             rbac_version = set_query->changes[0].value.safeGet<UInt64>();
-            if (rbac_version < 1)
-                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "{} must be >= 1", RBAC_VERSION_SETTING_NAME);
-            if (rbac_version > LATEST_RBAC_VERSION)
-                throw Exception(ErrorCodes::RBAC_VERSION_IS_TOO_NEW, "{} {} is too new", RBAC_VERSION_SETTING_NAME, rbac_version);
+            if (rbac_version < RBAC_INITIAL_VERSION)
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "{} must be >= {}", RBAC_VERSION_SETTING_NAME, RBAC_INITIAL_VERSION);
+            if (rbac_version > RBAC_LATEST_VERSION)
+                throw Exception(ErrorCodes::RBAC_VERSION_IS_TOO_NEW, "{} must be <= {}, {} {} is too new", RBAC_VERSION_SETTING_NAME, RBAC_LATEST_VERSION, RBAC_VERSION_SETTING_NAME, rbac_version);
         }
         else if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
@@ -167,7 +169,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             if (res)
                 throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
             res = policy = std::make_unique<RowPolicy>();
-            InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
+            InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query, rbac_version);
         }
         else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
         {
