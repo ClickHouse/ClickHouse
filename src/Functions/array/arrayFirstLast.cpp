@@ -19,7 +19,8 @@ enum class ArrayFirstLastStrategy : uint8_t
     Last
 };
 
-enum class ArrayFirstLastElementNotExistsStrategy : uint8_t {
+enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
+{
     Default,
     Null
 };
