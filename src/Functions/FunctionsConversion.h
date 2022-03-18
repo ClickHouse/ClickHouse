@@ -45,6 +45,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/FunctionsCodingIP.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -2500,10 +2501,12 @@ public:
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<Diagnostic> diagnostic_
-            , CastType cast_type_)
+            , CastType cast_type_
+            , bool cast_ipv4_ipv6_default_on_conversion_error_)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
+        , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
     {
     }
 
@@ -2552,6 +2555,7 @@ private:
 
     std::optional<Diagnostic> diagnostic;
     CastType cast_type;
+    bool cast_ipv4_ipv6_default_on_conversion_error;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -3349,7 +3353,9 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        if (from_type->equals(*to_type))
+        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+
+        if (from_type->equals(*to_type) && !convert_to_ipv6)
         {
             if (isUInt8(from_type))
                 return createUInt8ToUInt8Wrapper(from_type, to_type);
@@ -3417,7 +3423,9 @@ private:
             return false;
         };
 
-        auto make_custom_serialization_wrapper = [&](const auto & types) -> bool
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = cast_ipv4_ipv6_default_on_conversion_error;
+
+        auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using ToDataType = typename Types::RightType;
@@ -3425,8 +3433,45 @@ private:
 
             if constexpr (WhichDataType(FromDataType::type_id).isStringOrFixedString())
             {
-                if (to_type->getCustomSerialization())
+                if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
+                    if (to_type->getCustomName()->getName() == "IPv4")
+                    {
+                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                            -> ColumnPtr
+                        {
+                            if (!WhichDataType(result_type).isUInt32())
+                                throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected UInt32", result_type->getName());
+
+                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
+                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                            else
+                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                        };
+
+                        return true;
+                    }
+
+                    if (to_type->getCustomName()->getName() == "IPv6")
+                    {
+                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                            -> ColumnPtr
+                        {
+                            if (!WhichDataType(result_type).isFixedString())
+                                throw Exception(
+                                    ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected FixedString", result_type->getName());
+
+                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
+                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                            else
+                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                        };
+
+                        return true;
+                    }
+
                     ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
                     return true;
                 }
