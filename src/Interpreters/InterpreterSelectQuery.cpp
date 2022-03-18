@@ -595,11 +595,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
-        Pipe pipe;
-        pipe.addSimpleTransform([&](const Block& header)
-        {
-           return std::make_shared<ReadFromCacheTransform>(header, cached_data, query_ptr);
-        });
+        Pipe pipe(std::make_shared<ReadFromCacheTransform>(Block{}, cached_data, query_ptr));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
