@@ -831,15 +831,21 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
 static InterpolateDescription getInterpolateDescription(const ASTSelectQuery & query, Block block, ContextPtr context)
 {
     InterpolateDescription interpolate_descr;
-    interpolate_descr.reserve(query.interpolate()->children.size());
-
-    for (const auto & elem : query.interpolate()->children)
+    if (query.interpolate())
     {
-        auto interpolate = elem->as<ASTInterpolateElement &>();
-        auto syntax_result = TreeRewriter(context).analyze(interpolate.expr, block.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(interpolate.expr, syntax_result, context);
-        ExpressionActionsPtr actions = analyzer.getActions(true, true, CompileExpressions::yes);
-        interpolate_descr.emplace_back(block.findByName(interpolate.column->getColumnName())->cloneEmpty(), actions);
+        interpolate_descr.reserve(query.interpolate()->children.size());
+
+        for (const auto & elem : query.interpolate()->children)
+        {
+            auto interpolate = elem->as<ASTInterpolateElement &>();
+            ColumnWithTypeAndName column = block.findByName(interpolate.column->getColumnName())->cloneEmpty();
+
+            auto syntax_result = TreeRewriter(context).analyze(interpolate.expr, block.getNamesAndTypesList());
+            ExpressionAnalyzer analyzer(interpolate.expr, syntax_result, context);
+            ExpressionActionsPtr actions = analyzer.getActions(true, true, CompileExpressions::yes);
+
+            interpolate_descr.emplace_back(column, actions);
+        }
     }
 
     return interpolate_descr;

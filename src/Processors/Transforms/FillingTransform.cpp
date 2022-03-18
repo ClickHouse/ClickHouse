@@ -179,21 +179,26 @@ FillingTransform::FillingTransform(
         size_t block_position = header_.getPositionByName(interpolate_description[i].column.name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
-        /* TODO JOO check types?
-        auto & descr = filling_row.getFillDescription(i);
-        const auto & type = header_.getByPosition(block_position).type;
 
-        if (!tryConvertFields(descr, type))
-            throw Exception("Incompatible types of WITH FILL expression values with column type "
-                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        /// Check column-expression compatibility
+        auto column = interpolate_description[i].column;
+        auto exp_type = interpolate_description[i].actions->getActionsDAG().getResultColumns()[0].type;
+        auto exp_column = exp_type->createColumn();
+        exp_column->insertDefault();
 
-        if (type->isValueRepresentedByUnsignedInteger() &&
-            ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
-                (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
+        try
         {
-            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
-                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-        } */
+            if (auto exp_field = (*exp_column)[0]; convertFieldToType(exp_field, *column.type).isNull())
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Incompatible types of INTERPOLATE expression type {} with column '{}' of type {}",
+                        exp_type->getName(), column.name, column.type->getName());
+        }
+        catch (const Exception &)
+        {
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Incompatible types of INTERPOLATE expression type {} with column '{}' of type {}",
+                    exp_type->getName(), column.name, column.type->getName());
+        }
     }
 
     std::set<size_t> unique_positions;
