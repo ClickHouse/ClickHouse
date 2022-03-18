@@ -399,6 +399,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
             return true;
 
         /// disallow GLOBAL IN, GLOBAL NOT IN
+        /// TODO why?
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
