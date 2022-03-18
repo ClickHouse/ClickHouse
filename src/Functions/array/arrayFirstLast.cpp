@@ -1,4 +1,5 @@
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
@@ -12,13 +13,18 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-enum class ArrayFirstLastStrategy
+enum class ArrayFirstLastStrategy : uint8_t
 {
     First,
     Last
 };
 
-template <ArrayFirstLastStrategy strategy>
+enum class ArrayFirstLastElementNotExistsStrategy : uint8_t {
+    Default,
+    Null
+};
+
+template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
     using column_type = ColumnArray;
@@ -30,6 +36,9 @@ struct ArrayFirstLastImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
+        if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+            return makeNullable(array_element);
+
         return array_element;
     }
 
@@ -52,6 +61,16 @@ struct ArrayFirstLastImpl
                 out->reserve(data.size());
 
                 size_t offsets_size = offsets.size();
+
+                ColumnUInt8::MutablePtr col_null_map_to;
+                ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                {
+                    col_null_map_to = ColumnUInt8::create(offsets_size, false);
+                    vec_null_map_to = &col_null_map_to->getData();
+                }
+
                 for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
                 {
                     size_t start_offset = offsets[offset_index - 1];
@@ -67,16 +86,29 @@ struct ArrayFirstLastImpl
                     else
                     {
                         out->insertDefault();
+
+                        if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                            (*vec_null_map_to)[offset_index] = true;
                     }
                 }
+
+                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                    return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
 
                 return out;
             }
             else
             {
                 auto out = array.getData().cloneEmpty();
-                out->insertDefault();
-                return out->replicate(IColumn::Offsets(1, array.size()));
+                out->insertManyDefaults(array.size());
+
+                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                {
+                    auto col_null_map_to = ColumnUInt8::create(out->size(), true);
+                    return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
+                }
+
+                return out;
             }
         }
 
@@ -87,6 +119,16 @@ struct ArrayFirstLastImpl
         out->reserve(data.size());
 
         size_t offsets_size = offsets.size();
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+        if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+        {
+            col_null_map_to = ColumnUInt8::create(offsets_size, false);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
         for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
         {
             size_t start_offset = offsets[offset_index - 1];
@@ -120,25 +162,43 @@ struct ArrayFirstLastImpl
             }
 
             if (!exists)
+            {
                 out->insertDefault();
+
+                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+                    (*vec_null_map_to)[offset_index] = true;
+            }
         }
+
+        if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
+            return ColumnNullable::create(std::move(out), std::move(col_null_map_to));
 
         return out;
     }
 };
 
 struct NameArrayFirst { static constexpr auto name = "arrayFirst"; };
-using ArrayFirstImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::First>;
+using ArrayFirstImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::First, ArrayFirstLastElementNotExistsStrategy::Default>;
 using FunctionArrayFirst = FunctionArrayMapped<ArrayFirstImpl, NameArrayFirst>;
 
+struct NameArrayFirstOrNull { static constexpr auto name = "arrayFirstOrNull"; };
+using ArrayFirstOrNullImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::First, ArrayFirstLastElementNotExistsStrategy::Null>;
+using FunctionArrayFirstOrNull = FunctionArrayMapped<ArrayFirstOrNullImpl, NameArrayFirstOrNull>;
+
 struct NameArrayLast { static constexpr auto name = "arrayLast"; };
-using ArrayLastImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::Last>;
+using ArrayLastImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::Last, ArrayFirstLastElementNotExistsStrategy::Default>;
 using FunctionArrayLast = FunctionArrayMapped<ArrayLastImpl, NameArrayLast>;
+
+struct NameArrayLastOrNull { static constexpr auto name = "arrayLastOrNull"; };
+using ArrayLastOrNullImpl = ArrayFirstLastImpl<ArrayFirstLastStrategy::Last, ArrayFirstLastElementNotExistsStrategy::Null>;
+using FunctionArrayLastOrNull = FunctionArrayMapped<ArrayLastOrNullImpl, NameArrayLastOrNull>;
 
 void registerFunctionArrayFirst(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFirst>();
+    factory.registerFunction<FunctionArrayFirstOrNull>();
     factory.registerFunction<FunctionArrayLast>();
+    factory.registerFunction<FunctionArrayLastOrNull>();
 }
 
 }
