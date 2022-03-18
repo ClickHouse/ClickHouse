@@ -734,6 +734,7 @@ void StorageMergeTree::loadMutations()
                 {
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
+                        /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
                         entry.writeCSN(csn);
                     }
                     else
@@ -744,7 +745,6 @@ void StorageMergeTree::loadMutations()
                         disk->removeFile(it->path());
                         continue;
                     }
-                    /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
                 }
 
                 auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
@@ -1011,7 +1011,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
-            /// Do not squash mutation from different transactions to be able to commit/rollback them independently.
+            /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
 
@@ -1447,7 +1447,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(nullptr, part_name, /*force=*/ false))
+    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false))
         dropPartsImpl({part}, /*detach=*/ false);
 
     /// Else nothing to do, part was removed in some different way

@@ -19,21 +19,29 @@ class MergeTreeTransaction;
 #define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr)
 #endif
 
+/// Commit Sequence Number
 using CSN = UInt64;
-using Snapshot = CSN;
+/// Local part of TransactionID
 using LocalTID = UInt64;
+/// Hash of TransactionID that fits into 64-bit atomic
 using TIDHash = UInt64;
 
 namespace Tx
 {
+    /// For transactions that are probably not committed (yet)
     const CSN UnknownCSN = 0;
+    /// For changes were made without creating a transaction
     const CSN PrehistoricCSN = 1;
+    /// Special reserved values
     const CSN CommittingCSN = 2;
-    const CSN MaxReservedCSN = 16;
+    const CSN MaxReservedCSN = 32;
+
+    /// So far, that changes will never become visible
+    const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
 
     const LocalTID PrehistoricLocalTID = 1;
-    const LocalTID DummyLocalTID = 1;
-    const LocalTID MaxReservedLocalTID = 16;
+    const LocalTID DummyLocalTID = 2;
+    const LocalTID MaxReservedLocalTID = 32;
 }
 
 struct TransactionID
@@ -85,9 +93,6 @@ namespace Tx
     const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
     const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
     const TransactionID DummyTID = {PrehistoricCSN, DummyLocalTID, UUIDHelpers::Nil};
-
-    /// So far, that changes will never become visible
-    const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
 }
 
 }

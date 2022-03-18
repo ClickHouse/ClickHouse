@@ -457,7 +457,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid)
     if (tid == Tx::PrehistoricTID)
         return;
 
-    /// Ensure that we are not trying to get CSN for TID that was already removed from
+    /// Ensure that we are not trying to get CSN for TID that was already removed from the log
     CSN tail = instance().tail_ptr.load();
     if (tail <= tid.start_csn)
         return;

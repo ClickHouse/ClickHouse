@@ -31,6 +31,8 @@ struct MergeTreeMutationEntry
 
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
+    /// CSN of transaction which has created mutation
+    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
     /// Create a new entry and write it to a temporary file.
