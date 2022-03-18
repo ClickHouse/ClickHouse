@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import time
+import os
+import csv
 from env_helper import GITHUB_REPOSITORY
 from ci_config import CI_CONFIG
 
@@ -49,3 +51,11 @@ def post_commit_status(gh, sha, check_name, description, state, report_url):
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
+
+
+def post_commit_status_to_file(file_path, description, state, report_url):
+    if os.path.exists(file_path):
+        raise Exception(f'File "{file_path}" already exists!')
+    with open(file_path, 'w', encoding='utf-8') as f:
+        out = csv.writer(f, delimiter='\t')
+        out.writerow([state, report_url, description])

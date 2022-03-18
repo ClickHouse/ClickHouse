@@ -1733,17 +1733,17 @@ jobs:
           docker kill "$(docker ps -q)" ||:
           docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH"
-  FunctionalStatelessTestBugfixCheck:
-    runs-on: [self-hosted, func-tester]
+  TestsBugfixCheck:
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/stateless_bugfix_asan
+          TEMP_PATH=${{runner.temp}}/tests_bugfix_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests bugfix validate check (address, actions)
-          REPO_COPY=${{runner.temp}}/stateless_bugfix_asan/ClickHouse
+          CHECK_NAME=Tests bugfix validate check (actions)
           KILL_TIMEOUT=3600
+          REPO_COPY=${{runner.temp}}/tests_bugfix_check/ClickHouse
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1754,13 +1754,24 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Functional test
+      - name: Bugfix test
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci"
-          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT" --validate-bugfix
+
+          TEMP_PATH="${TEMP_PATH}/integration" \
+            REPORTS_PATH="${REPORTS_PATH}/integration" \
+            python3 integration_test_check.py "Integration tests bugfix validate check" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          TEMP_PATH="${TEMP_PATH}/stateless" \
+            REPORTS_PATH="${REPORTS_PATH}/stateless" \
+            python3 functional_test_check.py "Stateless tests bugfix validate check" "$KILL_TIMEOUT" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/post_commit_status.tsv" "${TEMP_PATH}/integration/post_commit_status.tsv"
       - name: Cleanup
         if: always()
         run: |
@@ -2720,39 +2731,6 @@ jobs:
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci"
           python3 integration_test_check.py "$CHECK_NAME"
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH"
-  IntegrationTestsBugfixCheck:
-    runs-on: [self-hosted, stress-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/integration_tests_asan_bugfix_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests bugfix validate check (asan, actions)
-          REPO_COPY=${{runner.temp}}/integration_tests_asan_bugfix_check/ClickHouse
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Integration test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 integration_test_check.py "$CHECK_NAME" --validate-bugfix
       - name: Cleanup
         if: always()
         run: |

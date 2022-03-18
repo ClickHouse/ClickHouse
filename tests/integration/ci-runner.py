@@ -27,6 +27,8 @@ MAX_TIME_SECONDS = 3600
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
+NO_CHANGES_MSG = 'Nothing to run'
+
 
 def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
@@ -710,7 +712,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
             logging.info("No tests to run found")
-            return "success", "Nothing to run", [("Nothing to run", "OK")], ""
+            return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))

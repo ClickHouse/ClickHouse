@@ -18,7 +18,7 @@ from build_download_helper import download_all_deb_packages
 from download_previous_release import download_previous_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
-from commit_status_helper import post_commit_status, override_status
+from commit_status_helper import post_commit_status, override_status, post_commit_status_to_file
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
@@ -109,6 +109,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     parser.add_argument("--validate-bugfix", action='store_true', help="Check that added tests failed on latest stable")
+    parser.add_argument("--post-commit-status", default='commit_status', choices=['commit_status', 'file'], help="Where to public post commit status")
     return parser.parse_args()
 
 
@@ -198,8 +199,14 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [output_path_log] + additional_logs, check_name_with_group, False)
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name_with_group, description, state, report_url)
+
+    print(f"::notice:: {check_name} Report url: {report_url}")
+    if args.post_commit_status == 'commit_status':
+        post_commit_status(gh, pr_info.sha, check_name_with_group, description, state, report_url)
+    elif args.post_commit_status == 'file':
+        post_commit_status_to_file(os.path.join(temp_path, "post_commit_status.tsv"), description, state, report_url)
+    else:
+        raise Exception(f'Unknown post_commit_status option "{args.post_commit_status}"')
 
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name_with_group)
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
