@@ -439,12 +439,12 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
         downloader_id.clear();
     }
 
-    // if (!download_can_continue && cache_writer)
-    // {
-    //     cache_writer->finalize();
-    //     cache_writer.reset();
-    //     remote_file_reader.reset();
-    // }
+    if (!download_can_continue && cache_writer)
+    {
+        cache_writer->finalize();
+        cache_writer.reset();
+        remote_file_reader.reset();
+    }
 
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
