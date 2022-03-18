@@ -52,7 +52,6 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromCacheStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -65,6 +64,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ReadFromCacheTransform.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -595,7 +595,11 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
-        auto read_from_cache_step = std::make_unique<ReadFromCacheStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+        Pipe pipe;
+        pipe.addSimpleTransform([&](const Block& header) {
+           return std::make_shared<ReadFromCacheTransform>(header, cached_data, query_ptr);
+        });
+        auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
         return;
