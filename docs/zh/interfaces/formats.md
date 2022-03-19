@@ -1240,7 +1240,8 @@ SELECT * FROM topic1_stream;
 | `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)          | `FLOAT`                    |
 | `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)          | `DOUBLE`                   |
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)              | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `DATE64`                   | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                 |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)          | `STRING`                   |
 | —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
@@ -1295,7 +1296,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
 | `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
 | `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `DATE64`                 | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                 |
+| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`        |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
