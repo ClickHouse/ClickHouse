@@ -177,11 +177,10 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
         ret->super_digest = config.getString("keeper_server.superdigest");
     }
 
-    if (config.has("keeper_server.four_letter_word_allow_list"))
-        ret->four_letter_word_allow_list = config.getString("keeper_server.four_letter_word_allow_list");
-
-    if (config.has("keeper_server.four_letter_word_white_list"))
-        ret->four_letter_word_allow_list = config.getString("keeper_server.four_letter_word_white_list", DEFAULT_FOUR_LETTER_WORD_CMD);
+    ret->four_letter_word_allow_list = config.getString(
+        "keeper_server.four_letter_word_allow_list",
+        config.getString("keeper_server.four_letter_word_white_list",
+                         DEFAULT_FOUR_LETTER_WORD_CMD));
 
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
