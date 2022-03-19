@@ -15,6 +15,8 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 

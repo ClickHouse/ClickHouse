@@ -34,7 +34,7 @@ protected:
     {
         SimpleObjectPool<T> * parent;
 
-        Deleter(SimpleObjectPool<T> * parent_ = nullptr) : parent{parent_} {}
+        Deleter(SimpleObjectPool<T> * parent_ = nullptr) : parent{parent_} {} /// NOLINT
 
         void operator()(T * owning_ptr) const
         {

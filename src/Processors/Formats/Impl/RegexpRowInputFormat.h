@@ -22,7 +22,7 @@ class ReadBuffer;
 class RegexpFieldExtractor
 {
 public:
-    RegexpFieldExtractor(const FormatSettings & format_settings);
+    explicit RegexpFieldExtractor(const FormatSettings & format_settings);
 
     /// Return true if row was successfully parsed and row fields were extracted.
     bool parseRow(PeekableReadBuffer & buf);

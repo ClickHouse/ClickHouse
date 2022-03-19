@@ -130,6 +130,7 @@ public:
     IntervalTree() { nodes.resize(1); }
 
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
+    requires std::is_same_v<Value, IntervalTreeVoidValue>
     ALWAYS_INLINE bool emplace(Interval interval)
     {
         assert(!tree_is_built);

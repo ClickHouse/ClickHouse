@@ -52,10 +52,10 @@ private:
     friend class DateLUT;
     explicit DateLUTImpl(const std::string & time_zone);
 
-    DateLUTImpl(const DateLUTImpl &) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
-    DateLUTImpl(const DateLUTImpl &&) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
+    DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
+    DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
+    DateLUTImpl(const DateLUTImpl &&) = delete; /// NOLINT
+    DateLUTImpl & operator=(const DateLUTImpl &&) = delete; /// NOLINT
 
     // Normalized and bound-checked index of element in lut,
     // has to be a separate type to support overloading
@@ -149,12 +149,12 @@ public:
         Int8 amount_of_offset_change_value; /// Usually -4 or 4, but look at Lord Howe Island. Multiply by OffsetChangeFactor
         UInt8 time_at_offset_change_value; /// In seconds from beginning of the day. Multiply by OffsetChangeFactor
 
-        inline Int32 amount_of_offset_change() const
+        inline Int32 amount_of_offset_change() const /// NOLINT
         {
             return static_cast<Int32>(amount_of_offset_change_value) * OffsetChangeFactor;
         }
 
-        inline UInt32 time_at_offset_change() const
+        inline UInt32 time_at_offset_change() const /// NOLINT
         {
             return static_cast<UInt32>(time_at_offset_change_value) * OffsetChangeFactor;
         }
@@ -230,12 +230,12 @@ private:
         return LUTIndex(guess ? guess - 1 : 0);
     }
 
-    inline LUTIndex toLUTIndex(DayNum d) const
+    static inline LUTIndex toLUTIndex(DayNum d)
     {
         return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
     }
 
-    inline LUTIndex toLUTIndex(ExtendedDayNum d) const
+    static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
         return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
     }
@@ -245,7 +245,7 @@ private:
         return findIndex(t);
     }
 
-    inline LUTIndex toLUTIndex(LUTIndex i) const
+    static inline LUTIndex toLUTIndex(LUTIndex i)
     {
         return i;
     }
@@ -793,7 +793,7 @@ public:
     }
 
     /// Check and change mode to effective.
-    inline UInt8 check_week_mode(UInt8 mode) const
+    inline UInt8 check_week_mode(UInt8 mode) const /// NOLINT
     {
         UInt8 week_format = (mode & 7);
         if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
@@ -805,7 +805,7 @@ public:
       * Returns 0 for monday, 1 for tuesday...
       */
     template <typename DateOrTime>
-    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const
+    inline unsigned calc_weekday(DateOrTime v, bool sunday_first_day_of_week) const /// NOLINT
     {
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
@@ -815,7 +815,7 @@ public:
     }
 
     /// Calculate days in one year.
-    inline unsigned calc_days_in_year(Int32 year) const
+    inline unsigned calc_days_in_year(Int32 year) const /// NOLINT
     {
         return ((year & 3) == 0 && (year % 100 || (year % 400 == 0 && year)) ? 366 : 365);
     }
@@ -852,7 +852,7 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    inline Time toRelativeMinuteNum(Time t) const
+    inline Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
         return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
@@ -883,8 +883,8 @@ public:
             return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfQuarterInterval(Date d, UInt64 quarters) const
     {
         if (quarters == 1)
@@ -892,8 +892,8 @@ public:
         return toStartOfMonthInterval(d, quarters * 3);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfMonthInterval(Date d, UInt64 months) const
     {
         if (months == 1)
@@ -906,8 +906,8 @@ public:
             return toDayNum(years_months_lut[month_total_index / months * months]);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
@@ -920,8 +920,8 @@ public:
             return ExtendedDayNum(4 + (d - 4) / days * days);
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline Time toStartOfDayInterval(Date d, UInt64 days) const
     {
         if (days == 1)
@@ -1057,12 +1057,12 @@ public:
         return values.year * 10000 + values.month * 100 + values.day_of_month;
     }
 
-    inline Time YYYYMMDDToDate(UInt32 num) const
+    inline Time YYYYMMDDToDate(UInt32 num) const /// NOLINT
     {
         return makeDate(num / 10000, num / 100 % 100, num % 100);
     }
 
-    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const
+    inline ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const /// NOLINT
     {
         return makeDayNum(num / 10000, num / 100 % 100, num % 100);
     }
@@ -1143,7 +1143,7 @@ public:
             + UInt64(components.date.year) * 10000000000;
     }
 
-    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const
+    inline Time YYYYMMDDhhmmssToTime(UInt64 num) const /// NOLINT
     {
         return makeDateTime(
             num / 10000000000,
@@ -1219,10 +1219,8 @@ public:
 
     /// If resulting month has less deys than source month, then saturation can happen.
     /// Example: 31 Aug + 1 month = 30 Sep.
-    template <
-        typename DateTime,
-        typename
-        = std::enable_if_t<std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>>>
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     inline Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
         const auto result_day = addMonthsIndex(t, delta);
@@ -1247,8 +1245,8 @@ public:
             return res;
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto NO_SANITIZE_UNDEFINED addMonths(Date d, Int64 delta) const
     {
         if constexpr (std::is_same_v<Date, DayNum>)
@@ -1280,10 +1278,8 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    template <
-        typename DateTime,
-        typename
-        = std::enable_if_t<std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>>>
+    template <typename DateTime>
+    requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     inline Time addYears(DateTime t, Int64 delta) const
     {
         auto result_day = addYearsIndex(t, delta);
@@ -1308,8 +1304,8 @@ public:
             return res;
     }
 
-    template <typename Date,
-              typename = std::enable_if_t<std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>>>
+    template <typename Date>
+    requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
     inline auto addYears(Date d, Int64 delta) const
     {
         if constexpr (std::is_same_v<Date, DayNum>)

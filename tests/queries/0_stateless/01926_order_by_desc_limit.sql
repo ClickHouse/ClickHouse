@@ -2,6 +2,8 @@
 
 DROP TABLE IF EXISTS order_by_desc;
 
+SET remote_fs_enable_cache=0;
+
 CREATE TABLE order_by_desc (u UInt32, s String)
 ENGINE MergeTree ORDER BY u PARTITION BY u % 100
 SETTINGS index_granularity = 1024;
