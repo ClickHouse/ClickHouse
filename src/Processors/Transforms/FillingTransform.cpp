@@ -174,15 +174,15 @@ FillingTransform::FillingTransform(
         }
     }
 
-    for (size_t i = 0, size = interpolate_description.size(); i < size; ++i)
+    for (const auto & descr : interpolate_description)
     {
-        size_t block_position = header_.getPositionByName(interpolate_description[i].column.name);
+        size_t block_position = header_.getPositionByName(descr.column.name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
 
         /// Check column-expression compatibility
-        auto column = interpolate_description[i].column;
-        auto exp_type = interpolate_description[i].actions->getActionsDAG().getResultColumns()[0].type;
+        auto column = descr.column;
+        auto exp_type = descr.actions->getActionsDAG().getResultColumns()[0].type;
         auto exp_column = exp_type->createColumn();
         exp_column->insertDefault();
 
