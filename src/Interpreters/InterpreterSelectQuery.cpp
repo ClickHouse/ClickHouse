@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -842,7 +843,11 @@ static InterpolateDescription getInterpolateDescription(const ASTSelectQuery & q
         for (const auto & elem : query.interpolate()->children)
         {
             auto interpolate = elem->as<ASTInterpolateElement &>();
-            ColumnWithTypeAndName column = block.findByName(interpolate.column->getColumnName())->cloneEmpty();
+            ColumnWithTypeAndName *block_column = block.findByName(interpolate.column->getColumnName());
+            if (!block_column)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Missing column '{}' as an INTERPOLATE expression target", interpolate.column->getColumnName());
+            ColumnWithTypeAndName column = block_column->cloneEmpty();
 
             auto syntax_result = TreeRewriter(context).analyze(interpolate.expr, block.getNamesAndTypesList());
             ExpressionAnalyzer analyzer(interpolate.expr, syntax_result, context);
