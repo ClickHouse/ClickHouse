@@ -262,3 +262,9 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/faiss"]
+	path = contrib/faiss
+	url = https://github.com/facebookresearch/faiss.git
+[submodule "contrib/openmp"]
+	path = contrib/openmp
+	url = https://github.com/llvm/llvm-project.git
