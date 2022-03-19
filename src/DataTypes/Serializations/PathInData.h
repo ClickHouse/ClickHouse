@@ -55,7 +55,7 @@ public:
     const Parts & getParts() const  { return parts; }
 
     bool isNested(size_t i) const { return parts[i].is_nested; }
-    bool hasNested() const { return std::any_of(parts.begin(), parts.end(), [](const auto & part) { return part.is_nested; }); }
+    bool hasNested() const { return has_nested; }
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
@@ -65,16 +65,20 @@ public:
 
 private:
     /// Creates full path from parts.
-    static String buildPath(const Parts & other_parts);
+    void buildPath(const Parts & other_parts);
 
     /// Creates new parts full from full path with correct string pointers.
-    static Parts buildParts(const String & other_path, const Parts & other_parts);
+    void buildParts(const Parts & other_parts);
 
     /// The full path. Parts are separated by dots.
     String path;
 
     /// Parts of the path. All string_view-s in parts must point to the @path.
     Parts parts;
+
+    /// True if at least one part is nested.
+    /// Cached to avoid linear complexity at 'hasNested'.
+    bool has_nested = false;
 };
 
 class PathInDataBuilder
