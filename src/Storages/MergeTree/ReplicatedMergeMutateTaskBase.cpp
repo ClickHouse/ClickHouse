@@ -144,9 +144,9 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     };
 
 
-    auto execute_fetch = [&] () -> bool
+    auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
-        if (storage.executeFetch(entry))
+        if (storage.executeFetch(entry, need_to_check_missing_part))
             return remove_processed_entry();
 
         return false;
@@ -164,12 +164,12 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                     return remove_processed_entry();
             }
 
-            bool res = false;
-            std::tie(res, part_log_writer) = prepare();
+            bool prepared_successfully = false;
+            std::tie(prepared_successfully, need_to_check_missing, part_log_writer) = prepare();
 
             /// Avoid resheduling, execute fetch here, in the same thread.
-            if (!res)
-                return execute_fetch();
+            if (!prepared_successfully)
+                return execute_fetch(need_to_check_missing);
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
