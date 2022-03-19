@@ -5,9 +5,7 @@ toc_title: JSON
 
 # Functions for Working with JSON {#functions-for-working-with-json}
 
-In Yandex.Metrica, JSON is transmitted by users as session parameters. There are some special functions for working with this JSON. (Although in most of the cases, the JSONs are additionally pre-processed, and the resulting values are put in separate columns in their processed format.) All these functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
-
-The following assumptions are made:
+ClickHouse has special functions for working with this JSON. The `visitParam` functions make strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done. The following assumptions are made:
 
 1.  The field name (function argument) must be a constant.
 2.  The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, but `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`

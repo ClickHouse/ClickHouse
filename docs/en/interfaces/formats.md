@@ -51,6 +51,7 @@ The supported formats are:
 | [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
 | [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
 | [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
+| [ProtobufList](#protobuflist)                                                           | ✔     | ✔      |
 | [Avro](#data-format-avro)                                                               | ✔     | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
@@ -64,7 +65,7 @@ The supported formats are:
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✔      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 | [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
@@ -300,7 +301,7 @@ Result:
     <tr> <th>Search phrase</th> <th>Count</th> </tr>
     <tr> <td></td> <td>8267016</td> </tr>
     <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
-    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>clickhouse</td> <td>1655</td> </tr>
     <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
     <tr> <td>freeform photos</td> <td>1480</td> </tr>
   </table>
@@ -371,7 +372,7 @@ Similar to TabSeparated, but outputs a value in name=value format. Names are esc
 ``` text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
+SearchPhrase=clickhouse     count()=1655
 SearchPhrase=2014 spring fashion    count()=1549
 SearchPhrase=freeform photos       count()=1480
 SearchPhrase=angelina jolie    count()=1245
@@ -1060,7 +1061,7 @@ XML format is suitable only for output, not for parsing. Example:
                         <field>2166</field>
                 </row>
                 <row>
-                        <SearchPhrase>yandex</SearchPhrase>
+                        <SearchPhrase>clickhouse</SearchPhrase>
                         <field>1655</field>
                 </row>
                 <row>
@@ -1230,7 +1231,38 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## ProtobufSingle {#protobufsingle}
 
-Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
+Same as [Protobuf](#protobuf) but for storing/parsing a single Protobuf message without length delimiter.
+As a result, only a single table row can be written/read.
+
+## ProtobufList {#protobuflist}
+
+Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+
+Usage example:
+
+``` sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+``` bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+where the file `schemafile.proto` looks like this:
+
+``` capnp
+syntax = "proto3";
+
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
 
 ## Avro {#data-format-avro}
 
