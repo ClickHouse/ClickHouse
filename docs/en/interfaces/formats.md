@@ -1396,7 +1396,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`        | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                      |
 | `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                     |
 | `DATE32`                     | [Date](../sql-reference/data-types/date.md)               | `UINT16`                     |
-| `DATE64`, `TIMESTAMP`        | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
+| `DATE64`                     | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
+| `TIMESTAMP`                  | [DateTime64](../sql-reference/data-types/datetime64.md)   | `TIMESTAMP`                  |
 | `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `BINARY`                     |
 | —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                     |
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
@@ -1453,7 +1454,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                  |
 | `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                  |
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)         | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
+| `DATE64`                   | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
+| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                   |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `BINARY`                   |
 | `STRING`, `BINARY`         | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                  |
@@ -1515,7 +1517,8 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
 | `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
 | `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `DATE64`                 | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                 |
+| `TIMESTAMP`              | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                   |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `LIST`                   | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
