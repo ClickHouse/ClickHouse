@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/InterpolateDescription.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -28,9 +29,10 @@ void InterpolateColumnDescription::interpolate(Field & field) const
     if (field.isNull())
         return;
     Block expr_columns;
-    expr_columns.insert({column.type->createColumnConst(1, field), column.type, column.name});
+    Field column_field = convertFieldToType(field, *column.type.get());
+    expr_columns.insert({column.type->createColumnConst(1, column_field), column.type, column.name});
     actions->execute(expr_columns);
-    expr_columns.getByPosition(0).column->get(0, field);
+    field = convertFieldToType((*expr_columns.getByPosition(0).column)[0], *column.type.get());
 }
 
 void InterpolateColumnDescription::explain(JSONBuilder::JSONMap & map, const Block & /*header*/) const
