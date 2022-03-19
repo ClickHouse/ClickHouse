@@ -164,7 +164,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                     return remove_processed_entry();
             }
 
-            bool prepared_successfully = false;
+            bool prepared_successfully = false, bool need_to_check_missing = true;
             std::tie(prepared_successfully, need_to_check_missing, part_log_writer) = prepare();
 
             /// Avoid resheduling, execute fetch here, in the same thread.
@@ -198,7 +198,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             try
             {
                 if (!finalize(part_log_writer))
-                    return execute_fetch();
+                    return execute_fetch(/* need_to_check_missing = */true);
             }
             catch (...)
             {
