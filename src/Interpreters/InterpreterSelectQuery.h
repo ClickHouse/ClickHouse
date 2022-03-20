@@ -165,7 +165,7 @@ private:
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
-    static Chunk create_single_chunk_from_many(Chunks chunks);
+    Chunk create_single_cache_chunk_from_many(IAST::Hash ASTHash);
 
     enum class Modificator
     {

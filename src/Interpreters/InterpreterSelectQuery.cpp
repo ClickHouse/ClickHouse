@@ -595,7 +595,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
         auto& header= cached_data[query_ptr->getTreeHash()].first;
-        auto chunk = create_single_chunk_from_many(cached_data[query_ptr->getTreeHash()].second);
+        auto chunk = create_single_cache_chunk_from_many(query_ptr->getTreeHash());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk)));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -2637,16 +2637,19 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
-Chunk InterpreterSelectQuery::create_single_chunk_from_many(Chunks chunks)
+Chunk InterpreterSelectQuery::create_single_cache_chunk_from_many(IAST::Hash ASTHash)
 {
     std::vector<ColumnPtr> columns;
     UInt64 num_rows = 0;
-    for (auto& c : chunks) {
+    for (auto& c : cached_data[ASTHash].second) {
         num_rows = c.getNumRows();
         auto cols = c.detachColumns();
         columns.insert(columns.end(), cols.begin(), cols.end());
     }
-    return Chunk(columns, num_rows);
+
+    auto result = Chunk(columns, num_rows);
+    cached_data[ASTHash].second = {result.clone()};
+    return result;
 }
 
 }
