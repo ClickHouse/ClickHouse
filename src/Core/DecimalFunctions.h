@@ -157,11 +157,20 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-    const auto whole = decimal.value / scale_multiplier;
+    auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
     if (fractional < T(0))
-        fractional *= T(-1);
-
+    {
+        if constexpr (std::is_same_v<DecimalType, DateTime64>)
+        {
+            whole -= T(1);
+            fractional = scale_multiplier + fractional;
+        }
+        else
+        {
+            fractional *= T(-1);
+        }
+    }
     return {whole, fractional};
 }
 
