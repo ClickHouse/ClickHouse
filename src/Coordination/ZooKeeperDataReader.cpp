@@ -1,10 +1,13 @@
 #include <Coordination/ZooKeeperDataReader.h>
+
 #include <filesystem>
 #include <cstdlib>
+#include <string>
+
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/ReadBufferFromFile.h>
-#include <string>
+#include <Coordination/pathUtils.h>
 
 
 namespace DB
@@ -14,20 +17,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CORRUPTED_DATA;
-}
-
-static String parentPath(const String & path)
-{
-    auto rslash_pos = path.rfind('/');
-    if (rslash_pos > 0)
-        return path.substr(0, rslash_pos);
-    return "/";
-}
-
-static std::string getBaseName(const String & path)
-{
-    size_t basename_start = path.rfind('/');
-    return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
 int64_t getZxidFromName(const std::string & filename)
@@ -148,7 +137,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [&path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); value.stat.numChildren++; });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); value.stat.numChildren++; });
         }
     }
 
@@ -529,7 +518,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
             if (request->getOpNum() == Coordination::OpNum::Multi && hasErrorsInMultiRequest(request))
                 return true;
 
-            storage.processRequest(request, session_id, zxid, /* check_acl = */ false);
+            storage.processRequest(request, session_id, time, zxid, /* check_acl = */ false);
         }
     }
 

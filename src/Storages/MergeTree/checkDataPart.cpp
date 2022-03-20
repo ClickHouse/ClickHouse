@@ -98,7 +98,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    SerializationInfoByName serialization_infos(columns_txt, {});
+    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
+    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
     auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
 
     if (disk->exists(serialization_path))
@@ -153,7 +154,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                            checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
+                            projection_checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
                         });
                 }
             }
@@ -270,7 +271,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, check_uncompressed);
-
     return checksums_data;
 }
 

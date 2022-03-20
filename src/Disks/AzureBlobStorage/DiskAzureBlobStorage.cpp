@@ -53,7 +53,7 @@ DiskAzureBlobStorage::DiskAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "", metadata_disk_, "DiskAzureBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "", metadata_disk_, nullptr, "DiskAzureBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}
@@ -66,17 +66,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     std::optional<size_t>) const
 {
     auto settings = current_settings.get();
-    auto metadata = readMeta(path);
+    auto metadata = readMetadata(path);
 
     LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
         path, blob_container_client, metadata, settings->max_single_read_retries,
-        settings->max_single_download_retries, read_settings, threadpool_read);
+        settings->max_single_download_retries, read_settings);
 
-    if (threadpool_read)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(reader_impl));
@@ -94,7 +92,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
     size_t buf_size,
     WriteMode mode)
 {
-    auto metadata = readOrCreateMetaForWriting(path, mode);
     auto blob_path = path + "_" + getRandomASCIIString(8); /// NOTE: path contains the tmp_* prefix in the blob name
 
     LOG_TRACE(log, "{} to file by path: {}. AzureBlob Storage path: {}",
@@ -106,7 +103,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
         current_settings.get()->max_single_part_upload_size,
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromAzureBlobStorage>>(std::move(buffer), std::move(metadata), blob_path);
+    auto create_metadata_callback = [this, path, mode, blob_path] (size_t count)
+    {
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_path, count] (Metadata & metadata) { metadata.addObject(blob_path, count); return true; });
+    };
+
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(create_metadata_callback), path);
 }
 
 

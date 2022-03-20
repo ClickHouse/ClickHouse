@@ -90,6 +90,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         , is_attach(is_attach_)
 {
     auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
+    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+
     auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
     auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
     configuration =
@@ -648,7 +650,7 @@ void StorageRabbitMQ::unbindExchange()
 
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & /* query_info */,
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
@@ -669,7 +671,7 @@ Pipe StorageRabbitMQ::read(
 
     std::lock_guard lock(loop_mutex);
 
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
     if (!connection->isConnected())
@@ -688,7 +690,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
+            *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1024,9 +1026,9 @@ bool StorageRabbitMQ::streamToViews()
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
     auto column_names = block_io.pipeline.getHeader().getNames();
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
     auto block_size = getMaxBlockSize();
 
@@ -1039,7 +1041,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

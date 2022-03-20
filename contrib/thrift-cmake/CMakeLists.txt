@@ -1,4 +1,10 @@
-# === thrift
+option(ENABLE_THRIFT "Enable Thrift" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_THRIFT)
+    message (STATUS "thrift disabled")
+    return()
+endif()
+
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp")
 set(thriftcpp_SOURCES
         "${LIBRARY_DIR}/src/thrift/TApplicationException.cpp"
@@ -42,6 +48,48 @@ set(thriftcpp_threads_SOURCES
 
 include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake") # makes config.h
 
-add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${THRIFT_INCLUDE_DIR}" ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries (${THRIFT_LIBRARY} PUBLIC boost::headers_only)
+set (HAVE_ARPA_INET_H 1)
+set (HAVE_FCNTL_H 1)
+set (HAVE_GETOPT_H 1)
+set (HAVE_INTTYPES_H 1)
+set (HAVE_NETDB_H 1)
+set (HAVE_NETINET_IN_H 1)
+set (HAVE_SIGNAL_H 1)
+set (HAVE_STDINT_H 1)
+set (HAVE_UNISTD_H 1)
+set (HAVE_PTHREAD_H 1)
+set (HAVE_SYS_IOCTL_H 1)
+set (HAVE_SYS_PARAM_H 1)
+set (HAVE_SYS_RESOURCE_H 1)
+set (HAVE_SYS_SOCKET_H 1)
+set (HAVE_SYS_STAT_H 1)
+set (HAVE_SYS_TIME_H 1)
+set (HAVE_SYS_UN_H 1)
+set (HAVE_POLL_H 1)
+set (HAVE_SYS_POLL_H 1)
+set (HAVE_SYS_SELECT_H 1)
+set (HAVE_SCHED_H 1)
+set (HAVE_STRING_H 1)
+set (HAVE_STRINGS_H 1)
+set (HAVE_GETHOSTBYNAME 1)
+set (HAVE_STRERROR_R 1)
+set (HAVE_SCHED_GET_PRIORITY_MAX 1)
+set (HAVE_SCHED_GET_PRIORITY_MIN 1)
+
+if (OS_LINUX AND NOT USE_MUSL)
+    set (STRERROR_R_CHAR_P 1)
+endif ()
+
+#set(PACKAGE ${PACKAGE_NAME})
+#set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
+#set(VERSION ${thrift_VERSION})
+
+# generate a config.h file
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build/cmake/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/thrift/config.h")
+
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+
+add_library(_thrift ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+add_library(ch_contrib::thrift ALIAS _thrift)
+target_include_directories(_thrift SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src" ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries (_thrift PUBLIC boost::headers_only)

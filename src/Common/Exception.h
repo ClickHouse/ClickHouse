@@ -37,7 +37,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
     Exception(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
     {}
 
     struct CreateFromPocoTag {};
@@ -55,7 +55,7 @@ public:
     template <typename ...Args>
     void addMessage(const std::string& format, Args&&... args)
     {
-        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
+        extendedMessage(fmt::format(fmt::runtime(format), std::forward<Args>(args)...));
     }
 
     void addMessage(const std::string& message)
@@ -96,7 +96,7 @@ public:
     void rethrow() const override { throw *this; }
 
     int getErrno() const { return saved_errno; }
-    const std::optional<std::string> getPath() const { return path; }
+    std::optional<std::string> getPath() const { return path; }
 
 private:
     int saved_errno;
@@ -119,7 +119,7 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+        : Exception(fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...), code)
     {}
 
 
@@ -129,12 +129,12 @@ public:
 #endif
     ;
 
-    int getLineNumber() { return line_number_; }
-    void setLineNumber(int line_number) { line_number_ = line_number;}
+    int getLineNumber() const { return line_number; }
+    void setLineNumber(int line_number_) { line_number = line_number_;}
 
 private:
-    ssize_t line_number_{-1};
-    mutable std::string formatted_message_;
+    ssize_t line_number{-1};
+    mutable std::string formatted_message;
 
     const char * name() const throw() override { return "DB::ParsingException"; }
     const char * className() const throw() override { return "DB::ParsingException"; }
@@ -205,11 +205,12 @@ void rethrowFirstException(const Exceptions & exceptions);
 
 
 template <typename T>
-std::enable_if_t<std::is_pointer_v<T>, T> exception_cast(std::exception_ptr e)
+requires std::is_pointer_v<T>
+T exception_cast(std::exception_ptr e)
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(e);
     }
     catch (std::remove_pointer_t<T> & concrete)
     {

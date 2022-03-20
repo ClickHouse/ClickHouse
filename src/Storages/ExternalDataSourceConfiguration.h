@@ -16,7 +16,7 @@ struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
-    String username;
+    String username = "default";
     String password;
     String database;
     String table;
@@ -98,7 +98,7 @@ getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfigura
 struct URLBasedDataSourceConfiguration
 {
     String url;
-    String format;
+    String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 

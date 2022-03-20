@@ -49,6 +49,8 @@ static constexpr int32_t PASSWORD_LENGTH = 16;
 /// but it can be raised up, so we have a slightly larger limit on our side.
 static constexpr int32_t MAX_STRING_OR_ARRAY_SIZE = 1 << 28;  /// 256 MiB
 static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
+static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
+static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;
 static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 
 }

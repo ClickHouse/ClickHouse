@@ -12,14 +12,19 @@ class Context;
  */
 class ITableFunctionFileLike : public ITableFunction
 {
+public:
+    bool needStructureHint() const override { return structure == "auto"; }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
 protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String filename;
-    String format;
+    String format = "auto";
     String structure = "auto";
     String compression_method = "auto";
+    ColumnsDescription structure_hint;
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;

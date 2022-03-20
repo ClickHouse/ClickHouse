@@ -25,7 +25,7 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     if with_credentials:
         connection_str = 'mongodb://root:clickhouse@localhost:{}'.format(started_cluster.mongo_port)
     else:
-        connection_str = 'mongodb://localhost:27018'
+        connection_str = 'mongodb://localhost:{}'.format(started_cluster.mongo_no_cred_port)
     if secure:
         connection_str += '/?tls=true&tlsAllowInvalidCertificates=true'
     return pymongo.MongoClient(connection_str)

@@ -73,7 +73,7 @@ StorageS3Cluster::StorageS3Cluster(
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -82,7 +82,7 @@ Pipe StorageS3Cluster::read(
 {
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
@@ -132,12 +132,12 @@ Pipe StorageS3Cluster::read(
         }
     }
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
     return Pipe::unitePipes(std::move(pipes));
 }
 
 QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -152,9 +152,8 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 

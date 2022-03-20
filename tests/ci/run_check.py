@@ -2,8 +2,9 @@
 import sys
 import logging
 import re
-from github import Github
+from typing import Tuple
 
+from github import Github
 from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
@@ -17,8 +18,10 @@ TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
-OK_TEST_LABEL = set(["can be tested", "release", "pr-documentation", "pr-doc-fix"])
+OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
+CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
+FORCE_TESTS_LABEL = "force tests"
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
@@ -29,13 +32,14 @@ TRUSTED_CONTRIBUTORS = {
         "achimbab",
         "adevyatova ",  # DOCSUP
         "Algunenano",  # Raúl Marín, Tinybird
+        "amosbird",
         "AnaUvarova",  # DOCSUP
         "anauvarova",  # technical writer, Yandex
         "annvsh",  # technical writer, Yandex
         "atereh",  # DOCSUP
         "azat",
         "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloundFlare
+        "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
         "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
@@ -65,6 +69,7 @@ TRUSTED_CONTRIBUTORS = {
         "s-mx",  # Maxim Sabyanin, former employee, present contributor
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
+        "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",
@@ -99,29 +104,29 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 
 # Returns whether we should look into individual checks for this PR. If not, it
 # can be skipped entirely.
-def should_run_checks_for_pr(pr_info):
+# Returns can_run, description, labels_state
+def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
-    force_labels = set(["force tests"]).intersection(pr_info.labels)
-    if force_labels:
-        return True, "Labeled '{}'".format(", ".join(force_labels))
+    if FORCE_TESTS_LABEL in pr_info.labels:
+        return True, f"Labeled '{FORCE_TESTS_LABEL}'", "pending"
 
-    if "do not test" in pr_info.labels:
-        return False, "Labeled 'do not test'"
+    if DO_NOT_TEST_LABEL in pr_info.labels:
+        return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
-    if "can be tested" not in pr_info.labels and not pr_is_by_trusted_user(
+    if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        return False, "Needs 'can be tested' label"
+        return False, "Needs 'can be tested' label", "failure"
 
-    if (
-        "release" in pr_info.labels
-        or "pr-backport" in pr_info.labels
-        or "pr-cherrypick" in pr_info.labels
-    ):
-        return False, "Don't try new checks for release/backports/cherry-picks"
+    if OK_SKIP_LABELS.intersection(pr_info.labels):
+        return (
+            False,
+            "Don't try new checks for release/backports/cherry-picks",
+            "success",
+        )
 
-    return True, "No special conditions apply"
+    return True, "No special conditions apply", "pending"
 
 
 def check_pr_description(pr_info):
@@ -203,14 +208,17 @@ def check_pr_description(pr_info):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, labels_from_api=True)
-    can_run, description = should_run_checks_for_pr(pr_info)
+    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True)
+    can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
     description_report = check_pr_description(pr_info)[:139]
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
+        logging.info(
+            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
+        )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
@@ -227,7 +235,7 @@ if __name__ == "__main__":
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(
-            context=NAME, description=description, state="failure", target_url=url
+            context=NAME, description=description, state=labels_state, target_url=url
         )
         sys.exit(1)
     else:

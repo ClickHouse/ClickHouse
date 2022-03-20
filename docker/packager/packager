@@ -30,10 +30,10 @@ def pull_image(image_name):
 
 def build_image(image_name, filepath):
     context = os.path.dirname(filepath)
+    build_cmd = "docker build --network=host -t {} -f {} {}".format(image_name, filepath, context)
+    logging.info("Will build image with cmd: '{}'".format(build_cmd))
     subprocess.check_call(
-        "docker build --network=host -t {} -f {} {}".format(
-            image_name, filepath, context
-        ),
+        build_cmd,
         shell=True,
     )
 
@@ -61,7 +61,6 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
     subprocess.check_call(cmd, shell=True)
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
-    CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
@@ -71,13 +70,11 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     result = []
     cmake_flags = ['$CMAKE_FLAGS']
 
-    is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd or is_cross_ppc
 
     if is_cross_darwin:
         cc = compiler[:-len(DARWIN_SUFFIX)]
@@ -159,7 +156,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append('ENABLE_TESTS=1')
         result.append('BINARY_OUTPUT=tests')
         cmake_flags.append('-DENABLE_TESTS=1')
-        cmake_flags.append('-DUSE_GTEST=1')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
@@ -171,7 +167,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if clang_tidy:
         cmake_flags.append('-DENABLE_CLANG_TIDY=1')
         cmake_flags.append('-DENABLE_UTILS=1')
-        cmake_flags.append('-DUSE_GTEST=1')
         cmake_flags.append('-DENABLE_TESTS=1')
         cmake_flags.append('-DENABLE_EXAMPLES=1')
         # Don't stop on first error to find more clang-tidy errors in one run.

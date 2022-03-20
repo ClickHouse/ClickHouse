@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -65,8 +66,32 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_resolution = arguments[1].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_hindex)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
+        const auto & data_hindex = col_hindex->getData();
+
+        const auto * col_resolution = checkAndGetColumn<ColumnUInt8>(non_const_arguments[1].column.get());
+        if (!col_resolution)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt8.",
+                arguments[1].type->getName(),
+                2,
+                getName());
+
+        const auto & data_resolution = col_resolution->getData();
+
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -74,12 +99,10 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        std::vector<H3Index> hindex_vec;
-
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 parent_hindex = col_hindex->getUInt(row);
-            const UInt8 child_resolution = col_resolution->getUInt(row);
+            const UInt64 parent_hindex = data_hindex[row];
+            const UInt8 child_resolution = data_resolution[row];
 
             if (child_resolution > MAX_H3_RES)
                 throw Exception(
@@ -94,6 +117,7 @@ public:
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), toString(vec_size), toString(child_resolution));
 
+            std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 

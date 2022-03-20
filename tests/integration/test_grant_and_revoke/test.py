@@ -150,8 +150,11 @@ def test_grant_all_on_table():
     instance.query("CREATE USER A, B")
     instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION")
     instance.query("GRANT ALL ON test.table TO B", user='A')
-    assert instance.query(
-        "SHOW GRANTS FOR B") == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") ==\
+        "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, "\
+        "DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "\
+        "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "\
+        "SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     instance.query("REVOKE ALL ON test.table FROM B", user='A')
     assert instance.query("SHOW GRANTS FOR B") == ""
 
@@ -250,6 +253,15 @@ def test_introspection():
     assert instance.query("SHOW GRANTS", user='A') == TSV(["GRANT SELECT ON test.table TO A"])
     assert instance.query("SHOW GRANTS", user='B') == TSV(["GRANT CREATE ON *.* TO B WITH GRANT OPTION"])
 
+    assert instance.query("SHOW GRANTS FOR ALL", user='A') == TSV(["GRANT SELECT ON test.table TO A"])
+    assert instance.query("SHOW GRANTS FOR ALL", user='B') == TSV(["GRANT CREATE ON *.* TO B WITH GRANT OPTION"])
+    assert instance.query("SHOW GRANTS FOR ALL") == TSV(["GRANT SELECT ON test.table TO A",
+                                                         "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+                                                         "GRANT ALL ON *.* TO default WITH GRANT OPTION"])
+                                                        
+    expected_error = "necessary to have grant SHOW USERS"
+    assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user='A')
+    
     expected_access1 = "CREATE USER A\n" \
                        "CREATE USER B\n" \
                        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default"

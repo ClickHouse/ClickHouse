@@ -36,7 +36,8 @@ public:
 
     Block() = default;
     Block(std::initializer_list<ColumnWithTypeAndName> il);
-    Block(const ColumnsWithTypeAndName & data_);
+    Block(const ColumnsWithTypeAndName & data_); /// NOLINT
+    Block(ColumnsWithTypeAndName && data_); /// NOLINT
 
     /// insert the column at the specified position
     void insert(size_t position, ColumnWithTypeAndName elem);
@@ -106,8 +107,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !!columns(); }
-    bool operator!() const { return !this->operator bool(); }
+    operator bool() const { return !!columns(); } /// NOLINT
+    bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -182,25 +183,23 @@ using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
 /// Throw exception when blocks are different.
-void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description);
+void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::string_view context_description);
 
 /// Actual header is compatible to desired if block have equal structure except constants.
 /// It is allowed when column from actual header is constant, but in desired is not.
 /// If both columns are constant, it is checked that they have the same value.
 bool isCompatibleHeader(const Block & actual, const Block & desired);
-void assertCompatibleHeader(const Block & actual, const Block & desired, const std::string & context_description);
+void assertCompatibleHeader(const Block & actual, const Block & desired, std::string_view context_description);
 
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
 void convertToFullIfSparse(Block & block);
 
-/// Helps in-memory storages to extract columns from block.
-/// Properly handles cases, when column is a subcolumn and when it is compressed.
-ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
-
 /// Converts columns-constants to full columns ("materializes" them).
 Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
+
+Block concatenateBlocks(const std::vector<Block> & blocks);
 
 }

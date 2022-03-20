@@ -36,6 +36,8 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+void registerInputFormatProtobufList(FormatFactory & factory);
+void registerOutputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory);
@@ -74,6 +76,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 
 void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
+void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 
@@ -84,6 +87,7 @@ void registerInputFormatHiveText(FormatFactory & factory);
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
 void registerArrowSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory);
@@ -96,6 +100,7 @@ void registerNativeSchemaReader(FormatFactory & factory);
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory);
 void registerProtobufSchemaReader(FormatFactory & factory);
+void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerLineAsStringSchemaReader(FormatFactory & factory);
 void registerJSONAsStringSchemaReader(FormatFactory & factory);
 void registerRawBLOBSchemaReader(FormatFactory & factory);
@@ -106,6 +111,8 @@ void registerRegexpSchemaReader(FormatFactory & factory);
 void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
+
+void registerFileExtensions(FormatFactory & factory);
 
 void registerFormats()
 {
@@ -136,6 +143,8 @@ void registerFormats()
     registerInputFormatJSONCompactEachRow(factory);
     registerOutputFormatJSONCompactEachRow(factory);
     registerInputFormatProtobuf(factory);
+    registerOutputFormatProtobufList(factory);
+    registerInputFormatProtobufList(factory);
     registerOutputFormatProtobuf(factory);
     registerInputFormatTemplate(factory);
     registerOutputFormatTemplate(factory);
@@ -173,6 +182,7 @@ void registerFormats()
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
+    registerInputFormatJSONAsObject(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif
@@ -181,6 +191,7 @@ void registerFormats()
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
+    registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 
     registerArrowSchemaReader(factory);
     registerParquetSchemaReader(factory);
@@ -193,6 +204,7 @@ void registerFormats()
     registerRowBinaryWithNamesAndTypesSchemaReader(factory);
     registerAvroSchemaReader(factory);
     registerProtobufSchemaReader(factory);
+    registerProtobufListSchemaReader(factory);
     registerLineAsStringSchemaReader(factory);
     registerJSONAsStringSchemaReader(factory);
     registerRawBLOBSchemaReader(factory);
@@ -203,16 +215,6 @@ void registerFormats()
     registerTSKVSchemaReader(factory);
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
-
-    factory.registerFileExtension("csv", "CSV");
-    factory.registerFileExtension("tsv", "TSV");
-    factory.registerFileExtension("parquet", "Parquet");
-    factory.registerFileExtension("orc", "ORC");
-    factory.registerFileExtension("native", "Native");
-    factory.registerFileExtension("json", "JSON");
-    factory.registerFileExtension("ndjson", "JSONEachRow");
-    factory.registerFileExtension("xml", "XML");
-    factory.registerFileExtension("avro", "Avro");
 }
 
 }

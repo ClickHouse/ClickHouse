@@ -18,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -120,7 +121,7 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 
 Pipe XDBCDictionarySource::loadAll()
 {
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
@@ -129,7 +130,7 @@ Pipe XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
-    LOG_TRACE(log, load_query_update);
+    LOG_TRACE(log, fmt::runtime(load_query_update));
     return loadFromQuery(bridge_url, sample_block, load_query_update);
 }
 

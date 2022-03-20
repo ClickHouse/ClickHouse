@@ -17,6 +17,7 @@
 #include <Databases/MySQL/MaterializeMetadata.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
@@ -24,6 +25,10 @@
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 #include <base/bit_cast.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -147,6 +152,61 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     }
 }
 
+static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
+{
+    String table_name;
+    String database_name;
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
+
+    bool parse_failed = false;
+    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
+    IParser::Pos pos(tokens, 0);
+    Expected expected;
+    ASTPtr res;
+    ASTPtr table;
+    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
+    {
+        ParserKeyword("TABLE").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else
+    {
+        parse_failed = true;
+    }
+    if (!parse_failed)
+    {
+        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
+        {
+            database_name = table_id.database_name;
+            table_name = table_id.table_name;
+        }
+    }
+    return std::make_tuple(database_name, table_name);
+}
+
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     ContextPtr context_,
     const String & database_name_,
@@ -158,11 +218,22 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
-    , pool(std::move(pool_))
+    , pool(std::move(pool_)) /// NOLINT
     , client(std::move(client_))
     , settings(settings_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
+
+    if (!settings->materialized_mysql_tables_list.value.empty())
+    {
+        Names tables_list;
+        boost::split(tables_list, settings->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
+        for (String & table_name: tables_list)
+        {
+            boost::trim(table_name);
+            materialized_tables_list.insert(table_name);
+        }
+    }
 }
 
 void MaterializedMySQLSyncThread::synchronization()
@@ -315,6 +386,47 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
     return std::move(res.pipeline);
 }
 
+static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, const String & database_name, const String & table_name, const Settings & global_settings)
+{
+    Block tables_columns_sample_block
+            {
+                    { std::make_shared<DataTypeString>(),   "column_name" },
+                    { std::make_shared<DataTypeString>(),   "column_type" }
+            };
+
+    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
+                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
+
+    StreamSettings mysql_input_stream_settings(global_settings, false, true);
+    auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
+
+    Block block;
+    WriteBufferFromOwnString query_columns;
+    QueryPipeline pipeline(std::move(mysql_source));
+    PullingPipelineExecutor executor(pipeline);
+    while (executor.pull(block))
+    {
+        const auto & column_name_col = *block.getByPosition(0).column;
+        const auto & column_type_col = *block.getByPosition(1).column;
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            String column_name = column_name_col[i].safeGet<String>();
+            String column_type = column_type_col[i].safeGet<String>();
+            //we can do something special conversion to guarantee select results is the same as the binlog parse results
+            if (column_type.starts_with("set"))
+            {
+                query_columns << (backQuote(column_name) + " + 0");
+            } else
+                query_columns << backQuote(column_name);
+            query_columns << ",";
+        }
+    }
+    String query_columns_str = query_columns.str();
+    return query_columns_str.substr(0, query_columns_str.length() - 1);
+}
+
 static inline void dumpDataForTables(
     mysqlxx::Pool::Entry & connection, const std::unordered_map<String, String> & need_dumping_tables,
     const String & query_prefix, const String & database_name, const String & mysql_database_name,
@@ -334,9 +446,10 @@ static inline void dumpDataForTables(
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
-            auto input = std::make_unique<MySQLSource>(
-                connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                pipeline.getHeader(), mysql_input_stream_settings);
+            String mysql_select_all_query = "SELECT " + rewriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettingsRef()) + " FROM "
+                    + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
+            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
+            auto input = std::make_unique<MySQLSource>(connection, mysql_select_all_query, pipeline.getHeader(), mysql_input_stream_settings);
             auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
             Pipe pipe(std::move(input));
             pipe.addTransform(counting);
@@ -391,7 +504,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
 
             checkMySQLVariables(connection, getContext()->getSettingsRef());
             std::unordered_map<String, String> need_dumping_tables;
-            metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables);
+            metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables, materialized_tables_list);
 
             if (!need_dumping_tables.empty())
             {
@@ -421,7 +534,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, materialized_tables_list, metadata.executed_gtid_set, metadata.binlog_checksum);
 
             setSynchronizationThreadException(nullptr);
             return true;
@@ -749,9 +862,24 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         auto query_context = createQueryContext(getContext());
         CurrentThread::QueryScope query_scope(query_context);
 
+        String query = query_event.query;
+        if (!materialized_tables_list.empty())
+        {
+             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
+
+            if (!ddl_table_name.empty())
+            {
+                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
+                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
+                {
+                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
+                    return;
+                }
+            }
+        }
         String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
         String event_database = query_event.schema == mysql_database_name ? database_name : "";
-        tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
+        tryToExecuteQuery(query_prefix + query, query_context, event_database, comment);
     }
     catch (Exception & exception)
     {
