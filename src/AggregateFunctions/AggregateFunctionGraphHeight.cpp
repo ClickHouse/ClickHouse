@@ -18,13 +18,6 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Trait, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionGraphHeightImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
-{
-    return std::make_shared<GraphHeightGeneralImpl>(argument_type, parameters, std::forward<TArgs>(args)...);
-}
-
-
 AggregateFunctionPtr createAggregateFunctionGraphHeight(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
