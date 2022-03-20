@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table",
-    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "secure"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
 
 namespace
 {
@@ -277,7 +277,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration.user, configuration.password, {});
+            session.authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress{});
             context = session.makeQueryContext();
         }
         else

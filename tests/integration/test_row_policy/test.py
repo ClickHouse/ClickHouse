@@ -435,25 +435,36 @@ def test_grant_create_row_policy():
     node.query("DROP USER X")
 
 
+def test_users_xml_is_readonly():
+    assert re.search("storage is readonly", node.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
+
+
 def test_some_users_without_policies():
     copy_policy_xml('no_filters.xml')
     assert node.query("SHOW POLICIES") == ""
     node.query("CREATE USER X, Y")
     node.query("GRANT SELECT ON mydb.filtered_table1 TO X, Y")
 
-    node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b AS permissive TO X")
+    node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a < b AS permissive TO X")
     assert node.query("SELECT * FROM mydb.filtered_table1", user='X') == TSV([[0, 1]])
     assert node.query("SELECT * FROM mydb.filtered_table1", user='Y') == ""
 
     node.query("ALTER POLICY pA ON mydb.filtered_table1 AS restrictive")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='X') == ""
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='Y') == ""
+    node.query("CREATE POLICY pB ON mydb.filtered_table1 FOR SELECT USING 1 AS permissive TO X")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='X') == TSV([[0, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='Y') == ""
+    node.query("ALTER POLICY pB ON mydb.filtered_table1 TO X, Y")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='X') == TSV([[0, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table1", user='Y') == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
+    node.query("DROP POLICY pB ON mydb.filtered_table1")
+
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 AS simple")
     assert node.query("SELECT * FROM mydb.filtered_table1", user='X') == TSV([[0, 1]])
     assert node.query("SELECT * FROM mydb.filtered_table1", user='Y') == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
 
     node.query("DROP USER X, Y")
-
-
-def test_users_xml_is_readonly():
-    assert re.search("storage is readonly", node.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
 
 
 def test_tags_with_db_and_table_names():

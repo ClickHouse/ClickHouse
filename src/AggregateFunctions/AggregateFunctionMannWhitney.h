@@ -149,7 +149,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        auto param = params[0].get<String>();
+        const auto & param = params[0].get<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")

@@ -245,7 +245,6 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-public:
     /*
      * Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
@@ -349,10 +348,10 @@ public:
 template <>
 struct fmt::formatter<DB::RowNumber>
 {
-    constexpr auto parse(format_parse_context & ctx)
+    static constexpr auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

@@ -18,7 +18,7 @@ const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
 
 IMergeSelector::PartsRange ITTLMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge)
 {
     using Iterator = IMergeSelector::PartsRange::const_iterator;
     Iterator best_begin;
