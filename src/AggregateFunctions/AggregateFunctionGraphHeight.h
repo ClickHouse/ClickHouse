@@ -29,7 +29,7 @@ struct GraphHeightGenericData
 {
     HashMap<StringRef, StringRef> graph;
 
-    void merge(GraphHeightGenericData & rhs) {
+    void merge(const GraphHeightGenericData & rhs) {
         for (const auto & elem : rhs.graph) {
             graph[elem.getKey()] = elem.getMapped();
             if (unlikely(graph.size() > AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
@@ -67,21 +67,17 @@ struct GraphHeightGenericData
 };
 
 /// Implementation of groupArray for String or any ComplexObject via Array
-template <typename Node>
 class GraphHeightGeneralImpl final
-    : public IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl<Node>>
+    : public IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl>
 {
     using Data = GraphHeightGenericData;
     DataTypePtr & data_type;
 
 public:
     GraphHeightGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl<Node>>(
+        : IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl>(
             {data_type_}, parameters_)
-        , data_type(this->argument_types[0])
-    {
-        assertNoParameters(getName(), this->parameters);
-        assertBinary(getName(), this->argument_types);
+        , data_type(this->argument_types[0]) {
     }
 
     String getName() const override { return "GraphHeight"; }
@@ -95,7 +91,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(rhs).merge(this->data(rhs));
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -108,7 +104,7 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto([[maybe_unused]] AggregateDataPtr __restrict place, [[maybe_unused]] IColumn & to, Arena *) const override
     {
         // TODO
     }
