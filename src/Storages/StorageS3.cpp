@@ -633,7 +633,7 @@ bool StorageS3::isColumnOriented() const
 
 Pipe StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -660,13 +660,13 @@ Pipe StorageS3::read(
     if (isColumnOriented())
     {
         columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
     for (size_t i = 0; i < num_streams; ++i)

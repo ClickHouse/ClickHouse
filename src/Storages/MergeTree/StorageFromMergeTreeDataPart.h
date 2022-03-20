@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -35,8 +35,7 @@ public:
                                               .readFromParts(
                                                   parts,
                                                   column_names,
-                                                  metadata_snapshot,
-                                                  metadata_snapshot,
+                                                  storage_snapshot,
                                                   query_info,
                                                   context,
                                                   max_block_size,
