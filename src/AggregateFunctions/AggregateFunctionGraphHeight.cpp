@@ -31,8 +31,8 @@ AggregateFunctionPtr createAggregateFunctionGraphHeight(
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);
 
-    if (argument_types[0] != argument_types[1]) {
-        throw Exception("Parameters for aggregate function " + name + " should be of equal types", ErrorCodes::BAD_ARGUMENTS);
+    if (!argument_types[0]->equals(*argument_types[1])) {
+        throw Exception("Parameters for aggregate function " + name + " should be of equal types. Got " + argument_types[0]->getName() + " and " + argument_types[1]->getName(), ErrorCodes::BAD_ARGUMENTS);
     }
     return std::make_shared<GraphHeightGeneralImpl>(argument_types[0], parameters);
 }
