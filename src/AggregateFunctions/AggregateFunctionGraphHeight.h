@@ -109,6 +109,8 @@ public:
     void insertResultInto([[maybe_unused]] AggregateDataPtr __restrict place, [[maybe_unused]] IColumn & to, Arena *) const override
     {
         // TODO
+        UInt64 ans = 0;
+        assert_cast<ColumnVector<UInt64>&>(to).getData().push_back(ans);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

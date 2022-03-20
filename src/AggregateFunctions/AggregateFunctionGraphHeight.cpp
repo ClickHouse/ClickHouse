@@ -34,7 +34,7 @@ AggregateFunctionPtr createAggregateFunctionGraphHeight(
     if (argument_types[0] != argument_types[1]) {
         throw Exception("Parameters for aggregate function " + name + " should be of equal types", ErrorCodes::BAD_ARGUMENTS);
     }
-    return std::make_shared<GraphHeightGeneralImpl>(argument_types, parameters);
+    return std::make_shared<GraphHeightGeneralImpl>(argument_types[0], parameters);
 }
 
 }
