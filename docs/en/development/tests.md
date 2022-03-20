@@ -11,7 +11,7 @@ Functional tests are the most simple and convenient to use. Most of ClickHouse f
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and it is available to general public.
+Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from CLickHouse and it is available to general public.
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
 
@@ -133,44 +133,6 @@ If the system clickhouse-server is already running and you do not want to stop i
 
 `clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
 
-## Testing Environment {#testing-environment}
-
-Before publishing release as stable we deploy it on testing environment. Testing environment is a cluster that process 1/39 part of [Yandex.Metrica](https://metrica.yandex.com/) data. We share our testing environment with Yandex.Metrica team. ClickHouse is upgraded without downtime on top of existing data. We look at first that data is processed successfully without lagging from realtime, the replication continue to work and there is no issues visible to Yandex.Metrica team. First check can be done in the following way:
-
-``` sql
-SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
-```
-
-In some cases we also deploy to testing environment of our friend teams in Yandex: Market, Cloud, etc. Also we have some hardware servers that are used for development purposes.
-
-## Load Testing {#load-testing}
-
-After deploying to testing environment we run load testing with queries from production cluster. This is done manually.
-
-Make sure you have enabled `query_log` on your production cluster.
-
-Collect query log for a day or more:
-
-``` bash
-$ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
-```
-
-This is a way complicated example. `type = 2` will filter queries that are executed successfully. `query LIKE '%ym:%'` is to select relevant queries from Yandex.Metrica. `is_initial_query` is to select only queries that are initiated by client, not by ClickHouse itself (as parts of distributed query processing).
-
-`scp` this log to your testing cluster and run it as following:
-
-``` bash
-$ clickhouse benchmark --concurrency 16 < queries.tsv
-```
-
-(probably you also want to specify a `--user`)
-
-Then leave it for a night or weekend and go take a rest.
-
-You should check that `clickhouse-server` does not crash, memory footprint is bounded and performance not degrading over time.
-
-Precise query execution timings are not recorded and not compared due to high variability of queries and environment.
-
 ## Build Tests {#build-tests}
 
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
@@ -259,13 +221,13 @@ Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuz
 
 ## Security Audit
 
-People from Yandex Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
+Our Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
-We run `clang-tidy` and `PVS-Studio` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
+We run `clang-tidy` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
 
-We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. 
 
 If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
 
@@ -309,12 +271,6 @@ Alternatively you can try `uncrustify` tool to reformat your code. Configuration
 `CLion` has its own code formatter that has to be tuned for our code style.
 
 We also use `codespell` to find typos in code. It is automated as well.
-
-## Metrica B2B Tests {#metrica-b2b-tests}
-
-Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
-
-These tests are automated by separate team. Due to high number of moving parts, tests are fail most of the time by completely unrelated reasons, that are very difficult to figure out. Most likely these tests have negative value for us. Nevertheless these tests was proved to be useful in about one or two times out of hundreds.
 
 ## Test Coverage {#test-coverage}
 

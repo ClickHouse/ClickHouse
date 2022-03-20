@@ -199,18 +199,27 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
+
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
-    if (path.find_first_of("*?{") == std::string::npos)
+
+    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    {
+        paths.push_back(path);
+    }
+    else if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
         if (fs::exists(path))
             total_bytes_to_read += fs::file_size(path, error);
+
         paths.push_back(path);
     }
     else
+    {
         paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
+    }
 
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
@@ -264,22 +273,38 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    auto read_buffer_creator = [&]()
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        String path;
-        auto it = std::find_if(paths.begin(), paths.end(), [](const String & p){ return std::filesystem::exists(p); });
-        if (it == paths.end())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-                "table structure manually",
-                format);
+        auto read_buffer_creator = [&]()
+        {
+            read_buffer_creator_was_used = true;
 
-        path = *it;
-        return createReadBuffer(path, false, "File", -1, compression_method, context);
-    };
+            if (!std::filesystem::exists(path))
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+                    "table structure manually",
+                    format);
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
+            return createReadBuffer(path, false, "File", -1, compression_method, context);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+            exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:\n{}", exception_messages);
 }
 
 bool StorageFile::isColumnOriented() const
@@ -313,7 +338,11 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     is_db_table = false;
     paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     is_path_with_globs = paths.size() > 1;
-    path_for_partitioned_write = table_path_;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_path_;
+
     setStorageMetadata(args);
 }
 
@@ -418,28 +447,27 @@ public:
 
     static Block getBlockForSource(
         const StorageFilePtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
         if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(
-                columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
-            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
+            return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
     }
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
+        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
         , read_buf(std::move(read_buf_))
         , columns_description(std::move(columns_description_))
@@ -489,8 +517,8 @@ public:
                 auto get_block_for_format = [&]() -> Block
                 {
                     if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-                    return metadata_snapshot->getSampleBlock();
+                        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                    return storage_snapshot->metadata->getSampleBlock();
                 };
 
                 auto format = context->getInputFormat(
@@ -553,7 +581,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -574,7 +602,7 @@ private:
 
 Pipe StorageFile::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -588,7 +616,7 @@ Pipe StorageFile::read(
         if (paths.size() == 1 && !fs::exists(paths[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+                return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
                 throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
@@ -624,9 +652,9 @@ Pipe StorageFile::read(
         {
             if (isColumnOriented())
                 return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
             else
-                return metadata_snapshot->getColumns();
+                return storage_snapshot->metadata->getColumns();
         };
 
         /// In case of reading from fd we have to check whether we have already created
@@ -638,7 +666,7 @@ Pipe StorageFile::read(
             read_buffer = std::move(peekable_read_buffer_from_fd);
 
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
+            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -853,6 +881,7 @@ SinkToStoragePtr StorageFile::write(
     {
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
+
         fs::create_directories(fs::path(path_for_partitioned_write).parent_path());
 
         return std::make_shared<PartitionedStorageFileSink>(

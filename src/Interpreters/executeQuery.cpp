@@ -413,9 +413,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ASTPtr ast;
     const char * query_end;
 
-    /// Don't limit the size of internal queries.
-    size_t max_query_size = 0;
-    if (!internal) max_query_size = settings.max_query_size;
+    size_t max_query_size = settings.max_query_size;
+    /// Don't limit the size of internal queries or distributed subquery.
+    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        max_query_size = 0;
 
     String query_database;
     String query_table;
@@ -780,8 +781,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
-                element.thread_ids = std::move(info.thread_ids);
-                element.profile_counters = std::move(info.profile_counters);
+                element.thread_ids = info.thread_ids;
+                element.profile_counters = info.profile_counters;
 
                 /// We need to refresh the access info since dependent views might have added extra information, either during
                 /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT

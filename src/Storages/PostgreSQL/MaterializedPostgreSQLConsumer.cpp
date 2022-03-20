@@ -645,6 +645,10 @@ void MaterializedPostgreSQLConsumer::addNested(
     assert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, nested_storage_info);
 
+    auto it = deleted_tables.find(postgres_table_name);
+    if (it != deleted_tables.end())
+        deleted_tables.erase(it);
+
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
     waiting_list[postgres_table_name] = table_start_lsn;
@@ -663,7 +667,9 @@ void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, Sto
 
 void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_name)
 {
-    storages.erase(postgres_table_name);
+    auto it = storages.find(postgres_table_name);
+    if (it != storages.end())
+        storages.erase(it);
     deleted_tables.insert(postgres_table_name);
 }
 
@@ -727,6 +733,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
             {
                 if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
                     continue;
+
                 throw;
             }
         }

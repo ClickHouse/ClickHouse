@@ -36,7 +36,7 @@ private:
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
 public:
-    MergeTreePartsMover(MergeTreeData * data_)
+    explicit MergeTreePartsMover(MergeTreeData * data_)
         : data(data_)
         , log(&Poco::Logger::get("MergeTreePartsMover"))
     {
@@ -59,7 +59,6 @@ public:
     /// merge or mutation.
     void swapClonedPart(const std::shared_ptr<const IMergeTreeDataPart> & cloned_parts) const;
 
-public:
     /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;
 

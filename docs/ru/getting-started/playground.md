@@ -5,10 +5,11 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
+!!! warning "Warning"
+    This service is deprecated and will be replaced in foreseeable future.
+
 [ClickHouse Playground](https://play.clickhouse.com) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
 В Playground доступны несколько тестовых массивов данных, а также примеры запросов, которые показывают возможности ClickHouse. Кроме того, вы можете выбрать LTS релиз ClickHouse, который хотите протестировать.
-
-ClickHouse Playground дает возможность поработать с  [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) в конфигурации m2.small (4 vCPU, 32 ГБ ОЗУ), которую предосталяет [Яндекс.Облако](https://cloud.yandex.com/). Дополнительную информацию об облачных провайдерах читайте в разделе [Поставщики облачных услуг ClickHouse](../commercial/cloud.md).
 
 Вы можете отправлять запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../interfaces/jdbc.md) или [ODBC](../interfaces/odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../interfaces/index.md).
 
@@ -54,11 +55,3 @@ curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&us
 ``` bash
 clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
-
-## Детали реализации {#implementation-details}
-
-Веб-интерфейс ClickHouse Playground выполняет запросы через ClickHouse [HTTP API](../interfaces/http.md).
-Бэкэнд Playground - это кластер ClickHouse без дополнительных серверных приложений. Как упоминалось выше,  способы подключения по HTTPS и TCP/TLS общедоступны как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
-
-!!! warning "Предупреждение"
-    Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации **настоятельно не рекомендуется**. Убедитесь, что он настроен только на частную сеть и защищен брандмауэром.
