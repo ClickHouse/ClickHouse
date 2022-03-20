@@ -3,18 +3,14 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Columns/ColumnArray.h>
-#include "Common/HashTable/HashTableKeyHolder.h"
-#include "Common/PODArray.h"
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Interpreters/AggregationCommon.h>
-#include <double-conversion/utils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include "AggregateFunctions/FactoryHelpers.h"
 #include "DataTypes/DataTypesNumber.h"
-#include "IO/VarInt.h"
-#include "IO/WriteHelpers.h"
 #include "base/types.h"
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Helpers.h>
 
 
 #define AGGREGATE_FUNCTION_GRAPH_MAX_SIZE 0xFFFFFF
@@ -99,18 +95,15 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
     }
 };
 
-class GraphHeightGeneralImpl final
-    : public IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphHeightGeneralImpl>
+template<typename Data>
+class GraphOperationGeneral
+    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data>>
 {
-    using Data = BidirectionalGraphGenericData;
-
 public:
-    GraphHeightGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphHeightGeneralImpl>(
+    GraphOperationGeneral(const DataTypePtr & data_type_, const Array & parameters_)
+        : IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphOperationGeneral>(
             {data_type_}, parameters_) {
     }
-
-    String getName() const override { return "GraphHeight"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
@@ -134,15 +127,27 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    void insertResultInto([[maybe_unused]] AggregateDataPtr __restrict place, [[maybe_unused]] IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        // TODO
-        UInt64 ans = this->data(place).edges_count;
-        assert_cast<ColumnVector<UInt64>&>(to).getData().push_back(ans);
+        assert_cast<ColumnVector<UInt64>&>(to).getData().push_back(calculateOperation(place, arena));
     }
+
+    virtual UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const = 0;
 
     bool allocatesMemoryInArena() const override { return true; }
 };
 
+template<typename GraphOperation>
+AggregateFunctionPtr createGraphOperation(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertBinary(name, argument_types);
+    assertNoParameters(name, parameters);
+
+    if (!argument_types[0]->equals(*argument_types[1])) {
+        throw Exception("Parameters for aggregate function " + name + " should be of equal types. Got " + argument_types[0]->getName() + " and " + argument_types[1]->getName(), ErrorCodes::BAD_ARGUMENTS);
+    }
+    return std::make_shared<GraphOperation>(argument_types[0], parameters);
+}
 
 }
