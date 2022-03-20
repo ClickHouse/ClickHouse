@@ -18,7 +18,7 @@ TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
-OK_SKIP_LABELS = {"release", "pr-documentation", "pr-doc-fix"}
+OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
 FORCE_TESTS_LABEL = "force tests"
@@ -69,6 +69,7 @@ TRUSTED_CONTRIBUTORS = {
         "s-mx",  # Maxim Sabyanin, former employee, present contributor
         "sevirov",  # technical writer, Yandex
         "spongedu",  # Seasoned contributor
+        "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "vdimir",  # Employee
         "vzakaznikov",

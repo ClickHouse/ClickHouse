@@ -22,7 +22,9 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/WriteHelpers.h>
@@ -113,9 +115,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-/// returns CREATE TABLE query, but with removed:
-/// - UUID
-/// - SETTINGS (for MergeTree)
+/// returns CREATE TABLE query, but with removed UUID
 /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
 ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 {
@@ -124,11 +124,6 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
-    /// Existing table has default settings (i.e. `index_granularity = 8192`), reset them.
-    if (ASTStorage * storage = old_create_query_ast.storage)
-    {
-        storage->reset(storage->settings);
-    }
     return old_ast;
 }
 
@@ -480,8 +475,15 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->set(create->storage, storage_ast);
 
     if (!comment.empty())
-    {
         create->set(create->comment, std::make_shared<ASTLiteral>(comment));
+
+    /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
+    /// and recreate tables on settings changes.
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+        storage_settings->loadFromQuery(*create->storage);
     }
 
     return create;

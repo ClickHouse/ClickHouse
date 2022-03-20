@@ -253,6 +253,8 @@
     \
     M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
     M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
+    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -281,6 +283,10 @@
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
+    M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
+    M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
 
 namespace ProfileEvents
 {

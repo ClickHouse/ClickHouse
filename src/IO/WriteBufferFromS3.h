@@ -6,6 +6,7 @@
 
 #    include <memory>
 #    include <vector>
+#    include <list>
 #    include <base/logger_useful.h>
 #    include <base/types.h>
 
@@ -13,8 +14,6 @@
 #    include <IO/WriteBuffer.h>
 
 #    include <aws/core/utils/memory/stl/AWSStringStream.h>
-
-#    include <Common/ThreadPool.h>
 
 namespace Aws::S3
 {
@@ -47,6 +46,8 @@ public:
         const String & bucket_,
         const String & key_,
         size_t minimum_upload_part_size_,
+        size_t upload_part_size_multiply_factor_,
+        size_t upload_part_size_multiply_threshold_,
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
@@ -85,11 +86,14 @@ private:
     String key;
     std::optional<std::map<String, String>> object_metadata;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
-    size_t minimum_upload_part_size;
-    size_t max_single_part_upload_size;
+    size_t upload_part_size;
+    const size_t upload_part_size_multiply_factor;
+    const size_t upload_part_size_multiply_threshold;
+    const size_t max_single_part_upload_size;
     /// Buffer to accumulate data.
     std::shared_ptr<Aws::StringStream> temporary_buffer;
-    size_t last_part_size;
+    size_t last_part_size = 0;
+    std::atomic<size_t> total_parts_uploaded = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.

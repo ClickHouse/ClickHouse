@@ -509,8 +509,8 @@ protected:
                     loading_dependencies_tables.reserve(info.dependencies.size());
                     for (auto && dependency : info.dependencies)
                     {
-                        loading_dependencies_databases.push_back(std::move(dependency.database));
-                        loading_dependencies_tables.push_back(std::move(dependency.table));
+                        loading_dependencies_databases.push_back(dependency.database);
+                        loading_dependencies_tables.push_back(dependency.table);
                     }
 
                     Array loading_dependent_databases;
@@ -519,8 +519,8 @@ protected:
                     loading_dependent_tables.reserve(info.dependencies.size());
                     for (auto && dependent : info.dependent_database_objects)
                     {
-                        loading_dependent_databases.push_back(std::move(dependent.database));
-                        loading_dependent_tables.push_back(std::move(dependent.table));
+                        loading_dependent_databases.push_back(dependent.database);
+                        loading_dependent_tables.push_back(dependent.table);
                     }
 
                     if (columns_mask[src_index++])
@@ -556,20 +556,20 @@ private:
 
 Pipe StorageSystemTables::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     Block res_block;
 
     std::vector<UInt8> columns_mask(sample_block.columns());

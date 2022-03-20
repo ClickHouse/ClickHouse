@@ -79,6 +79,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
+add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
@@ -143,7 +144,6 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionState.cpp
     AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
-
 list (APPEND dbms_headers
     AggregateFunctions/IAggregateFunction.h
     AggregateFunctions/IAggregateFunctionCombinator.h
@@ -154,10 +154,25 @@ list (APPEND dbms_headers
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources TableFunctions/ITableFunction.cpp TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers TableFunctions/ITableFunction.h   TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources Dictionaries/DictionaryFactory.cpp Dictionaries/DictionarySourceFactory.cpp Dictionaries/DictionaryStructure.cpp  Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers Dictionaries/DictionaryFactory.h   Dictionaries/DictionarySourceFactory.h   Dictionaries/DictionaryStructure.h Dictionaries/getDictionaryConfigurationFromAST.h)
+list (APPEND dbms_sources
+    TableFunctions/ITableFunction.cpp
+    TableFunctions/TableFunctionView.cpp
+    TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers
+    TableFunctions/ITableFunction.h
+    TableFunctions/TableFunctionView.h
+    TableFunctions/TableFunctionFactory.h)
+
+list (APPEND dbms_sources
+    Dictionaries/DictionaryFactory.cpp
+    Dictionaries/DictionarySourceFactory.cpp
+    Dictionaries/DictionaryStructure.cpp
+    Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers
+    Dictionaries/DictionaryFactory.h
+    Dictionaries/DictionarySourceFactory.h
+    Dictionaries/DictionaryStructure.h
+    Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
@@ -252,18 +267,16 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
-set (DBMS_COMMON_LIBRARIES)
-
 if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE ch_contrib::libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
     endif()
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PUBLIC ${all_modules})
     target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
@@ -508,6 +521,10 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
+if (TARGET ch_contrib::minizip)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::minizip)
+endif ()
+
 if (TARGET ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
@@ -551,6 +568,18 @@ if (ENABLE_TESTS)
         clickhouse_common_config
         clickhouse_common_zookeeper
         string_utils)
+
+    if (TARGET ch_contrib::simdjson)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
+    endif()
+
+    if(TARGET ch_contrib::rapidjson)
+        target_include_directories(unit_tests_dbms PRIVATE ch_contrib::rapidjson)
+    endif()
+
+    if (TARGET ch_contrib::yaml_cpp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
+    endif()
 
     add_check(unit_tests_dbms)
 endif ()
