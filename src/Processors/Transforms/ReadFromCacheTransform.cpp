@@ -7,7 +7,7 @@ Chunk ReadFromCacheTransform::generate()
 {
     if (chunks_read_count < chunks.size())
     {
-        return chunks[chunks_read_count].clone();
+        return chunks[chunks_read_count++].clone();
     }
     return {};
 }
