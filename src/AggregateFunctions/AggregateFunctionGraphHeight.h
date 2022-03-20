@@ -11,7 +11,9 @@
 #include <double-conversion/utils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include "DataTypes/DataTypesNumber.h"
 #include "IO/WriteHelpers.h"
+#include "base/types.h"
 
 
 #define AGGREGATE_FUNCTION_GRAPH_MAX_SIZE 0xFFFFFF
@@ -82,7 +84,7 @@ public:
 
     String getName() const override { return "GraphHeight"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
