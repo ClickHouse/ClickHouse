@@ -2637,7 +2637,7 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
-static Chunk InterpreterSelectQuery::create_single_chunk_from_many(Chunks chunks)
+Chunk InterpreterSelectQuery::create_single_chunk_from_many(Chunks chunks)
 {
     std::vector<ColumnPtr> columns;
     UInt64 num_rows = 0;
