@@ -34,7 +34,7 @@ static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
-    "update_tag", "dont_check_update_time",
+    "update_lag", "dont_check_update_time",
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",

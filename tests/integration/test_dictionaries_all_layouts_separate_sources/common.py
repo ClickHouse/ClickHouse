@@ -175,7 +175,9 @@ class SimpleLayoutTester(BaseLayoutTester):
             # print query
             if isinstance(answer, list):
                 answer = str(answer).replace(' ', '')
-            assert node.query(query) == str(answer) + '\n'
+            answer = str(answer) + '\n'
+            node_answer = node.query(query)
+            assert str(node_answer).strip() == answer.strip(), f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
 
 
 class ComplexLayoutTester(BaseLayoutTester):
@@ -210,7 +212,9 @@ class ComplexLayoutTester(BaseLayoutTester):
 
         for query, answer in queries_with_answers:
             # print query
-            assert node.query(query) == str(answer) + '\n'
+            node_answer = node.query(query)
+            answer = str(answer) + '\n'
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
 
 
 class RangedLayoutTester(BaseLayoutTester):
@@ -240,5 +244,6 @@ class RangedLayoutTester(BaseLayoutTester):
 
         for query, answer in queries_with_answers:
             # print query
-            assert node.query(query) == str(answer) + '\n'
-
+            node_answer = node.query(query)
+            answer = str(answer) + '\n'
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"

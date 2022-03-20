@@ -445,7 +445,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         }
     }
 
-    auto sorting_key_columns = result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{};
+    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
     for (size_t i = 0; i < order_by->children.size(); ++i)
@@ -740,9 +740,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage
-        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
-        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
+    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
+        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
@@ -755,11 +754,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (converted_to_cnf && settings.optimize_using_constraints)
     {
         optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
+            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
 
         if (settings.optimize_substitute_columns)
             optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
-                tables_with_columns, result.metadata_snapshot, result.storage);
+                tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
     /// GROUP BY injective function elimination.

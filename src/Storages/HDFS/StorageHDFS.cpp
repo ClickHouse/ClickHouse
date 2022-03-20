@@ -172,23 +172,43 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     const String & compression_method,
     ContextPtr ctx)
 {
-    auto read_buffer_creator = [&]()
+    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
+    auto paths = getPathsList(path_from_uri, uri, ctx);
+
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-        auto paths = getPathsList(path_from_uri, uri, ctx);
-        if (paths.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-                "specify table structure manually",
-                format);
+        auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
+        {
+            read_buffer_creator_was_used = true;
 
-        auto compression = chooseCompressionMethod(paths[0], compression_method);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, paths[0], ctx->getGlobalContext()->getConfigRef()), compression);
-    };
+            if (paths.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+                    "specify table structure manually",
+                    format);
 
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+            auto compression = chooseCompressionMethod(path, compression_method);
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, ctx->getGlobalContext()->getConfigRef()), compression);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+           exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from hdfs files failed. Errors:\n{}", exception_messages);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -272,16 +292,15 @@ Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool n
 
 Block HDFSSource::getBlockForSource(
     const StorageHDFSPtr & storage,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ColumnsDescription & columns_description,
     bool need_path_column,
     bool need_file_column)
 {
     if (storage->isColumnOriented())
-        return metadata_snapshot->getSampleBlockForColumns(
-            columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     else
-        return getHeader(metadata_snapshot, need_path_column, need_file_column);
+        return getHeader(storage_snapshot->metadata, need_path_column, need_file_column);
 }
 
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
@@ -304,17 +323,17 @@ String HDFSSource::URISIterator::next()
 
 HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     UInt64 max_block_size_,
     bool need_path_column_,
     bool need_file_column_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, need_path_column_, need_file_column_))
+    : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, need_path_column_, need_file_column_))
     , WithContext(context_)
     , storage(std::move(storage_))
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , max_block_size(max_block_size_)
     , need_path_column(need_path_column_)
     , need_file_column(need_file_column_)
@@ -345,8 +364,8 @@ bool HDFSSource::initialize()
     auto get_block_for_format = [&]() -> Block
     {
         if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-        return metadata_snapshot->getSampleBlock();
+            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+        return storage_snapshot->metadata->getSampleBlock();
     };
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, get_block_for_format(), max_block_size);
@@ -500,7 +519,7 @@ bool StorageHDFS::isColumnOriented() const
 
 Pipe StorageHDFS::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -551,15 +570,14 @@ Pipe StorageHDFS::read(
          const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
             if (isColumnOriented())
-                return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+                return ColumnsDescription{storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
             else
-                return metadata_snapshot->getColumns();
+                return storage_snapshot->metadata->getColumns();
         };
 
         pipes.emplace_back(std::make_shared<HDFSSource>(
             this_ptr,
-            metadata_snapshot,
+            storage_snapshot,
             context_,
             max_block_size,
             need_path_column,

@@ -184,7 +184,7 @@ struct ConstSource : public Base
 
     virtual void accept(ArraySourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IArraySource, Base>::value)
+        if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
             throw Exception(
@@ -194,7 +194,7 @@ struct ConstSource : public Base
 
     virtual void accept(ValueSourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IValueSource, Base>::value)
+        if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
             throw Exception(

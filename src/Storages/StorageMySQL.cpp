@@ -75,17 +75,17 @@ StorageMySQL::StorageMySQL(
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned)
 {
-    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
-        metadata_snapshot->getColumns().getOrdinary(),
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         remote_database_name,
         remote_table_name,
@@ -95,7 +95,7 @@ Pipe StorageMySQL::read(
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
         WhichDataType which(column_data.type);
         /// Convert enum to string.
@@ -178,7 +178,7 @@ public:
     {
         /// Avoid Excessive copy when block is small enough
         if (block.rows() <= max_rows)
-            return Blocks{std::move(block)};
+            return {block};
 
         const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
         Blocks split_blocks(split_block_size);
@@ -281,13 +281,13 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-
         if (engine_args.size() >= 6)
             configuration.replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-
+    for (const auto & address : configuration.addresses)
+        context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
     if (configuration.replace_query && !configuration.on_duplicate_clause.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them");
