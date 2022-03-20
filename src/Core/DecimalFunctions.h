@@ -97,7 +97,10 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-    const auto fractional_sign = whole < 0 ? -1 : 1;
+
+    /// When DecimalType is DateTime64, fractional is always positive, even if whole is negative.
+    constexpr bool is_datetime64 = std::is_same_v<DecimalType, DateTime64>;
+    const auto fractional_sign = !is_datetime64 && whole < 0 ? -1 : 1;
 
     T whole_scaled = 0;
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
