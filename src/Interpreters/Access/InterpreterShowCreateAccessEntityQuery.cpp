@@ -37,6 +37,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+extern const UInt64 RBAC_LATEST_VERSION;
+extern const UInt64 RBAC_VERSION_ROW_POLICIES_ARE_SIMPLE_BY_DEFAULT;
 
 namespace
 {
@@ -183,15 +185,13 @@ namespace
     ASTPtr getCreateQueryImpl(
         const RowPolicy & policy,
         const AccessControl * access_control /* not used if attach_mode == true */,
+        UInt64 rbac_version,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
         query->names = std::make_shared<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
-
-        if (policy.isRestrictive())
-            query->is_restrictive = policy.isRestrictive();
 
         for (auto type : collections::range(RowPolicyFilterType::MAX))
         {
@@ -204,12 +204,15 @@ namespace
             }
         }
 
+        if (attach_mode || (rbac_version < RBAC_VERSION_ROW_POLICIES_ARE_SIMPLE_BY_DEFAULT) || (policy.getKind() != RowPolicyKind::SIMPLE))
+            query->kind = policy.getKind();
+
         if (!policy.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = policy.to_roles.toAST();
+                query->to_roles = policy.to_roles.toAST();
             else
-                query->roles = policy.to_roles.toASTWithNames(*access_control);
+                query->to_roles = policy.to_roles.toASTWithNames(*access_control);
         }
 
         return query;
@@ -218,6 +221,7 @@ namespace
     ASTPtr getCreateQueryImpl(
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
+        UInt64 rbac_version,
         bool attach_mode)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
@@ -225,7 +229,7 @@ namespace
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getCreateQueryImpl(*role, access_control, attach_mode);
         if (const RowPolicy * policy = typeid_cast<const RowPolicy *>(&entity))
-            return getCreateQueryImpl(*policy, access_control, attach_mode);
+            return getCreateQueryImpl(*policy, access_control, rbac_version, attach_mode);
         if (const Quota * quota = typeid_cast<const Quota *>(&entity))
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
@@ -352,22 +356,23 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
 
     ASTs list;
     const auto & access_control = getContext()->getAccessControl();
+    UInt64 rbac_version = getContext()->getSettingsRef().rbac_version;
     for (const auto & entity : entities)
-        list.push_back(getCreateQuery(*entity, access_control));
+        list.push_back(getCreateQuery(*entity, access_control, rbac_version));
 
     return list;
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control)
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control, UInt64 rbac_version)
 {
-    return getCreateQueryImpl(entity, &access_control, false);
+    return getCreateQueryImpl(entity, &access_control, rbac_version, false);
 }
 
 
 ASTPtr InterpreterShowCreateAccessEntityQuery::getAttachQuery(const IAccessEntity & entity)
 {
-    return getCreateQueryImpl(entity, nullptr, true);
+    return getCreateQueryImpl(entity, nullptr, RBAC_LATEST_VERSION, true);
 }
 
 

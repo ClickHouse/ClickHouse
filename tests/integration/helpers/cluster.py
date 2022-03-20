@@ -2288,6 +2288,16 @@ class ClickHouseInstance:
     def copy_file_to_container(self, local_path, dest_path):
         return self.cluster.copy_file_to_container(self.docker_id, local_path, dest_path)
 
+    def copy_dir_to_container(self, local_path, dest_path):
+        for file_name in os.listdir(local_path):
+            self.copy_file_to_container(os.path.join(local_path, file_name), os.path.join(dest_path, file_name))
+
+    def clear_dir_in_container(self, path):
+        return self.exec_in_container(['bash', '-c', f'rm -rf {os.path.join(path, "*")}'])
+
+    def read_file(node, path):
+        return node.exec_in_container(['bash', '-c', f'cat {path}'])
+
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",
                                          "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(

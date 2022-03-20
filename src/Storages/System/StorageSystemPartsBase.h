@@ -70,7 +70,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 private:
-    bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const;
+    static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
     const FormatSettings format_settings;

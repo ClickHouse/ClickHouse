@@ -1,0 +1,1 @@
+ATTACH USER u2;
