@@ -2648,7 +2648,8 @@ Chunk InterpreterSelectQuery::create_single_cache_chunk_from_many(IAST::Hash AST
     }
 
     auto result = Chunk(columns, num_rows);
-    cached_data[ASTHash].second = {result.clone()};
+    cached_data[ASTHash].second.clear();
+    cached_data[ASTHash].second.push_back(result.clone());
     return result;
 }
 
