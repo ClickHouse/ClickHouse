@@ -442,9 +442,9 @@ namespace
                 pattern_list_args->children = {
                     std::make_shared<ASTLiteral>("^["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*|["),
+                    std::make_shared<ASTLiteral>("]+|["),
                     to_remove,
-                    std::make_shared<ASTLiteral>("]*$")
+                    std::make_shared<ASTLiteral>("]+$")
                 };
                 func_name = "replaceRegexpAll";
             }
@@ -455,7 +455,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("^["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*")
+                        std::make_shared<ASTLiteral>("]+")
                     };
                 }
                 else
@@ -464,7 +464,7 @@ namespace
                     pattern_list_args->children = {
                         std::make_shared<ASTLiteral>("["),
                         to_remove,
-                        std::make_shared<ASTLiteral>("]*$")
+                        std::make_shared<ASTLiteral>("]+$")
                     };
                 }
                 func_name = "replaceRegexpOne";
@@ -1639,7 +1639,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 if (std::is_same_v<Collection, Tuple> && arr.size() == 1)
                     return false;
 
-                literal = std::make_shared<ASTLiteral>(arr);
+                literal = std::make_shared<ASTLiteral>(std::move(arr));
                 literal->begin = literal_begin;
                 literal->end = ++pos;
                 node = literal;
@@ -2360,6 +2360,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
+    ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_delete("DELETE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_group_by("GROUP BY");
@@ -2414,9 +2415,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_by_key;
     ASTPtr recompression_codec;
     ASTPtr group_by_assignments;
+    bool if_exists = false;
 
     if (mode == TTLMode::MOVE)
     {
+        if (s_if_exists.ignore(pos))
+            if_exists = true;
+
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
@@ -2448,7 +2453,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
+    auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name, if_exists);
     ttl_element->setTTL(std::move(ttl_expr));
     if (where_expr)
         ttl_element->setWhere(std::move(where_expr));

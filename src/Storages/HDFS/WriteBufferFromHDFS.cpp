@@ -15,7 +15,6 @@ namespace ErrorCodes
 extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
-extern const int BAD_ARGUMENTS;
 }
 
 
@@ -26,7 +25,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(
+    WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
             const Poco::Util::AbstractConfiguration & config_,
             int replication_,
@@ -37,12 +36,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const String path = hdfs_uri.substr(begin_of_path);
-
-        if (path.find_first_of("*?{") != std::string::npos)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "URI '{}' contains globs, so the table is in readonly mode", hdfs_uri);
-
-        if (!hdfsExists(fs.get(), path.c_str()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} already exists", path);
 
         fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 

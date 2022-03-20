@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <base/sort.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
@@ -122,7 +123,7 @@ public:
         {
             typename Data::SearchType key;
 
-            if constexpr (std::is_same<KeyType, String>::value)
+            if constexpr (std::is_same_v<KeyType, String>)
             {
                 StringRef key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
@@ -226,7 +227,7 @@ public:
         {
             keys.push_back(it.first);
         }
-        std::sort(keys.begin(), keys.end());
+        ::sort(keys.begin(), keys.end());
 
         // insert using sorted keys to result column
         for (auto & key : keys)

@@ -103,7 +103,7 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf) : elf_(elf)
     init();
 }
 
-Dwarf::Section::Section(std::string_view d) : is64Bit_(false), data_(d)
+Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
 {
 }
 
@@ -343,7 +343,7 @@ void Dwarf::Path::toString(std::string & dest) const
 // Next chunk in section
 bool Dwarf::Section::next(std::string_view & chunk)
 {
-    chunk = data_;
+    chunk = data;
     if (chunk.empty())
         return false;
 
@@ -351,11 +351,11 @@ bool Dwarf::Section::next(std::string_view & chunk)
     // a 96-bit value (0xffffffff followed by the 64-bit length) for a 64-bit
     // section.
     auto initial_length = read<uint32_t>(chunk);
-    is64Bit_ = (initial_length == uint32_t(-1));
-    auto length = is64Bit_ ? read<uint64_t>(chunk) : initial_length;
+    is64_bit = (initial_length == uint32_t(-1));
+    auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
     chunk = std::string_view(chunk.data(), length);
-    data_ = std::string_view(chunk.end(), data_.end() - chunk.end());
+    data = std::string_view(chunk.end(), data.end() - chunk.end());
     return true;
 }
 

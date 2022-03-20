@@ -125,10 +125,6 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
 
 Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
 
-## Optional External Libraries {#optional-external-libraries}
-
-ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
-
 ## C++ Compiler {#c-compiler}
 
 Compilers Clang starting from version 11 is supported for building ClickHouse.
@@ -247,7 +243,7 @@ List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3A
 
 ## Test Data {#test-data}
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
+Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data of web analytics. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
 
     sudo apt install wget xz-utils
 
@@ -274,7 +270,7 @@ Navigate to your fork repository in GitHub’s UI. If you have been developing i
 
 A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
 
-Testing will commence as soon as Yandex employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 

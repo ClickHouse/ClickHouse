@@ -52,6 +52,7 @@ private:
     void finalizeImpl() override;
     void finalizeBefore() override;
     void finalizeAfter() override;
+    void finalizeZstd();
     /// Adding zstd empty block to out.working_buffer
     void addEmptyBlock();
 

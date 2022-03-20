@@ -1572,7 +1572,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
     kafka_produce(kafka_cluster, 'virt2', messages, 0)
 
-    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key'
+    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key, key'
     result = instance.query(sql)
     iterations = 0
     while not kafka_check_result(result, False, 'test_kafka_virtual2.reference') and iterations < 10:
@@ -3322,7 +3322,7 @@ def test_issue26643(kafka_cluster):
 
         CREATE TABLE test.log
         (
-            `tnow` DateTime CODEC(DoubleDelta, LZ4),
+            `tnow` DateTime('Asia/Istanbul') CODEC(DoubleDelta, LZ4),
             `server` LowCardinality(String),
             `client` LowCardinality(String),
             `sPort` LowCardinality(UInt16),

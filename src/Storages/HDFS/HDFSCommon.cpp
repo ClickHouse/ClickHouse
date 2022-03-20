@@ -45,11 +45,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         {
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
-
-#if USE_INTERNAL_HDFS3_LIBRARY
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
-#endif
-
             continue;
         }
         else if (key == "hadoop_kerberos_kinit_command")
@@ -170,12 +166,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-#if USE_INTERNAL_HDFS3_LIBRARY
             builder.loadFromConfig(config, user_config_prefix, true);
-#else
-            throw Exception("Multi user HDFS configuration required internal libhdfs3",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-#endif
         }
     }
 

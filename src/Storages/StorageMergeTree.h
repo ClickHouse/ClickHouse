@@ -43,7 +43,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -53,7 +53,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -140,8 +140,8 @@ private:
     std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
 
-private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting

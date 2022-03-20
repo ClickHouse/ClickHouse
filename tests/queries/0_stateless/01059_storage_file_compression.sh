@@ -12,7 +12,6 @@ do
     ${CLICKHOUSE_CLIENT} --query "CREATE TABLE file (x UInt64) ENGINE = File(TSV, '${CLICKHOUSE_DATABASE}/${m}.tsv.${m}')"
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE file"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO file SELECT * FROM numbers(1000000)"
-    sleep 1
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), max(x) FROM file"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE file"
 done

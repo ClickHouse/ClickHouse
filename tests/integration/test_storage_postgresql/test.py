@@ -3,6 +3,7 @@ import pytest
 from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
+from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/named_collections.xml'], with_postgres=True)
@@ -13,10 +14,18 @@ node2 = cluster.add_instance('node2', main_configs=['configs/named_collections.x
 def started_cluster():
     try:
         cluster.start()
+        node1.query("CREATE DATABASE test")
         yield cluster
 
     finally:
         cluster.shutdown()
+
+@pytest.fixture(autouse=True)
+def setup_teardown():
+    print("PostgreSQL is available - running test")
+    yield  # run test
+    node1.query("DROP DATABASE test")
+    node1.query("CREATE DATABASE test")
 
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
@@ -143,11 +152,11 @@ def test_non_default_scema(started_cluster):
     cursor.execute('INSERT INTO test_schema.test_table SELECT i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
-        CREATE TABLE test_pg_table_schema (a UInt32)
+        CREATE TABLE test.test_pg_table_schema (a UInt32)
         ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema');
     ''')
 
-    result = node1.query('SELECT * FROM test_pg_table_schema')
+    result = node1.query('SELECT * FROM test.test_pg_table_schema')
     expected = node1.query('SELECT number FROM numbers(100)')
     assert(result == expected)
 
@@ -160,10 +169,10 @@ def test_non_default_scema(started_cluster):
     cursor.execute('INSERT INTO "test.nice.schema"."test.nice.table" SELECT i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
-        CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        CREATE TABLE test.test_pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test.nice.table', 'postgres', 'mysecretpassword', 'test.nice.schema');
     ''')
-    result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
+    result = node1.query('SELECT * FROM test.test_pg_table_schema_with_dots')
     assert(result == expected)
 
     cursor.execute('INSERT INTO "test_schema"."test_table" SELECT i FROM generate_series(100, 199) as t(i)')
@@ -173,60 +182,70 @@ def test_non_default_scema(started_cluster):
 
     cursor.execute('DROP SCHEMA test_schema CASCADE')
     cursor.execute('DROP SCHEMA "test.nice.schema" CASCADE')
-    node1.query('DROP TABLE test_pg_table_schema')
-    node1.query('DROP TABLE test_pg_table_schema_with_dots')
+    node1.query('DROP TABLE test.test_pg_table_schema')
+    node1.query('DROP TABLE test.test_pg_table_schema_with_dots')
 
 
 def test_concurrent_queries(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=False)
+    cursor = conn.cursor()
+    database_name = 'concurrent_test'
 
-    node1.query('''
-        CREATE TABLE test_table (key UInt32, value UInt32)
-        ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword')''')
-
+    cursor.execute(f'DROP DATABASE IF EXISTS {database_name}')
+    cursor.execute(f'CREATE DATABASE {database_name}')
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True, database_name=database_name)
+    cursor = conn.cursor()
     cursor.execute('CREATE TABLE test_table (key integer, value integer)')
 
-    prev_count =  node1.count_in_log('New connection to postgres1:5432')
+    node1.query(f'''
+        CREATE TABLE test.test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+    ''')
+
+    node1.query(f'''
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    ''')
+
     def node_select(_):
         for i in range(20):
-            result = node1.query("SELECT * FROM test_table", user='default')
-    busy_pool = Pool(20)
-    p = busy_pool.map_async(node_select, range(20))
-    p.wait()
-    count =  node1.count_in_log('New connection to postgres1:5432')
-    logging.debug(f'count {count}, prev_count {prev_count}')
-    # 16 is default size for connection pool
-    assert(int(count) <= int(prev_count) + 16)
+            result = node1.query("SELECT * FROM test.test_table", user='default')
 
     def node_insert(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-
-    busy_pool = Pool(5)
-    p = busy_pool.map_async(node_insert, range(5))
-    p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000)
+        for i in range(20):
+            result = node1.query("INSERT INTO test.test_table SELECT number, number FROM numbers(1000)", user='default')
 
     def node_insert_select(_):
-        for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-            result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
+        for i in range(20):
+            result = node1.query("INSERT INTO test.test_table SELECT number, number FROM numbers(1000)", user='default')
+            result = node1.query("SELECT * FROM test.test_table LIMIT 100", user='default')
 
-    busy_pool = Pool(5)
-    p = busy_pool.map_async(node_insert_select, range(5))
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_select, range(30))
     p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000  * 2)
 
-    node1.query('DROP TABLE test_table;')
-    cursor.execute('DROP TABLE test_table;')
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
 
-    count =  node1.count_in_log('New connection to postgres1:5432')
-    logging.debug(f'count {count}, prev_count {prev_count}')
-    assert(int(count) <= int(prev_count) + 16)
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_insert, range(30))
+    p.wait()
+
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
+
+    busy_pool = Pool(30)
+    p = busy_pool.map_async(node_insert_select, range(30))
+    p.wait()
+
+    count = int(node1.query(f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"))
+    print(count)
+    assert(count <= 18)
+
+    node1.query('DROP TABLE test.test_table;')
+    node1.query('DROP TABLE test.stat;')
 
 
 def test_postgres_distributed(started_cluster):
@@ -302,19 +321,19 @@ def test_postgres_distributed(started_cluster):
 def test_datetime_with_timezone(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_timezone")
-    node1.query("DROP TABLE IF EXISTS test_timezone")
+    node1.query("DROP TABLE IF EXISTS test.test_timezone")
     cursor.execute("CREATE TABLE test_timezone (ts timestamp without time zone, ts_z timestamp with time zone)")
     cursor.execute("insert into test_timezone select '2014-04-04 20:00:00', '2014-04-04 20:00:00'::timestamptz at time zone 'America/New_York';")
     cursor.execute("select * from test_timezone")
     result = cursor.fetchall()[0]
     logging.debug(f'{result[0]}, {str(result[1])[:-6]}')
-    node1.query("create table test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', 'mysecretpassword');")
-    assert(node1.query("select ts from test_timezone").strip() == str(result[0]))
+    node1.query("create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', 'mysecretpassword');")
+    assert(node1.query("select ts from test.test_timezone").strip() == str(result[0]))
     # [:-6] because 2014-04-04 16:00:00+00:00 -> 2014-04-04 16:00:00
-    assert(node1.query("select ts_z from test_timezone").strip() == str(result[1])[:-6])
-    assert(node1.query("select * from test_timezone") == "2014-04-04 20:00:00\t2014-04-04 16:00:00\n")
+    assert(node1.query("select ts_z from test.test_timezone").strip() == str(result[1])[:-6])
+    assert(node1.query("select * from test.test_timezone") == "2014-04-04 20:00:00\t2014-04-04 16:00:00\n")
     cursor.execute("DROP TABLE test_timezone")
-    node1.query("DROP TABLE test_timezone")
+    node1.query("DROP TABLE test.test_timezone")
 
 
 def test_postgres_ndim(started_cluster):
@@ -342,20 +361,20 @@ def test_postgres_on_conflict(started_cluster):
     cursor.execute(f'CREATE TABLE {table} (a integer PRIMARY KEY, b text, c integer)')
 
     node1.query('''
-        CREATE TABLE test_conflict (a UInt32, b String, c Int32)
+        CREATE TABLE test.test_conflict (a UInt32, b String, c Int32)
         ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING');
     ''')
-    node1.query(f''' INSERT INTO {table} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
-    node1.query(f''' INSERT INTO {table} SELECT number, concat('name_', toString(number)), 4 from numbers(100)''')
+    node1.query(f''' INSERT INTO test.{table} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
+    node1.query(f''' INSERT INTO test.{table} SELECT number, concat('name_', toString(number)), 4 from numbers(100)''')
 
-    check1 = f"SELECT count() FROM {table}"
+    check1 = f"SELECT count() FROM test.{table}"
     assert (node1.query(check1)).rstrip() == '100'
 
     table_func = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING')'''
     node1.query(f'''INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
     node1.query(f'''INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
 
-    check1 = f"SELECT count() FROM {table}"
+    check1 = f"SELECT count() FROM test.{table}"
     assert (node1.query(check1)).rstrip() == '100'
 
     cursor.execute(f'DROP TABLE {table} ')
@@ -367,48 +386,48 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute(f'CREATE TABLE test_table (a integer PRIMARY KEY, b integer)')
 
     node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (a UInt32, b Int32)
+        DROP TABLE IF EXISTS test.test_table;
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres1);
     ''')
-    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+    node1.query(f''' INSERT INTO test.test_table SELECT number, number from numbers(100)''')
+    assert (node1.query(f"SELECT count() FROM test.test_table").rstrip() == '100')
 
     node1.query('''
-        DROP TABLE test_table;
-        CREATE TABLE test_table (a UInt32, b Int32)
+        DROP TABLE test.test_table;
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres1, on_conflict='ON CONFLICT DO NOTHING');
     ''')
-    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
-    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+    node1.query(f''' INSERT INTO test.test_table SELECT number, number from numbers(100)''')
+    node1.query(f''' INSERT INTO test.test_table SELECT number, number from numbers(100)''')
+    assert (node1.query(f"SELECT count() FROM test.test_table").rstrip() == '100')
 
-    node1.query('DROP TABLE test_table;')
+    node1.query('DROP TABLE test.test_table;')
     node1.query_and_get_error('''
-        CREATE TABLE test_table (a UInt32, b Int32)
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres1, 'ON CONFLICT DO NOTHING');
     ''')
     node1.query_and_get_error('''
-        CREATE TABLE test_table (a UInt32, b Int32)
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres2);
     ''')
     node1.query_and_get_error('''
-        CREATE TABLE test_table (a UInt32, b Int32)
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(unknown_collection);
     ''')
 
     node1.query('''
-        CREATE TABLE test_table (a UInt32, b Int32)
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres1, port=5432, database='postgres', table='test_table');
     ''')
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+    assert (node1.query(f"SELECT count() FROM test.test_table").rstrip() == '100')
 
     node1.query('''
-        DROP TABLE test_table;
-        CREATE TABLE test_table (a UInt32, b Int32)
+        DROP TABLE test.test_table;
+        CREATE TABLE test.test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres3, port=5432);
     ''')
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+    assert (node1.query(f"SELECT count() FROM test.test_table").rstrip() == '100')
 
     assert (node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == '100')
     node1.query("INSERT INTO TABLE FUNCTION postgresql(postgres1, on_conflict='ON CONFLICT DO NOTHING') SELECT number, number from numbers(100)")
@@ -437,6 +456,27 @@ def test_where_false(started_cluster):
     result = node1.query("SELECT count() FROM postgresql('postgres1:5432', 'postgres', 'test', 'postgres', 'mysecretpassword') WHERE 1=1")
     assert(int(result) == 1)
     cursor.execute("DROP TABLE test")
+
+
+def test_datetime64(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (ts timestamp)")
+    cursor.execute("insert into test select '1960-01-01 20:00:00';")
+
+    result = node1.query("select * from postgresql(postgres1, table='test')")
+    assert(result.strip() == '1960-01-01 20:00:00.000000')
+
+
+def test_uuid(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (u uuid)")
+    cursor.execute("""CREATE EXTENSION IF NOT EXISTS "uuid-ossp";""")
+    cursor.execute("insert into test select uuid_generate_v1();")
+
+    result = node1.query("select toTypeName(u) from postgresql(postgres1, table='test')")
+    assert(result.strip() == 'Nullable(UUID)')
 
 
 if __name__ == '__main__':

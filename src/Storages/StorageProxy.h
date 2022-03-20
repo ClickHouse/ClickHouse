@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
 
 
@@ -34,10 +35,13 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,
         QueryProcessingStage::Enum to_stage,
-        const StorageMetadataPtr &,
+        const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
+        /// TODO: Find a way to support projections for StorageProxy
+        info.ignore_projections = true;
+        const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata), info);
     }
 
     Pipe watch(
@@ -53,14 +57,14 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return getNested()->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        return getNested()->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override

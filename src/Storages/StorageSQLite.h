@@ -36,7 +36,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -48,7 +48,6 @@ public:
 private:
     String remote_table_name;
     String database_path;
-    ContextPtr global_context;
     SQLitePtr sqlite_db;
     Poco::Logger * log;
 };
