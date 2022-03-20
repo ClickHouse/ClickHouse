@@ -12,6 +12,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 #include "DataTypes/DataTypesNumber.h"
+#include "IO/VarInt.h"
 #include "IO/WriteHelpers.h"
 #include "base/types.h"
 
@@ -27,17 +28,20 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-struct GraphHeightGenericData
+struct DirectionalGraphGenericData
 {
-    HashMap<StringRef, StringRef> graph;
+    HashMap<StringRef, std::vector<StringRef>> graph{};
+    size_t edges_count = 0;
 
-    void merge(const GraphHeightGenericData & rhs) {
-        for (const auto & elem : rhs.graph) {
-            graph[elem.getKey()] = elem.getMapped();
-            if (unlikely(graph.size() > AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
-                throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-            }
-        }
+    void merge(const DirectionalGraphGenericData & rhs) {
+      edges_count += rhs.edges_count;
+      if (unlikely(edges_count > AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+          throw Exception("Too large graph size", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+      }
+      for (const auto & elem : rhs.graph) {
+          auto& children = graph[elem.getKey()];
+          children.insert(children.end(), elem.getMapped().begin(), elem.getMapped().end());
+      }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -45,41 +49,65 @@ struct GraphHeightGenericData
         writeVarUInt(graph.size(), buf);
         for (const auto & elem : graph) {
             writeStringBinary(elem.getKey(), buf);
-            writeStringBinary(elem.getMapped(), buf);
+            writeVarUInt(elem.getMapped().size(), buf);
+            for (StringRef child : elem.getMapped()) {
+              writeStringBinary(child, buf);
+            }
         }
     }
 
     void deserialize(ReadBuffer & buf, Arena* arena)
     {
+        graph = {};
+        edges_count = 0;
         size_t size;
         readVarUInt(size, buf);
-        if (unlikely(size > AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
-            throw Exception("Too large graph size to serialize", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-        }
+        
         for (size_t i = 0; i < size; ++i) {
-            graph[readStringBinaryInto(*arena, buf)] = readStringBinaryInto(*arena, buf);
+          StringRef key = readStringBinaryInto(*arena, buf);
+          size_t children_count = 0;
+          readVarUInt(children_count, buf);
+          edges_count += children_count;
+          if (unlikely(edges_count > AGGREGATE_FUNCTION_GRAPH_MAX_SIZE)) {
+            throw Exception("Too large graph size to serialize", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+          }
+          auto& children = graph[key];
+          for (size_t child_idx = 0; child_idx < children_count; ++child_idx) {
+            children.push_back(readStringBinaryInto(*arena, buf));
+          }
         }
     }
 
     void add(const IColumn ** columns, size_t row_num, Arena * arena)
     {
         const char * begin = nullptr;
-        graph[columns[0]->serializeValueIntoArena(row_num, *arena, begin)] = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
+        StringRef key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+        StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
+        graph[key].push_back(value);
+        ++edges_count;
     }
 };
 
-/// Implementation of groupArray for String or any ComplexObject via Array
+struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
+    void add(const IColumn ** columns, size_t row_num, Arena * arena) {
+        const char * begin = nullptr;
+        StringRef key = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+        StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
+        graph[key].push_back(value);
+        graph[value].push_back(key);
+        edges_count += 2;
+    }
+};
+
 class GraphHeightGeneralImpl final
-    : public IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl>
+    : public IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphHeightGeneralImpl>
 {
-    using Data = GraphHeightGenericData;
-    DataTypePtr & data_type;
+    using Data = BidirectionalGraphGenericData;
 
 public:
     GraphHeightGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<GraphHeightGenericData, GraphHeightGeneralImpl>(
-            {data_type_}, parameters_)
-        , data_type(this->argument_types[0]) {
+        : IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphHeightGeneralImpl>(
+            {data_type_}, parameters_) {
     }
 
     String getName() const override { return "GraphHeight"; }
@@ -109,7 +137,7 @@ public:
     void insertResultInto([[maybe_unused]] AggregateDataPtr __restrict place, [[maybe_unused]] IColumn & to, Arena *) const override
     {
         // TODO
-        UInt64 ans = 0;
+        UInt64 ans = this->data(place).edges_count;
         assert_cast<ColumnVector<UInt64>&>(to).getData().push_back(ans);
     }
 

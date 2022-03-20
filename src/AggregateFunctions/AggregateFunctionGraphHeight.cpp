@@ -43,7 +43,7 @@ void registerAggregateFunctionGraphHeight(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGraphHeight, properties });
+    factory.registerFunction("graphHeight", { createAggregateFunctionGraphHeight, properties });
 }
 
 }
