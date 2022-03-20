@@ -90,6 +90,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         , is_attach(is_attach_)
 {
     auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
+    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+
     auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
     auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
     configuration =
