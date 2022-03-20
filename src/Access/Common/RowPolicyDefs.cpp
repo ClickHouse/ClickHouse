@@ -78,18 +78,18 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
     throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
 }
 
-String toString(RowPolicyKind kind)
+String toString(RowPolicyKind type)
 {
-    return RowPolicyKindInfo::get(kind).raw_name;
+    return RowPolicyKindInfo::get(type).raw_name;
 }
 
 const RowPolicyKindInfo & RowPolicyKindInfo::get(RowPolicyKind kind_)
 {
     static constexpr auto make_info = [](const char * raw_name_)
     {
-        String init_name = raw_name_;
-        boost::to_lower(init_name);
-        return RowPolicyKindInfo{raw_name_, std::move(init_name)};
+        String nam = raw_name_;
+        boost::to_lower(nam);
+        return RowPolicyKindInfo{raw_name_, std::move(nam)};
     };
 
     switch (kind_)
@@ -102,6 +102,11 @@ const RowPolicyKindInfo & RowPolicyKindInfo::get(RowPolicyKind kind_)
         case RowPolicyKind::RESTRICTIVE:
         {
             static const auto info = make_info("RESTRICTIVE");
+            return info;
+        }
+        case RowPolicyKind::SIMPLE:
+        {
+            static const auto info = make_info("SIMPLE");
             return info;
         }
         case RowPolicyKind::MAX: break;

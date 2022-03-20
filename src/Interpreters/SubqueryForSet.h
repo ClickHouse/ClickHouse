@@ -17,8 +17,8 @@ struct SubqueryForSet
 {
     SubqueryForSet();
     ~SubqueryForSet();
-    SubqueryForSet(SubqueryForSet &&);
-    SubqueryForSet & operator= (SubqueryForSet &&);
+    SubqueryForSet(SubqueryForSet &&) noexcept;
+    SubqueryForSet & operator=(SubqueryForSet &&) noexcept;
 
     /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;

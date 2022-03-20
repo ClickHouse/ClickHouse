@@ -15,7 +15,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -52,6 +52,7 @@ namespace
             bool expect_hash = false;
             bool expect_ldap_server_name = false;
             bool expect_kerberos_realm = false;
+            bool expect_common_names = false;
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -65,6 +66,8 @@ namespace
                             expect_ldap_server_name = true;
                         else if (check_type == AuthenticationType::KERBEROS)
                             expect_kerberos_realm = true;
+                        else if (check_type == AuthenticationType::SSL_CERTIFICATE)
+                            expect_common_names = true;
                         else if (check_type != AuthenticationType::NO_PASSWORD)
                             expect_password = true;
 
@@ -96,6 +99,7 @@ namespace
             }
 
             String value;
+            boost::container::flat_set<String> common_names;
             if (expect_password || expect_hash)
             {
                 ASTPtr ast;
@@ -123,6 +127,18 @@ namespace
                     value = ast->as<const ASTLiteral &>().value.safeGet<String>();
                 }
             }
+            else if (expect_common_names)
+            {
+                if (!ParserKeyword{"CN"}.ignore(pos, expected))
+                    return false;
+
+                ASTPtr ast;
+                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    return false;
+
+                for (const auto & ast_child : ast->children)
+                    common_names.insert(ast_child->as<const ASTLiteral &>().value.safeGet<String>());
+            }
 
             auth_data = AuthenticationData{*type};
             if (expect_password)
@@ -133,6 +149,8 @@ namespace
                 auth_data.setLDAPServerName(value);
             else if (expect_kerberos_realm)
                 auth_data.setKerberosRealm(value);
+            else if (expect_common_names)
+                auth_data.setSSLCertificateCommonNames(std::move(common_names));
 
             return true;
         });
@@ -232,7 +250,7 @@ namespace
             if (!parseHostsWithoutPrefix(pos, expected, res_hosts))
                 return false;
 
-            hosts.add(std::move(res_hosts));
+            hosts.add(res_hosts);
             return true;
         });
     }
@@ -271,7 +289,7 @@ namespace
             if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
+            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -396,7 +414,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             if (!settings)
                 settings = std::make_shared<ASTSettingsProfileElements>();
-            boost::range::push_back(settings->elements, std::move(new_settings));
+
+            insertAtEnd(settings->elements, std::move(new_settings));
             continue;
         }
 

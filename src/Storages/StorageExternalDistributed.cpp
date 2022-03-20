@@ -172,7 +172,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
 Pipe StorageExternalDistributed::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -184,7 +184,7 @@ Pipe StorageExternalDistributed::read(
     {
         pipes.emplace_back(shard->read(
             column_names,
-            metadata_snapshot,
+            storage_snapshot,
             query_info,
             context,
             processed_stage,
