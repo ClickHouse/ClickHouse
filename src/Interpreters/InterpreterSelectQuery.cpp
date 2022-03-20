@@ -64,6 +64,8 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ReadFromCacheTransform.h>
+
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -594,10 +596,10 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     if (cached_data.contains(query_ptr->getTreeHash()))
     {
-        auto& header= cached_data[query_ptr->getTreeHash()].first;
-        auto chunk = create_single_cache_chunk_from_many(query_ptr->getTreeHash());
+        auto &header= cached_data[query_ptr->getTreeHash()].first;
+        const auto &chunks = cached_data[query_ptr->getTreeHash()].second;
 
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk)));
+        Pipe pipe(std::make_shared<ReadFromCacheTransform>(header, chunks));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
