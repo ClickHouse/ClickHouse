@@ -80,6 +80,7 @@ void registerFunctionInitialQueryID(FunctionFactory & factory);
 void registerFunctionServerUUID(FunctionFactory &);
 void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
+void registerFunctionNonNegativeDerivative(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -166,6 +167,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionServerUUID(factory);
     registerFunctionZooKeeperSessionUptime(factory);
     registerFunctionGetOSKernelVersion(factory);
+    registerFunctionNonNegativeDerivative(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
