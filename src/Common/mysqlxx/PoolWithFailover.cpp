@@ -128,7 +128,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
 
-    struct ErrorDetail {
+    struct ErrorDetail
+    {
         std::string description;
         int code;
     };
