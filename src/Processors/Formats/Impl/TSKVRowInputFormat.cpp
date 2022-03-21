@@ -241,7 +241,7 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
 
     std::unordered_map<String, DataTypePtr> names_and_types;
     StringRef name_ref;
-    String name;
+    String name_buf;
     String value;
     do
     {
