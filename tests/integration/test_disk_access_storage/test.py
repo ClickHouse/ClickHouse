@@ -42,7 +42,7 @@ def test_create():
         assert instance.query(
             "SHOW CREATE USER u2") == "CREATE USER u2 IDENTIFIED WITH sha256_password HOST LOCAL DEFAULT ROLE rx\n"
         assert instance.query(
-            "SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 AS permissive TO u1, u2\n"
+            "SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
         assert instance.query(
             "SHOW CREATE QUOTA q") == "CREATE QUOTA q FOR INTERVAL 1 hour MAX queries = 100 TO ALL EXCEPT rx\n"
         assert instance.query("SHOW GRANTS FOR u1") == ""
