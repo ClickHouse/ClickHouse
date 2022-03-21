@@ -1241,6 +1241,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     std::atomic_store(&zk_log, std::move(zk_log_));
 }
 
+#ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
@@ -1282,5 +1283,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         maybe_zk_log->add(elem);
     }
 }
+#else
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool)
+{}
+#endif
 
 }

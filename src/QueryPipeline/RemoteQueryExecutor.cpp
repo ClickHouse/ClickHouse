@@ -210,7 +210,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
-void RemoteQueryExecutor::sendQuery()
+void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 {
     if (sent_query)
         return;
@@ -237,13 +237,7 @@ void RemoteQueryExecutor::sendQuery()
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
-    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    /// Set initial_query_id to query_id for the clickhouse-benchmark.
-    ///
-    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
-    ///  due to it executes queries via RemoteBlockInputStream)
-    if (modified_client_info.initial_query_id.empty())
-        modified_client_info.initial_query_id = query_id;
+    modified_client_info.query_kind = query_kind;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -569,12 +563,13 @@ void RemoteQueryExecutor::sendExternalTables()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
+                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
                     Pipe pipe = cur->read(
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        metadata_snapshot, query_info, context,
+                        storage_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     if (pipe.empty())

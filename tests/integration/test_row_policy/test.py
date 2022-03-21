@@ -389,6 +389,52 @@ def test_dcl_management():
     assert node.query("SHOW POLICIES") == ""
 
 
+def test_grant_create_row_policy():
+    copy_policy_xml('no_filters.xml')
+    assert node.query("SHOW POLICIES") == ""
+    node.query("CREATE USER X")
+
+    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user='X')
+    node.query("GRANT CREATE POLICY ON mydb.filtered_table1 TO X")
+    node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user='X')
+    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table2"
+    assert expected_error in node.query_and_get_error("CREATE POLICY pA ON mydb.filtered_table2 FOR SELECT USING a<b", user='X')
+
+    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user='X')
+    node.query("GRANT ALTER POLICY ON mydb.filtered_table1 TO X")
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user='X')
+    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table2"
+    assert expected_error in node.query_and_get_error("ALTER POLICY pA ON mydb.filtered_table2 FOR SELECT USING a==b", user='X')
+
+    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("DROP POLICY pA ON mydb.filtered_table1", user='X')
+    node.query("GRANT DROP POLICY ON mydb.filtered_table1 TO X")
+    node.query("DROP POLICY pA ON mydb.filtered_table1", user='X')
+    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table2"
+    assert expected_error in node.query_and_get_error("DROP POLICY pA ON mydb.filtered_table2", user='X')
+
+    node.query("REVOKE ALL ON *.* FROM X")
+
+    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user='X')
+    node.query("GRANT CREATE POLICY ON *.* TO X")
+    node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user='X')
+    
+    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user='X')
+    node.query("GRANT ALTER POLICY ON *.* TO X")
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user='X')
+
+    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    assert expected_error in node.query_and_get_error("DROP POLICY pA ON mydb.filtered_table1", user='X')
+    node.query("GRANT DROP POLICY ON *.* TO X")
+    node.query("DROP POLICY pA ON mydb.filtered_table1", user='X')
+
+    node.query("DROP USER X")
+
+
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", node.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
 

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_HDFS
+
 #include <Disks/IDiskRemote.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
@@ -79,3 +83,4 @@ private:
 };
 
 }
+#endif

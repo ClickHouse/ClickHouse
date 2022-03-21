@@ -18,7 +18,7 @@ MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & 
 {
 }
 
-MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & index_name_, const bool met_)
+MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & index_name_, bool met_)
     : index_name(index_name_), is_empty(false), met(met_)
 {
 }
@@ -84,7 +84,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
     throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR);
 }
 
-MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondtition(
+MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondition(
     const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const
 {
     return std::make_shared<MergeTreeIndexhypothesisMergedCondition>(

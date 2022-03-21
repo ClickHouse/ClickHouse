@@ -1122,19 +1122,16 @@ def refresh_with_revoked_privilege(self, grant_target_name, user_name, node=None
     RQ_SRS_006_RBAC_LiveView("1.0"),
 )
 @Name("live view")
-def feature(self, stress=None, parallel=None, node="clickhouse1"):
+def feature(self, stress=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.stress = parallel
 
     with allow_experimental_live_view(self.context.node):
-        tasks = []
         with Pool(3) as pool:
             try:
                 for suite in loads(current_module(), Suite):
-                    run_scenario(pool, tasks, suite)
+                    Suite(test=suite, parallel=True, executor=pool)
             finally:
-                join(tasks)
+                join()

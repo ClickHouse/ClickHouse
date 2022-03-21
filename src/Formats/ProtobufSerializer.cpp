@@ -36,6 +36,7 @@
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
 #   include <base/range.h>
+#   include <base/sort.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -2163,11 +2164,16 @@ namespace
             for (auto & desc : field_descs_)
                 field_infos.emplace_back(std::move(desc.column_indices), *desc.field_descriptor, std::move(desc.field_serializer));
 
-            std::sort(field_infos.begin(), field_infos.end(),
+            ::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
 
             for (size_t i : collections::range(field_infos.size()))
                 field_index_by_field_tag.emplace(field_infos[i].field_tag, i);
+        }
+
+        void setHasEnvelopeAsParent()
+        {
+            has_envelope_as_parent = true;
         }
 
         void setColumns(const ColumnPtr * columns_, size_t num_columns_) override
@@ -2216,7 +2222,7 @@ namespace
 
         void writeRow(size_t row_num) override
         {
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 writer->startNestedMessage();
             else
                 writer->startMessage();
@@ -2235,13 +2241,17 @@ namespace
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
                 writer->endNestedMessage(parent_field_descriptor->number(), is_group, should_skip_if_empty);
             }
+            else if (has_envelope_as_parent)
+            {
+                writer->endNestedMessage(1, false, should_skip_if_empty);
+            }
             else
                 writer->endMessage(with_length_delimiter);
         }
 
         void readRow(size_t row_num) override
         {
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 reader->startNestedMessage();
             else
                 reader->startMessage(with_length_delimiter);
@@ -2284,7 +2294,7 @@ namespace
                 }
             }
 
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 reader->endNestedMessage();
             else
                 reader->endMessage(false);
@@ -2374,6 +2384,7 @@ namespace
         };
 
         const FieldDescriptor * const parent_field_descriptor;
+        bool has_envelope_as_parent = false;
         const bool with_length_delimiter;
         const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
@@ -2387,6 +2398,86 @@ namespace
         size_t last_field_index = static_cast<size_t>(-1);
     };
 
+    /// Serializes a top-level envelope message in the protobuf schema.
+    /// "Envelope" means that the contained subtree of serializers is enclosed in a message just once,
+    /// i.e. only when the first and the last row read/write trigger a read/write of the msg header.
+    class ProtobufSerializerEnvelope : public ProtobufSerializer
+    {
+    public:
+        ProtobufSerializerEnvelope(
+            std::unique_ptr<ProtobufSerializerMessage>&& serializer_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : serializer(std::move(serializer_))
+            , reader(reader_or_writer_.reader)
+            , writer(reader_or_writer_.writer)
+        {
+            // The inner serializer has a backreference of type protobuf::FieldDescriptor * to it's parent
+            // serializer. If it is unset, it considers itself the top-level message, otherwise a nested
+            // message and accordingly it makes start/endMessage() vs. startEndNestedMessage() calls into
+            // Protobuf(Writer|Reader). There is no field descriptor because Envelopes merely forward calls
+            // but don't contain data to be serialized. We must still force the inner serializer to act
+            // as nested message.
+            serializer->setHasEnvelopeAsParent();
+        }
+
+        void setColumns(const ColumnPtr * columns_, size_t num_columns_) override
+        {
+            serializer->setColumns(columns_, num_columns_);
+        }
+
+        void setColumns(const MutableColumnPtr * columns_, size_t num_columns_) override
+        {
+            serializer->setColumns(columns_, num_columns_);
+        }
+
+        void writeRow(size_t row_num) override
+        {
+            if (first_call_of_write_row)
+            {
+                writer->startMessage();
+                first_call_of_write_row = false;
+            }
+
+            serializer->writeRow(row_num);
+        }
+
+        void finalizeWrite() override
+        {
+            writer->endMessage(/*with_length_delimiter = */ true);
+        }
+
+        void readRow(size_t row_num) override
+        {
+            if (first_call_of_read_row)
+            {
+                reader->startMessage(/*with_length_delimiter = */ true);
+                first_call_of_read_row = false;
+            }
+
+            int field_tag;
+            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
+            assert(ret);
+
+            serializer->readRow(row_num);
+        }
+
+        void insertDefaults(size_t row_num) override
+        {
+            serializer->insertDefaults(row_num);
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerEnvelope ->\n";
+            serializer->describeTree(out, indent + 1);
+        }
+
+        std::unique_ptr<ProtobufSerializerMessage> serializer;
+        ProtobufReader * const reader;
+        ProtobufWriter * const writer;
+        bool first_call_of_write_row = true;
+        bool first_call_of_read_row = true;
+    };
 
     /// Serializes a tuple with explicit names as a nested message.
     class ProtobufSerializerTupleAsNestedMessage : public ProtobufSerializer
@@ -2609,7 +2700,8 @@ namespace
             const DataTypes & data_types,
             std::vector<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
-            bool with_length_delimiter)
+            bool with_length_delimiter,
+            bool with_envelope)
         {
             root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
             get_root_desc_function = [root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
@@ -2643,17 +2735,27 @@ namespace
             missing_column_indices.clear();
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
-            std::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
+            ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
             boost::range::set_difference(collections::range(column_names.size()), used_column_indices_sorted,
                                          std::back_inserter(missing_column_indices));
 
-            *root_serializer_ptr = message_serializer.get();
-
+            if (!with_envelope)
+            {
+                *root_serializer_ptr = message_serializer.get();
 #if 0
-            LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
-
-            return message_serializer;
+                return message_serializer;
+            }
+            else
+            {
+                auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
+                *root_serializer_ptr = envelope_serializer.get();
+#if 0
+                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+#endif
+                return envelope_serializer;
+            }
         }
 
     private:
@@ -2755,7 +2857,7 @@ namespace
             }
 
             /// Shorter suffixes first.
-            std::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
+            ::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
                       [](const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f1,
                          const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f2)
             {
@@ -3336,9 +3438,10 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     std::vector<size_t> & missing_column_indices,
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
+    bool with_envelope,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -3346,10 +3449,11 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const DataTypes & data_types,
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
+    bool with_envelope,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
+    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)

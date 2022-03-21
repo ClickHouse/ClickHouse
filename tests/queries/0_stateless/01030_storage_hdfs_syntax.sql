@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, use-hdfs
 
 drop table if exists test_table_hdfs_syntax
 ;

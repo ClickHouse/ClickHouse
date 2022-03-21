@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
+#include <Common/FileCache_fwd.h>
 
 namespace DB
 {
@@ -76,12 +77,17 @@ struct ReadSettings
 
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
+    bool remote_fs_enable_cache = true;
+    size_t remote_fs_cache_max_wait_sec = 1;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    FileCachePtr remote_fs_cache;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
+    bool http_skip_not_found_url_for_globs = true;
 
     /// Set to true for MergeTree tables to make sure
     /// that last position (offset in compressed file) is always passed.

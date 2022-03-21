@@ -174,6 +174,7 @@ def group_runners_by_tag(listed_runners):
         "fuzzer-unit-tester",
         "stress-tester",
         "style-checker",
+        "style-checker-aarch64",
     ]
     for runner in listed_runners:
         for tag in runner.tags:

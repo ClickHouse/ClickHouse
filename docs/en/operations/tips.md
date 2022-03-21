@@ -129,13 +129,17 @@ If you want to divide an existing ZooKeeper cluster into two, the correct way is
 
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
+You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
+
+Do not change `minSessionTimeout` setting, large values may affect ClickHouse restart stability.
+
 With the default settings, ZooKeeper is a time bomb:
 
 > The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+The ZooKeeper (3.5.1) configuration below is used in a large production environment:
 
 zoo.cfg:
 
