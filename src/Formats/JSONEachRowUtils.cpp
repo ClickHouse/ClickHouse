@@ -9,9 +9,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 
 #include <base/find_symbols.h>
 

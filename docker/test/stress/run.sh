@@ -22,15 +22,19 @@ export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+
 export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+function install_packages()
+{
+    dpkg -i $1/clickhouse-common-static_*.deb
+    dpkg -i $1/clickhouse-common-static-dbg_*.deb
+    dpkg -i $1/clickhouse-server_*.deb
+    dpkg -i $1/clickhouse-client_*.deb
+}
 
 function configure()
 {
@@ -116,7 +120,7 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 240 ]
+        if [ "$counter" -gt ${1:-240} ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
@@ -127,6 +131,9 @@ function start()
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
         sleep 0.5
+        cat /var/log/clickhouse-server/stdout.log
+        tail -n200 /var/log/clickhouse-server/stderr.log
+        tail -n200 /var/log/clickhouse-server/clickhouse-server.log
         counter=$((counter + 1))
     done
 
@@ -170,6 +177,8 @@ quit
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 }
+
+install_packages package_folder
 
 configure
 
@@ -245,6 +254,120 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 
 zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
     && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
+
+echo -e "Backward compatibility check\n"
+
+echo "Download previous release server"
+mkdir previous_release_package_folder
+clickhouse-client --query="SELECT version()" | ./download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/backward_compatibility_check_results.tsv \
+    || echo -e 'Download script failed\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
+
+if [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
+then
+    echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/backward_compatibility_check_results.tsv
+    stop
+
+    # Uninstall current packages
+    dpkg --remove clickhouse-client
+    dpkg --remove clickhouse-server
+    dpkg --remove clickhouse-common-static-dbg
+    dpkg --remove clickhouse-common-static
+
+    rm -rf /var/lib/clickhouse/*
+
+    # Install previous release packages
+    install_packages previous_release_package_folder
+
+    # Start server from previous release
+    configure
+    start
+
+    clickhouse-client --query="SELECT 'Server version: ', version()"
+
+    # Install new package before running stress test because we should use new clickhouse-client and new clickhouse-test
+    install_packages package_folder
+
+    mkdir tmp_stress_output
+    
+    ./stress --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
+        && echo -e 'Test script exit code\tOK' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'Test script failed\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
+    rm -rf tmp_stress_output
+
+    clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+
+    stop    
+    
+    # Start new server
+    configure
+    start 500
+    clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'Server failed to start\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
+
+    clickhouse-client --query="SELECT 'Server version: ', version()"
+
+    # Let the server run for a while before checking log.
+    sleep 60
+    
+    stop
+
+    # Error messages (we should ignore some errors)
+    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
+               -e "Code: 236. DB::Exception: Cancelled mutating parts" \
+               -e "REPLICA_IS_ALREADY_ACTIVE" \
+               -e "REPLICA_IS_ALREADY_EXIST" \
+               -e "DDLWorker: Cannot parse DDL task query" \
+               -e "RaftInstance: failed to accept a rpc connection due to error 125" \
+               -e "UNKNOWN_DATABASE" \
+               -e "NETWORK_ERROR" \
+               -e "UNKNOWN_TABLE" \
+               -e "ZooKeeperClient" \
+               -e "KEEPER_EXCEPTION" \
+               -e "DirectoryMonitor" \
+               -e "TABLE_IS_READ_ONLY" \
+               -e "Code: 1000, e.code() = 111, Connection refused" \
+               -e "UNFINISHED" \
+               -e "Renaming unexpected part" \
+        /var/log/clickhouse-server/clickhouse-server.log | zgrep -Fa "<Error>" > /dev/null \
+        && echo -e 'Error message in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'No Error messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
+
+    # Sanitizer asserts
+    zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+    zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+    zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
+        && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'No sanitizer asserts\tOK' >> /test_output/backward_compatibility_check_results.tsv
+    rm -f /test_output/tmp
+
+    # OOM
+    zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+        && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
+
+    # Logical errors
+    zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+        && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'No logical errors\tOK' >> /test_output/backward_compatibility_check_results.tsv
+
+    # Crash
+    zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+        && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'Not crashed\tOK' >> /test_output/backward_compatibility_check_results.tsv
+
+    # It also checks for crash without stacktrace (printed by watchdog)
+    zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+        && echo -e 'Fatal message in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
+        || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
+
+else
+    echo -e "Failed to download previous release packets\tFAIL" >> /test_output/backward_compatibility_check_results.tsv
+fi
+
+zgrep -Fa "FAIL" /test_output/backward_compatibility_check_results.tsv > /dev/null \
+        && echo -e 'Backward compatibility check\tFAIL' >> /test_output/test_results.tsv \
+        || echo -e 'Backward compatibility check\tOK' >> /test_output/test_results.tsv
+
 
 # Put logs into /test_output/
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*

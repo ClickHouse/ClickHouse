@@ -663,7 +663,7 @@ public:
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
-        return getLeastSupertype({type_x, type_arr_nested});
+        return getLeastSupertype(DataTypes{type_x, type_arr_nested});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override

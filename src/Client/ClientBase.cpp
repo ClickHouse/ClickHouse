@@ -647,6 +647,12 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    if (fake_drop)
+    {
+        if (parsed_query->as<ASTDropQuery>())
+            return;
+    }
+
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -1092,10 +1098,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
+            auto metadata = storage->getInMemoryMetadataPtr();
             sendDataFromPipe(
                 storage->read(
                         sample.getNames(),
-                        storage->getInMemoryMetadataPtr(),
+                        storage->getStorageSnapshot(metadata),
                         query_info,
                         global_context,
                         {},

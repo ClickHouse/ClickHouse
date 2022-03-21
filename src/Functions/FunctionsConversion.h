@@ -25,6 +25,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
@@ -34,6 +37,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
@@ -45,6 +49,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/FunctionsCodingIP.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -786,7 +791,8 @@ static ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 }
 
 template <typename FromDataType, typename Name>
-struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name, ConvertDefaultBehaviorTag>
+requires (!std::is_same_v<FromDataType, DataTypeString>)
+struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag>
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
@@ -1319,19 +1325,23 @@ struct ConvertThroughParsing
 
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertDefaultBehaviorTag>
+requires (!std::is_same_v<ToDataType, DataTypeString>)
+struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertDefaultBehaviorTag>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertDefaultBehaviorTag>
+requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
+struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertDefaultBehaviorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
+requires (!std::is_same_v<ToDataType, DataTypeString>)
+struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertReturnNullOnErrorTag>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
+requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
+struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
@@ -1386,7 +1396,8 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertR
 /** If types are identical, just take reference to column.
   */
 template <typename T, typename Name>
-struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name, ConvertDefaultBehaviorTag>
+requires (!T::is_parametric)
+struct ConvertImpl<T, T, Name, ConvertDefaultBehaviorTag>
 {
     template <typename Additions = void *>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/,
@@ -2532,10 +2543,12 @@ public:
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<Diagnostic> diagnostic_
-            , CastType cast_type_)
+            , CastType cast_type_
+            , bool cast_ipv4_ipv6_default_on_conversion_error_)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
+        , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
     {
     }
 
@@ -2584,6 +2597,7 @@ private:
 
     std::optional<Diagnostic> diagnostic;
     CastType cast_type;
+    bool cast_ipv4_ipv6_default_on_conversion_error;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -2731,8 +2745,8 @@ private:
     }
 
     template <typename ToDataType>
-    std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
-    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
+    requires IsDataTypeDecimal<ToDataType>
+    WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
     {
         TypeIndex type_index = from_type->getTypeId();
         UInt32 scale = to_type->getScale();
@@ -2934,20 +2948,61 @@ private:
             throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: "
                 + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
-        if (from_type->getElements().size() != to_type->getElements().size())
-            throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
-                "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
-
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
-        auto element_wrappers = getElementWrappers(from_element_types, to_element_types);
 
-        return [element_wrappers, from_element_types, to_element_types]
+        std::vector<WrapperType> element_wrappers;
+        std::vector<std::optional<size_t>> to_reverse_index;
+
+        /// For named tuples allow conversions for tuples with
+        /// different sets of elements. If element exists in @to_type
+        /// and doesn't exist in @to_type it will be filled by default values.
+        if (from_type->haveExplicitNames() && from_type->serializeNames()
+            && to_type->haveExplicitNames() && to_type->serializeNames())
+        {
+            const auto & from_names = from_type->getElementNames();
+            std::unordered_map<String, size_t> from_positions;
+            from_positions.reserve(from_names.size());
+            for (size_t i = 0; i < from_names.size(); ++i)
+                from_positions[from_names[i]] = i;
+
+            const auto & to_names = to_type->getElementNames();
+            element_wrappers.reserve(to_names.size());
+            to_reverse_index.reserve(from_names.size());
+
+            for (size_t i = 0; i < to_names.size(); ++i)
+            {
+                auto it = from_positions.find(to_names[i]);
+                if (it != from_positions.end())
+                {
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                    to_reverse_index.emplace_back(it->second);
+                }
+                else
+                {
+                    element_wrappers.emplace_back();
+                    to_reverse_index.emplace_back();
+                }
+            }
+        }
+        else
+        {
+            if (from_element_types.size() != to_element_types.size())
+                throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
+                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+
+            element_wrappers = getElementWrappers(from_element_types, to_element_types);
+            to_reverse_index.reserve(to_element_types.size());
+            for (size_t i = 0; i < to_element_types.size(); ++i)
+                to_reverse_index.emplace_back(i);
+        }
+
+        return [element_wrappers, from_element_types, to_element_types, to_reverse_index]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
 
-            size_t tuple_size = from_element_types.size();
+            size_t tuple_size = to_element_types.size();
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);
@@ -2955,8 +3010,16 @@ private:
             /// invoke conversion for each element
             for (size_t i = 0; i < tuple_size; ++i)
             {
-                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_element_types[i], "" }};
-                converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
+                if (to_reverse_index[i])
+                {
+                    size_t from_idx = *to_reverse_index[i];
+                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[from_idx], from_element_types[from_idx], "" }};
+                    converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
+                }
+                else
+                {
+                    converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                }
             }
 
             return ColumnTuple::create(converted_columns);
@@ -3075,6 +3138,68 @@ private:
             throw Exception{"Unsupported types to CAST AS Map\n"
                 "Left type: " + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
         }
+    }
+
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_type) const
+    {
+        if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
+        {
+            if (!from_tuple->haveExplicitNames())
+                 throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
+
+            PathsInData paths;
+            DataTypes from_types;
+
+            std::tie(paths, from_types) = flattenTuple(from_type);
+            auto to_types = from_types;
+
+            for (auto & type : to_types)
+            {
+                if (isTuple(type) || isNested(type))
+                     throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
+
+                type = recursiveRemoveLowCardinality(type);
+            }
+
+            return [element_wrappers = getElementWrappers(from_types, to_types),
+                has_nullable_subcolumns = to_type->hasNullableSubcolumns(), from_types, to_types, paths]
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                size_t tuple_size = to_types.size();
+                auto flattened_column = flattenTuple(arguments.front().column);
+                const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
+
+                if (tuple_size != column_tuple.getColumns().size())
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Expected tuple with {} subcolumn, but got {} subcolumns",
+                        tuple_size, column_tuple.getColumns().size());
+
+                auto res = ColumnObject::create(has_nullable_subcolumns);
+                for (size_t i = 0; i < tuple_size; ++i)
+                {
+                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
+                    auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
+                    res->addSubcolumn(paths[i], converted_column->assumeMutable());
+                }
+
+                return res;
+            };
+        }
+        else if (checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count);
+                auto & res_object = assert_cast<ColumnObject &>(res->assumeMutableRef());
+                res_object.finalize();
+                return res;
+            };
+        }
+
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Cast to Object can be performed only from flatten named tuple or string. Got: {}", from_type->getName());
     }
 
     template <typename FieldType>
@@ -3381,7 +3506,9 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        if (from_type->equals(*to_type))
+        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+
+        if (from_type->equals(*to_type) && !convert_to_ipv6)
         {
             if (isUInt8(from_type))
                 return createUInt8ToUInt8Wrapper(from_type, to_type);
@@ -3449,7 +3576,9 @@ private:
             return false;
         };
 
-        auto make_custom_serialization_wrapper = [&](const auto & types) -> bool
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = cast_ipv4_ipv6_default_on_conversion_error;
+
+        auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using ToDataType = typename Types::RightType;
@@ -3457,8 +3586,45 @@ private:
 
             if constexpr (WhichDataType(FromDataType::type_id).isStringOrFixedString())
             {
-                if (to_type->getCustomSerialization())
+                if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
+                    if (to_type->getCustomName()->getName() == "IPv4")
+                    {
+                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                            -> ColumnPtr
+                        {
+                            if (!WhichDataType(result_type).isUInt32())
+                                throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected UInt32", result_type->getName());
+
+                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
+                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                            else
+                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                        };
+
+                        return true;
+                    }
+
+                    if (to_type->getCustomName()->getName() == "IPv6")
+                    {
+                        ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                            -> ColumnPtr
+                        {
+                            if (!WhichDataType(result_type).isFixedString())
+                                throw Exception(
+                                    ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected FixedString", result_type->getName());
+
+                            if (cast_ipv4_ipv6_default_on_conversion_error_value)
+                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                            else
+                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                        };
+
+                        return true;
+                    }
+
                     ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
                     return true;
                 }
@@ -3496,6 +3662,8 @@ private:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
+            case TypeIndex::Object:
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             default:
