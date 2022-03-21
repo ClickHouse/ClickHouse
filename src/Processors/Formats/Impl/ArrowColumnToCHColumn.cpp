@@ -180,12 +180,12 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
         {
             Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
             if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
-                throw Exception{
+                throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}",
                     days_num,
                     column_name,
-                    DATE_LUT_MAX_DAY_NUM};
+                    DATE_LUT_MAX_DAY_NUM);
 
             column_data.emplace_back(days_num);
         }
