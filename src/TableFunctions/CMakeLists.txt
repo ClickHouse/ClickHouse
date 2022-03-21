@@ -8,10 +8,9 @@ list(REMOVE_ITEM clickhouse_table_functions_sources ITableFunction.cpp TableFunc
 list(REMOVE_ITEM clickhouse_table_functions_headers ITableFunction.h TableFunctionFactory.h)
 
 add_library(clickhouse_table_functions ${clickhouse_table_functions_sources})
+target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms)
 if (TARGET ch_contrib::hivemetastore)
-    target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms ch_contrib::hivemetastore ch_contrib::hdfs)
-else ()
-    target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms)
+    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::hivemetastore ch_contrib::hdfs ch_contrib::parquet)
 endif ()
 
 

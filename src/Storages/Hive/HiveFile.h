@@ -7,26 +7,19 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
+#include <arrow/adapters/orc/adapter.h>
+#include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/HiveSettings.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
 class Statistics;
 class ColumnStatistics;
-}
-
-namespace parquet::arrow
-{
-class FileReader;
-}
-
-namespace arrow::adapters::orc
-{
-class ORCFileReader;
 }
 
 namespace DB
@@ -36,7 +29,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class ReadBufferFromHDFS;
 class IHiveFile : public WithContext
 {
 public:
