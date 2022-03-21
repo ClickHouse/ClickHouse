@@ -122,6 +122,11 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
     initializeIndexByName();
 }
 
+Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
+{
+    initializeIndexByName();
+}
+
 
 void Block::initializeIndexByName()
 {
@@ -720,18 +725,6 @@ void convertToFullIfSparse(Block & block)
     for (auto & column : block)
         column.column = recursiveRemoveSparse(column.column);
 }
-
-ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
-{
-    auto current_column = block.getByName(column.getNameInStorage()).column;
-    current_column = current_column->decompress();
-
-    if (column.isSubcolumn())
-        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
-
-    return current_column;
-}
-
 
 Block materializeBlock(const Block & block)
 {

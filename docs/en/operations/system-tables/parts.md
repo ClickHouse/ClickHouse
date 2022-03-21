@@ -82,7 +82,7 @@ Columns:
 
 -   `path` ([String](../../sql-reference/data-types/string.md)) – Absolute path to the folder with data part files.
 
--   `disk` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
+-   `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
 -   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of compressed files.
 

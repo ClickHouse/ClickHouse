@@ -176,7 +176,6 @@ private:
         bool need_remove_expired_values,
         const MergeTreeData::MergingParams & merging_params) const;
 
-private:
     MergeTreeData & data;
     const size_t max_tasks_count;
 
@@ -192,26 +191,6 @@ private:
     ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
-
-public:
-    /// Returns true if passed part name is active.
-    /// (is the destination for one of active mutation/merge).
-    ///
-    /// NOTE: that it accept basename (i.e. dirname), not the path,
-    /// since later requires canonical form.
-    bool hasTemporaryPart(const std::string & basename) const;
-
-private:
-    /// Set of active temporary paths that is used as the destination.
-    /// List of such paths is required to avoid trying to remove them during cleanup.
-    ///
-    /// NOTE: It is pretty short, so use STL is fine.
-    std::unordered_set<std::string> tmp_parts;
-    /// Lock for "tmp_parts".
-    ///
-    /// NOTE: mutable is required to mark hasTemporaryPath() const
-    mutable std::mutex tmp_parts_lock;
-
 };
 
 

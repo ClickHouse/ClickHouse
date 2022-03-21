@@ -27,19 +27,21 @@ xflags = {
 @Requirements(
     RQ_SRS_020_ClickHouse_Extended_Precision("1.0"),
 )
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """Extended precision data type regression.
     """
     nodes = {
         "clickhouse":
             ("clickhouse1",)
     }
+    if stress is not None:
+        self.context.stress = stress
+    self.context.clickhouse_version = clickhouse_version
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "extended-precision-data-type_env")) as cluster:
 
         self.context.cluster = cluster
-        self.context.stress = stress
 
         Feature(run=load("extended_precision_data_types.tests.feature", "feature"))
 
