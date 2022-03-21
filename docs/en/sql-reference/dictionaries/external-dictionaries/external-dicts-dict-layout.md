@@ -225,15 +225,15 @@ This storage method works the same way as hashed and allows using date/time (arb
 Example: The table contains discounts for each advertiser in the format:
 
 ``` text
-+---------|-------------|-------------|------+
++---------------|---------------------|-------------------|--------+
 | advertiser id | discount start date | discount end date | amount |
 +===============+=====================+===================+========+
 | 123           | 2015-01-01          | 2015-01-15        | 0.15   |
-+---------|-------------|-------------|------+
++---------------|---------------------|-------------------|--------+
 | 123           | 2015-01-16          | 2015-01-31        | 0.25   |
-+---------|-------------|-------------|------+
++---------------|---------------------|-------------------|--------+
 | 456           | 2015-01-01          | 2015-01-15        | 0.05   |
-+---------|-------------|-------------|------+
++---------------|---------------------|-------------------|--------+
 ```
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
@@ -272,10 +272,10 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
+To work with these dictionaries, you need to pass an additional argument to the `dictGet*` function, for which a range is selected:
 
 ``` sql
-dictGetT('dict_name', 'attr_name', id, date)
+dictGet*('dict_name', 'attr_name', id, date)
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.
@@ -479,17 +479,17 @@ This type of storage is for mapping network prefixes (IP addresses) to metadata 
 Example: The table contains network prefixes and their corresponding AS number and country code:
 
 ``` text
-  +-----------|-----|------+
+  +-----------------|-------|--------+
   | prefix          | asn   | cca2   |
   +=================+=======+========+
   | 202.79.32.0/20  | 17501 | NP     |
-  +-----------|-----|------+
+  +-----------------|-------|--------+
   | 2620:0:870::/48 | 3856  | US     |
-  +-----------|-----|------+
+  +-----------------|-------|--------+
   | 2a02:6b8:1::/48 | 13238 | RU     |
-  +-----------|-----|------+
+  +-----------------|-------|--------+
   | 2001:db8::/32   | 65536 | ZZ     |
-  +-----------|-----|------+
+  +-----------------|-------|--------+
 ```
 
 When using this type of layout, the structure must have a composite key.
@@ -538,10 +538,10 @@ PRIMARY KEY prefix
 
 The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+For queries, you must use the same functions (`dictGet*` with a tuple) as for dictionaries with composite keys:
 
 ``` sql
-dictGetT('dict_name', 'attr_name', tuple(ip))
+dictGet*('dict_name', 'attr_name', tuple(ip))
 ```
 
 The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
