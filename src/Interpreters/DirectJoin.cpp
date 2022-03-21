@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
@@ -19,16 +20,17 @@ static Block originalRightBlock(const Block & block, const TableJoin & table_joi
     return original_right_block;
 }
 
-
 bool DirectKeyValueJoin::addJoinedBlock(const Block &, bool)
 {
-    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
 }
 
-
-void DirectKeyValueJoin::checkTypesOfKeys(const Block &) const
+void DirectKeyValueJoin::checkTypesOfKeys(const Block & block) const
 {
-    // throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+    for (const auto & onexpr : table_join->getClauses())
+    {
+        JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_sample_block, onexpr.key_names_right);
+    }
 }
 
 void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
@@ -69,7 +71,6 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
     if (!isLeftOrFull(table_join->kind()))
     {
         MutableColumns dst_columns = block.mutateColumns();
-
         for (auto & col : dst_columns)
         {
             col = IColumn::mutate(col->filter(null_map, -1));

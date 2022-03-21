@@ -605,7 +605,8 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
                 right_key_name, rtype->second->getName(),
                 ex.message());
         }
-        if (!allow_right && !common_type->equals(*rtype->second))
+        bool right_side_changed = !common_type->equals(*rtype->second);
+        if (right_side_changed && !allow_right)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
                 "Can't change type for right table: {}: {} -> {}",
@@ -635,7 +636,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
     bool has_some_to_do = false;
     for (auto & col : cols_dst)
     {
-        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        if (auto it = type_mapping.find(col.name); it != type_mapping.end() && col.type != it->second)
         {
             col.type = it->second;
             col.column = nullptr;
@@ -644,6 +645,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
     }
     if (!has_some_to_do)
         return nullptr;
+
     return ActionsDAG::makeConvertingActions(cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, add_new_cols, &key_column_rename);
 }
 
