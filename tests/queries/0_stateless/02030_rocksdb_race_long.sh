@@ -11,38 +11,29 @@ set -o errexit
 set -o pipefail
 
 echo "
-	DROP TABLE IF EXISTS rocksdb_race;
-	CREATE TABLE rocksdb_race (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key);
+    DROP TABLE IF EXISTS rocksdb_race;
+    CREATE TABLE rocksdb_race (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key);
     INSERT INTO rocksdb_race SELECT '1_' || toString(number), number FROM numbers(100000);
 " | $CLICKHOUSE_CLIENT -n
 
 function read_stat_thread()
 {
-    while true; do
-        echo "
-            SELECT * FROM system.rocksdb FORMAT Null;
-        " | $CLICKHOUSE_CLIENT -n
-    done
+    $CLICKHOUSE_CLIENT -n -q 'SELECT * FROM system.rocksdb FORMAT Null'
 }
 
 function truncate_thread()
 {
-    while true; do
-        sleep 3s;
-        echo "
-            TRUNCATE TABLE rocksdb_race;
-        " | $CLICKHOUSE_CLIENT -n
-    done
+    sleep 3s;
+    $CLICKHOUSE_CLIENT -n -q 'TRUNCATE TABLE rocksdb_race'
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_stat_thread;
-export -f truncate_thread;
+export -f read_stat_thread
+export -f truncate_thread
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_stat_thread 2> /dev/null &
-timeout $TIMEOUT bash -c truncate_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT read_stat_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT truncate_thread 2> /dev/null &
 
 wait
 
