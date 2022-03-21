@@ -2642,13 +2642,16 @@ void InterpreterSelectQuery::initSettings()
 }
 Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
 {
-    if (chunks.empty()) {
+    if (chunks.empty())
+    {
         return {};
     }
     auto result_columns = chunks[0].clone().mutateColumns();
-    for (const auto & chunk : result_columns | std::views::drop(1)) {
+    for (const auto & chunk : result_columns | std::views::drop(1))
+    {
         auto columns = chunk.getColumns();
-        for (size_t i = 0; i != columns.size(); ++i) {
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
             result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
         }
     }
