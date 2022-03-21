@@ -40,9 +40,7 @@ public:
 
 void registerAggregateFunctionGraphDiameter(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
-
-    factory.registerFunction("graphDiameter", { createGraphOperation<GraphDiameterGeneral>, properties });
+    factory.registerFunction("graphDiameter", { createGraphOperation<GraphDiameterGeneral>, AggregateFunctionProperties{} });
 }
 
 }
