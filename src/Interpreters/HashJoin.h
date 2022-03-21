@@ -170,11 +170,6 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary.
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
-    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
-      */
-    void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
-
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
     /** For RIGHT and FULL JOINs.
@@ -392,8 +387,6 @@ private:
     std::vector<String> required_right_keys_sources;
 
     Poco::Logger * log;
-
-    Block totals;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)

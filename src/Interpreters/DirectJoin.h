@@ -45,17 +45,6 @@ public:
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
 
-    virtual void setTotals(const Block &) override
-    {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
-    }
-
-    virtual const Block & getTotals() const override
-    {
-        static const Block totals;
-        return totals;
-    }
-
     virtual size_t getTotalRowCount() const override
     {
         return 0;
