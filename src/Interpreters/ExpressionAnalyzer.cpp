@@ -26,6 +26,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 

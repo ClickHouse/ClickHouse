@@ -49,8 +49,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ROCKSDB_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ROCKSDB_ERROR;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
