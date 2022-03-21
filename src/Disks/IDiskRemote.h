@@ -66,6 +66,8 @@ public:
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
 
+    String getCachePath() const;
+
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads
     /// (file actually rewritten on disk). So additional RW lock is required for
@@ -163,6 +165,7 @@ protected:
     const String remote_fs_root_path;
 
     DiskPtr metadata_disk;
+
     FileCachePtr cache;
 
 private:

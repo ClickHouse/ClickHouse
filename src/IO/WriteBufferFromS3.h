@@ -33,6 +33,7 @@ namespace DB
 {
 
 using ScheduleFunc = std::function<void(std::function<void()>)>;
+class WriteBufferFromFile;
 
 /**
  * Buffer to write a data to a S3 object with specified bucket and key.
@@ -86,7 +87,7 @@ private:
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
 
-    void tryWriteToCacheIfNeeded();
+    bool cacheEnabled() const;
 
     String bucket;
     String key;
@@ -121,6 +122,8 @@ private:
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
     FileCachePtr cache;
+    std::unique_ptr<WriteBufferFromFile> cache_writer;
+    size_t current_download_offset = 0;
 };
 
 }

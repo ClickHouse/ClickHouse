@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <IO/WriteSettings.h>
 
 
 namespace DB
@@ -28,6 +29,7 @@ struct MergeTreeWriterSettings
 
     MergeTreeWriterSettings(
         const Settings & global_settings,
+        const WriteSettings & query_write_settings_,
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
@@ -40,6 +42,7 @@ struct MergeTreeWriterSettings
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , query_write_settings(query_write_settings_)
     {
     }
 
@@ -48,6 +51,7 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
+    WriteSettings query_write_settings;
 };
 
 }

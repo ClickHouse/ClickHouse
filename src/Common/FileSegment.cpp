@@ -31,10 +31,34 @@ FileSegment::FileSegment(
     , log(&Poco::Logger::get("FileSegment"))
 #endif
 {
-    if (download_state == State::DOWNLOADED)
-        reserved_size = downloaded_size = size_;
-    else if (download_state != State::EMPTY)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Can create cell with either DOWNLOADED or EMPTY state");
+    /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
+    switch (download_state)
+    {
+        /// EMPTY is used when file segment is not in cache and
+        /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
+        case (State::EMPTY):
+        {
+            break;
+        }
+        /// DOWNLOADED is used either on inital cache metadata load into memory on server startup
+        /// or on reduceSizeToDownloaded() -- when file segment object is updated.
+        case (State::DOWNLOADED):
+        {
+            reserved_size = downloaded_size = size_;
+            break;
+        }
+        /// DOWNLOADING is used only for write-through caching (e.g. getOrSetDownloader() is not
+        /// needed, downloader is set on file segment creation).
+        case (State::DOWNLOADING):
+        {
+            downloader_id = getCallerId();
+            break;
+        }
+        default:
+        {
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state");
+        }
+    }
 }
 
 FileSegment::State FileSegment::state() const
