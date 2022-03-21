@@ -75,7 +75,7 @@ xfails = {
     RQ_SRS008_AES_Functions_DifferentModes("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse AES encryption functions regression module.
     """
     nodes = {
@@ -84,6 +84,7 @@ def regression(self, local, clickhouse_binary_path, stress=None):
 
     if stress is not None:
         self.context.stress = stress
+    self.context.clickhouse_version = clickhouse_version
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "aes_encryption_env")) as cluster:

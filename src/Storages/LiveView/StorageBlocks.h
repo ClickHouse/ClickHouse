@@ -18,9 +18,9 @@ public:
         QueryProcessingStage::Enum to_stage_)
         : IStorage(table_id_), pipes(std::move(pipes_)), to_stage(to_stage_)
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(columns_);
-        setInMemoryMetadata(metadata_);
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_);
+        setInMemoryMetadata(storage_metadata);
     }
     static StoragePtr createStorage(const StorageID & table_id,
         const ColumnsDescription & columns, Pipes pipes, QueryProcessingStage::Enum to_stage)
@@ -34,14 +34,14 @@ public:
     bool supportsFinal() const override { return true; }
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
     {
         return to_stage;
     }
 
     Pipe read(
         const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,

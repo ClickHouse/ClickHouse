@@ -6,7 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Common/renameat2.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -325,7 +326,7 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    renameNoReplace(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)

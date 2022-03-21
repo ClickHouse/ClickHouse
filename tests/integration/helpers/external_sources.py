@@ -10,8 +10,6 @@ import pymongo
 import pymysql.cursors
 import redis
 import logging
-from tzlocal import get_localzone
-
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
@@ -166,8 +164,9 @@ class SourceMongo(ExternalSource):
             if field.field_type == "Date":
                 self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
             elif field.field_type == "DateTime":
-                self.converters[field.name] = lambda x: get_localzone().localize(
-                    datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
+                def converter(x):
+                    return datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S')
+                self.converters[field.name] = converter
             else:
                 self.converters[field.name] = lambda x: x
 
@@ -482,8 +481,7 @@ class SourceCassandra(ExternalSource):
         if type == 'UUID':
             return uuid.UUID(value)
         elif type == 'DateTime':
-            local_datetime = datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
-            return get_localzone().localize(local_datetime)
+            return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
         return value
 
     def load_data(self, data, table_name):

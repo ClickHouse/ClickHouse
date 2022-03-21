@@ -75,7 +75,7 @@ private:
     {
         const ColumnPtr offsets;
 
-        SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
+        explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;

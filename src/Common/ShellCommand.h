@@ -45,11 +45,11 @@ public:
 
     struct Config
     {
-        Config(const std::string & command_)
+        Config(const std::string & command_) /// NOLINT
             : command(command_)
         {}
 
-        Config(const char * command_)
+        Config(const char * command_) /// NOLINT
             : command(command_)
         {}
 
