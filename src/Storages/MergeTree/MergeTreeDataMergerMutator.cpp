@@ -693,11 +693,10 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
     }
 
-    bool is_wide_part = isWidePart(source_part);
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, info] : serialization_infos)
     {
-        if (is_wide_part && removed_columns.count(name))
+        if (removed_columns.count(name))
             continue;
 
         auto it = renamed_columns_from_to.find(name);
@@ -709,7 +708,7 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a
     /// single file
-    if (!is_wide_part)
+    if (!isWidePart(source_part))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
     Names source_column_names = source_part->getColumns().getNames();
@@ -781,11 +780,5 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-
-bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
-{
-    std::lock_guard lock(tmp_parts_lock);
-    return tmp_parts.contains(basename);
-}
 
 }

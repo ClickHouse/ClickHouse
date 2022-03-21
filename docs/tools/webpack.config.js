@@ -14,7 +14,6 @@ module.exports = {
 
     entry: [
 		path.resolve(scssPath, 'bootstrap.scss'),
-		path.resolve(scssPath, 'greenhouse.scss'),
 		path.resolve(scssPath, 'main.scss'),
 		path.resolve(jsPath, 'main.js'),
 	],

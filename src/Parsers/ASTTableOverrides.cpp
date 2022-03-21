@@ -93,7 +93,7 @@ ASTPtr ASTTableOverrideList::tryGetTableOverride(const String & name) const
     return children[it->second];
 }
 
-void ASTTableOverrideList::setTableOverride(const String & name, const ASTPtr ast)
+void ASTTableOverrideList::setTableOverride(const String & name, ASTPtr ast)
 {
     auto it = positions.find(name);
     if (it == positions.end())

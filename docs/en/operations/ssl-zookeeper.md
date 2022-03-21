@@ -33,7 +33,7 @@ Client section in `config.xml` will look like:
 Add Zookeeper to ClickHouse config with some cluster and macros:
 
 ``` xml
-<yandex>
+<clickhouse>
     <zookeeper>
         <node>
             <host>localhost</host>
@@ -41,7 +41,7 @@ Add Zookeeper to ClickHouse config with some cluster and macros:
             <secure>1</secure>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>
 ```
 
 Start `clickhouse-server`. In logs you should see:

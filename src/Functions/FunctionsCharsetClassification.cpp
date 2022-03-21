@@ -8,26 +8,21 @@
 namespace DB
 {
 
-/* Determine language and charset of text data. For each text, we build the distribution of bigrams bytes.
- * Then we use marked-up dictionaries with distributions of bigram bytes of various languages ​​and charsets.
- * Using a naive Bayesian classifier, find the most likely charset and language and return it
- */
-
-template <bool detect_language>
-struct CharsetClassificationImpl
+namespace
 {
     /* We need to solve zero-frequency problem for Naive Bayes Classifier
      * If the bigram is not found in the text, we assume that the probability of its meeting is 1e-06.
      * 1e-06 is minimal value in our marked-up dictionary.
      */
-    static constexpr Float64 zero_frequency = 1e-06;
+    constexpr Float64 zero_frequency = 1e-06;
 
     /// If the data size is bigger than this, behaviour is unspecified for this function.
-    static constexpr size_t max_string_size = 1u << 15;
+    constexpr size_t max_string_size = 1UL << 15;
 
-    static ALWAYS_INLINE inline Float64 naiveBayes(
+    template <typename ModelMap>
+    ALWAYS_INLINE inline Float64 naiveBayes(
         const FrequencyHolder::EncodingMap & standard,
-        const HashMap<UInt16, UInt64> & model,
+        const ModelMap & model,
         Float64 max_result)
     {
         Float64 res = 0;
@@ -52,10 +47,11 @@ struct CharsetClassificationImpl
     }
 
     /// Сount how many times each bigram occurs in the text.
-    static ALWAYS_INLINE inline void calculateStats(
+    template <typename ModelMap>
+    ALWAYS_INLINE inline void calculateStats(
         const UInt8 * data,
         const size_t size,
-        HashMap<UInt16, UInt64> & model)
+        ModelMap & model)
     {
         UInt16 hash = 0;
         for (size_t i = 0; i < size; ++i)
@@ -65,7 +61,15 @@ struct CharsetClassificationImpl
             ++model[hash];
         }
     }
+}
 
+/* Determine language and charset of text data. For each text, we build the distribution of bigrams bytes.
+ * Then we use marked-up dictionaries with distributions of bigram bytes of various languages ​​and charsets.
+ * Using a naive Bayesian classifier, find the most likely charset and language and return it
+ */
+template <bool detect_language>
+struct CharsetClassificationImpl
+{
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -74,7 +78,7 @@ struct CharsetClassificationImpl
     {
         const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
-        if (detect_language)
+        if constexpr (detect_language)
             /// 2 chars for ISO code + 1 zero byte
             res_data.reserve(offsets.size() * 3);
         else
@@ -83,37 +87,43 @@ struct CharsetClassificationImpl
 
         res_offsets.resize(offsets.size());
 
-        size_t res_offset = 0;
+        size_t current_result_offset = 0;
+
+        double zero_frequency_log = log(zero_frequency);
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;
 
-            std::string_view res;
-
-            HashMap<UInt16, UInt64> model;
+            HashMapWithStackMemory<UInt16, UInt64, DefaultHash<UInt16>, 4> model;
             calculateStats(str, str_len, model);
 
+            std::string_view result_value;
+
             /// Go through the dictionary and find the charset with the highest weight
-            Float64 max_result = log(zero_frequency) * (max_string_size);
+            Float64 max_result = zero_frequency_log * (max_string_size);
             for (const auto & item : encodings_freq)
             {
                 Float64 score = naiveBayes(item.map, model, max_result);
                 if (max_result < score)
                 {
                     max_result = score;
-                    res = detect_language ? item.lang : item.name;
+
+                    if constexpr (detect_language)
+                        result_value = item.lang;
+                    else
+                        result_value = item.name;
                 }
             }
 
-            res_data.resize(res_offset + res.size() + 1);
-            memcpy(&res_data[res_offset], res.data(), res.size());
+            size_t result_value_size = result_value.size();
+            res_data.resize(current_result_offset + result_value_size + 1);
+            memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
+            res_data[current_result_offset + result_value_size] = '\0';
+            current_result_offset += result_value_size + 1;
 
-            res_data[res_offset + res.size()] = 0;
-            res_offset += res.size() + 1;
-
-            res_offsets[i] = res_offset;
+            res_offsets[i] = current_result_offset;
         }
     }
 };

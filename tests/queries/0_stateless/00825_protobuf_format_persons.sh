@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
+# End-to-end test of serialization/deserialization of a table with different
+# data types to/from Protobuf format.
+#   Cf. 02240_protobuflist_format_persons.sh
+
 # To generate reference file for this test use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
