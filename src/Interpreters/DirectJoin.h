@@ -31,29 +31,16 @@ public:
 
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
-    virtual bool addJoinedBlock(const Block &, bool) override
-    {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
-    }
-
-    virtual void checkTypesOfKeys(const Block &) const override
-    {
-        // throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
-    }
+    virtual bool addJoinedBlock(const Block &, bool) override;
+    virtual void checkTypesOfKeys(const Block &) const override;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
 
-    virtual size_t getTotalRowCount() const override
-    {
-        return 0;
-    }
+    virtual size_t getTotalRowCount() const override { return 0; }
 
-    virtual size_t getTotalByteCount() const override
-    {
-        return 0;
-    }
+    virtual size_t getTotalByteCount() const override { return 0; }
 
     virtual bool alwaysReturnsEmptySet() const override { return false; }
 

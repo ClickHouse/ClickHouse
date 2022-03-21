@@ -19,6 +19,18 @@ static Block originalRightBlock(const Block & block, const TableJoin & table_joi
     return original_right_block;
 }
 
+
+bool DirectKeyValueJoin::addJoinedBlock(const Block &, bool)
+{
+    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+}
+
+
+void DirectKeyValueJoin::checkTypesOfKeys(const Block &) const
+{
+    // throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "not implemented");
+}
+
 void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
 {
     if (!table_join->oneDisjunct()
