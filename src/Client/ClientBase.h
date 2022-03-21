@@ -61,7 +61,6 @@ protected:
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -77,6 +76,7 @@ protected:
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
+    bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
@@ -252,10 +252,12 @@ protected:
 
     QueryProcessingStage::Enum query_processing_stage;
 
+    bool fake_drop = false;
+
     struct HostAndPort
     {
         String host;
-        UInt16 port;
+        std::optional<UInt16> port;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};

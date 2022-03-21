@@ -60,7 +60,8 @@ public:
         return ColumnArray::create(nested_column->assumeMutable());
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    template <typename ... Args>
+    requires (IsMutableColumns<Args ...>::value)
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
@@ -168,6 +169,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
+
+    size_t getNumberOfDimensions() const;
 
 private:
     WrappedPtr data;

@@ -17,9 +17,9 @@ cluster = ClickHouseCluster(__file__)
 mysql_node = None
 mysql8_node = None
 
-node_db = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=True, with_mysql8=True, stay_alive=True)
-node_disable_bytes_settings = cluster.add_instance('node2', user_configs=["configs/users_disable_bytes_settings.xml"], with_mysql=False, stay_alive=True)
-node_disable_rows_settings = cluster.add_instance('node3', user_configs=["configs/users_disable_rows_settings.xml"], with_mysql=False, stay_alive=True)
+node_db = cluster.add_instance('node1', main_configs=["configs/timezone_config.xml"], user_configs=["configs/users.xml"], with_mysql=True, with_mysql8=True, stay_alive=True)
+node_disable_bytes_settings = cluster.add_instance('node2', main_configs=["configs/timezone_config.xml"], user_configs=["configs/users_disable_bytes_settings.xml"], with_mysql=False, stay_alive=True)
+node_disable_rows_settings = cluster.add_instance('node3', main_configs=["configs/timezone_config.xml"], user_configs=["configs/users_disable_rows_settings.xml"], with_mysql=False, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
