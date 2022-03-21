@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-parallel
 
 set -eu
 
@@ -18,7 +18,7 @@ rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 
 chmod 777 ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 
-for i in {1..200}
+for i in {1..10}
 do
 	${CLICKHOUSE_CLIENT} --query "insert into function file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/test$i.csv', 'CSV', 'k UInt32, v UInt32') select number, number from numbers(10000);"
 done
@@ -28,14 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt32, v UInt32) engine=F
 
 ${CLICKHOUSE_CLIENT} --query "select count() from file_log "
 
-for i in {201..400}
-do
-	${CLICKHOUSE_CLIENT} --query "insert into function file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/test$i.csv', 'CSV', 'k UInt32, v UInt32') select number, number from numbers(10000);"
-done
-
-${CLICKHOUSE_CLIENT} --query "select count() from file_log "
-
-for i in {401..600}
+for i in {11..20}
 do
 	${CLICKHOUSE_CLIENT} --query "insert into function file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/test$i.csv', 'CSV', 'k UInt32, v UInt32') select number, number from numbers(10000);"
 done

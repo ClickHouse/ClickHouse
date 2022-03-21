@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IParser.h>
 
 #include <memory>
 #include <optional>

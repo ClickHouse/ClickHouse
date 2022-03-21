@@ -108,14 +108,19 @@ public:
 
     bool is_replicated_database_internal = false;
 
+    /// For parallel processing on replicas
+    bool collaborate_with_initiator{false};
+    UInt64 count_participating_replicas{0};
+    UInt64 number_of_current_replica{0};
+
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
     /** Serialization and deserialization.
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, const UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, const UInt64 client_protocol_revision);
+    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

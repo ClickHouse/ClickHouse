@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 
 namespace DB
@@ -68,8 +69,6 @@ private:
     void readPrefix();
     void readSuffix();
 
-    bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
-
     std::unique_ptr<PeekableReadBuffer> buf;
 
     const RowInputFormatParams params;
@@ -93,6 +92,20 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
+};
+
+class ValuesSchemaReader : public IRowSchemaReader
+{
+public:
+    ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    PeekableReadBuffer buf;
+    ContextPtr context;
+    ParserExpression parser;
+    bool first_row = true;
 };
 
 }

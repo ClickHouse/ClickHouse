@@ -66,7 +66,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false);
 
 /// Check if arguments contain lazy executed argument. If contain, return index of the last one,
 /// otherwise return -1.
-int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments);
+int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments);
 
 void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to);
 

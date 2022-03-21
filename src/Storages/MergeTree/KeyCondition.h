@@ -5,14 +5,13 @@
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
 {
 
+class ASTFunction;
 class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
@@ -32,7 +31,7 @@ struct FieldRef : public Field
 
     /// Create as explicit field without block.
     template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {}
+    FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
 
     /// Create as reference to field in block.
     FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
@@ -61,10 +60,10 @@ public:
     bool right_included = false;          /// includes the right border
 
     /// The whole universe (not null).
-    Range() {}
+    Range() {} /// NOLINT
 
     /// One point.
-    Range(const FieldRef & point)
+    Range(const FieldRef & point) /// NOLINT
         : left(point), right(point), left_included(true), right_included(true) {}
 
     /// A bounded two-sided range.
@@ -314,8 +313,8 @@ private:
             ALWAYS_TRUE,
         };
 
-        RPNElement() {}
-        RPNElement(Function function_) : function(function_) {}
+        RPNElement() = default;
+        RPNElement(Function function_) : function(function_) {} /// NOLINT
         RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
         RPNElement(Function function_, size_t key_column_, const Range & range_)
             : function(function_), range(range_), key_column(key_column_) {}

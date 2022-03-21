@@ -28,7 +28,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
+    UInt64 max_block_size_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
@@ -43,7 +43,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_,
+    UInt64 max_block_size_,
     bool auto_commit_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
@@ -74,7 +74,17 @@ template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
     if (!tx)
-        tx = std::make_shared<T>(connection_holder->get());
+    {
+        try
+        {
+            tx = std::make_shared<T>(connection_holder->get());
+        }
+        catch (const pqxx::broken_connection &)
+        {
+            connection_holder->update();
+            tx = std::make_shared<T>(connection_holder->get());
+        }
+    }
 
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }

@@ -3,7 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessType.h>
+#include <Access/Common/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -76,7 +76,7 @@ protected:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
             return checkString(PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -135,6 +135,8 @@ private:
     std::optional<IdentifierQuotingStyle> quote_style;
     std::optional<bool> is_schema_allowed;
 
+    Poco::Net::HTTPBasicCredentials credentials{};
+
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -166,7 +168,7 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             bool res;
             readBoolText(res, buf);
@@ -186,7 +188,7 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             std::string character;
             readStringBinary(character, buf);

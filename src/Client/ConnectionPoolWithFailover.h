@@ -110,7 +110,6 @@ private:
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
-private:
     GetPriorityForLoadBalancing get_priority_load_balancing;
 };
 

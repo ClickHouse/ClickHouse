@@ -1392,11 +1392,35 @@ Returns the first element in the `arr1` array for which `func` returns something
 
 Note that the `arrayFirst` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
+## arrayFirstOrNull(func, arr1, …) {#array-first-or-null}
+
+Returns the first element in the `arr1` array for which `func` returns something other than 0. If there are no such element, returns null.
+
+Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+## arrayLast(func, arr1, …) {#array-last}
+
+Returns the last element in the `arr1` array for which `func` returns something other than 0.
+
+Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+## arrayLastOrNull(func, arr1, …) {#array-last-or-null}
+
+Returns the last element in the `arr1` array for which `func` returns something other than 0. If there are no such element, returns null.
+
+Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
 ## arrayFirstIndex(func, arr1, …) {#array-first-index}
 
 Returns the index of the first element in the `arr1` array for which `func` returns something other than 0.
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+## arrayLastIndex(func, arr1, …) {#array-last-index}
+
+Returns the index of the last element in the `arr1` array for which `func` returns something other than 0.
+
+Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arrayMin {#array-min}
 

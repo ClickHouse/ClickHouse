@@ -22,8 +22,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
+QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -179,6 +179,9 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     for (auto & context : interpreter_context)
         last_pipeline->addInterpreterContext(std::move(context));
+
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
 
     return last_pipeline;
 }

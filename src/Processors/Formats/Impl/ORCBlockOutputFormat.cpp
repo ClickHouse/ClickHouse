@@ -87,6 +87,7 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         {
             return orc::createPrimitiveType(orc::TypeKind::DOUBLE);
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Date:
         {
             return orc::createPrimitiveType(orc::TypeKind::DATE);
@@ -292,6 +293,7 @@ void ORCBlockOutputFormat::writeColumn(
             writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value; });
             break;
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int32 & value){ return value; });
@@ -495,7 +497,7 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     writer->add(*batch);
 }
 
-void ORCBlockOutputFormat::finalize()
+void ORCBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
         prepareWriter();
@@ -524,6 +526,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
     });
+    factory.markFormatHasNoAppendSupport("ORC");
 }
 
 }

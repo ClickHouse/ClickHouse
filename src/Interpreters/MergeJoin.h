@@ -102,8 +102,6 @@ private:
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
     std::atomic<bool> is_in_memory{true};
-    const bool nullable_right_side;
-    const bool nullable_left_side;
     const bool is_any_join;
     const bool is_all_join;
     const bool is_semi_join;
@@ -117,6 +115,8 @@ private:
     const size_t max_files_to_merge;
 
     Names lowcard_right_keys;
+
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

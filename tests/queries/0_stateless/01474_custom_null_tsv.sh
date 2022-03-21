@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE tsv_custom_null (id Nullable(UInt32)) E
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO tsv_custom_null VALUES (NULL)";
 
-$CLICKHOUSE_CLIENT --output_format_tsv_null_representation='MyNull' --query="SELECT * FROM tsv_custom_null FORMAT TSV";
+$CLICKHOUSE_CLIENT --format_tsv_null_representation='MyNull' --query="SELECT * FROM tsv_custom_null FORMAT TSV";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE tsv_custom_null";
 

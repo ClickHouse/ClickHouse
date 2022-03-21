@@ -61,27 +61,12 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
 }
 #endif
 
-std::string getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+
+std::string checkAndGetSuperdigest(const String & user_and_digest)
 {
-    /// the most specialized path
-    if (config.has("keeper_server.snapshot_storage_path"))
-        return config.getString("keeper_server.snapshot_storage_path");
-
-    if (config.has("keeper_server.storage_path"))
-        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "snapshots";
-
-    if (standalone_keeper)
-        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots";
-    else
-        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
-}
-
-std::string checkAndGetSuperdigest(const Poco::Util::AbstractConfiguration & config)
-{
-    if (!config.has("keeper_server.superdigest"))
+    if (user_and_digest.empty())
         return "";
 
-    auto user_and_digest = config.getString("keeper_server.superdigest");
     std::vector<std::string> scheme_and_id;
     boost::split(scheme_and_id, user_and_digest, [](char c) { return c == ':'; });
     if (scheme_and_id.size() != 2 || scheme_and_id[0] != "super")
@@ -90,30 +75,39 @@ std::string checkAndGetSuperdigest(const Poco::Util::AbstractConfiguration & con
     return user_and_digest;
 }
 
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, Poco::Logger * log)
+{
+    if (value > std::numeric_limits<int32_t>::max())
+    {
+        LOG_WARNING(log, "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.", value, name, std::numeric_limits<int32_t>::max());
+        return std::numeric_limits<int32_t>::max();
+    }
+
+    return static_cast<int32_t>(value);
+}
+
 }
 
 KeeperServer::KeeperServer(
-    int server_id_,
-    const CoordinationSettingsPtr & coordination_settings_,
+    const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_,
-    bool standalone_keeper)
-    : server_id(server_id_)
-    , coordination_settings(coordination_settings_)
+    SnapshotsQueue & snapshots_queue_)
+    : server_id(configuration_and_settings_->server_id)
+    , coordination_settings(configuration_and_settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        getSnapshotsPathFromConfig(config, standalone_keeper),
+                        configuration_and_settings_->snapshot_storage_path,
                         coordination_settings,
-                        checkAndGetSuperdigest(config)))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings, standalone_keeper))
+                        checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
+    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 }
 
-void KeeperServer::startup()
+void KeeperServer::startup(bool enable_ipv6)
 {
     state_machine->init();
 
@@ -151,18 +145,18 @@ void KeeperServer::startup()
     }
 
     nuraft::raft_params params;
-    params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
-    params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
-    params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
-
-    params.reserved_log_items_ = coordination_settings->reserved_log_items;
-    params.snapshot_distance_ = coordination_settings->snapshot_distance;
-    params.stale_log_gap_ = coordination_settings->stale_log_gap;
-    params.fresh_log_gap_ = coordination_settings->fresh_log_gap;
-    params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
+    params.heart_beat_interval_ = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
+    params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
+    params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+    params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
+    params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
+    params.stale_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->stale_log_gap, "stale_log_gap", log);
+    params.fresh_log_gap_ = getValueOrMaxInt32AndLogWarning(coordination_settings->fresh_log_gap, "fresh_log_gap", log);
+    params.client_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
-    params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
-    params.max_append_size_ = coordination_settings->max_requests_batch_size;
+    params.auto_forwarding_req_timeout_ = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
+    params.auto_forwarding_req_timeout_ = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
+    params.max_append_size_ = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -177,13 +171,14 @@ void KeeperServer::startup()
 #endif
     }
 
-    launchRaftServer(params, asio_opts);
+    launchRaftServer(enable_ipv6, params, asio_opts);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 }
 
 void KeeperServer::launchRaftServer(
+    bool enable_ipv6,
     const nuraft::raft_params & params,
     const nuraft::asio_service::options & asio_opts)
 {
@@ -198,7 +193,7 @@ void KeeperServer::launchRaftServer(
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
-    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger);
+    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
     if (!asio_listener)
         return;
@@ -265,11 +260,12 @@ void KeeperServer::shutdown()
 namespace
 {
 
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, int64_t time, const Coordination::ZooKeeperRequestPtr & request)
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
     request->write(buf);
+    DB::writeIntBinary(time, buf);
     return buf.getBuffer();
 }
 
@@ -288,13 +284,10 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
 {
 
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, request] : requests_for_sessions)
-        entries.push_back(getZooKeeperLogEntry(session_id, request));
+    for (const auto & [session_id, time, request] : requests_for_sessions)
+        entries.push_back(getZooKeeperLogEntry(session_id, time, request));
 
-    {
-        std::lock_guard lock(append_entries_mutex);
-        return raft_instance->append_entries(entries);
-    }
+    return raft_instance->append_entries(entries);
 }
 
 bool KeeperServer::isLeader() const
@@ -302,9 +295,44 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
+
+bool KeeperServer::isObserver() const
+{
+    auto srv_config = state_manager->get_srv_config();
+    return srv_config->is_learner();
+}
+
+
+bool KeeperServer::isFollower() const
+{
+    return !isLeader() && !isObserver();
+}
+
 bool KeeperServer::isLeaderAlive() const
 {
     return raft_instance->is_leader_alive();
+}
+
+/// TODO test whether taking failed peer in count
+uint64_t KeeperServer::getFollowerCount() const
+{
+    return raft_instance->get_peer_info_all().size();
+}
+
+uint64_t KeeperServer::getSyncedFollowerCount() const
+{
+    uint64_t last_log_idx = raft_instance->get_last_log_idx();
+    const auto followers = raft_instance->get_peer_info_all();
+
+    uint64_t stale_followers = 0;
+
+    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
+    for (const auto & fl : followers)
+    {
+        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
+            stale_followers++;
+    }
+    return followers.size() - stale_followers;
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)

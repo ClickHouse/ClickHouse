@@ -36,6 +36,16 @@ def start(node):
        node.start_clickhouse()
 
 
+def delete_with_retry(node_name, path):
+    for _ in range(30):
+        try:
+            get_fake_zk(node_name).delete(path)
+            return
+        except:
+            time.sleep(0.5)
+    raise Exception(f"Cannot delete {path} from node {node_name}")
+
+
 def test_start_offline(started_cluster):
     p = Pool(3)
     try:
@@ -53,9 +63,11 @@ def test_start_offline(started_cluster):
         assert node3.contains_in_log("Cannot connect to ZooKeeper (or Keeper) before internal Keeper start")
 
         node2_zk = get_fake_zk("node2")
-        node2_zk.create("/test_dead", b"data")
+        node2_zk.create("/c", b"data")
+
     finally:
         p.map(start, [node1, node2, node3])
+        delete_with_retry("node1", "/test_alive")
 
 
 def test_start_non_existing(started_cluster):
@@ -80,6 +92,8 @@ def test_start_non_existing(started_cluster):
         node1.replace_in_config('/etc/clickhouse-server/config.d/enable_keeper1.xml', 'non_existing_node', 'node3')
         node2.replace_in_config('/etc/clickhouse-server/config.d/enable_keeper2.xml', 'non_existing_node', 'node3')
         p.map(start, [node1, node2, node3])
+        delete_with_retry("node2", "/test_non_exising")
+
 
 def test_restart_third_node(started_cluster):
     node1_zk = get_fake_zk("node1")
@@ -88,3 +102,4 @@ def test_restart_third_node(started_cluster):
     node3.restart_clickhouse()
 
     assert node3.contains_in_log("Connected to ZooKeeper (or Keeper) before internal Keeper start")
+    node1_zk.delete("/test_restart")

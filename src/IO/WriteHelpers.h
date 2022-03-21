@@ -9,9 +9,9 @@
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
@@ -80,7 +80,7 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
+    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
 template <typename T>
@@ -117,6 +117,7 @@ inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
+
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
@@ -662,7 +663,7 @@ inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 }
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
@@ -868,8 +869,8 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
 
 /// Methods for output in binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+requires is_arithmetic_v<T>
+inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -987,8 +988,8 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+requires is_arithmetic_v<T>
+inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
@@ -1020,8 +1021,8 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+requires is_arithmetic_v<T>
+inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
@@ -1053,8 +1054,8 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+requires is_arithmetic_v<T>
+inline void writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
@@ -1123,8 +1124,8 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
-writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+requires is_arithmetic_v<T> && (sizeof(T) <= 8)
+inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     if constexpr (sizeof(x) == 2)
         x = __builtin_bswap16(x);
@@ -1137,8 +1138,8 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
 }
 
 template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+requires is_big_int_v<T>
+inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {

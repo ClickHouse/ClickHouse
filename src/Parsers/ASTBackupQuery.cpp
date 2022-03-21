@@ -94,10 +94,25 @@ namespace
         }
     }
 
-    void formatSettings(const IAST & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const IAST::FormatSettings & format)
     {
+        if (!settings && !base_backup_name)
+            return;
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
-        settings.format(format);
+        bool empty = true;
+        if (base_backup_name)
+        {
+            format.ostr << "base_backup = ";
+            base_backup_name->format(format);
+            empty = false;
+        }
+        if (settings)
+        {
+            if (!empty)
+                format.ostr << ", ";
+            settings->format(format);
+        }
+
     }
 }
 
@@ -120,11 +135,11 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
 
     formatElements(elements, kind, format);
 
-    if (settings)
-        formatSettings(*settings, format);
+    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
+    backup_name->format(format);
 
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO" : " FROM") << (format.hilite ? hilite_none : "");
-    format.ostr << " " << quoteString(backup_name);
+    if (settings || base_backup_name)
+        formatSettings(settings, base_backup_name, format);
 }
 
 }

@@ -157,7 +157,12 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPt
 void ArithmeticOperationsInAgrFuncMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (const auto * function_node = ast->as<ASTFunction>())
+    {
+        if (function_node->is_window_function)
+            return;
+
         visit(*function_node, ast, data);
+    }
 }
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)

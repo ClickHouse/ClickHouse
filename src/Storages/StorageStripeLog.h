@@ -32,7 +32,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -49,6 +49,9 @@ public:
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
+
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     StorageStripeLog(
@@ -92,7 +95,7 @@ private:
 
     const size_t max_compress_block_size;
 
-    std::shared_timed_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 };

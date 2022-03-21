@@ -62,6 +62,9 @@ public:
     template <bool use_flags, bool multiple_disjuncts, typename T>
     void setUsed(const T & f);
 
+    template <bool use_flags, bool multiple_disjunct>
+    void setUsed(const Block * block, size_t row_num, size_t offset);
+
     template <bool use_flags, bool multiple_disjuncts, typename T>
     bool getUsed(const T & f);
 
@@ -231,6 +234,7 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
+        using MappedType = Mapped;
         std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
@@ -359,8 +363,6 @@ private:
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
-    bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
-    bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
@@ -411,7 +413,7 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
     bool overDictionary() const;

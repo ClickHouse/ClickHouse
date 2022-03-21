@@ -133,8 +133,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings/#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -187,11 +186,12 @@ Example:
 -   `_key` — Key of the message.
 -   `_offset` — Offset of the message.
 -   `_timestamp` — Timestamp of the message.
+-   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
 
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
 
 [Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->

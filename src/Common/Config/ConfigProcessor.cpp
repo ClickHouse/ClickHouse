@@ -18,8 +18,9 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 #include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -41,24 +42,6 @@ namespace ErrorCodes
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
-/// Extracts from a string the first encountered number consisting of at least two digits.
-static std::string numberFromHost(const std::string & s)
-{
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        std::string res;
-        size_t j = i;
-        while (j < s.size() && isNumericASCII(s[j]))
-            res += s[j++];
-        if (res.size() >= 2)
-        {
-            while (res[0] == '0')
-                res.erase(res.begin());
-            return res;
-        }
-    }
-    return "";
-}
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
@@ -123,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -154,6 +137,35 @@ static Node * getRootNode(Document * document)
 static bool allWhitespace(const std::string & s)
 {
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
+}
+
+static void deleteAttributesRecursive(Node * root)
+{
+    const NodeListPtr children = root->childNodes();
+    std::vector<Node *> children_to_delete;
+
+    for (size_t i = 0, size = children->length(); i < size; ++i)
+    {
+        Node * child = children->item(i);
+
+        if (child->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & child_element = dynamic_cast<Element &>(*child);
+
+            if (child_element.hasAttribute("replace"))
+                child_element.removeAttribute("replace");
+
+            if (child_element.hasAttribute("remove"))
+                children_to_delete.push_back(child);
+            else
+                deleteAttributesRecursive(child);
+        }
+    }
+
+    for (auto * child : children_to_delete)
+    {
+        root->removeChild(child);
+    }
 }
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
@@ -217,6 +229,10 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         if (!merged && !remove)
         {
+            /// Since we didn't find a pair to this node in default config, we will paste it as is.
+            /// But it may have some child nodes which have attributes like "replace" or "remove".
+            /// They are useless in preprocessed configuration.
+            deleteAttributesRecursive(with_node);
             NodePtr new_node = config->importNode(with_node, true);
             config_root->appendChild(new_node);
         }
@@ -243,19 +259,6 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     }
 
     mergeRecursive(config, config_root, with_root);
-}
-
-static std::string layerFromHost()
-{
-    struct utsname buf;
-    if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
-
-    std::string layer = numberFromHost(buf.nodename);
-    if (layer.empty())
-        throw Poco::Exception(std::string("no layer in host name: ") + buf.nodename);
-
-    return layer;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -287,18 +290,6 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (node->nodeType() != Node::ELEMENT_NODE)
         return;
-
-    /// Substitute <layer> for the number extracted from the hostname only if there is an
-    /// empty <layer> tag without attributes in the original file.
-    if (node->nodeName() == "layer"
-        && !node->hasAttributes()
-        && !node->hasChildNodes()
-        && node->nodeValue().empty())
-    {
-        NodePtr new_node = config->createTextNode(layerFromHost());
-        node->appendChild(new_node);
-        return;
-    }
 
     std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
@@ -486,7 +477,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }
@@ -705,6 +696,10 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             if (new_path.starts_with(main_config_path))
                 new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+            /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
+            /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
+            new_path = fs::path(new_path).replace_extension(".xml").string();
 
             if (preprocessed_dir.empty())
             {

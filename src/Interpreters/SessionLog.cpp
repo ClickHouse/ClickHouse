@@ -21,6 +21,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Interpreters/Context.h>
 
 #include <cassert>
 
@@ -45,7 +46,7 @@ auto eventTime()
     return std::make_pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
 }
 
-using AuthType = Authentication::Type;
+using AuthType = AuthenticationType;
 using Interface = ClientInfo::Interface;
 
 void fillColumnArray(const Strings & data, IColumn & column)
@@ -76,7 +77,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
 
 NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
-    const auto event_type = std::make_shared<DataTypeEnum8>(
+    auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"LoginFailure",           static_cast<Int8>(SESSION_LOGIN_FAILURE)},
@@ -84,8 +85,8 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(Authentication::TypeInfo::get(v).raw_name, static_cast<Int8>(v))
-    const auto identified_with_column = std::make_shared<DataTypeEnum8>(
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
+    auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_PASSWORD),
@@ -97,7 +98,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
 
-    const auto interface_type_column = std::make_shared<DataTypeEnum8>(
+    auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"TCP",                    static_cast<Int8>(Interface::TCP)},
@@ -107,9 +108,9 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)}
         });
 
-    const auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    const auto settings_type_column = std::make_shared<DataTypeArray>(
+    auto settings_type_column = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(
             DataTypes({
                 // setting name
@@ -152,7 +153,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 void SessionLogElement::appendToBlock(MutableColumns & columns) const
 {
     assert(type >= SESSION_LOGIN_FAILURE && type <= SESSION_LOGOUT);
-    assert(user_identified_with >= Authentication::Type::NO_PASSWORD && user_identified_with <= Authentication::Type::MAX_TYPE);
+    assert(user_identified_with >= AuthenticationType::NO_PASSWORD && user_identified_with <= AuthenticationType::MAX);
 
     size_t i = 0;
 
@@ -214,8 +215,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     {
         const auto user = access->getUser();
         log_entry.user = user->getName();
-        log_entry.user_identified_with = user->authentication.getType();
-        log_entry.external_auth_server = user->authentication.getLDAPServerName();
+        log_entry.user_identified_with = user->auth_data.getType();
+        log_entry.external_auth_server = user->auth_data.getLDAPServerName();
     }
 
     if (session_id)
@@ -244,7 +245,7 @@ void SessionLog::addLoginFailure(
     log_entry.user = user;
     log_entry.auth_failure_reason = reason.message();
     log_entry.client_info = info;
-    log_entry.user_identified_with = Authentication::Type::NO_PASSWORD;
+    log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
 
     add(log_entry);
 }

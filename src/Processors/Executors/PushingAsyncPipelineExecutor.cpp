@@ -2,10 +2,9 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <iostream>
-
+#include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <base/scope_guard_safe.h>
+#include <Poco/Event.h>
 
 namespace DB
 {
@@ -91,7 +90,7 @@ struct PushingAsyncPipelineExecutor::Data
         if (has_exception)
         {
             has_exception = false;
-            std::rethrow_exception(std::move(exception));
+            std::rethrow_exception(exception);
         }
     }
 };
@@ -104,11 +103,6 @@ static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGrou
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
-
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        );
 
         data.executor->execute(num_threads);
     }

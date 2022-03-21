@@ -13,7 +13,7 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 
 Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` and so on.
 
-With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, in Yandex.Metrica, conditional aggregate functions are used to implement the segment comparison functionality.
+With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, conditional aggregate functions can be used to implement the segment comparison functionality.
 
 ## -Array {#agg-functions-combinator-array}
 
@@ -24,6 +24,12 @@ Example 1: `sumArray(arr)` - Totals all the elements of all ‘arr’ arrays. In
 Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘arr’ arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it’s not always possible to add ‘arrayJoin’ to a query.
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
+
+## -Map {#agg-functions-combinator-map}
+
+The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
+
+Examples: `sumMap(map(1,1))`, `avgMap(map('a', 1))`.
 
 ## -SimpleState {#agg-functions-combinator-simplestate}
 

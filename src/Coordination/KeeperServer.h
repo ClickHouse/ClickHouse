@@ -6,7 +6,6 @@
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
-#include <unordered_map>
 #include <base/logger_useful.h>
 
 namespace DB
@@ -29,8 +28,6 @@ private:
     nuraft::ptr<nuraft::asio_service> asio_service;
     nuraft::ptr<nuraft::rpc_listener> asio_listener;
 
-    std::mutex append_entries_mutex;
-
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
@@ -45,6 +42,7 @@ private:
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
     void launchRaftServer(
+        bool enable_ipv6,
         const nuraft::raft_params & params,
         const nuraft::asio_service::options & asio_opts);
 
@@ -52,15 +50,13 @@ private:
 
 public:
     KeeperServer(
-        int server_id_,
-        const CoordinationSettingsPtr & coordination_settings_,
-        const Poco::Util::AbstractConfiguration & config,
+        const KeeperConfigurationAndSettingsPtr & settings_,
+        const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        bool standalone_keeper);
+        SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
-    void startup();
+    void startup(bool enable_ipv6 = true);
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
@@ -73,9 +69,24 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const
+    {
+        return state_machine;
+    }
+
     bool isLeader() const;
 
+    bool isFollower() const;
+
+    bool isObserver() const;
+
     bool isLeaderAlive() const;
+
+    /// @return follower count if node is not leader return 0
+    uint64_t getFollowerCount() const;
+
+    /// @return synced follower count if node is not leader return 0
+    uint64_t getSyncedFollowerCount() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

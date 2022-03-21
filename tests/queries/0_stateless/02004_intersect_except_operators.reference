@@ -134,3 +134,8 @@ UNION ALL
 SELECT 1
 EXCEPT
 SELECT 4
+set limit=1;
+select 1 intersect select 1;
+1
+(((select 1) intersect select 1));
+1

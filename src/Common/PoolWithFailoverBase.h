@@ -7,6 +7,7 @@
 #include <functional>
 #include <base/types.h>
 #include <base/scope_guard.h>
+#include <base/sort.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -178,7 +179,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
-    std::sort(
+    ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
@@ -394,8 +395,8 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 
         if (delta >= 0)
         {
-            const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-            size_t shift_amount = MAX_BITS;
+            const UInt64 max_bits = sizeof(UInt64) * CHAR_BIT;
+            size_t shift_amount = max_bits;
             /// Divide error counts by 2 every decrease_error_period seconds.
             if (decrease_error_period)
                 shift_amount = delta / decrease_error_period;
@@ -404,7 +405,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
             if (shift_amount)
                 last_decrease_time = current_time;
 
-            if (shift_amount >= MAX_BITS)
+            if (shift_amount >= max_bits)
             {
                 for (auto & state : states)
                 {

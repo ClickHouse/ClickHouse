@@ -226,13 +226,14 @@ bool isStorageTouchedByMutations(
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQuery interpreter(
+        select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
     auto io = interpreter.execute();
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (!block.rows())
-        executor.pull(block);
+    while (executor.pull(block)) {}
+
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
@@ -291,7 +292,7 @@ MutationsInterpreter::MutationsInterpreter(
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
-    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
 {
     mutation_ast = prepare(!can_execute);
 }
@@ -421,6 +422,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
+
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
@@ -569,7 +571,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
-            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+
+            if (!column.default_desc.expression)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot materialize column `{}` because it doesn't have default expression", column.name);
+
+            auto materialized_column = makeASTFunction(
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+            stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -622,7 +633,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         dependencies.insert(dependency);
                 }
             }
-            else if (metadata_snapshot->hasRowsTTL())
+            else if (metadata_snapshot->hasRowsTTL()
+                || metadata_snapshot->hasAnyRowsWhereTTL()
+                || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -720,7 +733,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
-                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits().ignoreProjections()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 QueryPlan plan;
@@ -789,7 +802,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot),
+            false, true, execute_scalar_subqueries);
+
         if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);

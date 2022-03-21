@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Typelist.h"
+#include "TypeList.h"
 
 namespace detail
 {
@@ -14,7 +14,7 @@ struct FnTraits<R(A...)>
     static constexpr bool value = std::is_invocable_r_v<R, F, A...>;
 
     using Ret = R;
-    using Args = Typelist<A...>;
+    using Args = TypeList<A...>;
 };
 
 template <class R, class ...A>

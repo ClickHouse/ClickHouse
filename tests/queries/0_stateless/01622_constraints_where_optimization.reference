@@ -1,0 +1,14 @@
+SELECT count()
+FROM t_constraints_where
+WHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE b < 8
+SELECT count()
+FROM t_constraints_where

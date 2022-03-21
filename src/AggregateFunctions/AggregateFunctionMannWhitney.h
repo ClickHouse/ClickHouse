@@ -149,7 +149,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        auto param = params[0].get<String>();
+        const auto & param = params[0].get<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -215,12 +215,12 @@ public:
         a.merge(b, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, arena);
     }

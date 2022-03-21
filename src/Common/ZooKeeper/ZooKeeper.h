@@ -78,7 +78,7 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     /// hosts_string -- comma separated [secure://]host:port list
-    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
@@ -86,7 +86,7 @@ public:
               std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
               const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
-    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
@@ -410,4 +410,11 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
+
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
+String extractZooKeeperName(const String & path);
+
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
 }

@@ -7,9 +7,7 @@
 # - sometimes warnings from 3rd party libraries may come from macro substitutions in our code
 #   and we have to wrap them with #pragma GCC/clang diagnostic ignored
 
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
-endif ()
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 # Intended for exploration of new compiler warnings that may be found useful.
@@ -27,46 +25,6 @@ if (COMPILER_CLANG)
     no_warning(vla-extension)
     no_warning(zero-length-array)
     no_warning(c11-extensions)
-
-    add_warning(comma)
-    add_warning(conditional-uninitialized)
-    add_warning(covered-switch-default)
-    add_warning(deprecated)
-    add_warning(embedded-directive)
-    add_warning(empty-init-stmt) # linux-only
-    add_warning(extra-semi-stmt) # linux-only
-    add_warning(extra-semi)
-    add_warning(gnu-case-range)
-    add_warning(inconsistent-missing-destructor-override)
-    add_warning(newline-eof)
-    add_warning(old-style-cast)
-    add_warning(range-loop-analysis)
-    add_warning(redundant-parens)
-    add_warning(reserved-id-macro)
-    add_warning(shadow-field)
-    add_warning(shadow-uncaptured-local)
-    add_warning(shadow)
-    add_warning(string-plus-int)
-    add_warning(undef)
-    add_warning(unreachable-code-return)
-    add_warning(unreachable-code)
-    add_warning(unused-exception-parameter)
-    add_warning(unused-macros)
-    add_warning(unused-member-function)
-    add_warning(unneeded-internal-declaration)
-    add_warning(implicit-int-float-conversion)
-    add_warning(no-delete-null-pointer-checks)
-    add_warning(anon-enum-enum-conversion)
-    add_warning(assign-enum)
-    add_warning(bitwise-op-parentheses)
-    add_warning(int-in-bool-context)
-    add_warning(sometimes-uninitialized)
-    add_warning(tautological-bitwise-compare)
-
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        add_warning(zero-as-null-pointer-constant)
-    endif()
 
     if (WEVERYTHING)
         add_warning(everything)
@@ -97,12 +55,45 @@ if (COMPILER_CLANG)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
 
-        # XXX: libstdc++ has some of these for 3way compare
-        if (NOT USE_LIBCXX)
-            no_warning(zero-as-null-pointer-constant)
-        endif()
-
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
+    else ()
+        add_warning(comma)
+        add_warning(conditional-uninitialized)
+        add_warning(covered-switch-default)
+        add_warning(deprecated)
+        add_warning(embedded-directive)
+        add_warning(empty-init-stmt) # linux-only
+        add_warning(extra-semi-stmt) # linux-only
+        add_warning(extra-semi)
+        add_warning(gnu-case-range)
+        add_warning(inconsistent-missing-destructor-override)
+        add_warning(newline-eof)
+        add_warning(old-style-cast)
+        add_warning(range-loop-analysis)
+        add_warning(redundant-parens)
+        add_warning(reserved-id-macro)
+        add_warning(shadow-field)
+        add_warning(shadow-uncaptured-local)
+        add_warning(shadow)
+        add_warning(string-plus-int)
+        add_warning(undef)
+        add_warning(unreachable-code-return)
+        add_warning(unreachable-code)
+        add_warning(unused-exception-parameter)
+        add_warning(unused-macros)
+        add_warning(unused-member-function)
+        add_warning(unneeded-internal-declaration)
+        add_warning(implicit-int-float-conversion)
+        add_warning(no-delete-null-pointer-checks)
+        add_warning(anon-enum-enum-conversion)
+        add_warning(assign-enum)
+        add_warning(bitwise-op-parentheses)
+        add_warning(int-in-bool-context)
+        add_warning(sometimes-uninitialized)
+        add_warning(tautological-bitwise-compare)
+
+        # XXX: libstdc++ has some of these for 3way compare
+        add_warning(zero-as-null-pointer-constant)
     endif ()
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
@@ -184,11 +175,8 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        # Warn when a literal 0 is used as null pointer constant.
-        add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-    endif()
+    # Warn when a literal 0 is used as null pointer constant.
+    add_cxx_compile_options(-Wzero-as-null-pointer-constant)
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
         # XXX: gcc10 stuck with this option while compiling GatherUtils code

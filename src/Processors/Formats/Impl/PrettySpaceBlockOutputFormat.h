@@ -16,7 +16,7 @@ public:
 
     String getName() const override { return "PrettySpaceBlockOutputFormat"; }
 
-protected:
+private:
     void write(const Chunk & chunk, PortKind port_kind) override;
     void writeSuffix() override;
 };

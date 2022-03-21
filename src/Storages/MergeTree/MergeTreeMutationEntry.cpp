@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -10,7 +11,39 @@
 namespace DB
 {
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, Int64 tmp_number)
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
+{
+    assert(block_number_);
+    return fmt::format("mutation_{}.txt", block_number_);
+}
+
+UInt64 MergeTreeMutationEntry::tryParseFileName(const String & file_name_)
+{
+    UInt64 maybe_block_number = 0;
+    ReadBufferFromString file_name_buf(file_name_);
+    if (!checkString("mutation_", file_name_buf))
+        return 0;
+    if (!tryReadIntText(maybe_block_number, file_name_buf))
+        return 0;
+    if (!checkString(".txt", file_name_buf))
+        return 0;
+    assert(maybe_block_number);
+    return maybe_block_number;
+}
+
+UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
+{
+    if (UInt64 maybe_block_number = tryParseFileName(file_name_))
+        return maybe_block_number;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
+}
+
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
@@ -35,10 +68,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     }
 }
 
-void MergeTreeMutationEntry::commit(Int64 block_number_)
+void MergeTreeMutationEntry::commit(UInt64 block_number_)
 {
+    assert(block_number_);
     block_number = block_number_;
-    String new_file_name = "mutation_" + toString(block_number) + ".txt";
+    String new_file_name = versionToFileName(block_number);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
     is_temp = false;
     file_name = new_file_name;
@@ -62,10 +96,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     , file_name(file_name_)
     , is_temp(false)
 {
-    ReadBufferFromString file_name_buf(file_name);
-    file_name_buf >> "mutation_" >> block_number >> ".txt";
-    assertEOF(file_name_buf);
-
+    block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name);
 
     *buf >> "format version: 1\n";

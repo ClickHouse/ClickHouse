@@ -1,13 +1,8 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <Common/hex.h>
 #include <base/logger_useful.h>
-#include <Core/Field.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
-#include "getIdentifierQuote.h"
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Parsers/getInsertQuery.h>
 
@@ -45,7 +40,7 @@ void ODBCSink::consume(Chunk chunk)
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();
     execute<void>(connection_holder,
-                  [&](nanodbc::connection & connection) { execute(connection, query); });
+        [&](nanodbc::connection & connection) { execute(connection, query); });
 }
 
 }

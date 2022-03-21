@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -7,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
-#include <variant>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 
 namespace DB
@@ -35,20 +37,33 @@ class RemoteQueryExecutor
 public:
     using ReadContext = RemoteQueryExecutorReadContext;
 
+    /// We can provide additional logic for RemoteQueryExecutor
+    /// For example for s3Cluster table function we provide an Iterator over tasks to do.
+    /// Nodes involved into the query send request for a new task and we answer them using this object.
+    /// In case of parallel reading from replicas we provide a Coordinator object
+    /// Every replica will tell us about parts and mark ranges it wants to read and coordinator will
+    /// decide whether to deny or to accept that request.
+    struct Extension
+    {
+      std::shared_ptr<TaskIterator> task_iterator{nullptr};
+      std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+      std::optional<IConnections::ReplicaInfo> replica_info;
+    };
+
     /// Takes already set connection.
     /// We don't own connection, thus we have to drain it synchronously.
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
@@ -56,19 +71,25 @@ public:
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     ~RemoteQueryExecutor();
 
     /// Create connection and send query, external tables and scalars.
-    void sendQuery();
+    ///
+    /// @param query_kind - kind of query, usually it is SECONDARY_QUERY,
+    ///                     since this is the queries between servers
+    ///                     (for which this code was written in general).
+    ///                     But clickhouse-benchmark uses the same code,
+    ///                     and it should pass INITIAL_QUERY.
+    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
 
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
@@ -115,7 +136,7 @@ private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
         const Scalars & scalars_, const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_);
+        QueryProcessingStage::Enum stage_, std::optional<Extension> extension_);
 
     Block header;
     Block totals;
@@ -135,6 +156,13 @@ private:
     QueryProcessingStage::Enum stage;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
+
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+
+    /// This is needed only for parallel reading from replicas, because
+    /// we create a RemoteQueryExecutor per replica and have to store additional info
+    /// about the number of the current replica or the count of replicas at all.
+    IConnections::ReplicaInfo replica_info;
 
     std::function<std::shared_ptr<IConnections>()> create_connections;
     /// Hold a shared reference to the connection pool so that asynchronous connection draining will
@@ -203,7 +231,9 @@ private:
 
     void processReadTaskRequest();
 
-    /// Cancell query and restart it with info about duplicated UUIDs
+    void processMergeTreeReadTaskRequest(PartitionReadRequest request);
+
+    /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
     std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 

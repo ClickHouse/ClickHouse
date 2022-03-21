@@ -34,7 +34,7 @@ The URL can be specified with or without a scheme. Examples:
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
+https://clickhouse.com/time/
 ```
 
 For these examples, the `domain` function returns the following results:
@@ -42,7 +42,7 @@ For these examples, the `domain` function returns the following results:
 ``` text
 some.svn-hosting.com
 some.svn-hosting.com
-yandex.com
+clickhouse.com
 ```
 
 **Returned values**
@@ -85,7 +85,7 @@ The URL can be specified with or without a scheme. Examples:
 ``` text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
+https://clickhouse.com/time/
 ```
 
 **Returned values**
@@ -109,7 +109,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 
 ### firstSignificantSubdomain {#firstsignificantsubdomain}
 
-Returns the “first significant subdomain”. This is a non-standard concept specific to Yandex.Metrica. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
+Returns the “first significant subdomain”. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
 
 ### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
 
@@ -117,7 +117,7 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
 -   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
@@ -127,7 +127,7 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
 -   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
@@ -335,7 +335,7 @@ Returns an array containing the URL, truncated at the end by the symbols /,? in 
 
 ### URLPathHierarchy(URL) {#urlpathhierarchyurl}
 
-The same as above, but without the protocol and host in the result. The / element (root) is not included. Example: the function is used to implement tree reports the URL in Yandex. Metric.
+The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
 ``` text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
@@ -343,6 +343,21 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
     '/browse/',
     '/browse/CONV-6788'
 ]
+```
+
+### encodeURLComponent(URL) {#encodeurlcomponenturl}
+
+Returns the encoded URL.
+Example:
+
+``` sql
+SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedURL;
+```
+
+``` text
+┌─EncodedURL───────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT%201%3B │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### decodeURLComponent(URL) {#decodeurlcomponenturl}
@@ -358,6 +373,36 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
+```
+
+### encodeURLFormComponent(URL) {#encodeurlformcomponenturl}
+
+Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
+Example:
+
+``` sql
+SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS EncodedURL;
+```
+
+``` text
+┌─EncodedURL────────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT+1+2%2B3 │
+└───────────────────────────────────────────────────────────┘
+```
+
+### decodeURLFormComponent(URL) {#decodeurlformcomponenturl}
+
+Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
+Example:
+
+``` sql
+SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') AS DecodedURL;
+```
+
+``` text
+┌─DecodedURL────────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1 2+3 │
+└───────────────────────────────────────────┘
 ```
 
 ### netloc {#netloc}

@@ -21,8 +21,13 @@ ExceptionKeepingTransform::ExceptionKeepingTransform(const Block & in_header, co
 
 IProcessor::Status ExceptionKeepingTransform::prepare()
 {
-    if (!ignore_on_start_and_finish && !was_on_start_called)
-        return Status::Ready;
+    if (stage == Stage::Start)
+    {
+        if (ignore_on_start_and_finish)
+            stage = Stage::Consume;
+        else
+            return Status::Ready;
+    }
 
     /// Check can output.
 
@@ -43,12 +48,19 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         return Status::PortFull;
     }
 
-    if (!ready_input)
+    if (stage == Stage::Generate)
+        return Status::Ready;
+
+    while (!ready_input)
     {
         if (input.isFinished())
         {
-            if (!ignore_on_start_and_finish && !was_on_finish_called && !has_exception)
-                return Status::Ready;
+            if (stage != Stage::Exception && stage != Stage::Finish)
+            {
+                stage = Stage::Finish;
+                if (!ignore_on_start_and_finish)
+                    return Status::Ready;
+            }
 
             output.finish();
             return Status::Finished;
@@ -63,12 +75,13 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
         if (data.exception)
         {
-            has_exception = true;
+            stage = Stage::Exception;
+            onException();
             output.pushData(std::move(data));
             return Status::PortFull;
         }
 
-        if (has_exception)
+        if (stage == Stage::Exception)
             /// In case of exception, just drop all other data.
             /// If transform is stateful, it's state may be broken after exception from transform()
             data.chunk.clear();
@@ -117,40 +130,66 @@ static std::exception_ptr runStep(std::function<void()> step, ThreadStatus * thr
 
 void ExceptionKeepingTransform::work()
 {
-    if (!ignore_on_start_and_finish && !was_on_start_called)
+    if (stage == Stage::Start)
     {
-        was_on_start_called = true;
+        stage = Stage::Consume;
 
         if (auto exception = runStep([this] { onStart(); }, thread_status, elapsed_counter_ms))
         {
-            has_exception = true;
+            stage = Stage::Exception;
             ready_output = true;
-            data.exception = std::move(exception);
+            data.exception = exception;
+            onException();
         }
     }
-    else if (ready_input)
+    else if (stage == Stage::Consume || stage == Stage::Generate)
     {
-        ready_input = false;
-
-        if (auto exception = runStep([this] { transform(data.chunk); }, thread_status, elapsed_counter_ms))
+        if (stage == Stage::Consume)
         {
-            has_exception = true;
-            data.chunk.clear();
-            data.exception = std::move(exception);
+            ready_input = false;
+
+            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_status, elapsed_counter_ms))
+            {
+                stage = Stage::Exception;
+                ready_output = true;
+                data.exception = exception;
+                onException();
+            }
+            else
+                stage = Stage::Generate;
         }
 
-        if (data.chunk || data.exception)
-            ready_output = true;
-    }
-    else if (!ignore_on_start_and_finish && !was_on_finish_called)
-    {
-        was_on_finish_called = true;
+        if (stage == Stage::Generate)
+        {
+            GenerateResult res;
+            if (auto exception = runStep([this, &res] { res = onGenerate(); }, thread_status, elapsed_counter_ms))
+            {
+                stage = Stage::Exception;
+                ready_output = true;
+                data.exception = exception;
+                onException();
+            }
+            else
+            {
+                if (res.chunk)
+                {
+                    data.chunk = std::move(res.chunk);
+                    ready_output = true;
+                }
 
+                if (res.is_done)
+                    stage = Stage::Consume;
+            }
+        }
+    }
+    else if (stage == Stage::Finish)
+    {
         if (auto exception = runStep([this] { onFinish(); }, thread_status, elapsed_counter_ms))
         {
-            has_exception = true;
+            stage = Stage::Exception;
             ready_output = true;
-            data.exception = std::move(exception);
+            data.exception = exception;
+            onException();
         }
     }
 }

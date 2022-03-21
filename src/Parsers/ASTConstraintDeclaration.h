@@ -10,7 +10,14 @@ namespace DB
 class ASTConstraintDeclaration : public IAST
 {
 public:
+    enum class Type : UInt8
+    {
+        CHECK,
+        ASSUME,
+    };
+
     String name;
+    Type type;
     IAST * expr;
 
     String getID(char) const override { return "Constraint"; }

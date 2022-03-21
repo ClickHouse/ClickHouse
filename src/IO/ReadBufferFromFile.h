@@ -23,15 +23,22 @@ protected:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
 public:
-    explicit ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
-        char * existing_memory = nullptr, size_t alignment = 0);
+    explicit ReadBufferFromFile(
+        const std::string & file_name_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        int flags = -1,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt);
 
     /// Use pre-opened file descriptor.
     explicit ReadBufferFromFile(
         int & fd, /// Will be set to -1 if constructor didn't throw and ownership of file descriptor is passed to the object.
         const std::string & original_file_name = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr, size_t alignment = 0);
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt);
 
     ~ReadBufferFromFile() override;
 
@@ -42,6 +49,10 @@ public:
     {
         return file_name;
     }
+
+    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
+
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 };
 
 
@@ -50,9 +61,14 @@ public:
 class ReadBufferFromFilePRead : public ReadBufferFromFile
 {
 public:
-    ReadBufferFromFilePRead(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
-        char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFile(file_name_, buf_size, flags, existing_memory, alignment)
+    explicit ReadBufferFromFilePRead(
+        const std::string & file_name_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        int flags = -1,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFile(file_name_, buf_size, flags, existing_memory, alignment, file_size_)
     {
         use_pread = true;
     }
@@ -68,10 +84,15 @@ private:
     OpenedFileCache::OpenedFilePtr file;
 
 public:
-    ReadBufferFromFilePReadWithDescriptorsCache(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
-        char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment),
-        file_name(file_name_)
+    explicit ReadBufferFromFilePReadWithDescriptorsCache(
+        const std::string & file_name_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        int flags = -1,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment, file_size_)
+        , file_name(file_name_)
     {
         file = OpenedFileCache::instance().get(file_name, flags);
         fd = file->getFD();

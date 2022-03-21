@@ -21,7 +21,7 @@ class StorageXDBC : public IStorageURLBase
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -41,7 +41,6 @@ public:
 
     std::string getName() const override;
 private:
-
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;
     std::string remote_table_name;
@@ -52,7 +51,7 @@ private:
 
     std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -60,13 +59,15 @@ private:
 
     std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
-    Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
+    Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
+
+    bool isColumnOriented() const override;
 };
 
 }

@@ -99,6 +99,8 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
+
     factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -107,6 +109,8 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, true);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
 }
 
 }

@@ -8,6 +8,7 @@ import logging
 import io
 import string
 import ast
+import math
 
 import avro.schema
 import avro.io
@@ -35,6 +36,7 @@ from kafka.admin import NewTopic
 
 from . import kafka_pb2
 from . import social_pb2
+from . import message_with_repeated_pb2
 
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
@@ -42,7 +44,8 @@ from . import social_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/named_collection.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
@@ -119,16 +122,19 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
 def kafka_producer_send_heartbeat_msg(max_retries=50):
     kafka_produce(kafka_cluster, 'test_heartbeat_topic', ['test'], retries=max_retries)
 
-def kafka_consume(kafka_cluster, topic):
+def kafka_consume(kafka_cluster, topic, needDecode = True, timestamp = 0):
     consumer = KafkaConsumer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
-                yield message.value.decode()
+                assert timestamp == 0 or message.timestamp / 1000 == timestamp
+                if needDecode:
+                    yield message.value.decode()
+                else:
+                    yield message.value
     consumer.unsubscribe()
     consumer.close()
-
 
 def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messages):
     data = b''
@@ -232,7 +238,8 @@ kafka_topic_old	old
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n')
+            SETTINGS kafka_commit_on_select = 1;
         ''')
 
     # Don't insert malformed messages since old settings syntax
@@ -264,6 +271,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
                      kafka_group_name = '{kafka_group_name_new}',
                      kafka_format = '{kafka_format_json_each_row}',
                      kafka_row_delimiter = '\\n',
+                     kafka_commit_on_select = 1,
                      kafka_client_id = '{kafka_client_id} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
@@ -309,6 +317,7 @@ def test_kafka_json_as_string(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'kafka_json_as_string',
                      kafka_group_name = 'kafka_json_as_string',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
         ''')
@@ -436,15 +445,21 @@ def test_kafka_formats(kafka_cluster):
                 # /src/Processors/Formats/IRowInputFormat.cpp:0: DB::IRowInputFormat::generate() @ 0x1de72710 in /usr/bin/clickhouse
             ],
         },
-        # 'Template' : {
-        #     'data_sample' : [
-        #         '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #        # '(id = 1, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 2, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 3, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 4, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 5, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 6, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 7, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 8, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 9, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 10, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 11, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 12, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 13, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 14, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 15, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #        # '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #         # '' # tolerates
-        #     ],
-        #     'extra_settings': ", format_template_row='template_row.format'"
-        # },
+        'CustomSeparated' : {
+            'data_sample' : [
+                '0\t0\tAM\t0.5\t1\n',
+                '1\t0\tAM\t0.5\t1\n2\t0\tAM\t0.5\t1\n3\t0\tAM\t0.5\t1\n4\t0\tAM\t0.5\t1\n5\t0\tAM\t0.5\t1\n6\t0\tAM\t0.5\t1\n7\t0\tAM\t0.5\t1\n8\t0\tAM\t0.5\t1\n9\t0\tAM\t0.5\t1\n10\t0\tAM\t0.5\t1\n11\t0\tAM\t0.5\t1\n12\t0\tAM\t0.5\t1\n13\t0\tAM\t0.5\t1\n14\t0\tAM\t0.5\t1\n15\t0\tAM\t0.5\t1\n',
+                '0\t0\tAM\t0.5\t1\n',
+            ],
+        },
+        'Template' : {
+            'data_sample' : [
+                '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+               '(id = 1, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 2, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 3, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 4, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 5, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 6, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 7, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 8, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 9, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 10, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 11, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 12, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 13, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 14, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 15, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+               '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+            ],
+            'extra_settings': ", format_template_row='template_row.format'"
+        },
         'Regexp': {
             'data_sample': [
                 '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
@@ -681,6 +696,16 @@ def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'
             return TSV(result) == TSV(reference)
 
 
+def decode_avro(message):
+    b = io.BytesIO(message)
+    ret = avro.datafile.DataFileReader(b, avro.io.DatumReader())
+
+    output = io.StringIO()
+    for record in ret:
+        print(record, file=output)
+    return output.getvalue()
+
+
 # https://stackoverflow.com/a/57692111/1555175
 def describe_consumer_group(kafka_cluster, name):
     client = BrokerConnection('localhost', kafka_cluster.kafka_port, socket.AF_INET)
@@ -788,6 +813,7 @@ def test_kafka_issue4116(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'issue4116',
                      kafka_group_name = 'issue4116',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'CSV',
                      kafka_row_delimiter = '\\n',
                      format_csv_delimiter = '|';
@@ -861,6 +887,7 @@ def test_kafka_consumer_hang(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = '{topic_name}',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = '{topic_name}',
                      kafka_format = 'JSONEachRow',
                      kafka_num_consumers = 8;
@@ -886,12 +913,14 @@ def test_kafka_consumer_hang2(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'consumer_hang2',
                      kafka_group_name = 'consumer_hang2',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
 
         CREATE TABLE test.kafka2 (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'consumer_hang2',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'consumer_hang2',
                      kafka_format = 'JSONEachRow';
         ''')
@@ -930,6 +959,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'csv',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'csv',
                      kafka_format = 'CSV';
         ''')
@@ -954,6 +984,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'tsv',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'tsv',
                      kafka_format = 'TSV';
         ''')
@@ -977,6 +1008,7 @@ def test_kafka_select_empty(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = '{topic_name}',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = '{topic_name}',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
@@ -1003,6 +1035,7 @@ def test_kafka_json_without_delimiter(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'json',
                      kafka_group_name = 'json',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
         ''')
 
@@ -1027,6 +1060,7 @@ def test_kafka_protobuf(kafka_cluster):
                      kafka_topic_list = 'pb',
                      kafka_group_name = 'pb',
                      kafka_format = 'Protobuf',
+                     kafka_commit_on_select = 1,
                      kafka_schema = 'kafka.proto:KeyValuePair';
         ''')
 
@@ -1055,6 +1089,7 @@ SETTINGS
     kafka_topic_list = 'string_field_on_first_position_in_protobuf',
     kafka_group_name = 'string_field_on_first_position_in_protobuf',
     kafka_format = 'Protobuf',
+    kafka_commit_on_select = 1,
     kafka_schema = 'social:User';
         ''')
 
@@ -1121,6 +1156,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
                      kafka_topic_list = 'pb_no_delimiter',
                      kafka_group_name = 'pb_no_delimiter',
                      kafka_format = 'ProtobufSingle',
+                     kafka_commit_on_select = 1,
                      kafka_schema = 'kafka.proto:KeyValuePair';
         ''')
 
@@ -1143,6 +1179,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
                     kafka_topic_list = 'pb_no_delimiter',
                     kafka_group_name = 'pb_no_delimiter',
                     kafka_format = 'ProtobufSingle',
+                    kafka_commit_on_select = 1,
                     kafka_schema = 'kafka.proto:KeyValuePair';
     ''')
 
@@ -1467,12 +1504,20 @@ def test_kafka_flush_on_big_message(kafka_cluster):
 
 
 def test_kafka_virtual_columns(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt1", config=topic_config)
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'virt1',
                      kafka_group_name = 'virt1',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
         ''')
 
@@ -1498,6 +1543,13 @@ def test_kafka_virtual_columns(kafka_cluster):
 
 
 def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2", config=topic_config)
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1520,7 +1572,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
     kafka_produce(kafka_cluster, 'virt2', messages, 0)
 
-    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key'
+    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key, key'
     result = instance.query(sql)
     iterations = 0
     while not kafka_check_result(result, False, 'test_kafka_virtual2.reference') and iterations < 10:
@@ -1544,6 +1596,7 @@ def test_kafka_insert(kafka_cluster):
                      kafka_topic_list = 'insert1',
                      kafka_group_name = 'insert1',
                      kafka_format = 'TSV',
+                     kafka_commit_on_select = 1,
                      kafka_row_delimiter = '\\n';
     ''')
 
@@ -1705,8 +1758,12 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 def test_kafka_virtual_columns2(kafka_cluster):
     admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
-    kafka_create_topic(admin_client, "virt2_0", num_partitions=2)
-    kafka_create_topic(admin_client, "virt2_1", num_partitions=2)
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2_0", num_partitions=2, config=topic_config)
+    kafka_create_topic(admin_client, "virt2_1", num_partitions=2, config=topic_config)
 
     instance.query('''
         CREATE TABLE test.kafka (value UInt64)
@@ -1765,9 +1822,13 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     assert TSV(result) == TSV(expected)
 
+    instance.query('''
+        DROP TABLE test.kafka;
+        DROP TABLE test.view;
+    ''')
     kafka_delete_topic(admin_client, "virt2_0")
     kafka_delete_topic(admin_client, "virt2_1")
-
+    instance.rotate_logs()
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
 
@@ -1825,6 +1886,94 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 '''
 
     assert TSV(result) == TSV(expected)
+
+    kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_insert_avro(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "avro1", config=topic_config)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        CREATE TABLE test.kafka (key UInt64, value UInt64, _timestamp DateTime('UTC'))
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro1',
+                     kafka_group_name = 'avro1',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'Avro';
+    ''')
+
+
+    instance.query("INSERT INTO test.kafka select number*10 as key, number*100 as value, 1636505534 as _timestamp from numbers(4) SETTINGS output_format_avro_rows_in_file = 2, output_format_avro_codec = 'deflate'")
+
+    messages = []
+    while True:
+        messages.extend(kafka_consume(kafka_cluster, 'avro1', needDecode = False, timestamp = 1636505534))
+        if len(messages) == 2:
+            break
+
+    result = ''
+    for a_message in messages:
+        result += decode_avro(a_message) + '\n'
+
+    expected_result = """{'key': 0, 'value': 0, '_timestamp': 1636505534}
+{'key': 10, 'value': 100, '_timestamp': 1636505534}
+
+{'key': 20, 'value': 200, '_timestamp': 1636505534}
+{'key': 30, 'value': 300, '_timestamp': 1636505534}
+
+"""
+    assert (result == expected_result)
+
+
+def test_kafka_produce_consume_avro(kafka_cluster):
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+
+    topic_name = "insert_avro"
+    kafka_create_topic(admin_client, topic_name)
+
+    num_rows = 75
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka_writer;
+
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro',
+                     kafka_group_name = 'avro',
+                     kafka_format = 'Avro';
+
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro',
+                     kafka_group_name = 'avro',
+                     kafka_format = 'Avro';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.kafka;
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer select number*10 as key, number*100 as value from numbers({num_rows}) SETTINGS output_format_avro_rows_in_file = 7".format(num_rows=num_rows))
+
+    instance.wait_for_log_line("Committed offset {offset}".format(offset=math.ceil(num_rows/7)))
+
+    expected_num_rows = instance.query("SELECT COUNT(1) FROM test.view", ignore_error=True)
+    assert (int(expected_num_rows) == num_rows)
+
+    expected_max_key = instance.query("SELECT max(key) FROM test.view", ignore_error=True)
+    assert (int(expected_max_key) == (num_rows - 1) * 10)
 
     kafka_delete_topic(admin_client, topic_name)
 
@@ -2185,6 +2334,7 @@ def test_exception_from_destructor(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'xyz',
                      kafka_group_name = '',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
     ''')
     instance.query_and_get_error('''
@@ -2483,6 +2633,7 @@ def test_kafka_unavailable(kafka_cluster):
                     kafka_topic_list = 'test_bad_reschedule',
                     kafka_group_name = 'test_bad_reschedule',
                     kafka_format = 'JSONEachRow',
+                    kafka_commit_on_select = 1,
                     kafka_max_block_size = 1000;
 
         CREATE MATERIALIZED VIEW test.destination_unavailable Engine=Log AS
@@ -2552,6 +2703,7 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
                      kafka_format = 'CSV',
                      kafka_row_delimiter = '\\n',
                      kafka_num_consumers = 4,
+                     kafka_commit_on_select = 1,
                      kafka_thread_per_consumer = 1;
         ''')
 
@@ -2850,7 +3002,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
             b'\x05\x02\x69\x64\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x04\x76\x61\x6c\x31\x04\x76\x61\x6c\x32\x04\x76\x61\x6c\x33\x05\x49\x6e\x74\x36\x34\x06\x53\x74\x72\x69\x6e\x67\x06\x53\x74\x72\x69\x6e\x67\x07\x46\x6c\x6f\x61\x74\x33\x32\x05\x55\x49\x6e\x74\x38\x00\x00\x00\x00\x00\x00\x00\x00\x03\x42\x41\x44\x02\x41\x4d\x00\x00\x00\x3f\x01',
             ],
-            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\\n"}',
+            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Type of \'blockNo\' must be UInt16, not String"}',
             'printable':False,
         },
         'ORC': {
@@ -3075,6 +3227,146 @@ def test_kafka_consumer_failover(kafka_cluster):
     producer.flush()
     prev_count = wait_for_new_data('test.destination', prev_count)
     kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_predefined_configuration(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_name = 'conf'
+    kafka_create_topic(admin_client, topic_name)
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+    kafka_produce(kafka_cluster, topic_name, messages)
+
+    instance.query(f'''
+        CREATE TABLE test.kafka (key UInt64, value UInt64) ENGINE = Kafka(kafka1, kafka_format='CSV');
+        ''')
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
+
+
+# https://github.com/ClickHouse/ClickHouse/issues/26643
+def test_issue26643(kafka_cluster):
+
+    # for backporting:
+    # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), value_serializer=producer_serializer)
+
+    topic_list = []
+    topic_list.append(NewTopic(name="test_issue26643", num_partitions=4, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000000,
+        server='server1',
+        clien='host1',
+        sPort=443,
+        cPort=50000,
+        r=[
+            message_with_repeated_pb2.dd(name='1', type=444, ttl=123123, data=b'adsfasd'),
+            message_with_repeated_pb2.dd(name='2')
+        ],
+        method='GET'
+    )
+
+    data = b''
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000002
+    )
+
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    producer.send(topic="test_issue26643", value=data)
+
+    data = _VarintBytes(len(serialized_msg)) + serialized_msg
+    producer.send(topic="test_issue26643", value=data)
+    producer.flush()
+
+    instance.query('''
+        CREATE TABLE IF NOT EXISTS test.test_queue
+        (
+            `tnow` UInt32,
+            `server` String,
+            `client` String,
+            `sPort` UInt16,
+            `cPort` UInt16,
+            `r.name` Array(String),
+            `r.class` Array(UInt16),
+            `r.type` Array(UInt16),
+            `r.ttl` Array(UInt32),
+            `r.data` Array(String),
+            `method` String
+        )
+        ENGINE = Kafka
+        SETTINGS
+            kafka_broker_list = 'kafka1:19092',
+            kafka_topic_list = 'test_issue26643',
+            kafka_group_name = 'test_issue26643_group',
+            kafka_format = 'Protobuf',
+            kafka_schema = 'message_with_repeated.proto:Message',
+            kafka_num_consumers = 4,
+            kafka_skip_broken_messages = 10000;
+
+        SET allow_suspicious_low_cardinality_types=1; 
+
+        CREATE TABLE test.log
+        (
+            `tnow` DateTime('Asia/Istanbul') CODEC(DoubleDelta, LZ4),
+            `server` LowCardinality(String),
+            `client` LowCardinality(String),
+            `sPort` LowCardinality(UInt16),
+            `cPort` UInt16 CODEC(T64, LZ4),
+            `r.name` Array(String),
+            `r.class` Array(LowCardinality(UInt16)),
+            `r.type` Array(LowCardinality(UInt16)),
+            `r.ttl` Array(LowCardinality(UInt32)),
+            `r.data` Array(String),
+            `method` LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYYYYMMDD(tnow)
+        ORDER BY (tnow, server)
+        TTL toDate(tnow) + toIntervalMonth(1000)
+        SETTINGS index_granularity = 16384, merge_with_ttl_timeout = 7200;
+
+        CREATE MATERIALIZED VIEW test.test_consumer TO test.log AS
+        SELECT
+            toDateTime(a.tnow) AS tnow,
+            a.server AS server,
+            a.client AS client,
+            a.sPort AS sPort,
+            a.cPort AS cPort,
+            a.`r.name` AS `r.name`,
+            a.`r.class` AS `r.class`,
+            a.`r.type` AS `r.type`,
+            a.`r.ttl` AS `r.ttl`,
+            a.`r.data` AS `r.data`,
+            a.method AS method
+        FROM test.test_queue AS a;
+        ''')
+
+    instance.wait_for_log_line("Committed offset")
+    result = instance.query('SELECT * FROM test.log')
+
+    expected = '''\
+2021-08-15 07:00:00	server1		443	50000	['1','2']	[0,0]	[444,0]	[123123,0]	['adsfasd','']	GET
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]	
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
+'''
+    assert TSV(result) == TSV(expected)
+
+    # kafka_cluster.open_bash_shell('instance')
 
 
 if __name__ == '__main__':

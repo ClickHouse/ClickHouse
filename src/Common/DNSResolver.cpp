@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern Event DNSError;
+    extern const Event DNSError;
 }
 
 namespace std
@@ -272,7 +272,7 @@ bool DNSResolver::updateCacheImpl(UpdateF && update_func, ElemsT && elems, const
     }
 
     if (!lost_elems.empty())
-        LOG_INFO(log, log_msg, lost_elems);
+        LOG_INFO(log, fmt::runtime(log_msg), lost_elems);
 
     return updated;
 }

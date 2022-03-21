@@ -21,6 +21,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
@@ -447,6 +448,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzz(with_union->list_of_selects);
     }
+    else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
+    {
+        auto selects = with_intersect_except->getListOfSelects();
+        fuzz(selects);
+    }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
         fuzz(tables->children);
@@ -540,7 +546,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
  * small probability. Do this after we add this fuzzer to CI and fix all the
  * problems it can routinely find even in this boring version.
  */
-void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
 
@@ -563,7 +569,7 @@ void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addTableLike(const ASTPtr ast)
+void QueryFuzzer::addTableLike(ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
@@ -577,7 +583,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addColumnLike(const ASTPtr ast)
+void QueryFuzzer::addColumnLike(ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
@@ -600,7 +606,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {

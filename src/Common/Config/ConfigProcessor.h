@@ -59,7 +59,6 @@ public:
     /// 4) If zk_node_cache is non-NULL, replace elements matching the "<foo from_zk="/bar">" pattern with
     ///    "<foo>contents of the /bar ZooKeeper node</foo>".
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
-    /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
@@ -99,7 +98,6 @@ public:
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
 
-public:
     using Files = std::vector<std::string>;
 
     static Files getConfigMergeFiles(const std::string & config_path);
@@ -123,7 +121,6 @@ private:
     Poco::AutoPtr<Poco::XML::NamePool> name_pool;
     Poco::XML::DOMParser dom_parser;
 
-private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);

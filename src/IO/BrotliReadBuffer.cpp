@@ -39,7 +39,7 @@ BrotliReadBuffer::BrotliReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_s
         , in_data(nullptr)
         , out_capacity(0)
         , out_data(nullptr)
-        , eof(false)
+        , eof_flag(false)
 {
 }
 
@@ -47,34 +47,39 @@ BrotliReadBuffer::~BrotliReadBuffer() = default;
 
 bool BrotliReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_flag)
         return false;
 
-    if (!in_available)
+    do
     {
-        in->nextIfAtEnd();
-        in_available = in->buffer().end() - in->position();
-        in_data = reinterpret_cast<uint8_t *>(in->position());
+        if (!in_available)
+        {
+            in->nextIfAtEnd();
+            in_available = in->buffer().end() - in->position();
+            in_data = reinterpret_cast<uint8_t *>(in->position());
+        }
+
+        if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
+        {
+            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+        }
+
+        out_capacity = internal_buffer.size();
+        out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
+
+        brotli->result = BrotliDecoderDecompressStream(brotli->state, &in_available, &in_data, &out_capacity, &out_data, nullptr);
+
+        in->position() = in->buffer().end() - in_available;
     }
+    while (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && out_capacity == internal_buffer.size());
 
-    if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
-    {
-        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
-    }
-
-    out_capacity = internal_buffer.size();
-    out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
-
-    brotli->result = BrotliDecoderDecompressStream(brotli->state, &in_available, &in_data, &out_capacity, &out_data, nullptr);
-
-    in->position() = in->buffer().end() - in_available;
     working_buffer.resize(internal_buffer.size() - out_capacity);
 
     if (brotli->result == BROTLI_DECODER_RESULT_SUCCESS)
     {
         if (in->eof())
         {
-            eof = true;
+            eof_flag = true;
             return !working_buffer.empty();
         }
         else

@@ -82,17 +82,17 @@ createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & a
     const bool left_decimal = isDecimal(data_type);
     const bool right_decimal = isDecimal(data_type_weight);
 
+    /// We multiply value by weight, so actual scale of numerator is <scale of value> + <scale of weight>
     if (left_decimal && right_decimal)
         ptr.reset(create(*data_type, *data_type_weight,
             argument_types,
-            getDecimalScale(*data_type), getDecimalScale(*data_type_weight)));
+            getDecimalScale(*data_type) + getDecimalScale(*data_type_weight), getDecimalScale(*data_type_weight)));
     else if (left_decimal)
         ptr.reset(create(*data_type, *data_type_weight, argument_types,
             getDecimalScale(*data_type)));
     else if (right_decimal)
         ptr.reset(create(*data_type, *data_type_weight, argument_types,
-            // numerator is not decimal, so its scale is 0
-            0, getDecimalScale(*data_type_weight)));
+            getDecimalScale(*data_type_weight), getDecimalScale(*data_type_weight)));
     else
         ptr.reset(create(*data_type, *data_type_weight, argument_types));
 

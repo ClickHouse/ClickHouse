@@ -17,7 +17,9 @@
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
 #include "Disks/DiskRestartProxy.h"
-
+#include "Disks/DiskLocal.h"
+#include "Disks/RemoteDisksCommon.h"
+#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -154,6 +156,8 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
         getClient(config, config_prefix, context),
         config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
         config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
+        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor),
+        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold),
         config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
@@ -173,17 +177,23 @@ void registerDiskS3(DiskFactory & factory)
                       ContextPtr context,
                       const DisksMap & /*map*/) -> DiskPtr {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-        if (uri.key.back() != '/')
-            throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
-        String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
+        if (uri.key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
+
+        if (uri.key.back() != '/')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
+
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
+
+        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
-            metadata_path,
+            metadata_disk,
+            std::move(cache),
             context,
             getSettings(config, config_prefix, context),
             getSettings);
@@ -198,24 +208,19 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
-        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
-        if (cache_enabled)
+#ifdef NDEBUG
+        bool use_cache = true;
+#else
+        /// Current S3 cache implementation lead to allocations in destructor of
+        /// read buffer.
+        bool use_cache = false;
+#endif
+
+        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-
-            if (metadata_path == cache_path)
-                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
-
-            auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
-            auto cache_file_predicate = [] (const String & path)
-            {
-                return path.ends_with("idx") // index files.
-                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
-                       || path.ends_with("txt") || path.ends_with("dat");
-            };
-
-            s3disk = std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+            s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
         }
 
         return std::make_shared<DiskRestartProxy>(s3disk);

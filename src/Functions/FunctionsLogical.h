@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <type_traits>
+#include <Interpreters/Context_fwd.h>
 
 
 #if USE_EMBEDDED_COMPILER
@@ -147,7 +148,6 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
 
-public:
     String getName() const override
     {
         return name;
@@ -185,16 +185,16 @@ public:
         if constexpr (!Impl::isSaturable())
         {
             auto * result = nativeBoolCast(b, types[0], values[0]);
-            for (size_t i = 1; i < types.size(); i++)
+            for (size_t i = 1; i < types.size(); ++i)
                 result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
-        constexpr bool breakOnTrue = Impl::isSaturatedValue(true);
+        constexpr bool break_on_true = Impl::isSaturatedValue(true);
         auto * next = b.GetInsertBlock();
         auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
         b.SetInsertPoint(stop);
         auto * phi = b.CreatePHI(b.getInt8Ty(), values.size());
-        for (size_t i = 0; i < types.size(); i++)
+        for (size_t i = 0; i < types.size(); ++i)
         {
             b.SetInsertPoint(next);
             auto * value = values[i];
@@ -205,7 +205,7 @@ public:
             if (i + 1 < types.size())
             {
                 next = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
-                b.CreateCondBr(truth, breakOnTrue ? stop : next, breakOnTrue ? next : stop);
+                b.CreateCondBr(truth, break_on_true ? stop : next, break_on_true ? next : stop);
             }
         }
         b.CreateBr(stop);
@@ -223,7 +223,6 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryLogical>(); }
 
-public:
     String getName() const override
     {
         return name;

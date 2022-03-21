@@ -54,6 +54,9 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
+    /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
+    queue_size = std::max(queue_size, max_threads);
+    jobs.reserve(queue_size);
 }
 
 template <typename Thread>
@@ -320,7 +323,7 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -328,9 +331,7 @@ void GlobalThreadPool::initialize(size_t max_threads)
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads,
-        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
-        false /*shutdown_on_exception*/));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

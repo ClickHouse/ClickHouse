@@ -13,7 +13,7 @@ private:
     DataTypePtr dictionary_type;
 
 public:
-    DataTypeLowCardinality(DataTypePtr dictionary_type_);
+    explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
 
@@ -51,6 +51,8 @@ public:
     bool isNullable() const override { return false; }
     bool onlyNull() const override { return false; }
     bool lowCardinality() const override { return true; }
+    bool supportsSparseSerialization() const override { return false; }
+    bool isLowCardinalityNullable() const override { return dictionary_type->isNullable(); }
 
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);

@@ -6,6 +6,8 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <map>
+#include <string>
+#include <unordered_set>
 
 namespace Poco
 {
@@ -61,7 +63,6 @@ public:
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
-public:
     using SlotToShard = std::vector<UInt64>;
 
     struct Address
@@ -184,11 +185,12 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
+        size_t getRemoteNodeCount() const { return per_replica_pools.size() - local_addresses.size(); }
+        size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
 
-    public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
@@ -203,7 +205,6 @@ public:
 
     using ShardsInfo = std::vector<ShardInfo>;
 
-    String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
@@ -259,7 +260,6 @@ private:
     /// Inter-server secret
     String secret;
 
-    String hash_of_addresses;
     /// Description of the cluster shards.
     ShardsInfo shards_info;
     /// Any remote shard.
@@ -293,12 +293,15 @@ public:
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-public:
     using Impl = std::map<String, ClusterPtr>;
 
     Impl getContainer() const;
 
 protected:
+
+    /// setup outside of this class, stored to prevent deleting from impl on config update
+    std::unordered_set<std::string> automatic_clusters;
+
     Impl impl;
     mutable std::mutex mutex;
 };

@@ -66,4 +66,14 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
+You can also adjust connection timeout:
+
+``` sql
+CREATE TABLE mongo_table
+(
+    key UInt64,
+    data String
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
+```
+
 [Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

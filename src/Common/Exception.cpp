@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
 #include <Common/config_version.h>
@@ -175,7 +176,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// Poco::Logger::get can allocate memory too
     tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
@@ -188,7 +189,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }
@@ -206,8 +207,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
-        ReadableSize(fs.f_blocks * fs.f_bsize),
-        ReadableSize(fs.f_bavail * fs.f_bsize),
+        ReadableSize(fs.f_blocks * fs.f_frsize),
+        ReadableSize(fs.f_bavail * fs.f_frsize),
         formatReadableQuantity(fs.f_files),
         formatReadableQuantity(fs.f_favail),
         mount_point);
@@ -554,19 +555,19 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        if (line_number_ == -1)
-            formatted_message_ = message();
+        if (line_number == -1)
+            formatted_message = message();
         else
-            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
+            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
     }
     catch (...)
     {}
 
-    if (!formatted_message_.empty())
+    if (!formatted_message.empty())
     {
         std::string result = name();
         result.append(": ");
-        result.append(formatted_message_);
+        result.append(formatted_message);
         return result;
     }
     else

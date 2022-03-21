@@ -97,7 +97,7 @@ private:
     /** Calculates the slope of a line between leftmost and rightmost data points.
       * (y2 - y1) / (x2 - x1)
       */
-    Float64 NO_SANITIZE_UNDEFINED getBoundingRatio(const AggregateFunctionBoundingRatioData & data) const
+    static Float64 NO_SANITIZE_UNDEFINED getBoundingRatio(const AggregateFunctionBoundingRatioData & data)
     {
         if (data.empty)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -111,11 +111,11 @@ public:
         return "boundingRatio";
     }
 
-    AggregateFunctionBoundingRatio(const DataTypes & arguments)
+    explicit AggregateFunctionBoundingRatio(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {})
     {
-        const auto x_arg = arguments.at(0).get();
-        const auto y_arg = arguments.at(1).get();
+        const auto * x_arg = arguments.at(0).get();
+        const auto * y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
             throw Exception("Illegal types of arguments of aggregate function " + getName() + ", must have number representation.",
@@ -142,12 +142,12 @@ public:
         data(place).merge(data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         data(place).deserialize(buf);
     }

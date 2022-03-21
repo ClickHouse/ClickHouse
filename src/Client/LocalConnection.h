@@ -5,6 +5,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -29,12 +30,14 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
     std::unique_ptr<PushingPipelineExecutor> pushing_executor;
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
+    InternalProfileEventsQueuePtr profile_queue;
 
     std::optional<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
     std::optional<ColumnsDescription> columns_description;
+    std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
     bool is_cancelled = false;
@@ -43,24 +46,34 @@ struct LocalQueryState
     bool sent_totals = false;
     bool sent_extremes = false;
     bool sent_progress = false;
+    bool sent_profile_info = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
+    Stopwatch after_send_profile_events;
+
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 
 
 class LocalConnection : public IServerConnection, WithContext
 {
 public:
-    explicit LocalConnection(ContextPtr context_, bool send_progress_ = false);
+    explicit LocalConnection(
+        ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false, const String & server_display_name_ = "");
 
     ~LocalConnection() override;
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
 
-    static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
+    static ServerConnectionPtr createConnection(
+        const ConnectionParameters & connection_parameters,
+        ContextPtr current_context,
+        bool send_progress = false,
+        bool send_profile_events = false,
+        const String & server_display_name = "");
 
     void setDefaultDatabase(const String & database) override;
 
@@ -91,6 +104,8 @@ public:
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
+
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -125,12 +140,16 @@ private:
 
     void updateProgress(const Progress & value);
 
+    void getProfileEvents(Block & block);
+
     bool pollImpl();
 
     ContextMutablePtr query_context;
     Session session;
 
     bool send_progress;
+    bool send_profile_events;
+    String server_display_name;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
@@ -138,5 +157,9 @@ private:
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
+
+    String current_database;
+
+    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 };
 }

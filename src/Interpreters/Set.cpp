@@ -25,7 +25,9 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
+#include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
 
 namespace DB
 {
@@ -163,7 +165,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
@@ -177,7 +179,7 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
@@ -405,7 +407,7 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
-    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
+    ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
@@ -443,7 +445,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -466,7 +468,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index]);
+            data_types[indexes_mapping[i].key_index],
+            single_point);
 
         if (!new_range)
             return {true, true};

@@ -279,37 +279,33 @@ private:
             // That may lead later to reading unallocated data from underlying PaddedPODArray
             // due to assumption that it is safe to read up to 15 bytes past end.
             const auto pad_to_next_block = block_size == 1 ? 0 : 1;
-            for (size_t r = 0; r < input_rows_count; ++r)
+            for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                resulting_size += (input_column->getDataAt(r).size / block_size + pad_to_next_block) * block_size + 1;
+                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size + 1;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     resulting_size += tag_size;
             }
-#if defined(MEMORY_SANITIZER)
-            encrypted_result_column_data.resize_fill(resulting_size, 0xFF);
-#else
             encrypted_result_column_data.resize(resulting_size);
-#endif
         }
 
         auto * encrypted = encrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
 
-        for (size_t r = 0; r < input_rows_count; ++r)
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
+            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
             auto iv_value = StringRef{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(r);
+                iv_value = iv_column->getDataAt(row_idx);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.size == 0)
                     iv_value.data = nullptr;
             }
 
-            const StringRef input_value = input_column->getDataAt(r);
+            const StringRef input_value = input_column->getDataAt(row_idx);
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -348,7 +344,7 @@ private:
                     // 1.a.2 Set AAD
                     if (aad_column)
                     {
-                        const auto aad_data = aad_column->getDataAt(r);
+                        const auto aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
@@ -408,7 +404,7 @@ private:
 };
 
 
-/// AES_decrypt(string, key, block_mode[, init_vector])
+/// decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
 class FunctionDecrypt : public IFunction
 {
@@ -471,7 +467,9 @@ private:
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
+        {
             result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
+        }
         else
         {
             const auto iv_column = arguments[3].column;
@@ -548,59 +546,58 @@ private:
 
         {
             size_t resulting_size = 0;
-            for (size_t r = 0; r < input_rows_count; ++r)
+            for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                size_t string_size = input_column->getDataAt(r).size;
+                size_t string_size = input_column->getDataAt(row_idx).size;
                 resulting_size += string_size + 1;  /// With terminating zero.
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (string_size < tag_size)
-                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                            ErrorCodes::BAD_ARGUMENTS);
+                    if (string_size > 0)
+                    {
+                        if (string_size < tag_size)
+                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
+                                ErrorCodes::BAD_ARGUMENTS);
 
-                    resulting_size -= tag_size;
+                        resulting_size -= tag_size;
+                    }
                 }
             }
 
-#if defined(MEMORY_SANITIZER)
-            // Pre-fill result column with values to prevent MSAN from dropping dead on
-            // aes-X-ecb mode with "WARNING: MemorySanitizer: use-of-uninitialized-value".
-            // This is most likely to be caused by the underlying assembler implementation:
-            // see crypto/aes/aesni-x86_64.s, function aesni_ecb_encrypt
-            // which msan seems to fail instrument correctly.
-            decrypted_result_column_data.resize_fill(resulting_size, 0xFF);
-#else
             decrypted_result_column_data.resize(resulting_size);
-#endif
         }
 
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
-        for (size_t r = 0; r < input_rows_count; ++r)
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required
-            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
+            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
             auto iv_value = StringRef{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(r);
+                iv_value = iv_column->getDataAt(row_idx);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.size == 0)
                     iv_value.data = nullptr;
             }
 
-            auto input_value = input_column->getDataAt(r);
+            auto input_value = input_column->getDataAt(row_idx);
+
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
-                if (input_value.size < tag_size)
-                    throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
-                            "should contain at least {} bytes of a tag.",
-                            input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
-                input_value.size -= tag_size;
+                if (input_value.size > 0)
+                {
+                    // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
+                    if (input_value.size < tag_size)
+                        throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
+                                "should contain at least {} bytes of a tag.",
+                                input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+
+                    input_value.size -= tag_size;
+                }
             }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
@@ -619,8 +616,9 @@ private:
                 }
             }
 
-            // Avoid extra work on empty ciphertext/plaintext for some ciphers
-            if (!(input_value.size == 0 && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
+            /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
+            /// This makes sense for default implementation for NULLs.
+            if (input_value.size > 0)
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -641,7 +639,7 @@ private:
                     // 1.a.2: Set AAD if present
                     if (aad_column)
                     {
-                        StringRef aad_data = aad_column->getDataAt(r);
+                        StringRef aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)

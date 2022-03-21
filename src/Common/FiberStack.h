@@ -4,7 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-
+#include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
@@ -36,10 +36,10 @@ public:
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
-        page_size = ::sysconf(_SC_PAGESIZE);
+        page_size = getPageSize();
     }
 
-    boost::context::stack_context allocate()
+    boost::context::stack_context allocate() const
     {
         size_t num_pages = 1 + (stack_size - 1) / page_size;
         size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
@@ -68,7 +68,7 @@ public:
         return sctx;
     }
 
-    void deallocate(boost::context::stack_context & sctx)
+    void deallocate(boost::context::stack_context & sctx) const
     {
 #if defined(BOOST_USE_VALGRIND)
         VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);
