@@ -130,8 +130,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
     struct ErrorDetail
     {
-        std::string description;
         int code;
+        std::string description;
     };
 
     std::unordered_map<std::string, ErrorDetail> replica_name_to_error_detail;
@@ -168,14 +168,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
-                    auto [it, inserted] = replica_name_to_error_detail.emplace(pool->getDescription(), ErrorDetail{e.displayText(), e.code()});
-
-                    if (!inserted)
-                    {
-                        auto & error_detail = it->second;
-                        error_detail.description = e.displayText();
-                        error_detail.code = e.code();
-                    }
+                    replica_name_to_error_detail.insert_or_assign(pool->getDescription(), ErrorDetail{e.code(), e.displayText()});
 
                     continue;
                 }
@@ -201,11 +194,11 @@ PoolWithFailover::Entry PoolWithFailover::get()
         {
             message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();
 
-            auto error_detail_it = replica_name_to_error_detail.find(((*jt)->getDescription()));
-            if (error_detail_it != replica_name_to_error_detail.end())
+            if (auto error_detail_it = replica_name_to_error_detail.find(((*jt)->getDescription()));
+                error_detail_it != replica_name_to_error_detail.end())
             {
-                auto & error_detail = error_detail_it->second;
-                message << ", ERROR " << error_detail.code  << " : " << error_detail.description;
+                const auto & [code, description] = error_detail_it->second;
+                message << ", ERROR " << code  << " : " << description;
             }
         }
     }
