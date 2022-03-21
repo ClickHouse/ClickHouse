@@ -10,7 +10,7 @@ namespace DB
 class CachingTransform : public ISimpleTransform
 {
 public:
-    CachingTransform(const Block & header_, std::unordered_map<IAST::Hash, Data, ASTHash> & cache_, ASTPtr query_ptr_)
+    CachingTransform(const Block & header_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, ASTPtr query_ptr_)
         : ISimpleTransform(header_, header_, false)
         , cache(cache_)
         , query_ptr(query_ptr_)
@@ -21,7 +21,7 @@ public:
 protected:
     void transform(Chunk & chunk) override;
 private:
-    std::unordered_map<IAST::Hash, Data, ASTHash> & cache;
+    LRUCache<CacheKey, Data, CacheKeyHasher> & cache;
     ASTPtr query_ptr;
     Block header;
 };

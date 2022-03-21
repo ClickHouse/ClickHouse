@@ -105,7 +105,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-std::unordered_map<IAST::Hash, Data, ASTHash> InterpreterSelectQuery::cached_data;
+LRUCache<CacheKey, Data, CacheKeyHasher> InterpreterSelectQuery::cache{42};
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
@@ -594,10 +594,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    if (cached_data.contains(query_ptr->getTreeHash()))
+    if (auto query_result = cache.get({query_ptr, source_header}))
     {
-        auto &header= cached_data[query_ptr->getTreeHash()].first;
-        const auto &chunks = cached_data[query_ptr->getTreeHash()].second;
+        const auto &header= query_result->first;
+        const auto &chunks = query_result->second;
 
         Pipe pipe(std::make_shared<ReadFromCacheTransform>(header, chunks));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -607,7 +607,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     executeImpl(query_plan, std::move(input_pipe));
 
-    auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cached_data, query_ptr);
+    auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(), cache, query_ptr);
     caching_step->setStepDescription("Cache query result");
     query_plan.addStep(std::move(caching_step));
 
@@ -2639,20 +2639,8 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
-Chunk InterpreterSelectQuery::create_single_cache_chunk_from_many(IAST::Hash ASTHash)
+Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
 {
-    std::vector<ColumnPtr> columns;
-    UInt64 num_rows = 0;
-    for (auto& c : cached_data[ASTHash].second) {
-        num_rows = c.getNumRows();
-        auto cols = c.detachColumns();
-        columns.insert(columns.end(), cols.begin(), cols.end());
-    }
-
-    auto result = Chunk(columns, num_rows);
-    cached_data[ASTHash].second.clear();
-    cached_data[ASTHash].second.push_back(result.clone());
-    return result;
+    return Chunk{};
 }
-
 }

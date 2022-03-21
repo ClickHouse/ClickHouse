@@ -29,9 +29,9 @@ void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     });
 }
 
-CachingStep::CachingStep(const DataStream & input_stream_, std::unordered_map<IAST::Hash, Data, ASTHash> & cached_results, ASTPtr query_ptr_)
+CachingStep::CachingStep(const DataStream & input_stream_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, ASTPtr query_ptr_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    , cache(cached_results)
+    , cache(cache_)
     , query_ptr(query_ptr_)
 {}
 

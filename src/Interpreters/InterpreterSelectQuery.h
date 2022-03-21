@@ -34,11 +34,16 @@ struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 using Data = std::pair<Block, Chunks>;
 
-struct ASTHash
-{
-    size_t operator() (const IAST::Hash & hash) const
+struct CacheKey {
+    ASTPtr ast;
+    Block header;
+};
+struct CacheKeyHasher {
+    size_t operator()(const CacheKey & k) const
     {
-        return hash.first * 7919 + hash.second;
+        auto ast_info = k.ast->getTreeHash();
+        auto header_info = k.header.getNamesAndTypesList().toString();
+        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273;
     }
 };
 
@@ -165,7 +170,7 @@ private:
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
-    Chunk create_single_cache_chunk_from_many(IAST::Hash ASTHash);
+    Chunk to_single_chunk(const Chunks& chunks);
 
     enum class Modificator
     {
@@ -220,7 +225,7 @@ private:
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSets prepared_sets;
 
-    static std::unordered_map<IAST::Hash, Data, ASTHash> cached_data;
+    static LRUCache<CacheKey, Data, CacheKeyHasher> cache;
 };
 
 }
