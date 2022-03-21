@@ -82,8 +82,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
         write_int(tcp_port_secure);
     }
 
-    writeText("four_letter_word_white_list=", buf);
-    writeText(four_letter_word_white_list, buf);
+    writeText("four_letter_word_allow_list=", buf);
+    writeText(four_letter_word_allow_list, buf);
     buf.write('\n');
 
     writeText("log_storage_path=", buf);
@@ -177,7 +177,11 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
         ret->super_digest = config.getString("keeper_server.superdigest");
     }
 
-    ret->four_letter_word_white_list = config.getString("keeper_server.four_letter_word_white_list", DEFAULT_FOUR_LETTER_WORD_CMD);
+    ret->four_letter_word_allow_list = config.getString(
+        "keeper_server.four_letter_word_allow_list",
+        config.getString("keeper_server.four_letter_word_white_list",
+                         DEFAULT_FOUR_LETTER_WORD_CMD));
+
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);

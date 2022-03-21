@@ -11,9 +11,10 @@ SELECT * FROM t_ephemeral_02205_1;
 
 TRUNCATE TABLE t_ephemeral_02205_1;
 
-# Attempt to use ephemeral through default of ordinary column should end up with error 10 -
-# ephemeral only considered when explicitly mentioned in the columns list
-INSERT INTO t_ephemeral_02205_1 VALUES (DEFAULT, 2); -- { clientError 10 }
+INSERT INTO t_ephemeral_02205_1 VALUES (DEFAULT, 2);
+SELECT * FROM t_ephemeral_02205_1;
+
+TRUNCATE TABLE t_ephemeral_02205_1;
 
 # Test INSERT using ephemerals default
 INSERT INTO t_ephemeral_02205_1 (x, y) VALUES (DEFAULT, DEFAULT);
