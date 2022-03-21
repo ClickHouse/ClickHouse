@@ -11,6 +11,14 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
+static Block originalRightBlock(const Block & block, const TableJoin & table_join)
+{
+    Block original_right_block;
+    for (const auto & col : block)
+        original_right_block.insert({col.column, col.type, table_join.getOriginalName(col.name)});
+    return original_right_block;
+}
+
 void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
 {
     if (!table_join->oneDisjunct()
@@ -18,6 +26,13 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         || table_join->getOnlyClause().key_names_right.size() != 1)
     {
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
+    }
+
+    if (table_join->strictness() != ASTTableJoin::Strictness::All &&
+        table_join->strictness() != ASTTableJoin::Strictness::Any &&
+        table_join->strictness() != ASTTableJoin::Strictness::RightAny)
+    {
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported by direct JOIN");
     }
 
     const auto & key_names_left = table_join->getOnlyClause().key_names_left;
@@ -28,7 +43,8 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         return;
 
     NullMap null_map(key_col.column->size(), 1);
-    Chunk joined_chunk = storage->getByKeys(key_col, right_sample_block, &null_map);
+    Block original_right_block = originalRightBlock(right_sample_block, *table_join);
+    Chunk joined_chunk = storage->getByKeys(key_col, original_right_block, &null_map);
 
     Columns cols = joined_chunk.detachColumns();
     for (size_t i = 0; i < cols.size(); ++i)

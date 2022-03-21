@@ -57,7 +57,7 @@ public:
     struct JoinOnClause
     {
         Names key_names_left;
-        Names key_names_right; /// Duplicating right key names are qualified.
+        Names key_names_right; /// Duplicating right key names are qualified
 
         ASTPtr on_filter_condition_left;
         ASTPtr on_filter_condition_right;
@@ -252,6 +252,7 @@ public:
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
+    String getOriginalName(const String & column_name) const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 

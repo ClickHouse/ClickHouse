@@ -190,14 +190,22 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
     columns_from_joined_table.swap(dedup_columns);
 }
 
+String TableJoin::getOriginalName(const String & column_name) const
+{
+    auto it = original_names.find(column_name);
+    if (it != original_names.end())
+        return it->second;
+    return column_name;
+}
+
 NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
-    for (const auto & column : required_columns)
+    out.reserve(required_columns.size());
+    for (const auto & name : required_columns)
     {
-        auto it = original_names.find(column);
-        if (it != original_names.end())
-            out.emplace_back(it->second, it->first); /// {original_name, name}
+        auto original_name = getOriginalName(name);
+        out.emplace_back(original_name, name);
     }
     return out;
 }

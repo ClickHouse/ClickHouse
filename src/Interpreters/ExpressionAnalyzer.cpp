@@ -1099,12 +1099,12 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 {
     /// Actions which need to be calculated on joined block.
     auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
-    Names original_right_columns;
-
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+
+    Names original_right_column_names;
     for (auto & pr : required_columns_with_aliases)
-        original_right_columns.push_back(pr.first);
+        original_right_column_names.push_back(pr.first);
 
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
@@ -1115,18 +1115,18 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     auto interpreter = interpretSubquery(
         join_element.table_expression,
         context,
-        original_right_columns,
+        original_right_column_names,
         query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
-        auto sample_block = interpreter->getSampleBlock();
-        auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
+        Block original_right_columns = interpreter->getSampleBlock();
+        auto rename_dag = std::make_unique<ActionsDAG>(original_right_columns.getColumnsWithTypeAndName());
         for (const auto & name_with_alias : required_columns_with_aliases)
         {
-            if (sample_block.has(name_with_alias.first))
+            if (name_with_alias.first != name_with_alias.second && original_right_columns.has(name_with_alias.first))
             {
-                auto pos = sample_block.getPositionByName(name_with_alias.first);
+                auto pos = original_right_columns.getPositionByName(name_with_alias.first);
                 const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
                 rename_dag->getIndex()[pos] = &alias;
             }
@@ -1163,7 +1163,9 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     if (!isInnerOrLeft(analyzed_join->kind()))
         return error_or_null("illegal kind");
 
-    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All)
+    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All &&
+        analyzed_join->strictness() != ASTTableJoin::Strictness::Any &&
+        analyzed_join->strictness() != ASTTableJoin::Strictness::RightAny)
         return error_or_null("illegal strictness");
 
     const auto & clauses = analyzed_join->getClauses();
@@ -1176,8 +1178,13 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     if (!only_one_key)
         return error_or_null("multiple keys is not allowed");
 
-    if (storage->getPrimaryKey() != clauses[0].key_names_right[0])
-        return error_or_null("key doesn't match storage");
+    String key_name = clauses[0].key_names_right[0];
+    String original_key_name = analyzed_join->getOriginalName(key_name);
+    if (storage->getPrimaryKey() != original_key_name)
+    {
+        return error_or_null(fmt::format("key '{}'{} doesn't match storage '{}'",
+            key_name, (key_name != original_key_name ? " (aka '" + original_key_name + "')" : ""), storage->getPrimaryKey()));
+    }
 
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
 }
