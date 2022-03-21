@@ -250,7 +250,7 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
         if (has_value)
         {
             readEscapedString(value, in);
-            names_and_types[name] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
+            names_and_types[std::move(name)] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
         }
         else
         {
