@@ -25,7 +25,7 @@ public:
     UInt64 getPriority() override { return priority; }
 
 private:
-    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
