@@ -20,21 +20,18 @@ namespace
     class FiltersMixer
     {
     public:
-        void add(const ASTPtr & filter, RowPolicyKind kind)
+        void add(const ASTPtr & filter, bool is_restrictive)
         {
-            if (kind == RowPolicyKind::PERMISSIVE)
-                permissions.push_back(filter);
-            else if ((kind == RowPolicyKind::RESTRICTIVE) || (kind == RowPolicyKind::SIMPLE))
+            if (is_restrictive)
                 restrictions.push_back(filter);
-            if ((kind == RowPolicyKind::PERMISSIVE) || (kind == RowPolicyKind::RESTRICTIVE))
-                setUsePermissiveFilters(true);
+            else
+                permissions.push_back(filter);
         }
 
         ASTPtr getResult() &&
         {
             /// Process permissive filters.
-            if (use_permissive_filters)
-                restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
+            restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
 
             /// Process restrictive filters.
             auto result = makeASTForLogicalAnd(std::move(restrictions));
@@ -46,17 +43,9 @@ namespace
             return result;
         }
 
-        /// If permissive filters are enabled then but no filters have been added then getResult() returns zero (i.e. no rows allowed).
-        /// It can happen if permissive or restrictive row policies have been added for some other users.
-        /// For example if the following is an only row policy for table1:
-        /// CREATE ROW POLICY policy1 ON table1 USING id=1 AS permissive TO user1
-        /// then user1 will see rows with id=1 and user2 will see no rows at all.
-        void setUsePermissiveFilters(bool use_permissive_filters_) { use_permissive_filters = use_permissive_filters_; }
-
     private:
         ASTs permissions;
         ASTs restrictions;
-        bool use_permissive_filters = false;
     };
 }
 
@@ -234,10 +223,8 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
                 key.filter_type = filter_type;
                 auto & mixer = mixers[key];
                 mixer.database_and_table_name = info.database_and_table_name;
-                if ((policy.getKind() == RowPolicyKind::PERMISSIVE) || (policy.getKind() == RowPolicyKind::RESTRICTIVE))
-                    mixer.mixer.setUsePermissiveFilters(true);
                 if (match)
-                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.getKind());
+                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
             }
         }
     }
