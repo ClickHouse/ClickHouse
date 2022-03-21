@@ -324,7 +324,10 @@ DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & 
     {
         const auto& measure = rel.measures(i);
         DB::AggregateDescription agg;
-        auto function_name = this->function_mapping.at(std::to_string(measure.measure().function_reference()));
+        auto function_signature = this->function_mapping.at(std::to_string(measure.measure().function_reference()));
+        auto function_name_idx = function_signature.find(":");
+        assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
+        auto function_name = function_signature.substr(0, function_name_idx);
         agg.column_name = function_name +"(" + measure_names.at(i) + ")";
         agg.arguments = DB::ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
         agg.argument_names = DB::Names{measure_names.at(i)};
@@ -391,7 +394,10 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
             args.emplace_back(parseArgument(actions_dag, arg));
         }
     }
-    auto function_name = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
+    auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
+    auto function_name_idx = function_signature.find(":");
+    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
+    auto function_name = function_signature.substr(0, function_name_idx);
     assert(SCALAR_FUNCTIONS.contains(function_name) && ("doesn't support function " + function_name).c_str());
     auto function_builder = DB::FunctionFactory::instance().get(SCALAR_FUNCTIONS.at(function_name), this->context);
     std::string args_name;

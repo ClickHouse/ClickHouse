@@ -61,15 +61,16 @@ using namespace DB;
 
 
 static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
-    {"IS_NOT_NULL","isNotNull"},
-    {"GREATER_THAN_OR_EQUAL","greaterOrEquals"},
-    {"AND", "and"},
-    {"LESS_THAN_OR_EQUAL", "lessOrEquals"},
-    {"LESS_THAN", "less"},
-    {"MULTIPLY", "multiply"},
-    {"SUM", "sum"},
+    {"is_not_null","isNotNull"},
+    {"gte","greaterOrEquals"},
+    {"gt", "greater"},
+    {"and", "and"},
+    {"lte", "lessOrEquals"},
+    {"lt", "less"},
+    {"multiply", "multiply"},
+    {"sum", "sum"},
     {"TO_DATE", "toDate"},
-    {"EQUAL_TO", "equals"}
+    {"equal", "equals"}
 };
 
 struct QueryContext {
