@@ -16,20 +16,27 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
-
-from cassandra.policies import RoundRobinPolicy
-import cassandra.cluster
-import psycopg2
-import pymongo
-import pymysql
 import requests
-from confluent_kafka.avro.cached_schema_registry_client import \
-    CachedSchemaRegistryClient
+
+try:
+    # Please, add modules that required for specific tests only here.
+    # So contributors will be able to run most tests locally
+    # without installing tons of unneeded packages that may be not so easy to install.
+    from cassandra.policies import RoundRobinPolicy
+    import cassandra.cluster
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    import pymongo
+    import pymysql
+    from confluent_kafka.avro.cached_schema_registry_client import \
+        CachedSchemaRegistryClient
+except Exception as e:
+    logging.warning(f"Cannot import some modules, some tests may not work:{e}")
+
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
