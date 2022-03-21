@@ -1977,10 +1977,11 @@ void ClientBase::readArguments(
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
         }
-        /// Options with value after equal sign.
+        /// Options with value after equal sign. It means startsWith.
         else if (in_external_group
-            && (arg == "--file="sv || arg == "--name="sv || arg == "--format="sv
-                || arg == "--structure="sv || arg == "--types="sv))
+            && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
+                || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
+                || 0 == strncmp(arg, "--types=", strlen("--types="))))
         {
             external_tables_arguments.back().emplace_back(arg);
         }
