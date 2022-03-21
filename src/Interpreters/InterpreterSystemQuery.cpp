@@ -303,8 +303,8 @@ BlockIO InterpreterSystemQuery::execute()
             if (query.remote_filesystem_cache_path.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache] : caches)
-                    cache->tryRemoveAll();
+                for (const auto & [_, cache_data] : caches)
+                    cache_data.cache->tryRemoveAll();
             }
             else
             {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FileCache_fwd.h>
+#include <Common/FileCacheSettings.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -14,7 +15,15 @@ namespace DB
  */
 class FileCacheFactory final : private boost::noncopyable
 {
-    using CacheByBasePath = std::unordered_map<std::string, FileCachePtr>;
+    struct CacheData
+    {
+        FileCachePtr cache;
+        FileCacheSettings settings;
+
+        CacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
+    };
+
+    using CacheByBasePath = std::unordered_map<std::string, CacheData>;
 
 public:
     static FileCacheFactory & instance();
@@ -25,8 +34,10 @@ public:
 
     CacheByBasePath getAll();
 
+    const FileCacheSettings & getSettings(const std::string & cache_base_path);
+
 private:
-    FileCachePtr getImpl(const std::string & cache_base_path, std::lock_guard<std::mutex> &);
+    CacheData * getImpl(const std::string & cache_base_path, std::lock_guard<std::mutex> &);
 
     std::mutex mutex;
     CacheByBasePath caches;

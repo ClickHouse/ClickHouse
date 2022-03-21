@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Common/FileCache_fwd.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; }}

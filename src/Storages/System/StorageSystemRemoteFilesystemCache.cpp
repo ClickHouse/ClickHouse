@@ -31,9 +31,11 @@ void StorageSystemRemoteFilesystemCache::fillData(MutableColumns & res_columns, 
 {
     auto caches = FileCacheFactory::instance().getAll();
 
-    for (const auto & [cache_base_path, cache] : caches)
+    for (const auto & [cache_base_path, cache_data] : caches)
     {
+        auto & cache = cache_data.cache;
         auto holder = cache->getAll();
+
         for (const auto & file_segment : holder.file_segments)
         {
             res_columns[0]->insert(cache_base_path);

@@ -18,6 +18,7 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
@@ -290,6 +291,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         });
     };
 
+    bool cache_on_insert = write_settings.remote_fs_cache_on_insert || FileCacheFactory::instance().getSettings(getCachePath()).cache_on_insert;
+
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
@@ -299,7 +302,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size, std::move(schedule), write_settings.remote_fs_cache_on_insert ? cache : nullptr);
+        buf_size, std::move(schedule), cache_on_insert ? cache : nullptr);
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {

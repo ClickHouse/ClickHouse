@@ -92,13 +92,6 @@ void WriteBufferFromS3::nextImpl()
 
     if (cacheEnabled())
     {
-        std::cerr << "\n\n\n\n\n\n\nCache is enabled!\n\n\n\n\n";
-
-        /// Use max_single_part_upload_size as file segment size. Space reservation is incremental,
-        /// so this size does not really mean anything apart from the final file segment size limit.
-        /// If single part is uploaded with the smaller size, just resize file segment.
-
-        // size_t max_file_segment_size = max_single_part_upload_size;
         auto cache_key = cache->hash(key);
 
         auto file_segments_holder = cache->setDownloading(cache_key, current_download_offset, size);
@@ -117,7 +110,6 @@ void WriteBufferFromS3::nextImpl()
             }
             else
             {
-                /// TODO: add try catch, add complete()
                 break;
             }
         }
