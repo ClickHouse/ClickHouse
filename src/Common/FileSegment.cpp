@@ -380,6 +380,18 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
     if (download_state != State::DOWNLOADED && getDownloadedSize(segment_lock) == range().size())
         setDownloaded(segment_lock);
 
+    if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
+    {
+        /// Segment state can be changed from DOWNLOADING or EMPTY only if the caller is the
+        /// downloader or the only owner of the segment.
+
+        bool can_update_segment_state = downloader_id == getCallerIdImpl(true)
+            || cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+
+        if (can_update_segment_state)
+            download_state = State::PARTIALLY_DOWNLOADED;
+    }
+
     try
     {
         completeImpl(cache_lock, segment_lock, /* allow_non_strict_checking */true);
@@ -446,7 +458,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
         remote_file_reader.reset();
     }
 
-    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
+    assertCorrectnessImpl(segment_lock);
 }
 
 String FileSegment::getInfoForLog() const
@@ -484,6 +496,19 @@ String FileSegment::stateToString(FileSegment::State state)
         case FileSegment::State::SKIP_CACHE:
             return "SKIP_CACHE";
     }
+}
+
+void FileSegment::assertCorrectness() const
+{
+    std::lock_guard segment_lock(mutex);
+    assertCorrectnessImpl(segment_lock);
+}
+
+void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment_lock */) const
+{
+    assert(downloader_id.empty() == (download_state != FileSegment::State::DOWNLOADING));
+    assert(!downloader_id.empty() == (download_state == FileSegment::State::DOWNLOADING));
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
