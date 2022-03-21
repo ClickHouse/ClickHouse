@@ -56,7 +56,7 @@ public:
             bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-            const WriteSettings & write_settings = {});
+            const WriteSettings & settings = {});
 
     void finalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,

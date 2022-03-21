@@ -167,7 +167,11 @@ DiskCacheWrapper::readFile(
                 auto tmp_path = path + ".tmp";
                 {
                     auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
-                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
+
+                    WriteSettings write_settings;
+                    write_settings.remote_fs_cache_on_insert = false;
+
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite, write_settings);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
@@ -196,10 +200,13 @@ DiskCacheWrapper::readFile(
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
+DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::writeFile(path, buf_size, mode);
+        return DiskDecorator::writeFile(path, buf_size, mode, settings);
+
+    WriteSettings current_settings = settings;
+    current_settings.remote_fs_cache_on_insert = false;
 
     LOG_TEST(log, "Write file {} to cache", backQuote(path));
 
@@ -208,15 +215,15 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         cache_disk->createDirectories(dir_path);
 
     return std::make_unique<WritingToCacheWriteBuffer>(
-        cache_disk->writeFile(path, buf_size, mode),
+        cache_disk->writeFile(path, buf_size, mode, current_settings),
         [this, path]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
             return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
         },
-        [this, path, buf_size, mode]()
+        [this, path, buf_size, mode, current_settings]()
         {
-            return DiskDecorator::writeFile(path, buf_size, mode);
+            return DiskDecorator::writeFile(path, buf_size, mode, current_settings);
         });
 }
 
