@@ -25,7 +25,7 @@ public:
         return answer;
     }
 
-    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, [[maybe_unused]] Arena* arena) const override {
+    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, [[maybe_unused]] Arena* arena) const {
         const auto& graph = this->data(place).graph;
         if (graph.size() < 2) {
             return 0;

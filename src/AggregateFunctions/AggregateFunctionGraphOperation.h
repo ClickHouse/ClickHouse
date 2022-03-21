@@ -111,32 +111,34 @@ public:
     String getName() const final { return OpType::name; }
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const final
     {
         this->data(place).add(columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const final
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const final
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const final
     {
         this->data(place).deserialize(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const final
     {
         assert_cast<ColumnVector<UInt64>&>(to).getData().push_back(calculateOperation(place, arena));
     }
 
-    virtual UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const = 0;
+    decltype(auto) calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const {
+      return static_cast<const OpType&>(*this).calculateOperation(std::move(place), arena);
+    }
 
     bool allocatesMemoryInArena() const final { return true; }
 };
