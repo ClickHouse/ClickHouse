@@ -33,3 +33,9 @@ Values
 1	world	3	2019-07-23	[1,2,3]	('tuple',3.14)
 2	Hello	123	2019-06-19	[]	('test',2.71828)
 3	Hello	42	2019-06-19	[1,2,3]	('default',0.75)
+default_by_other_column
+1	2	('tuple',3)
+10	10	('default',2.5)
+100	100	('default',25)
+100	100	('default',25)
+100	100	('default',25)
