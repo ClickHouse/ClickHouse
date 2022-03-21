@@ -2647,7 +2647,7 @@ Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
     }
     auto result_columns = chunks[0].clone().mutateColumns();
     for (const auto & chunk : result_columns | std::views::drop(1)) {
-        auto columns = chunks[chunk].getColumns();
+        auto columns = chunk.getColumns();
         for (size_t i = 0; i != columns.size(); ++i) {
             result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
         }
