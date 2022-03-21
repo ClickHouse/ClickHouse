@@ -1,16 +1,31 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
+#include <Backups/BackupInfo.h>
+#include <optional>
 
 
 namespace DB
 {
+class ASTBackupQuery;
 
-#define LIST_OF_BACKUP_SETTINGS(M) \
-    M(Bool, dummy, false, "", 0) \
+/// Settings specified in the "SETTINGS" clause of a BACKUP query.
+struct BackupSettings
+{
+    /// Base backup, if it's set an incremental backup will be built.
+    std::optional<BackupInfo> base_backup_info;
 
-DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(BackupSettingsTraits, LIST_OF_BACKUP_SETTINGS)
+    /// Compression method and level for writing the backup (when applicable).
+    String compression_method; /// "" means default method
+    int compression_level = -1; /// -1 means default level
 
-struct BackupSettings : public BaseSettings<BackupSettingsTraits> {};
+    /// Password used to encrypt the backup.
+    String password;
+
+    /// If this is set to true then only create queries will be written to backup,
+    /// without the data of tables.
+    bool structure_only = false;
+
+    static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
+};
 
 }
