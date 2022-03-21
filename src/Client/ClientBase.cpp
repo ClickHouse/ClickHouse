@@ -1970,25 +1970,23 @@ void ClientBase::readArguments(
 
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
-        const char * arg = argv[arg_num];
+        std::string_view arg = argv[arg_num];
 
-        if (arg == "--external"sv)
+        if (arg == "--external")
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
         }
-        /// Options with value after equal sign. It means startsWith.
-        else if (in_external_group
-            && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
-                || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
-                || 0 == strncmp(arg, "--types=", strlen("--types="))))
+        /// Options with value after equal sign.
+        else if (
+            in_external_group
+            && (arg.starts_with("--file=") || arg.starts_with("--name=") || arg.starts_with("--format=") || arg.starts_with("--structure=")
+                || arg.starts_with("--types=")))
         {
             external_tables_arguments.back().emplace_back(arg);
         }
         /// Options with value after whitespace.
-        else if (in_external_group
-            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
-                || arg == "--structure"sv || arg == "--types"sv))
+        else if (in_external_group && (arg == "--file" || arg == "--name" || arg == "--format" || arg == "--structure" || arg == "--types"))
         {
             if (arg_num + 1 < argc)
             {
@@ -2005,20 +2003,12 @@ void ClientBase::readArguments(
             in_external_group = false;
 
             /// Parameter arg after underline.
-            if (startsWith(arg, "--param_"))
+            if (arg.starts_with("--param_"))
             {
-                const char * param_continuation = arg + strlen("--param_");
-                const char * equal_pos = strchr(param_continuation, '=');
+                auto param_continuation = arg.substr(strlen("--param_"));
+                auto equal_pos = param_continuation.find_first_of('=');
 
-                if (equal_pos == param_continuation)
-                    throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-                if (equal_pos)
-                {
-                    /// param_name=value
-                    query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
-                }
-                else
+                if (equal_pos == std::string::npos)
                 {
                     /// param_name value
                     ++arg_num;
@@ -2027,12 +2017,20 @@ void ClientBase::readArguments(
                     arg = argv[arg_num];
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
+                else
+                {
+                    if (equal_pos == 0)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    /// param_name=value
+                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+                }
             }
-            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
+            else if (arg.starts_with("--host") || arg.starts_with("-h"))
             {
                 std::string host_arg;
                 /// --host host
-                if (arg == "--host"sv || arg == "-h"sv)
+                if (arg == "--host" || arg == "-h")
                 {
                     ++arg_num;
                     if (arg_num >= argc)
@@ -2059,11 +2057,11 @@ void ClientBase::readArguments(
                     prev_host_arg = host_arg;
                 }
             }
-            else if (startsWith(arg, "--port"))
+            else if (arg.starts_with("--port"))
             {
-                std::string port_arg = arg;
+                auto port_arg = String{arg};
                 /// --port port
-                if (arg == "--port"sv)
+                if (arg == "--port")
                 {
                     port_arg.push_back('=');
                     ++arg_num;
@@ -2088,7 +2086,7 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
-            else if (arg == "--allow_repeated_settings"sv)
+            else if (arg == "--allow_repeated_settings")
                 allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
