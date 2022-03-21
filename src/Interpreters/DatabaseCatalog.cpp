@@ -53,6 +53,34 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
+class DatabaseNameHints : public IHints<1, DatabaseNameHints>
+{
+public:
+    DatabaseNameHints(const DatabaseCatalog & database_catalog_)
+        : database_catalog(database_catalog_)
+    {
+    }
+private:
+    Names getAllRegisteredNames() const override;
+    const DatabaseCatalog & database_catalog;
+};
+
+class TableNameHints : public IHints<1, TableNameHints>
+{
+public:
+    TableNameHints(const DatabaseCatalog & database_catalog_, ContextPtr context_, const String & database_name_)
+        : database_catalog(database_catalog_)
+        , context(context_)
+        , database_name(database_name_)
+    {
+    }
+private:
+    Names getAllRegisteredNames() const override;
+    const DatabaseCatalog & database_catalog;
+    ContextPtr context;
+    String database_name;
+};
+
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
@@ -233,7 +261,26 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
-                exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+            {
+                String exception_message;
+                if (!db_and_table.first)
+                {
+                    DatabaseNameHints hints(*this);
+                    auto names = hints.getHints(table_id.getDatabaseName());
+                    exception_message = fmt::format("Database {} doesn't exist. Maybe you meant: {}", table_id.getDatabaseName(), toString(names));
+                }
+                else
+                {
+                    TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+                    auto names = hints.getHints(table_id.getTableName());
+                    Names names_with_prefix;
+                    std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
+                        return fmt::format("{}.{}", table_id.getDatabaseName(), e);
+                    });
+                    exception_message = fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix));
+                }
+                exception->emplace(exception_message, ErrorCodes::UNKNOWN_TABLE);
+            }
             return {};
         }
 
@@ -274,7 +321,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (databases.end() == it)
         {
             if (exception)
-                exception->emplace(fmt::format("Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())), ErrorCodes::UNKNOWN_DATABASE);
+            {
+                TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+                auto names = hints.getHints(table_id.getTableName());
+                Names names_with_prefix;
+                std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
+                    return fmt::format("{}.{}", table_id.getDatabaseName(), e);
+                });
+                exception->emplace(fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix)), ErrorCodes::UNKNOWN_TABLE);
+            }
             return {};
         }
         database = it->second;
@@ -282,7 +337,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-            exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+    {
+        TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+        auto names = hints.getHints(table_id.getTableName());
+        Names names_with_prefix;
+        std::transform(names.begin(), names.end(), std::back_inserter(names_with_prefix), [&table_id] (const auto & e) {
+            return fmt::format("{}.{}", table_id.getDatabaseName(), e);
+        });
+        exception->emplace(fmt::format("Table {} doesn't exist. Maybe you meant: {}", table_id.getNameForLogs(), toString(names_with_prefix)), ErrorCodes::UNKNOWN_TABLE);
+    }
     if (!table)
         database = nullptr;
 
@@ -305,7 +368,14 @@ void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name)
 {
     assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+    {
+        Names prompting_names;
+        auto getter = [] (const auto & e) { return e.first; };
+        std::transform(databases.begin(), databases.end(), std::back_inserter(prompting_names), getter);
+        DatabaseNameHints hints(*this);
+        auto names = hints.getHints(database_name, prompting_names);
+        throw Exception(fmt::format("Database {} doesn't exist. Maybe you meant: {}", backQuoteIfNeed(database_name), toString(names)), ErrorCodes::UNKNOWN_DATABASE);
+    }
 }
 
 
