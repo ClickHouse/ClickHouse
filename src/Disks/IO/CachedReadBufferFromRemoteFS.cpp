@@ -167,6 +167,24 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             }
             case FileSegment::State::DOWNLOADING:
             {
+                size_t download_offset = file_segment->getDownloadOffset();
+                bool can_start_from_cache = download_offset > file_offset_of_buffer_end;
+
+                /// If file segment is being downloaded but we can already read from already downloaded part, do that.
+                if (can_start_from_cache)
+                {
+                    ///                      segment{k} state: DOWNLOADING
+                    /// cache:           [______|___________
+                    ///                         ^
+                    ///                         download_offset (in progress)
+                    /// requested_range:    [__________]
+                    ///                     ^
+                    ///                     file_offset_of_buffer_end
+
+                    read_type = ReadType::CACHED;
+                    return getCacheReadBuffer(range.left);
+                }
+
                 if (wait_download_tries++ < wait_download_max_tries)
                 {
                     download_state = file_segment->wait();
@@ -476,6 +494,7 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
         auto download_offset = file_segment->getDownloadOffset();
         if (download_offset == file_offset_of_buffer_end)
         {
+            /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
             implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
             return true;

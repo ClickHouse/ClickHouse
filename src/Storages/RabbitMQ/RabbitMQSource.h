@@ -14,7 +14,7 @@ class RabbitMQSource : public SourceWithProgress
 public:
     RabbitMQSource(
             StorageRabbitMQ & storage_,
-            const StorageMetadataPtr & metadata_snapshot_,
+            const StorageSnapshotPtr & storage_snapshot_,
             ContextPtr context_,
             const Names & columns,
             size_t max_block_size_,
@@ -34,7 +34,7 @@ public:
 
 private:
     StorageRabbitMQ & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
@@ -48,7 +48,7 @@ private:
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         std::pair<Block, Block> headers,
         ContextPtr context_,
         const Names & columns,
