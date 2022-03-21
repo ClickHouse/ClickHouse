@@ -698,7 +698,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         }
 
         /// - If last file segment was read from remote fs, then we read up to segment->range().right, but
-        /// the requested right boundary cound be segment->range().left < requested_right_boundary <  segment->range().right.
+        /// the requested right boundary could be segment->range().left < requested_right_boundary <  segment->range().right.
         /// Therefore need to resize to a smaller size. And resize must be done after write into cache.
         /// - If last file segment was read from local fs, then we could read more than file_segemnt->range().right, so resize is also needed.
         if (std::next(current_file_segment_it) == file_segments_holder->file_segments.end())
