@@ -25,7 +25,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         bool import_nested_,
-        bool allow_missing_columns_);
+        bool allow_missing_columns_,
+        bool case_insensitive_matching_ = false);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
@@ -34,7 +35,7 @@ public:
     /// Get missing columns that exists in header but not in arrow::Schema
     std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
 
-    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name);
+    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, bool lowercase_names = false);
 
 private:
     const Block & header;
@@ -42,6 +43,7 @@ private:
     bool import_nested;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
+    bool case_insensitive_matching;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

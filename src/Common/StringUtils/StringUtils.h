@@ -240,6 +240,15 @@ inline bool equalsCaseInsensitive(char a, char b)
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
+inline bool equalsCaseInsensitive(const std::string_view a, const std::string_view b)
+{
+    if (a.length() != b.length())
+        return false;
+
+    return std::equal(
+        a.begin(), a.end(), b.begin(), [](const auto first, const auto second) { return equalsCaseInsensitive(first, second); });
+}
+
 
 template <typename F>
 std::string trim(const std::string & str, F && predicate)
