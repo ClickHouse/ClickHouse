@@ -229,9 +229,11 @@ public:
     virtual void prefetch() {}
 
     /**
-     * For reading from remote filesystem, when it matters how much we read.
+     * Set upper bound for read range [..., position).
+     * Required for reading from remote filesystem, when it matters how much we read.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
+
     virtual void setReadUntilEnd() {}
 
 protected:

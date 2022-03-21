@@ -28,6 +28,44 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct GetColumnsOptions
+{
+    enum Kind : UInt8
+    {
+        Ordinary = 1,
+        Materialized = 2,
+        Aliases = 4,
+        Ephemeral = 8,
+
+        AllPhysical = Ordinary | Materialized,
+        All = AllPhysical | Aliases | Ephemeral,
+    };
+
+    GetColumnsOptions(Kind kind_) : kind(kind_) {}
+
+    GetColumnsOptions & withSubcolumns(bool value = true)
+    {
+        with_subcolumns = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withVirtuals(bool value = true)
+    {
+        with_virtuals = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withExtendedObjects(bool value = true)
+    {
+        with_extended_objects = value;
+        return *this;
+    }
+
+    Kind kind;
+    bool with_subcolumns = false;
+    bool with_virtuals = false;
+    bool with_extended_objects = false;
+};
 
 /// Description of a single table column (in CREATE TABLE for example).
 struct ColumnDescription
@@ -79,18 +117,8 @@ public:
     auto begin() const { return columns.begin(); }
     auto end() const { return columns.end(); }
 
-    enum GetFlags : UInt8
-    {
-        Ordinary = 1,
-        Materialized = 2,
-        Aliases = 4,
-        Ephemeral = 8,
-
-        AllPhysical = Ordinary | Materialized,
-        All = AllPhysical | Aliases | Ephemeral,
-    };
-
-    NamesAndTypesList getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const;
+    NamesAndTypesList get(const GetColumnsOptions & options) const;
+    NamesAndTypesList getByNames(const GetColumnsOptions & options, const Names & names) const;
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
@@ -99,8 +127,7 @@ public:
     NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
-    NamesAndTypesList getAllWithSubcolumns() const;
-    NamesAndTypesList getAllPhysicalWithSubcolumns() const;
+    NamesAndTypesList getSubcolumns(const String & name_in_storage) const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
@@ -123,22 +150,27 @@ public:
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
             throw Exception("Cannot find column " + column_name + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
+
+        removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
 
+        addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
-    bool hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
+    bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
-    NameAndTypePair getColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
+    NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
+    NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     std::optional<NameAndTypePair> tryGetPhysical(const String & column_name) const;
-    std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
+    std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
+    std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
