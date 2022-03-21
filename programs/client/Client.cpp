@@ -820,6 +820,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
     ;
 
     /// Commandline options related to external tables.
@@ -952,6 +953,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("compression", options["compression"].as<bool>());
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
+    if (options.count("fake-drop"))
+        fake_drop = true;
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
