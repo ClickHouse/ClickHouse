@@ -142,7 +142,9 @@ if __name__ == "__main__":
     pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check)
 
     if validate_bugix_check and 'pr-bugfix' not in pr_info.labels:
-        logging.info("Skipping %s (no pr-bugfix)", check_name)
+        if args.post_commit_status == 'file':
+            post_commit_status_to_file(os.path.join(temp_path, "post_commit_status.tsv"), 'Skipped (no pr-bugfix)', 'success', 'null')
+        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
         sys.exit(0)
 
     gh = Github(get_best_robot_token())
