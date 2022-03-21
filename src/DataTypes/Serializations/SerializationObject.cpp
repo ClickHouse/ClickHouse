@@ -198,7 +198,7 @@ void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuf
 template <typename Parser>
 void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    deserializeTextImpl(column, [&](String & s) { readEscapedStringInto(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { readEscapedString(s, istr); });
 }
 
 template <typename Parser>
