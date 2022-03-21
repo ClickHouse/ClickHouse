@@ -2,7 +2,9 @@ SET join_algorithm = 'direct';
 
 {% for table_size in [10, 65555, 100000] -%}
 
-CREATE OR REPLACE TABLE rdb (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY (key);
+DROP TABLE IF EXISTS rdb;
+
+CREATE TABLE rdb (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY (key);
 INSERT INTO rdb SELECT (sipHash64(number) % {{ table_size }}) as key, ('val' || toString(key)) as value FROM numbers_mt({{ table_size }});
 
 {% for block_size in [10, 11, 128, 129, 65505, 65506, 70000] -%}
