@@ -45,6 +45,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const std::string ReadFromMergeTree::READ_FROM_MERGETREE_NAME = "ReadFromMergeTree";
+
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -112,6 +114,9 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
+
+    /// Add explicit description.
+    setStepDescription(data.getStorageID().getFullNameNotQuoted());
 }
 
 Pipe ReadFromMergeTree::readFromPool(
