@@ -34,11 +34,13 @@ struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 using Data = std::pair<Block, Chunks>;
 
-struct CacheKey {
+struct CacheKey
+{
     ASTPtr ast;
     Block header;
 };
-struct CacheKeyHasher {
+struct CacheKeyHasher
+{
     size_t operator()(const CacheKey & k) const
     {
         auto ast_info = k.ast->getTreeHash();
