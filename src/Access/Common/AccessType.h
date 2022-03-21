@@ -182,6 +182,7 @@ enum class AccessType
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
+    M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
