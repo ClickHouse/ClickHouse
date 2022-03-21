@@ -290,8 +290,8 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     if (args.get_priority_load_balancing != get_priority_load_balancing)
         return true;
 
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
+    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.get_priority_load_balancing)
+        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, args.get_priority_load_balancing);
 }
 
 

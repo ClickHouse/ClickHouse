@@ -3,11 +3,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_load_balancing.xml')
 
-node1 = cluster.add_instance('node1', with_zookeeper=True,
+# use 3-letter hostnames, so getHostNameDifference("nod1", "zoo1") will work as expected
+node1 = cluster.add_instance('nod1', with_zookeeper=True,
                                 main_configs=["configs/zookeeper_load_balancing.xml"])
-node2 = cluster.add_instance('node2', with_zookeeper=True,
+node2 = cluster.add_instance('nod2', with_zookeeper=True,
                                 main_configs=["configs/zookeeper_load_balancing.xml"])
-node3 = cluster.add_instance('node3', with_zookeeper=True,
+node3 = cluster.add_instance('nod3', with_zookeeper=True,
                                 main_configs=["configs/zookeeper_load_balancing.xml"])
 
 def change_balancing(old, new, reload=True):
@@ -56,7 +57,7 @@ def test_in_order(started_cluster):
         print(str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED"], privileged=True, user='root')))
         assert '1' == str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo1_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l"], privileged=True, user='root')).strip()
     finally:
-        change_balancing('first_or_random', 'random', reload=False)
+        change_balancing('in_order', 'random', reload=False)
 
 
 def test_nearest_hostname(started_cluster):
@@ -71,7 +72,7 @@ def test_nearest_hostname(started_cluster):
         print(str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED"], privileged=True, user='root')))
         assert '1' == str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo3_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l"], privileged=True, user='root')).strip()
     finally:
-        change_balancing('first_or_random', 'random', reload=False)
+        change_balancing('nearest_hostname', 'random', reload=False)
 
 
 def test_round_robin(started_cluster):
@@ -88,6 +89,6 @@ def test_round_robin(started_cluster):
         print(str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED"], privileged=True, user='root')))
         assert '1' == str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l"], privileged=True, user='root')).strip()
 
-        started_cluster.start_zookeeper_nodes(["zoo1"])
     finally:
-        change_balancing('first_or_random', 'random', reload=False)
+        started_cluster.start_zookeeper_nodes(["zoo1"])
+        change_balancing('round_robin', 'random', reload=False)
