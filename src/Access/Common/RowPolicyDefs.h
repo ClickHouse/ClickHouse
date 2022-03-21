@@ -54,26 +54,4 @@ struct RowPolicyFilterTypeInfo
     static const RowPolicyFilterTypeInfo & get(RowPolicyFilterType type);
 };
 
-
-/// Kinds of row policies. It affects how row policies are applied.
-/// A row is only accessible if at least one of the permissive policies passes,
-/// in addition to all the restrictive policies.
-enum class RowPolicyKind
-{
-    PERMISSIVE,
-    RESTRICTIVE,
-    SIMPLE,
-
-    MAX,
-};
-
-String toString(RowPolicyKind kind);
-
-struct RowPolicyKindInfo
-{
-    const char * const raw_name;
-    const String name;    /// Lowercased with underscores, e.g. "permissive".
-    static const RowPolicyKindInfo & get(RowPolicyKind kind);
-};
-
 }
