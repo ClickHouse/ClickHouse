@@ -241,6 +241,10 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     std::lock_guard cache_lock(mutex);
 
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
 
@@ -691,28 +695,32 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
     }
 }
 
-String LRUFileCache::dumpStructure(const Key & key_)
+String LRUFileCache::dumpStructure(const Key & key)
 {
     std::lock_guard cache_lock(mutex);
-    return dumpStructureImpl(key_, cache_lock);
+    return dumpStructureImpl(key, cache_lock);
 }
 
-String LRUFileCache::dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & /* cache_lock */)
+String LRUFileCache::dumpStructureImpl(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */)
 {
-    std::lock_guard cache_lock(mutex);
-
     WriteBufferFromOwnString result;
-    for (auto it = queue.begin(); it != queue.end(); ++it)
-    {
-        auto [key, offset] = *it;
-        if (key == key_)
-        {
-            auto * cell = getCell(key, offset, cache_lock);
-            result << (it != queue.begin() ? ", " : "") << cell->file_segment->range().toString();
-            result << "(state: " << cell->file_segment->download_state << ")";
-        }
-    }
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [offset, cell] : cells_by_offset)
+        result << cell.file_segment->getInfoForLog() << "\n";
+
     return result.str();
+}
+
+void LRUFileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [_, cell] : cells_by_offset)
+    {
+        const auto & file_segment = cell.file_segment;
+        file_segment->assertCorrectness();
+    }
 }
 
 }

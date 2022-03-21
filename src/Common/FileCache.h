@@ -211,6 +211,7 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
+    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }

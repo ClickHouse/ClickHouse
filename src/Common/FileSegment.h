@@ -123,11 +123,14 @@ public:
 
     String getInfoForLog() const;
 
+    void assertCorrectness() const;
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
 
