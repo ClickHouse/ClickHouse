@@ -239,7 +239,12 @@ struct ZooKeeperArgs
             }
             else if (key == "zookeeper_load_balancing")
             {
-                get_priority_load_balancing.load_balancing = DB::SettingFieldLoadBalancingTraits::fromString(config.getString(config_name + "." + key));
+                String load_balancing_str = config.getString(config_name + "." + key);
+                /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
+                auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+                if (!load_balancing)
+                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
+                get_priority_load_balancing.load_balancing = *load_balancing;
             }
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
