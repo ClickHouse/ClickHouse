@@ -20,6 +20,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/ISource.h>
 
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
@@ -50,6 +51,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ROCKSDB_ERROR;
 }
@@ -565,20 +567,53 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     return getByKeysImpl(sliced_keys, sample_block, null_map);
 }
 
+static MutableColumns getColumnsFromBlock(
+    const Block & sample_block, MutableColumns && columns, const Block & output_sample_block, PaddedPODArray<UInt8> * null_map)
+{
+    MutableColumns result_columns;
+    for (const auto & out_sample_col : output_sample_block)
+    {
+        auto i = sample_block.getPositionByName(out_sample_col.name);
+        if (columns[i] == nullptr)
+        {
+            throw DB::Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find column '{}'", out_sample_col.name);
+        }
+
+        ColumnWithTypeAndName col = sample_block.getByPosition(i);
+        if (!col.type->equals(*out_sample_col.type))
+        {
+            col.column = std::move(columns[i]);
+            result_columns.push_back(IColumn::mutate(castColumnAccurate(col, out_sample_col.type)));
+        }
+        else
+        {
+            result_columns.push_back(std::move(columns[i]));
+        }
+        columns[i] = nullptr;
+
+        if (null_map && result_columns.back()->isNullable())
+        {
+            assert_cast<ColumnNullable *>(result_columns.back().get())->applyNegatedNullMap(*null_map);
+        }
+    }
+    return result_columns;
+}
+
 Chunk StorageEmbeddedRocksDB::getByKeysImpl(
     const std::vector<rocksdb::Slice> & slices_keys,
-    const Block & sample_block,
+    const Block & output_sample_block,
     PaddedPODArray<UInt8> * null_map) const
 {
-    if (!sample_block)
+    if (!output_sample_block)
         return {};
 
     std::vector<String> values;
-    auto statuses = multiGet(slices_keys, values);
+    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
     size_t primary_key_pos = sample_block.getPositionByName(getPrimaryKey());
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
+    auto statuses = multiGet(slices_keys, values);
     for (size_t i = 0; i < statuses.size(); ++i)
     {
         if (statuses[i].ok())
@@ -603,7 +638,10 @@ Chunk StorageEmbeddedRocksDB::getByKeysImpl(
     }
 
     size_t num_rows = columns.at(0)->size();
-    return Chunk(std::move(columns), num_rows);
+    /// The `output_sample_block` may be different from `sample_block`.
+    /// It may constains subset of columns and types can be different (but should be convertable)
+    auto result_columns = getColumnsFromBlock(sample_block, std::move(columns), output_sample_block, null_map);
+    return Chunk(std::move(result_columns), num_rows);
 }
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
