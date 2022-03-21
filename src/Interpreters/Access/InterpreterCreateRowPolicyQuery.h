@@ -17,7 +17,7 @@ public:
 
     BlockIO execute() override;
 
-    static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query, UInt64 rbac_version);
+    static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
 
 private:
     AccessRightsElements getRequiredAccess() const;
