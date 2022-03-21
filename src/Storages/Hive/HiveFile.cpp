@@ -3,12 +3,10 @@
 #if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <arrow/adapters/orc/adapter.h>
 #include <arrow/io/memory.h>
 #include <arrow/io/api.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
-#include <parquet/arrow/reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
 #include <orc/Statistics.hh>
@@ -19,7 +17,6 @@
 #include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
