@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -34,9 +35,9 @@ IFileCache::IFileCache(
     const String & cache_base_path_,
     const FileCacheSettings & cache_settings_)
     : cache_base_path(cache_base_path_)
-    , max_size(cache_settings_.max_cache_size)
-    , max_element_size(cache_settings_.max_cache_elements)
-    , max_file_segment_size(cache_settings_.max_cache_elements)
+    , max_size(cache_settings_.max_size)
+    , max_element_size(cache_settings_.max_elements)
+    , max_file_segment_size(cache_settings_.max_file_segment_size)
 {
 }
 
@@ -204,8 +205,8 @@ FileSegments LRUFileCache::getImpl(
     return result;
 }
 
-FileSegments LRUFileCache::splitRangeIntoEmptyCells(
-    const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+FileSegments LRUFileCache::splitRangeIntoCells(
+    const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -221,9 +222,10 @@ FileSegments LRUFileCache::splitRangeIntoEmptyCells(
         current_cell_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_cell_size;
 
-        auto * cell = addCell(key, current_pos, current_cell_size, FileSegment::State::EMPTY, cache_lock);
+        auto * cell = addCell(key, current_pos, current_cell_size, state, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
+        assert(cell);
 
         current_pos += current_cell_size;
     }
@@ -245,7 +247,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoEmptyCells(key, offset, size, cache_lock);
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, cache_lock);
     }
     else
     {
@@ -290,7 +292,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             assert(current_pos < segment_range.left);
 
             auto hole_size = segment_range.left - current_pos;
-            file_segments.splice(it, splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
 
             current_pos = segment_range.right + 1;
             ++it;
@@ -304,7 +306,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             /// segmentN
 
             auto hole_size = range.right - current_pos + 1;
-            file_segments.splice(file_segments.end(), splitRangeIntoEmptyCells(key, current_pos, hole_size, cache_lock));
+            file_segments.splice(file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock));
         }
     }
 
@@ -343,6 +345,22 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             "Failed to insert into cache key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
 
     return &(it->second);
+}
+
+FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
+{
+    std::lock_guard cache_lock(mutex);
+
+    auto * cell = getCell(key, offset, cache_lock);
+    if (cell)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache cell already exists for key `{}` and offset {}",
+            keyToStr(key), offset);
+
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+
+    return FileSegmentsHolder(std::move(file_segments));
 }
 
 bool LRUFileCache::tryReserve(
@@ -473,6 +491,30 @@ void LRUFileCache::remove(const Key & key)
 
     if (fs::exists(key_path))
         fs::remove(key_path);
+}
+
+void LRUFileCache::tryRemoveAll()
+{
+    /// Try remove all cached files by cache_base_path.
+    /// Only releasable file segments are evicted.
+
+    std::lock_guard cache_lock(mutex);
+
+    for (auto it = queue.begin(); it != queue.end();)
+    {
+        auto & [key, offset] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (cell->releasable())
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+            }
+        }
+    }
 }
 
 void LRUFileCache::remove(
@@ -659,6 +701,20 @@ bool LRUFileCache::isLastFileSegmentHolder(
     return cell->file_segment.use_count() == 2;
 }
 
+FileSegmentsHolder LRUFileCache::getAll()
+{
+    std::lock_guard cache_lock(mutex);
+
+    FileSegments file_segments;
+    for (const auto & [key, offset] : queue)
+    {
+        auto * cell = getCell(key, offset, cache_lock);
+        file_segments.push_back(cell->file_segment);
+    }
+
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
     : file_segment(file_segment_)
 {
@@ -676,12 +732,13 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
             break;
         }
         case FileSegment::State::EMPTY:
+        case FileSegment::State::DOWNLOADING:
         {
             break;
         }
         default:
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                            "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
+                            "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
                             FileSegment::stateToString(file_segment->download_state));
     }
 }

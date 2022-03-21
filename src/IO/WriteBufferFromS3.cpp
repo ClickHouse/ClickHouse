@@ -20,8 +20,8 @@
 namespace ProfileEvents
 {
     extern const Event S3WriteBytes;
+    extern const Event RemoteFSCacheDownloadBytes;
 }
-
 
 namespace DB
 {
@@ -87,7 +87,41 @@ void WriteBufferFromS3::nextImpl()
     if (temporary_buffer->tellp() == -1)
         allocateBuffer();
 
-    temporary_buffer->write(working_buffer.begin(), offset());
+    size_t size = offset();
+    temporary_buffer->write(working_buffer.begin(), size);
+
+    if (cacheEnabled())
+    {
+        std::cerr << "\n\n\n\n\n\n\nCache is enabled!\n\n\n\n\n";
+
+        /// Use max_single_part_upload_size as file segment size. Space reservation is incremental,
+        /// so this size does not really mean anything apart from the final file segment size limit.
+        /// If single part is uploaded with the smaller size, just resize file segment.
+
+        // size_t max_file_segment_size = max_single_part_upload_size;
+        auto cache_key = cache->hash(key);
+
+        auto file_segments_holder = cache->setDownloading(cache_key, current_download_offset, size);
+        assert(file_segments_holder.file_segments.back()->range().right - file_segments_holder.file_segments.begin()->range().left + 1 == size);
+
+        size_t remaining_size = size;
+        for (const auto & file_segment : file_segments_holder.file_segments)
+        {
+            size_t current_size = std::min(file_segment->range().size(), remaining_size);
+            remaining_size -= current_size;
+
+            if (file_segment->reserve(current_size))
+            {
+                file_segment->write(working_buffer.begin(), current_size);
+                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, current_size);
+            }
+            else
+            {
+                /// TODO: add try catch, add complete()
+                break;
+            }
+        }
+    }
 
     ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
 
@@ -129,19 +163,9 @@ WriteBufferFromS3::~WriteBufferFromS3()
     }
 }
 
-void WriteBufferFromS3::tryWriteToCacheIfNeeded()
+bool WriteBufferFromS3::cacheEnabled() const
 {
-    if (!cache || IFileCache::shouldBypassCache())
-        return;
-
-    try
-    {
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw;
-    }
+    return cache && IFileCache::shouldBypassCache() == false;
 }
 
 void WriteBufferFromS3::preFinalize()

@@ -78,9 +78,9 @@ FileCachePtr getCachePtrForDisk(
     auto * log = &Poco::Logger::get("Disk(" + name + ")");
     LOG_INFO(log, "Disk registered with cache path: {}. Cache size: {}, max cache elements size: {}, max_file_segment_size: {}",
              cache_base_path,
-             max_cache_size ? toString(max_cache_size) : "UNLIMITED",
-             max_cache_elements ? toString(max_cache_elements) : "UNLIMITED",
-             max_file_segment_size);
+             file_cache_settings.max_size ? toString(file_cache_settings.max_size) : "UNLIMITED",
+             file_cache_settings.max_elements ? toString(file_cache_settings.max_elements) : "UNLIMITED",
+             file_cache_settings.max_file_segment_size);
 
     return cache;
 }

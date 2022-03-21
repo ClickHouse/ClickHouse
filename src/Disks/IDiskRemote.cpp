@@ -402,6 +402,12 @@ IDiskRemote::IDiskRemote(
 }
 
 
+String IDiskRemote::getCachePath() const
+{
+    return cache ? cache->getBasePath() : "";
+}
+
+
 bool IDiskRemote::exists(const String & path) const
 {
     return metadata_disk->exists(path);

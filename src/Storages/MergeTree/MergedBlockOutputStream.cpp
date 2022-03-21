@@ -19,13 +19,15 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
     bool reset_columns_,
-    bool blocks_are_granules_size)
+    bool blocks_are_granules_size,
+    const WriteSettings & write_settings)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
         storage.getContext()->getSettings(),
+        write_settings,
         storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,
@@ -125,6 +127,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         MergeTreeData::DataPart::Checksums * additional_column_checksums,
         const WriteSettings & write_settings)
 {
+    std::cerr << "\n\n\n\nCACHE ON INSERT: " << write_settings.remote_fs_cache_on_insert << "\n\n\n";
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
 

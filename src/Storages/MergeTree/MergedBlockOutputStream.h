@@ -21,7 +21,8 @@ public:
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
         bool reset_columns_ = false,
-        bool blocks_are_granules_size = false);
+        bool blocks_are_granules_size = false,
+        const WriteSettings & write_settings = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
