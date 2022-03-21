@@ -623,7 +623,7 @@ bool DiskLocal::setup()
         pcg32_fast rng(randomSeed());
         UInt32 magic_number = rng();
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
             writeIntBinary(magic_number, *buf);
         }
         disk_checker_magic_number = magic_number;
