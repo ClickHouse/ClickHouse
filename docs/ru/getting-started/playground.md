@@ -5,53 +5,39 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-!!! warning "Warning"
-    This service is deprecated and will be replaced in foreseeable future.
+[ClickHouse Playground](https://play.clickhouse.com/play?user=play) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
+Several example datasets are available in Playground.
 
-[ClickHouse Playground](https://play.clickhouse.com) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
-В Playground доступны несколько тестовых массивов данных, а также примеры запросов, которые показывают возможности ClickHouse. Кроме того, вы можете выбрать LTS релиз ClickHouse, который хотите протестировать.
+You can make queries to Playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
-Вы можете отправлять запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../interfaces/jdbc.md) или [ODBC](../interfaces/odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../interfaces/index.md).
+## Credentials {#credentials}
 
-## Параметры доступа {#credentials}
+| Parameter           | Value                              |
+|:--------------------|:-----------------------------------|
+| HTTPS endpoint      | `https://play.clickhouse.com:443/` |
+| Native TCP endpoint | `play.clickhouse.com:9440`         |
+| User                | `explorer` or `play`               |
+| Password            | (empty)                            |
 
-| Параметр            | Значение                                |
-|:--------------------|:----------------------------------------|
-| Конечная точка HTTPS| `https://play-api.clickhouse.com:8443` |
-| Конечная точка TCP  | `play-api.clickhouse.com:9440`         |
-| Пользователь        | `playground`                            |
-| Пароль              | `clickhouse`                            |
+## Limitations {#limitations}
 
-Также можно подключаться к ClickHouse определённых релизов, чтобы протестировать их различия (порты и пользователь / пароль остаются неизменными):
+The queries are executed as a read-only user. It implies some limitations:
 
--   20.3 LTS: `play-api-v20-3.clickhouse.com`
--   19.14 LTS: `play-api-v19-14.clickhouse.com`
+-   DDL queries are not allowed
+-   INSERT queries are not allowed
 
-!!! note "Примечание"
-    Для всех этих конечных точек требуется безопасное соединение TLS.
+The service also have quotas on its usage.
 
-## Ограничения {#limitations}
+## Examples {#examples}
 
-Запросы выполняются под пользователем с правами `readonly`, для которого есть следующие ограничения:
-- запрещены DDL запросы
-- запрещены INSERT запросы
-
-Также установлены следующие опции:
-- [max_result_bytes=10485760](../operations/settings/query-complexity.md#max-result-bytes)
-- [max_result_rows=2000](../operations/settings/query-complexity.md#setting-max_result_rows)
-- [result_overflow_mode=break](../operations/settings/query-complexity.md#result-overflow-mode)
-- [max_execution_time=60000](../operations/settings/query-complexity.md#max-execution-time)
-
-## Примеры {#examples}
-
-Пример конечной точки HTTPS с `curl`:
+HTTPS endpoint example with `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
-Пример конечной точки TCP с [CLI](../interfaces/cli.md):
+TCP endpoint example with [CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
