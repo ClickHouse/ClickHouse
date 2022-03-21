@@ -497,7 +497,7 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, bool lowercase_names)
+Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
 {
     ColumnsWithTypeAndName sample_columns;
     for (const auto & field : schema.fields())
@@ -517,11 +517,6 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema,
         std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
         ColumnWithTypeAndName sample_column
             = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values, false);
-
-        if (lowercase_names)
-        {
-            boost::to_lower(sample_column.name);
-        }
 
         sample_columns.emplace_back(std::move(sample_column));
     }
