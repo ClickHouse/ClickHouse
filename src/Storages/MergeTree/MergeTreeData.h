@@ -674,15 +674,18 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
+    /// Storage has data to backup.
+    bool hasDataToBackup() const override { return true; }
+
     /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.
-    RestoreDataTasks restoreDataPartsFromBackup(
+    RestoreTaskPtr restoreDataParts(
+        const std::unordered_set<String> & partition_ids,
         const BackupPtr & backup,
         const String & data_path_in_backup,
-        const std::unordered_set<String> & partition_ids,
         SimpleIncrement * increment);
 
     /// Moves partition to specified Disk
