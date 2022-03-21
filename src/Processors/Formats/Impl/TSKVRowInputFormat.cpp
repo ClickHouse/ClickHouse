@@ -245,8 +245,8 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
     String value;
     do
     {
-        bool has_value = readName(in, name_ref, name);
-        name = String(name_ref);
+        bool has_value = readName(in, name_ref, name_buf);
+        String name = String(name_ref);
         if (has_value)
         {
             readEscapedString(value, in);
