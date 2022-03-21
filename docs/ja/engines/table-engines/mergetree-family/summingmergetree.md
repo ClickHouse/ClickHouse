@@ -138,4 +138,4 @@ Columnが主キーになく、集計されていない場合は、既存の値�
 
 入れ子になったデータ構造の場合、合計のために列のタプルにその列を指定する必要はありません。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

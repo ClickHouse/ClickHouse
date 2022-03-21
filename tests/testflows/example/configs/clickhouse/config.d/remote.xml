@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <remote_servers>
         <replicated_cluster>
             <shard>
@@ -104,4 +104,4 @@
             </shard>
         </sharded_cluster_secure>
     </remote_servers>
-</yandex>
+</clickhouse>

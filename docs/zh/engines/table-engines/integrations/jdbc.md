@@ -8,7 +8,7 @@ toc_title: JDBC表引擎
 允许CH通过 [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity) 连接到外部数据库。
 
 
-要实现JDBC连接，CH需要使用以后台进程运行的程序 [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge)。
+要实现JDBC连接，CH需要使用以后台进程运行的程序 [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge)。
 
 该引擎支持 [Nullable](../../../sql-reference/data-types/nullable.md) 数据类型。
 
@@ -20,19 +20,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(dbms_uri, external_database, external_table)
+ENGINE = JDBC(datasource_uri, external_database, external_table)
 ```
 
 **引擎参数**
 
--   `dbms_uri` — 外部DBMS的uri.
+-   `datasource_uri` — 外部DBMS的URI或名字.
 
-    格式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+    URI格式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     MySQL示例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — 外部DBMS的数据库名.
 
--   `external_table` — `external_database`中的外部表名.
+-   `external_table` — `external_database`中的外部表名或类似`select * from table1 where column1=1`的查询语句.
 
 ## 用法示例 {#usage-example}
 
@@ -85,8 +85,14 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
+``` sql
+INSERT INTO jdbc_table(`int_id`, `float`)
+SELECT toInt32(number), toFloat32(number * 1.0)
+FROM system.numbers
+```
+
 ## 参见 {#see-also}
 
 -   [JDBC表函数](../../../sql-reference/table-functions/jdbc.md).
 
-[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/operations/table_engines/jdbc/) <!--hide-->

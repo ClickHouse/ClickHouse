@@ -1,18 +1,17 @@
 if (GLIBC_COMPATIBILITY)
-    set (ENABLE_FASTMEMCPY ON)
+    add_subdirectory(memcpy)
+    if(TARGET memcpy)
+        set(MEMCPY_LIBRARY memcpy)
+    endif()
 
     enable_language(ASM)
     include(CheckIncludeFile)
 
     check_include_file("sys/random.h" HAVE_SYS_RANDOM_H)
 
-    if(COMPILER_CLANG)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-builtin-requires-header")
-    endif()
-
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
-    if (ARCH_ARM)
+    if (ARCH_AARCH64)
         list (APPEND glibc_compatibility_sources musl/aarch64/syscall.s musl/aarch64/longjmp.s)
         set (musl_arch_include_dir musl/aarch64)
     elseif (ARCH_AMD64)
@@ -27,39 +26,31 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
-    if (NOT ARCH_ARM)
-        # clickhouse_memcpy don't support ARCH_ARM, see https://github.com/ClickHouse/ClickHouse/issues/18951
-        add_library (clickhouse_memcpy OBJECT
-            ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
-        )
-    endif()
-
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
-    if (COMPILER_CLANG)
-        target_compile_options(glibc-compatibility PRIVATE -Wno-unused-command-line-argument)
-    elseif (COMPILER_GCC)
-        target_compile_options(glibc-compatibility PRIVATE -Wno-unused-but-set-variable)
-    endif ()
+    target_no_warning(glibc-compatibility unused-command-line-argument)
+    target_no_warning(glibc-compatibility unused-but-set-variable)
+    target_no_warning(glibc-compatibility builtin-requires-header)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
-    if (NOT USE_STATIC_LIBRARIES AND NOT MAKE_STATIC_LIBRARIES)
+    if (NOT USE_STATIC_LIBRARIES AND NOT USE_STATIC_LIBRARIES)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility)
+    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     install(
-        TARGETS glibc-compatibility
+        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
         EXPORT global
         ARCHIVE DESTINATION lib
     )
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
+
 elseif (YANDEX_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()

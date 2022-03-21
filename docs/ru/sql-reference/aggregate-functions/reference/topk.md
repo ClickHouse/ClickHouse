@@ -18,8 +18,8 @@ topK(N)(column)
 
 **Аргументы**
 
--   ‘N’ - Количество значений.
--   ‘x’ – Столбец.
+-   `N` – количество значений.
+-   `x` – столбец.
 
 **Пример**
 
@@ -36,4 +36,3 @@ FROM ontime
 └─────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topk/) <!--hide-->

@@ -55,7 +55,7 @@ If `clickhouse-server` start failed with a configuration error, you should see t
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-If you don’t see an error at the end of the file, look through the entire file starting from the string:
+If you do not see an error at the end of the file, look through the entire file starting from the string:
 
 ``` text
 <Information> Application: starting up.
@@ -79,7 +79,7 @@ Revision: 54413
 
 **See system.d logs**
 
-If you don’t find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
+If you do not find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server

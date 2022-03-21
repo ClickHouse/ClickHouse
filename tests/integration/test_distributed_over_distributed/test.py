@@ -2,7 +2,6 @@
 # (just in case, with real separate instances).
 
 
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -51,9 +50,13 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node", list(NODES.values()))
-@pytest.mark.parametrize("source",
-                         ["distributed_over_distributed_table", "cluster('test_cluster', default, distributed_table)"])
+@pytest.mark.parametrize("node,source", [
+    pytest.param(NODES["node1"], "distributed_over_distributed_table", id="dod_node1"),
+    pytest.param(NODES["node1"], "cluster('test_cluster', default, distributed_table)", id="cluster_node1"),
+    pytest.param(NODES["node2"], "distributed_over_distributed_table", id="dod_node2"),
+    pytest.param(NODES["node2"], "cluster('test_cluster', default, distributed_table)", id="cluster_node2"),
+]
+)
 class TestDistributedOverDistributedSuite:
     def test_select_with_order_by_node(self, started_cluster, node, source):
         assert node.query("SELECT * FROM {source} ORDER BY node, key".format(source=source)) \

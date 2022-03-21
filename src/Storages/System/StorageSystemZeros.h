@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -14,22 +14,23 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public ext::shared_ptr_helper<StorageSystemZeros>, public IStorage
+class StorageSystemZeros final : public shared_ptr_helper<StorageSystemZeros>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemZeros>;
+    friend struct shared_ptr_helper<StorageSystemZeros>;
 public:
     std::string getName() const override { return "SystemZeros"; }
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
+    bool isSystemStorage() const override { return true; }
 
 private:
     bool multithreaded;

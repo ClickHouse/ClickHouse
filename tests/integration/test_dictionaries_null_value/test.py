@@ -1,11 +1,10 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
 DICTIONARY_FILES = ['configs/dictionaries/cache.xml']
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
+instance = cluster.add_instance('instance', dictionaries=DICTIONARY_FILES)
 
 
 @pytest.fixture(scope="module")

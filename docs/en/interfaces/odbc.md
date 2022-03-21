@@ -7,4 +7,4 @@ toc_title: ODBC Driver
 
 -   [Official driver](https://github.com/ClickHouse/clickhouse-odbc)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/odbc/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/odbc/) <!--hide-->

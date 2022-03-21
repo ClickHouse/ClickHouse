@@ -12,8 +12,8 @@ struct NameNotILike
     static constexpr auto name = "notILike";
 };
 
-using NotILikeImpl = MatchImpl<true, true, /*case-insensitive*/true>;
-using FunctionNotILike = FunctionsStringSearch<NotILikeImpl, NameNotILike>;
+using NotILikeImpl = MatchImpl<NameNotILike, true, true, /*case-insensitive*/true>;
+using FunctionNotILike = FunctionsStringSearch<NotILikeImpl>;
 
 }
 

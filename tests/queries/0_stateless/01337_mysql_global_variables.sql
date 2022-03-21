@@ -1,3 +1,5 @@
+-- Tags: global, no-fasttest
+
 SELECT @@test;
 SELECT @@max_allowed_packet FORMAT CSVWithNames;
 SELECT @@MAX_ALLOWED_PACKET FORMAT CSVWithNames;

@@ -58,9 +58,9 @@ def test_predefined_query_handler():
             'test_predefined_handler_get?max_threads=1&setting_name=max_threads', method='GET',
             headers={'XXX': 'xxx'}).content
 
-        assert b'max_threads\t1\nmax_alter_threads\t1\n' == cluster.instance.http_request(
-            'query_param_with_url/max_threads?max_threads=1&max_alter_threads=1',
-            headers={'XXX': 'max_alter_threads'}).content
+        assert b'max_final_threads\t1\nmax_threads\t1\n' == cluster.instance.http_request(
+            'query_param_with_url/max_threads?max_threads=1&max_final_threads=1',
+            headers={'XXX': 'max_final_threads'}).content
 
 
 def test_fixed_static_handler():

@@ -23,15 +23,6 @@ def temp_dir():
 
 
 @contextlib.contextmanager
-def autoremoved_file(path):
-    try:
-        with open(path, 'w') as handle:
-            yield handle
-    finally:
-        os.unlink(path)
-
-
-@contextlib.contextmanager
 def cd(new_cwd):
     old_cwd = os.getcwd()
     os.chdir(new_cwd)

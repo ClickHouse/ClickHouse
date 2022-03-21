@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-mysql-js-client .
+# docker build -t clickhouse/mysql-js-client .
 # MySQL JavaScript client docker container
 
 FROM node:8

@@ -24,14 +24,14 @@ CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 在写入与查询时，`IPv6`类型能够识别可读性更加友好的输入输出格式：
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.tech', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.tech/docs/en/', '2a02:e980:1e::1');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
 
 SELECT * FROM hits;
 ```
 
     ┌─url────────────────────────────────┬─from──────────────────────────┐
-    │ https://clickhouse.tech          │ 2001:44c8:129:2632:33:0:252:2 │
-    │ https://clickhouse.tech/docs/en/ │ 2a02:e980:1e::1               │
+    │ https://clickhouse.com          │ 2001:44c8:129:2632:33:0:252:2 │
+    │ https://clickhouse.com/docs/en/ │ 2a02:e980:1e::1               │
     │ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
     └────────────────────────────────────┴───────────────────────────────┘
 
@@ -65,4 +65,4 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
     │ FixedString(16)                           │  ��� │
     └───────────────────────────────────────────┴─────────┘
 
-[来源文章](https://clickhouse.tech/docs/en/data_types/domains/ipv6) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/data_types/domains/ipv6) <!--hide-->

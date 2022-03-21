@@ -2,12 +2,11 @@
 
 #include <Core/Names.h>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
-
-class Context;
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
@@ -27,7 +26,7 @@ public:
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context);
+    ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context);
     void prepare(ColumnsWithTypeAndName & sample) const;
     void execute(Block & block);
 };

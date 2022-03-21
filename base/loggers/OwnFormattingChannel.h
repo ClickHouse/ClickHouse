@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
@@ -14,13 +15,16 @@ class OwnFormattingChannel : public Poco::Channel, public ExtendedLogChannel
 public:
     explicit OwnFormattingChannel(
         Poco::AutoPtr<OwnPatternFormatter> pFormatter_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
-        : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_))
+        : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_)), priority(Poco::Message::PRIO_TRACE)
     {
     }
 
     void setChannel(Poco::AutoPtr<Poco::Channel> pChannel_) { pChannel = std::move(pChannel_); }
 
     void setLevel(Poco::Message::Priority priority_) { priority = priority_; }
+
+    // Poco::Logger::parseLevel returns ints
+    void setLevel(int level) { priority = static_cast<Poco::Message::Priority>(level); }
 
     void open() override
     {
@@ -42,7 +46,7 @@ public:
 private:
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
     Poco::AutoPtr<Poco::Channel> pChannel;
-    Poco::Message::Priority priority = Poco::Message::PRIO_TRACE;
+    std::atomic<Poco::Message::Priority> priority;
 };
 
 }

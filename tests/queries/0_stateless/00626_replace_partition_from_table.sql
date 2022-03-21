@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 

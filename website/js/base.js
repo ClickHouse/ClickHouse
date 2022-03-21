@@ -1,7 +1,7 @@
 (function () {
     Sentry.init({
         dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103',
-        environment: window.location.hostname === 'clickhouse.tech' ? 'prod' : 'test'
+        environment: window.location.hostname === 'clickhouse.com' ? 'prod' : 'test'
     });
     $(document).click(function (event) {
         var target = $(event.target);
@@ -15,23 +15,6 @@
         $('.algolia-autocomplete .ds-dropdown-menu').hide();
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
-        }
-        if (selector && selector.startsWith('#') && !is_tab && !is_collapse && !is_rating) {
-            event.preventDefault();
-            var dst = window.location.href.replace(window.location.hash, '');
-            var offset = 0;
-
-            if (selector !== '#') {
-                var destination = $(selector);
-                if (destination.length) {
-                    offset = destination.offset().top - $('#top-nav').height() * 1.5;
-                    dst += selector;
-                }
-            }
-            $('html, body').animate({
-                scrollTop: offset
-            }, 500);
-            window.history.replaceState('', document.title, dst);
         }
     });
 
@@ -53,7 +36,7 @@
         }
     });
 
-    if (window.location.hostname.endsWith('clickhouse.tech')) {
+    if (window.location.hostname.endsWith('clickhouse.com')) {
         $('a.favicon').each(function () {
             $(this).css({
                 background: 'url(/favicon/' + this.hostname + ') left center no-repeat',
@@ -72,7 +55,7 @@
 
         $('pre').each(function(_, element) {
            $(element).prepend(
-               '<img src="/images/mkdocs/copy.svg" alt="Copy" title="Copy" class="code-copy btn float-right m-0 p-0" />'
+               '<img src="/docs/images/mkdocs/copy.svg" alt="Copy" title="Copy" class="code-copy btn float-right m-0 p-0" />'
            );
         });
 
@@ -83,13 +66,6 @@
            })
         });
     }
-
-    $('#feedback_email, .feedback-email').each(function() {
-        var name = window.location.host.substring(0, 10)
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        $(this).attr('href', 'mailto:' + feedback_address);
-        $(this).html(feedback_address);
-    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
@@ -103,6 +79,17 @@
                     webvisor: !is_single_page
                 });
             } catch(e) { }
+            
+            if (!is_single_page) {
+                $('head').each(function(_, element) {
+                   $(element).append(
+                       '<script async src="https://www.googletagmanager.com/gtag/js?id=G-KF1LLRTQ5Q"></script><script>window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag(\'js\', new Date());gtag(\'config\', \'G-KF1LLRTQ5Q\');</script>'
+                   );
+                   $(element).append(
+                       '<script>!function(){var analytics=window.analytics=window.analytics||[];if(!analytics.initialize)if(analytics.invoked)window.console&&console.error&&console.error("Segment snippet included twice.");else{analytics.invoked=!0;analytics.methods=["trackSubmit","trackClick","trackLink","trackForm","pageview","identify","reset","group","track","ready","alias","debug","page","once","off","on","addSourceMiddleware","addIntegrationMiddleware","setAnonymousId","addDestinationMiddleware"];analytics.factory=function(e){return function(){var t=Array.prototype.slice.call(arguments);t.unshift(e);analytics.push(t);return analytics}};for(var e=0;e<analytics.methods.length;e++){var key=analytics.methods[e];analytics[key]=analytics.factory(key)}analytics.load=function(key,e){var t=document.createElement("script");t.type="text/javascript";t.async=!0;t.src="https://cdn.segment.com/analytics.js/v1/" + key + "/analytics.min.js";var n=document.getElementsByTagName("script")[0];n.parentNode.insertBefore(t,n);analytics._loadOptions=e};analytics._writeKey="dZuEnmCPmWqDuSEzCvLUSBBRt8Xrh2el";;analytics.SNIPPET_VERSION="4.15.3";analytics.load("dZuEnmCPmWqDuSEzCvLUSBBRt8Xrh2el");analytics.page();}}();</script>'
+                   );
+                });
+            }
         });
 
         var n = d.getElementsByTagName("script")[0],
@@ -111,7 +98,7 @@
         s.type = "text/javascript";
         s.async = true;
         s.src = "/js/metrika.js";
-        if (window.location.hostname.endsWith('clickhouse.tech')) {
+        if (window.location.hostname.endsWith('clickhouse.com')) {
             if (w.opera == "[object Opera]") {
                 d.addEventListener("DOMContentLoaded", f, false);
             } else {

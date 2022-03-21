@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -12,10 +10,14 @@ void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
+void registerFunctionsBinaryRepr(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
+void registerFunctionsCodingUUID(FunctionFactory &);
+void registerFunctionChar(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
+void registerFunctionCastOrDefault(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
 void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
@@ -33,6 +35,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
+void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -40,16 +43,20 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
+void registerFunctionsSQLJSON(FunctionFactory &);
+void registerFunctionToJSONString(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
-#if !defined(ARCADIA_BUILD)
-void registerFunctionBayesAB(FunctionFactory &);
-#endif
+void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
+void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
+void registerFunctionsTimeWindow(FunctionFactory &);
+void registerFunctionToBool(FunctionFactory &);
+void registerFunctionMinSampleSize(FunctionFactory &);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -67,13 +74,15 @@ void registerFunctions()
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
     registerFunctionsMap(factory);
-#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
-#endif
+    registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
+    registerFunctionsCodingUUID(factory);
+    registerFunctionChar(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
     registerFunctionsConversion(factory);
+    registerFunctionCastOrDefault(factory);
     registerFunctionsDateTime(factory);
     registerFunctionsEmbeddedDictionaries(factory);
     registerFunctionsExternalDictionaries(factory);
@@ -91,22 +100,26 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
+    registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
     registerFunctionsJSON(factory);
+    registerFunctionsSQLJSON(factory);
+    registerFunctionToJSONString(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
     registerFunctionBitHammingDistance(factory);
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
-
-#if !defined(ARCADIA_BUILD)
-    registerFunctionBayesAB(factory);
-#endif
+    registerFunctionValidateNestedArraySizes(factory);
+    registerFunctionsSnowflake(factory);
+    registerFunctionsTimeWindow(factory);
+    registerFunctionToBool(factory);
+    registerFunctionMinSampleSize(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

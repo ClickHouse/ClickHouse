@@ -29,6 +29,6 @@ Domain类型是特定实现的类型，它总是与某个现存的基础类型�
 -   当从其他列或表插入数据时，无法将string类型的值隐式地转换为Domain类型的值。
 -   无法对存储为Domain类型的值添加约束。
 
-[来源文章](https://clickhouse.tech/docs/en/data_types/domains/overview) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/data_types/domains/overview) <!--hide-->
 
 

@@ -5,9 +5,9 @@ toc_title: Performance
 
 # Performance {#performance}
 
-According to internal testing results at Yandex, ClickHouse shows the best performance (both the highest throughput for long queries and the lowest latency on short queries) for comparable operating scenarios among systems of its class that were available for testing. You can view the test results on a [separate page](https://clickhouse.tech/benchmark/dbms/).
+ClickHouse shows the best performance (both the highest throughput for long queries and the lowest latency on short queries) for comparable operating scenarios among systems of its class that were available for testing. You can view the test results on a [separate page](https://clickhouse.com/benchmark/dbms/).
 
-Numerous independent benchmarks came to similar conclusions. They are not difficult to find using an internet search, or you can see [our small collection of related links](https://clickhouse.tech/#independent-benchmarks).
+Numerous independent benchmarks came to similar conclusions. They are not difficult to find using an internet search, or you can see [our small collection of related links](https://clickhouse.com/#independent-benchmarks).
 
 ## Throughput for a Single Large Query {#throughput-for-a-single-large-query}
 
@@ -27,4 +27,4 @@ Under the same conditions, ClickHouse can handle several hundred queries per sec
 
 We recommend inserting data in packets of at least 1000 rows, or no more than a single request per second. When inserting to a MergeTree table from a tab-separated dump, the insertion speed can be from 50 to 200 MB/s. If the inserted rows are around 1 KB in size, the speed will be from 50,000 to 200,000 rows per second. If the rows are small, the performance can be higher in rows per second (on Banner System data -`>` 500,000 rows per second; on Graphite data -`>` 1,000,000 rows per second). To improve performance, you can make multiple INSERT queries in parallel, which scales linearly.
 
-{## [Original article](https://clickhouse.tech/docs/en/introduction/performance/) ##}
+{## [Original article](https://clickhouse.com/docs/en/introduction/performance/) ##}

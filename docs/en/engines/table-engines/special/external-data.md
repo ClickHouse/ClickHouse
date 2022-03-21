@@ -9,7 +9,7 @@ ClickHouse allows sending a server the data that is needed for processing a quer
 
 For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.
 
-If you need to run more than one query with a large volume of external data, don’t use this feature. It is better to upload the data to the DB ahead of time.
+If you need to run more than one query with a large volume of external data, do not use this feature. It is better to upload the data to the DB ahead of time.
 
 External data can be uploaded using the command-line client (in non-interactive mode), or using the HTTP interface.
 
@@ -63,4 +63,4 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 
 For distributed query processing, the temporary tables are sent to all the remote servers.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/external_data/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/external_data/) <!--hide-->

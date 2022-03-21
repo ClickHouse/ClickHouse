@@ -5,10 +5,6 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
-
 # Runs simple proxy resolver in python env container.
 def run_resolver(cluster):
     container_id = cluster.get_container_id('resolver')
@@ -23,7 +19,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/config.d/log_conf.xml", "configs/config.d/storage_conf.xml"],
+                             main_configs=["configs/config.d/storage_conf.xml"],
                              with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()

@@ -66,4 +66,4 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

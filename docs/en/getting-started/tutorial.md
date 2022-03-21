@@ -80,13 +80,13 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Import Sample Dataset {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
+Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use some anonymized web analytics data. There are [multiple ways to import the dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
 
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.
@@ -105,7 +105,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+There are two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -533,19 +533,19 @@ Example config for a cluster with three shards, one replica each:
     <perftest_3shards_1replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
             </replica>
         </shard>
@@ -591,15 +591,15 @@ Example config for a cluster of one shard containing three replicas:
     <perftest_1shards_3replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
              </replica>
         </shard>
@@ -617,15 +617,15 @@ ZooKeeper locations are specified in the configuration file:
 ``` xml
 <zookeeper>
     <node>
-        <host>zoo01.yandex.ru</host>
+        <host>zoo01</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo02.yandex.ru</host>
+        <host>zoo02</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo03.yandex.ru</host>
+        <host>zoo03</host>
         <port>2181</port>
     </node>
 </zookeeper>
@@ -659,4 +659,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 
 Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

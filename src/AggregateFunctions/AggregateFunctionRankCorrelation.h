@@ -7,7 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,6 +18,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 struct RankCorrelationData : public StatisticalSample<Float64, Float64>
@@ -58,6 +59,8 @@ public:
         return "rankCorr";
     }
 
+    bool allocatesMemoryInArena() const override { return true; }
+
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();
@@ -74,17 +77,17 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        auto & b = this->data(rhs);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, arena);
     }

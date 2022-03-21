@@ -7,9 +7,9 @@ toc_title: Distinctive Features
 
 ## True Column-Oriented Database Management System {#true-column-oriented-dbms}
 
-In a true column-oriented DBMS, no extra data is stored with the values. Among other things, this means that constant-length values must be supported, to avoid storing their length “number” next to the values. As an example, a billion UInt8-type values should consume around 1 GB uncompressed, or this strongly affects the CPU use. It is essential to store data compactly (without any “garbage”) even when uncompressed, since the speed of decompression (CPU usage) depends mainly on the volume of uncompressed data.
+In a real column-oriented DBMS, no extra data is stored with the values. Among other things, this means that constant-length values must be supported, to avoid storing their length “number” next to the values. For example, a billion UInt8-type values should consume around 1 GB uncompressed, or this strongly affects the CPU use. It is essential to store data compactly (without any “garbage”) even when uncompressed since the speed of decompression (CPU usage) depends mainly on the volume of uncompressed data.
 
-It is worth noting because there are systems that can store values of different columns separately, but that can’t effectively process analytical queries due to their optimization for other scenarios. Examples are HBase, BigTable, Cassandra, and HyperTable. In these systems, you would get throughput around a hundred thousand rows per second, but not hundreds of millions of rows per second.
+It is worth noting because there are systems that can store values of different columns separately, but that can’t effectively process analytical queries due to their optimization for other scenarios. Examples are HBase, BigTable, Cassandra, and HyperTable. You would get throughput around a hundred thousand rows per second in these systems, but not hundreds of millions of rows per second.
 
 It’s also worth noting that ClickHouse is a database management system, not a single database. ClickHouse allows creating tables and databases in runtime, loading data, and running queries without reconfiguring and restarting the server.
 
@@ -39,9 +39,9 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 
 ClickHouse supports a [declarative query language based on SQL](../sql-reference/index.md) that is identical to the ANSI SQL standard in [many cases](../sql-reference/ansi.md).
 
-Supported queries include [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), subqueries in [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md) clause, [IN](../sql-reference/operators/in.md) operator, and scalar subqueries.
+Supported queries include [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), subqueries in [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md) clause, [IN](../sql-reference/operators/in.md) operator, [window functions](../sql-reference/window-functions/index.md) and scalar subqueries.
 
-Correlated (dependent) subqueries and window functions are not supported at the time of writing but might become available in the future.
+Correlated (dependent) subqueries are not supported at the time of writing but might become available in the future.
 
 ## Vector Computation Engine {#vector-engine}
 
@@ -61,7 +61,7 @@ Unlike other database management systems, secondary indexes in ClickHouse does n
 
 ## Suitable for Online Queries {#suitable-for-online-queries}
 
-Most OLAP database management systems don’t aim for online queries with sub-second latencies. In alternative systems, report building time of tens of seconds or even minutes is often considered acceptable. Sometimes it takes even more which forces to prepare reports offline (in advance or by responding with “come back later”).
+Most OLAP database management systems do not aim for online queries with sub-second latencies. In alternative systems, report building time of tens of seconds or even minutes is often considered acceptable. Sometimes it takes even more which forces to prepare reports offline (in advance or by responding with “come back later”).
 
 In ClickHouse low latency means that queries can be processed without delay and without trying to prepare an answer in advance, right at the same moment while the user interface page is loading. In other words, online.
 
@@ -93,4 +93,4 @@ ClickHouse implements user account management using SQL queries and allows for [
 2.  Lack of ability to modify or delete already inserted data with a high rate and low latency. There are batch deletes and updates available to clean up or modify data, for example, to comply with [GDPR](https://gdpr-info.eu).
 3.  The sparse index makes ClickHouse not so efficient for point queries retrieving single rows by their keys.
 
-[Original article](https://clickhouse.tech/docs/en/introduction/distinctive-features/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/introduction/distinctive-features/) <!--hide-->

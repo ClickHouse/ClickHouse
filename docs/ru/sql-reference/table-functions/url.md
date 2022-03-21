@@ -5,7 +5,7 @@ toc_title: url
 
 # url {#url}
 
-Функция `url` берет данные по указанному адресу `URL` и создает из них таблицу указанной структуры со столбцами указанного формата. 
+Функция `url` берет данные по указанному адресу `URL` и создает из них таблицу указанной структуры со столбцами указанного формата.
 
 Функция `url` может быть использована в запросах `SELECT` и `INSERT` с таблицами на движке [URL](../../engines/table-engines/special/url.md).
 
@@ -27,7 +27,7 @@ url(URL, format, structure)
 
 **Примеры**
 
-Получение с HTTP-сервера первых 3 строк таблицы с данными в формате [CSV](../../interfaces/formats.md/#csv), содержащей столбцы типа [String](../../sql-reference/data-types/string.md) и [UInt32](../../sql-reference/data-types/int-uint.md).
+Получение с HTTP-сервера первых 3 строк таблицы с данными в формате [CSV](../../interfaces/formats.md#csv), содержащей столбцы типа [String](../../sql-reference/data-types/string.md) и [UInt32](../../sql-reference/data-types/int-uint.md).
 
 ``` sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3;
@@ -41,4 +41,7 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/url/) <!--hide-->
+## Символы подстановки в URL {globs-in-url}
+
+Шаблоны в фигурных скобках `{ }` используются, чтобы сгенерировать список шардов или указать альтернативные адреса на случай отказа. Поддерживаемые типы шаблонов и примеры смотрите в описании функции [remote](remote.md#globs-in-addresses).
+Символ `|` внутри шаблонов используется, чтобы задать адреса, если предыдущие оказались недоступны. Эти адреса перебираются в том же порядке, в котором они указаны в шаблоне. Количество адресов, которые могут быть сгенерированы, ограничено настройкой [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements).

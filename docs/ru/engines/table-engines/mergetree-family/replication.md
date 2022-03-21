@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "\u0420\u0435\u043f\u043b\u0438\u043a\u0430\u0446\u0438\u044f\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_title: "Репликация данных"
 ---
 
 # Репликация данных {#table_engines-replication}
@@ -65,6 +65,8 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 Репликация асинхронная, мульти-мастер. Запросы `INSERT` и `ALTER` можно направлять на любой доступный сервер. Данные вставятся на сервер, где выполнен запрос, а затем скопируются на остальные серверы. В связи с асинхронностью, только что вставленные данные появляются на остальных репликах с небольшой задержкой. Если часть реплик недоступна, данные на них запишутся тогда, когда они станут доступны. Если реплика доступна, то задержка составляет столько времени, сколько требуется для передачи блока сжатых данных по сети. Количество потоков для выполнения фоновых задач можно задать с помощью настройки [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size).
 
+Движок `ReplicatedMergeTree` использует отдельный пул потоков для скачивания кусков данных. Размер пула ограничен настройкой [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size), которую можно указать при перезапуске сервера.
+
 По умолчанию, запрос INSERT ждёт подтверждения записи только от одной реплики. Если данные были успешно записаны только на одну реплику, и сервер с этой репликой перестал существовать, то записанные данные будут потеряны. Вы можете включить подтверждение записи от нескольких реплик, используя настройку `insert_quorum`.
 
 Каждый блок данных записывается атомарно. Запрос INSERT разбивается на блоки данных размером до `max_insert_block_size = 1048576` строк. То есть, если в запросе `INSERT` менее 1048576 строк, то он делается атомарно.
@@ -100,7 +102,7 @@ CREATE TABLE table_name
 ) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
-SAMPLE BY intHash32(UserID)
+SAMPLE BY intHash32(UserID);
 ```
 
 <details markdown="1">
@@ -113,12 +115,12 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
 ```
 
 </details>
 
-Как видно в примере, эти параметры могут содержать подстановки в фигурных скобках. Подставляемые значения достаются из конфигурационного файла, из секции «[macros](../../../operations/server-configuration-parameters/settings/#macros)». 
+Как видно в примере, эти параметры могут содержать подстановки в фигурных скобках. Эти подстановки заменяются на соответствующие значения из конфигурационного файла, из секции [macros](../../../operations/server-configuration-parameters/settings.md#macros).
 
 Пример:
 
@@ -140,7 +142,7 @@ CREATE TABLE table_name
 `table_name` - имя узла для таблицы в ZooKeeper. Разумно делать его таким же, как имя таблицы. Оно указывается явно, так как, в отличие от имени таблицы, оно не меняется после запроса RENAME.
 *Подсказка*: можно также указать имя базы данных перед `table_name`, например `db_name.table_name`
 
-Можно использовать две встроенных подстановки `{database}` и `{table}`, они раскрываются в имя таблицы и в имя базы данных соответственно (если эти подстановки не переопределены в секции `macros`). Т.о. Zookeeper путь можно задать как `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'`. 
+Можно использовать две встроенных подстановки `{database}` и `{table}`, они раскрываются в имя таблицы и в имя базы данных соответственно (если эти подстановки не переопределены в секции `macros`). Т.о. Zookeeper путь можно задать как `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'`.
 Будьте осторожны с переименованиями таблицы при использовании этих автоматических подстановок. Путь в Zookeeper-е нельзя изменить, а подстановка при переименовании таблицы раскроется в другой путь, таблица будет обращаться к несуществующему в Zookeeper-е пути и перейдет в режим только для чтения.
 
 Имя реплики — то, что идентифицирует разные реплики одной и той же таблицы. Можно использовать для него имя сервера, как показано в примере. Впрочем, достаточно, чтобы имя было уникально лишь в пределах каждого шарда.
@@ -161,7 +163,7 @@ CREATE TABLE table_name
 ``` sql
 CREATE TABLE table_name (
 	x UInt32
-) ENGINE = ReplicatedMergeTree 
+) ENGINE = ReplicatedMergeTree
 ORDER BY x;
 ```
 
@@ -170,7 +172,7 @@ ORDER BY x;
 ``` sql
 CREATE TABLE table_name (
 	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
 ORDER BY x;
 ```
 
@@ -249,6 +251,7 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 **Смотрите также**
 
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replication/) <!--hide-->
+-   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)

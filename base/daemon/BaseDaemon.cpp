@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
@@ -9,39 +13,28 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
-#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
-#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <memory>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 
-#include <Poco/Observer.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/PatternFormatter.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Condition.h>
-#include <Poco/SyslogChannel.h>
-#include <Poco/DirectoryIterator.h>
 
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/argsToConfig.h>
-#include <common/getThreadId.h>
-#include <common/coverage.h>
-#include <common/sleep.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/argsToConfig.h>
+#include <base/getThreadId.h>
+#include <base/coverage.h>
+#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -54,15 +47,17 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <Common/setThreadName.h>
+#include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config_version.h>
-#endif
+#include <loggers/OwnFormattingChannel.h>
+#include <loggers/OwnPatternFormatter.h>
+
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -70,6 +65,7 @@
 #endif
 #include <ucontext.h>
 
+namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -83,17 +79,13 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
-static constexpr size_t max_query_id_size = 127;
-
 static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
-    + sizeof(ucontext_t)
+    + sizeof(ucontext_t*)
     + sizeof(StackTrace)
     + sizeof(UInt32)
-    + max_query_id_size + 1    /// query_id + varint encoded length
     + sizeof(void*);
-
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -109,7 +101,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     errno = saved_errno;
 }
 
-/** Signal handler for HUP / USR1 */
+/** Signal handler for HUP */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -133,18 +125,14 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
-    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    const StackTrace stack_trace(signal_context);
-
-    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
-    query_id.size = std::min(query_id.size, max_query_id_size);
+    const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
+    const StackTrace stack_trace(*signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
-    DB::writeStringBinary(query_id, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
@@ -166,7 +154,7 @@ __attribute__((__weak__)) void collectCrashLog(
 
 
 /** The thread that read info about signal or std::terminate from pipe.
-  * On HUP / USR1, close log files (for new files to be opened later).
+  * On HUP, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
   * On other signals, write info to log.
   */
@@ -188,6 +176,8 @@ public:
 
     void run() override
     {
+        static_assert(PIPE_BUF >= 512);
+        static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
         char buf[signal_pipe_buf_size];
         DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
@@ -206,7 +196,7 @@ public:
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
             }
-            else if (sig == SIGHUP || sig == SIGUSR1)
+            else if (sig == SIGHUP)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -231,10 +221,9 @@ public:
             else
             {
                 siginfo_t info{};
-                ucontext_t context{};
+                ucontext_t * context{};
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num{};
-                std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
                 if (sig != SanitizerTrap)
@@ -245,12 +234,11 @@ public:
 
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
-                DB::readBinary(query_id, in);
                 DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, thread_ptr); }).detach();
             }
         }
     }
@@ -259,27 +247,51 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(const std::string & message, UInt32 thread_num) const
+    void onTerminate(std::string_view message, UInt32 thread_num) const
     {
+        size_t pos = message.find('\n');
+
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
+
+        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
+        while (pos != std::string_view::npos)
+        {
+            ++pos;
+            size_t next_pos = message.find('\n', pos);
+            size_t size = next_pos;
+            if (next_pos != std::string_view::npos)
+                size = next_pos - pos;
+
+            LOG_FATAL(log, "{}", message.substr(pos, size));
+            pos = next_pos;
+        }
     }
 
     void onFault(
         int sig,
         const siginfo_t & info,
-        const ucontext_t & context,
+        ucontext_t * context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
-        const std::string & query_id,
         DB::ThreadStatus * thread_ptr) const
     {
         DB::ThreadStatus thread_status;
+
+        String query_id;
+        String query;
 
         /// Send logs from this thread to client if possible.
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
+            query_id = thread_ptr->getQueryId().toString();
+
+            if (auto thread_group = thread_ptr->getThreadGroup())
+            {
+                query = thread_group->query;
+            }
+
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
         }
@@ -294,19 +306,19 @@ private:
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, strsignal(sig), sig);
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
 
         if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, context);
+            error_message = signalToErrorMessage(sig, info, *context);
         else
             error_message = "Sanitizer trap.";
 
-        LOG_FATAL(log, error_message);
+        LOG_FATAL(log, fmt::runtime(error_message));
 
         if (stack_trace.getSize())
         {
@@ -319,11 +331,11 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
-            LOG_FATAL(log, bare_stacktrace.str());
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -378,20 +390,16 @@ static void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    StringRef query_id = DB::CurrentThread::getQueryId();
-    query_id.size = std::min(query_id.size, max_query_id_size);
-
     int sig = SignalListener::SanitizerTrap;
     DB::writeBinary(sig, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
-    DB::writeStringBinary(query_id, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
     /// The time that is usually enough for separate thread to print info into log.
-    sleepForSeconds(10);
+    sleepForSeconds(20);
 }
 #endif
 
@@ -437,11 +445,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(file).makeParent();
-    if (path.toString().empty())
+    fs::path path = fs::path(file).parent_path();
+    if (path.empty())
         return "";
-    Poco::File(path).createDirectories();
-    return path.toString();
+    fs::create_directories(path);
+    return path;
 };
 
 
@@ -449,7 +457,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        Poco::File(path).createDirectories();
+        fs::create_directories(path);
         return true;
     }
     catch (...)
@@ -468,9 +476,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -516,21 +524,28 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
+}
+
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    Poco::File proc_path{"/dev/fd"};
+    fs::path proc_path{"/dev/fd"};
 #else
-    Poco::File proc_path{"/proc/self/fd"};
+    fs::path proc_path{"/proc/self/fd"};
 #endif
-    if (proc_path.isDirectory()) /// Hooray, proc exists
+    if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        std::vector<std::string> fds;
-        /// in /proc/self/fd directory filenames are numeric file descriptors
-        proc_path.list(fds);
-        for (const auto & fd_str : fds)
+        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
+        std::vector<int> fds;
+        for (const auto & path : fs::directory_iterator(proc_path))
+            fds.push_back(DB::parse<int>(path.path().filename()));
+
+        for (const auto & fd : fds)
         {
-            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -592,7 +607,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+        std::string path = fs::path(config().getString("application.path")).replace_filename("");
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -640,7 +655,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = Poco::Path(log_path).setFileName("").toString();
+        log_path = fs::path(log_path).replace_filename("");
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -651,6 +666,34 @@ void BaseDaemon::initialize(Application & self)
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
+
+        /// Check that stderr is writable before freopen(),
+        /// since freopen() will make stderr invalid on error,
+        /// and logging to stderr will be broken,
+        /// so the following code (that is used in every program) will not write anything:
+        ///
+        ///     int main(int argc, char ** argv)
+        ///     {
+        ///         try
+        ///         {
+        ///             DB::SomeApp app;
+        ///             return app.run(argc, argv);
+        ///         }
+        ///         catch (...)
+        ///         {
+        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        ///             return 1;
+        ///         }
+        ///     }
+        if (access(stderr_path.c_str(), W_OK))
+        {
+            int fd;
+            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+                throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
+            if (fd != -1)
+                ::close(fd);
+        }
+
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
@@ -703,8 +746,7 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        Poco::File cores = core_path;
-        if (!(cores.exists() && cores.isDirectory()))
+        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);
@@ -788,7 +830,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
-    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGHUP}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
@@ -950,11 +992,19 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
         }
 
+        /// If streaming compression of logs is used then we write watchdog logs to cerr
+        if (config().getRawString("logger.stream_compress", "false") == "true")
+        {
+            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
+        }
+
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
         addSignalHandler(
-            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
+            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
             [](int sig, siginfo_t *, void *)
             {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,

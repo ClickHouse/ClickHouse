@@ -98,14 +98,16 @@ NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
         { "error_count",           std::make_shared<DataTypeUInt64>() },
         { "data_files",            std::make_shared<DataTypeUInt64>() },
         { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
+        { "broken_data_files",            std::make_shared<DataTypeUInt64>() },
+        { "broken_data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
         { "last_exception",        std::make_shared<DataTypeString>() },
     };
 }
 
 
-void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;
@@ -181,6 +183,8 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
             res_columns[col_num++]->insert(status.error_count);
             res_columns[col_num++]->insert(status.files_count);
             res_columns[col_num++]->insert(status.bytes_count);
+            res_columns[col_num++]->insert(status.broken_files_count);
+            res_columns[col_num++]->insert(status.broken_bytes_count);
 
             if (status.last_exception)
                 res_columns[col_num++]->insert(getExceptionMessage(status.last_exception, false));

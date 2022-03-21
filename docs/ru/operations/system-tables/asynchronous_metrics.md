@@ -35,5 +35,3 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 
- [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/asynchronous_metrics) <!--hide-->
- 

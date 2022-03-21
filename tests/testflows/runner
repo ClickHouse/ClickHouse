@@ -14,7 +14,7 @@ DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_testflows_tests"
 
-DIND_TESTFLOWS_TESTS_IMAGE_NAME = "yandex/clickhouse-testflows-runner"
+DIND_TESTFLOWS_TESTS_IMAGE_NAME = "clickhouse/testflows-runner"
 
 def check_args_and_update_paths(args):
     if not os.path.isabs(args.binary):
@@ -120,3 +120,13 @@ if __name__ == "__main__":
     print(("Running testflows container as: '" + cmd + "'."))
     # testflows return non zero error code on failed tests
     subprocess.call(cmd, shell=True)
+
+    result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH", None)
+    if result_path is not None:
+        move_from = os.path.join(args.clickhouse_root, 'tests/testflows')
+        status = os.path.join(move_from, 'check_status.tsv')
+        results = os.path.join(move_from, 'test_results.tsv')
+        clickhouse_logs = os.path.join(move_from, 'clickhouse_logs.tar.gz')
+        subprocess.call("mv {} {}".format(status, result_path), shell=True)
+        subprocess.call("mv {} {}".format(results, result_path), shell=True)
+        subprocess.call("mv {} {}".format(clickhouse_logs, result_path), shell=True)

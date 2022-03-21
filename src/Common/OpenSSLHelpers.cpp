@@ -1,10 +1,8 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #include "OpenSSLHelpers.h"
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
 

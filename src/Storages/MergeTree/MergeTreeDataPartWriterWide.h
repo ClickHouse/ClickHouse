@@ -29,12 +29,15 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
+
+    void finish(bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
+    void finishDataSerialization(bool sync);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -50,15 +53,15 @@ private:
         const NameAndTypePair & name_and_type,
         const IColumn & column,
         WrittenOffsetColumns & offset_columns,
-        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        IDataType::SerializeBinaryBulkSettings & serialize_settings,
+        ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
+        ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
 
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        DB::IDataType::SubstreamPath & path);
+        ISerialization::SubstreamPath & path);
 
     /// Write mark to disk using stream and rows count
     void flushMarkToFile(
@@ -70,12 +73,12 @@ private:
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows,
-        DB::IDataType::SubstreamPath & path);
+        ISerialization::SubstreamPath & path);
 
     void writeFinalMark(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        DB::IDataType::SubstreamPath & path);
+        ISerialization::SubstreamPath & path);
 
     void addStreams(
         const NameAndTypePair & column,
@@ -84,7 +87,7 @@ private:
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
     /// errors.
-    void validateColumnOfFixedSize(const String & name, const IDataType & type);
+    void validateColumnOfFixedSize(const NameAndTypePair & name_type);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
@@ -100,15 +103,16 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
 
-    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
     SerializationStates serialization_states;
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;

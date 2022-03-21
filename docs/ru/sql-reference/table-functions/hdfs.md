@@ -61,4 +61,3 @@ LIMIT 2
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/hdfs/) <!--hide-->

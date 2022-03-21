@@ -1,3 +1,5 @@
+-- Tags: zookeeper
+
 DROP TABLE IF EXISTS merge_tree_pk;
 
 CREATE TABLE merge_tree_pk

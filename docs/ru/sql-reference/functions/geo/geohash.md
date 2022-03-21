@@ -1,10 +1,10 @@
 ---
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0441\u0438\u0441\u0442\u0435\u043c\u043e\u0439\u0020\u0047\u0065\u006f\u0068\u0061\u0073\u0068"
+toc_title: "Функции для работы с системой Geohash"
 ---
 
 # Функции для работы с системой Geohash {#geohash}
 
-[Geohash](https://en.wikipedia.org/wiki/Geohash) — это система геокодирования, которая делит поверхность Земли на участки в виде "решетки", и каждую ячейку решетки кодирует в виде строки из букв и цифр. Система поддерживает иерархию (вложенность) ячеек, поэтому чем точнее определена геопозиция, тем длиннее строка с кодом соответствующей ячейки. 
+[Geohash](https://en.wikipedia.org/wiki/Geohash) — это система геокодирования, которая делит поверхность Земли на участки в виде "решетки", и каждую ячейку решетки кодирует в виде строки из букв и цифр. Система поддерживает иерархию (вложенность) ячеек, поэтому чем точнее определена геопозиция, тем длиннее строка с кодом соответствующей ячейки.
 
 Для ручного преобразования географических координат в строку geohash можно использовать сайт [geohash.org](http://geohash.org/).
 
@@ -29,7 +29,7 @@ geohashEncode(longitude, latitude, [precision])
 **Пример**
 
 ``` sql
-SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
 ``` text
@@ -57,7 +57,7 @@ geohashDecode(geohash_string)
 **Пример**
 
 ``` sql
-SELECT geohashDecode('ezs42') AS res
+SELECT geohashDecode('ezs42') AS res;
 ```
 
 ``` text
@@ -76,20 +76,20 @@ SELECT geohashDecode('ezs42') AS res
 geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `longitude_min` — минимальная долгота. Диапазон возможных значений: `[-180°, 180°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md)).
--   `latitude_min` - минимальная широта. Диапазон возможных значений: `[-90°, 90°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
--   `longitude_max` - максимальная долгота. Диапазон возможных значений: `[-180°, 180°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
--   `latitude_max` - максимальная широта. Диапазон возможных значений: `[-90°, 90°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
--   `precision` - точность geohash. Диапазон возможных значений: `[1, 12]`. Тип данных: [UInt8](../../../sql-reference/data-types/int-uint.md).
+-   `latitude_min` — минимальная широта. Диапазон возможных значений: `[-90°, 90°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
+-   `longitude_max` — максимальная долгота. Диапазон возможных значений: `[-180°, 180°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
+-   `latitude_max` — максимальная широта. Диапазон возможных значений: `[-90°, 90°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
+-   `precision` — точность geohash. Диапазон возможных значений: `[1, 12]`. Тип данных: [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 !!! info "Замечание"
     Все передаваемые координаты должны быть одного и того же типа: либо `Float32`, либо `Float64`.
 
 **Возвращаемые значения**
 
--   Массив строк, описывающих участки, покрывающие заданный участок. Длина каждой строки соответствует точности geohash. Порядок строк — произвольный. 
+-   Массив строк, описывающих участки, покрывающие заданный участок. Длина каждой строки соответствует точности geohash. Порядок строк — произвольный.
 -   \[\] - Если переданные минимальные значения широты и долготы больше соответствующих максимальных значений, функция возвращает пустой массив.
 
 Тип данных: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-reference/data-types/string.md)).
@@ -102,8 +102,9 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 Запрос:
 
 ``` sql
-SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
+
 Результат:
 
 ``` text
@@ -112,4 +113,3 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 └─────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/geo/geohash) <!--hide-->

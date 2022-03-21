@@ -1,5 +1,5 @@
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -49,47 +49,48 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
     return res;
 }
 
+ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
+{
+    if (col.type->isNullable())
+    {
+        const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
+
+        if (!col.column)
+        {
+            return ColumnWithTypeAndName{nullptr, nested_type, col.name};
+        }
+        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
+        {
+            const auto & nested_col = nullable->getNestedColumnPtr();
+            return ColumnWithTypeAndName{nested_col, nested_type, col.name};
+        }
+        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
+        {
+            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
+
+            ColumnPtr nullable_res;
+            if (nullable_column)
+            {
+                const auto & nested_col = nullable_column->getNestedColumnPtr();
+                nullable_res = ColumnConst::create(nested_col, col.column->size());
+            }
+            else
+            {
+                nullable_res = makeNullable(col.column);
+            }
+            return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
+        }
+        else
+            throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
+    }
+    return col;
+}
 
 ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
     ColumnsWithTypeAndName res;
     for (const auto & col : columns)
-    {
-        if (col.type->isNullable())
-        {
-            const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
-
-            if (!col.column)
-            {
-                res.emplace_back(ColumnWithTypeAndName{nullptr, nested_type, col.name});
-            }
-            else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
-            {
-                const auto & nested_col = nullable->getNestedColumnPtr();
-                res.emplace_back(ColumnWithTypeAndName{nested_col, nested_type, col.name});
-            }
-            else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
-            {
-                const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
-
-                ColumnPtr nullable_res;
-                if (nullable_column)
-                {
-                    const auto & nested_col = nullable_column->getNestedColumnPtr();
-                    nullable_res = ColumnConst::create(nested_col, col.column->size());
-                }
-                else
-                {
-                    nullable_res = makeNullable(col.column);
-                }
-                res.emplace_back(ColumnWithTypeAndName{ nullable_res, nested_type, col.name });
-            }
-            else
-                throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else
-            res.emplace_back(col);
-    }
+        res.emplace_back(columnGetNested(col));
 
     return res;
 }
@@ -223,12 +224,98 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+bool areTypesEqual(const IDataType & lhs, const IDataType & rhs)
 {
-    const auto & lhs_name = lhs->getName();
-    const auto & rhs_name = rhs->getName();
+    const auto & lhs_name = lhs.getName();
+    const auto & rhs_name = rhs.getName();
 
     return lhs_name == rhs_name;
+}
+
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    return areTypesEqual(*lhs, *rhs);
+}
+
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
+    if (src->onlyNull())
+        return src;
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    {
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
+    }
+
+    for (const auto & elem : args)
+    {
+        if (!elem.type->isNullable())
+            continue;
+
+        /// Const Nullable that are NULL.
+        if (elem.column->onlyNull())
+        {
+            assert(result_type->isNullable());
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
+        if (isColumnConst(*elem.column))
+            continue;
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        {
+            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
+            if (!result_null_map_column) //-V1051
+            {
+                result_null_map_column = null_map_column;
+            }
+            else
+            {
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    result_null_map[i] |= src_null_map[i];
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
+            }
+        }
+    }
+
+    if (!result_null_map_column)
+        return makeNullable(src);
+
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+}
+
+NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
+{
+    NullPresence res;
+
+    for (const auto & elem : args)
+    {
+        res.has_nullable |= elem.type->isNullable();
+        res.has_null_constant |= elem.type->onlyNull();
+    }
+
+    return res;
+}
+
+bool isDecimalOrNullableDecimal(const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    if (which.isDecimal())
+        return true;
+    if (!which.isNullable())
+        return false;
+    return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
 }

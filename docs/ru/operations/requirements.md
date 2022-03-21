@@ -1,6 +1,6 @@
 ---
 toc_priority: 44
-toc_title: "\u0422\u0440\u0435\u0431\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Требования"
 ---
 
 # Требования {#trebovaniia}

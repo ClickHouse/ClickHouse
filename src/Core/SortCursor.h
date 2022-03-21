@@ -53,7 +53,7 @@ struct SortCursorImpl
       */
     IColumn::Permutation * permutation = nullptr;
 
-    SortCursorImpl() {}
+    SortCursorImpl() = default;
 
     SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
@@ -126,7 +126,7 @@ struct SortCursorImpl
 
 /// Prevent using pos instead of getRow()
 private:
-    size_t pos;
+    size_t pos = 0;
 };
 
 using SortCursorImpls = std::vector<SortCursorImpl>;
@@ -140,7 +140,7 @@ struct SortCursorHelper
 
     const Derived & derived() const { return static_cast<const Derived &>(*this); }
 
-    SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
+    explicit SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
 
@@ -245,7 +245,7 @@ public:
     SortingHeap() = default;
 
     template <typename Cursors>
-    SortingHeap(Cursors & cursors)
+    explicit SortingHeap(Cursors & cursors)
     {
         size_t size = cursors.size();
         queue.reserve(size);
@@ -365,5 +365,21 @@ private:
         *curr_it = std::move(top);
     }
 };
+
+template <typename TLeftColumns, typename TRightColumns>
+bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescription & descr)
+{
+    for (const auto & elem : descr)
+    {
+        size_t ind = elem.column_number;
+        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
+        if (res < 0)
+            return true;
+        else if (res > 0)
+            return false;
+    }
+
+    return false;
+}
 
 }

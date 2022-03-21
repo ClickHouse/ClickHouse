@@ -4,16 +4,13 @@ import sys
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/minio.xml", "configs/ssl.xml", "configs/config.d/log_conf.xml"],
+                             main_configs=["configs/minio.xml", "configs/ssl.xml"],
                              with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -33,10 +30,20 @@ def assert_objects_count(cluster, objects_count, path='data/'):
             logging.info("Existing S3 object: %s", str(object_meta))
         assert objects_count == len(s3_objects)
 
-
+# TinyLog: files: id.bin, sizes.json
+# INSERT overwrites 1 file (`sizes.json`) and appends 1 file (`id.bin`), so
+# files_overhead=1, files_overhead_per_insert=1
+#
+# Log: files: id.bin, __marks.mrk, sizes.json
+# INSERT overwrites 1 file (`sizes.json`), and appends 2 files (`id.bin`, `__marks.mrk`), so
+# files_overhead=1, files_overhead_per_insert=2
+#
+# StripeLog: files: data.bin, index.mrk, sizes.json
+# INSERT overwrites 1 file (`sizes.json`), and appends 2 files (`index.mrk`, `data.bin`), so
+# files_overhead=1, files_overhead_per_insert=2
 @pytest.mark.parametrize(
     "log_engine,files_overhead,files_overhead_per_insert",
-    [("TinyLog", 1, 1), ("Log", 2, 1), ("StripeLog", 1, 2)])
+    [("TinyLog", 1, 1), ("Log", 1, 2), ("StripeLog", 1, 2)])
 def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_insert):
     node = cluster.instances["node"]
 

@@ -24,7 +24,8 @@ DiskPtr DiskFactory::create(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const Context & context) const
+    ContextPtr context,
+    const DisksMap & map) const
 {
     const auto disk_type = config.getString(config_prefix + ".type", "local");
 
@@ -33,7 +34,7 @@ DiskPtr DiskFactory::create(
         throw Exception{"DiskFactory: the disk '" + name + "' has unknown disk type: " + disk_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 
     const auto & disk_creator = found->second;
-    return disk_creator(name, config, config_prefix, context);
+    return disk_creator(name, config, config_prefix, context, map);
 }
 
 }

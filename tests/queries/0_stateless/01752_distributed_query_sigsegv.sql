@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 -- this is enough to trigger the regression
 SELECT throwIf(dummy = 0) FROM remote('127.1', system.one); -- { serverError 395 }
 

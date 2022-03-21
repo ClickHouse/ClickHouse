@@ -1,7 +1,3 @@
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
@@ -85,7 +81,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end; ++pos)
+    for (; pos < end; ++pos, ++pos2)
         count += (*pos & ~*pos2) != 0;
 
     return count;
@@ -196,7 +192,7 @@ namespace
     {
         const size_t size = src_offsets.size();
         if (size != filt.size())
-            throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
         ResultOffsetsBuilder result_offsets_builder(res_offsets);
 
@@ -229,23 +225,19 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #ifdef __SSE2__
-        const __m128i zero_vec = _mm_setzero_si128();
-        static constexpr size_t SIMD_BYTES = 16;
+        /** A slightly more optimized version.
+        * Based on the assumption that often pieces of consecutive values
+        *  completely pass or do not pass the filter.
+        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+        */
+        static constexpr size_t SIMD_BYTES = 64;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
         {
-            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
-                zero_vec));
-            mask = ~mask;
+            uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
 
-            if (mask == 0)
-            {
-                /// SIMD_BYTES consecutive rows do not pass the filter
-            }
-            else if (mask == 0xffff)
+            if (0xffffffffffffffff == mask)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -262,15 +254,21 @@ namespace
             }
             else
             {
-                for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
-                        copy_array(offsets_pos + i);
+                while (mask)
+                {
+                    size_t index = __builtin_ctzll(mask);
+                    copy_array(offsets_pos + index);
+                #ifdef __BMI__
+                    mask = _blsr_u64(mask);
+                #else
+                    mask = mask & (mask-1);
+                #endif
+                }
             }
 
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
         }
-    #endif
 
         while (filt_pos < filt_end)
         {
@@ -344,5 +342,20 @@ namespace detail
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
+
+size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
+{
+    if (limit == 0)
+        limit = column_size;
+    else
+        limit = std::min(column_size, limit);
+
+    if (perm_size < limit)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of permutation ({}) is less than required ({})", perm_size, limit);
+
+    return limit;
+}
+
 
 }

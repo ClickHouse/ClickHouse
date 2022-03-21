@@ -3,6 +3,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Common/assert_cast.h>
@@ -30,7 +31,7 @@ Field nowSubsecond(UInt32 scale)
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
-    DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
+    DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
 
     // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
     // Andjust fractional to scale, e.g. for 123456789 nanoseconds:
@@ -47,14 +48,14 @@ Field nowSubsecond(UInt32 scale)
 }
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow64 : public IExecutableFunctionImpl
+class ExecutableFunctionNow64 : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
 
     String getName() const override { return "now64"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, time_value);
     }
@@ -63,16 +64,16 @@ private:
     Field time_value;
 };
 
-class FunctionBaseNow64 : public IFunctionBaseImpl
+class FunctionBaseNow64 : public IFunctionBase
 {
 public:
-    explicit FunctionBaseNow64(Field time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
+    explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
+        : time_value(time_), argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
 
     String getName() const override { return "now64"; }
 
     const DataTypes & getArgumentTypes() const override
     {
-        static const DataTypes argument_types;
         return argument_types;
     }
 
@@ -81,20 +82,22 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     Field time_value;
+    DataTypes argument_types;
     DataTypePtr return_type;
 };
 
-class Now64OverloadResolver : public IFunctionOverloadResolverImpl
+class Now64OverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now64";
@@ -106,17 +109,18 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<Now64OverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
 
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
+        String timezone_name;
 
-        if (arguments.size() > 1)
+        if (arguments.size() > 2)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        if (arguments.size() == 1)
+        if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
@@ -128,18 +132,27 @@ public:
 
             scale = argument.column->get64(0);
         }
+        if (arguments.size() == 2)
+        {
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+        }
 
-        return std::make_shared<DataTypeDateTime64>(scale);
+        return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
     }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
         auto res_type = removeNullable(result_type);
         if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(res_type.get()))
             scale = type->getScale();
 
-        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), result_type);
+        DataTypes arg_types;
+        arg_types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            arg_types.push_back(arg.type);
+
+        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
 };
 

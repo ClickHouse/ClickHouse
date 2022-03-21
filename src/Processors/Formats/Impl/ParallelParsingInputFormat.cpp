@@ -2,17 +2,12 @@
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <ext/scope_guard.h>
 
 namespace DB
 {
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
-    SCOPE_EXIT(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
@@ -26,8 +21,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                segmentator_condvar.wait(lock,
-                                         [&]{ return unit.status == READY_TO_INSERT || parsing_finished; });
+                segmentator_condvar.wait(lock, [&] { return unit.status == READY_TO_INSERT || parsing_finished; });
             }
 
             if (parsing_finished)
@@ -38,7 +32,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(in, unit.segment, min_chunk_bytes);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
@@ -60,12 +54,8 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
-    SCOPE_EXIT(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
     if (thread_group)
-        CurrentThread::attachTo(thread_group);
+        CurrentThread::attachToIfDetached(thread_group);
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
@@ -89,6 +79,11 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         unit.chunk_ext.chunk.clear();
         unit.chunk_ext.block_missing_values.clear();
 
+        /// Propagate column_mapping to other parsers.
+        /// Note: column_mapping is used only for *WithNames types
+        if (current_ticket_number != 0)
+            input_format->setColumnMapping(column_mapping);
+
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
@@ -98,6 +93,14 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
             /// NOLINTNEXTLINE(bugprone-use-after-move)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+        }
+
+        /// Extract column_mapping from first parser to propagate it to others
+        if (current_ticket_number == 0)
+        {
+            column_mapping = input_format->getColumnMapping();
+            column_mapping->is_set = true;
+            first_parser_finished.set();
         }
 
         // We suppose we will get at least some blocks for a non-empty buffer,
@@ -117,8 +120,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
@@ -127,14 +128,23 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
             if (e->getLineNumber() != -1)
                 e->setLineNumber(e->getLineNumber() + offset);
     }
-    tryLogCurrentException(__PRETTY_FUNCTION__);
+    if (is_server)
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
+    first_parser_finished.set();
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
 }
 
 Chunk ParallelParsingInputFormat::generate()
 {
+    /// Delayed launching of segmentator thread
+    if (unlikely(!parsing_started.exchange(true)))
+    {
+        segmentator_thread = ThreadFromGlobalPool(
+            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+    }
+
     if (isCancelled() || parsing_finished)
     {
         /**

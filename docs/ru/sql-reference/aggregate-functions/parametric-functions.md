@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: "\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043d\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Параметрические агрегатные функции"
 ---
 
 # Параметрические агрегатные функции {#aggregate_functions_parametric}
@@ -11,14 +11,19 @@ toc_title: "\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0438\u0447\u0435\u
 
 Рассчитывает адаптивную гистограмму. Не гарантирует точного результата.
 
-    histogram(number_of_bins)(values)
+``` sql
+histogram(number_of_bins)(values)
+```
 
 Функция использует [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). Границы столбцов устанавливаются по мере поступления новых данных в функцию. В общем случае столбцы имею разную ширину.
+
+**Аргументы**
+
+`values` — [выражение](../syntax.md#syntax-expressions), предоставляющее входные значения.
 
 **Параметры**
 
 `number_of_bins` — максимальное количество корзин в гистограмме. Функция автоматически вычисляет количество корзин. Она пытается получить указанное количество корзин, но если не получилось, то в результате корзин будет меньше.
-`values` — [выражение](../syntax.md#syntax-expressions), предоставляющее входные значения.
 
 **Возвращаемые значения**
 
@@ -87,13 +92,15 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 !!! warning "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
 
-**Параметры**
-
--   `pattern` — строка с шаблоном. Смотрите [Синтаксис шаблонов](#sequence-function-pattern-syntax).
+**Аргументы**
 
 -   `timestamp` — столбец, содержащий метки времени. Типичный тип данных столбца — `Date` или `DateTime`. Также можно использовать любой из поддержанных типов данных [UInt](../../sql-reference/aggregate-functions/parametric-functions.md).
 
 -   `cond1`, `cond2` — условия, описывающие цепочку событий. Тип данных — `UInt8`. Можно использовать до 32 условий. Функция учитывает только те события, которые указаны в условиях. Функция пропускает данные из последовательности, если они не описаны ни в одном из условий.
+
+**Параметры**
+
+-   `pattern` — строка с шаблоном. Смотрите [Синтаксис шаблонов](#sequence-function-pattern-syntax).
 
 **Возвращаемые значения**
 
@@ -109,7 +116,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `.*` — соответствует любому количеству событий. Для этого элемента шаблона не надо задавать условия.
 
--   `(?t operator value)` — устанавливает время в секундах, которое должно разделять два события. Например, шаблон `(?1)(?t>1800)(?2)` соответствует событиям, которые произошли более чем через 1800 секунд друг от друга. Между этими событиями может находиться произвольное количество любых событий. Операторы могут быть `>=`, `>`, `<`, `<=`.
+-   `(?t operator value)` — устанавливает время в секундах, которое должно разделять два события. Например, шаблон `(?1)(?t>1800)(?2)` соответствует событиям, которые произошли более чем через 1800 секунд друг от друга. Между этими событиями может находиться произвольное количество любых событий. Операторы могут быть `>=`, `>`, `<`, `<=`, `==`.
 
 **Примеры**
 
@@ -165,7 +172,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 ## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
-Вычисляет количество цепочек событий, соответствующих шаблону. Функция обнаруживает только непересекающиеся цепочки событий. Она начитает искать следующую цепочку только после того, как полностью совпала текущая цепочка событий.
+Вычисляет количество цепочек событий, соответствующих шаблону. Функция обнаруживает только непересекающиеся цепочки событий. Она начинает искать следующую цепочку только после того, как полностью совпала текущая цепочка событий.
 
 !!! warning "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
@@ -174,13 +181,15 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-**Параметры**
-
--   `pattern` — строка с шаблоном. Смотрите [Синтаксис шаблонов](#sequence-function-pattern-syntax).
+**Аргументы**
 
 -   `timestamp` — столбец, содержащий метки времени. Типичный тип данных столбца — `Date` или `DateTime`. Также можно использовать любой из поддержанных типов данных [UInt](../../sql-reference/aggregate-functions/parametric-functions.md).
 
 -   `cond1`, `cond2` — условия, описывающие цепочку событий. Тип данных — `UInt8`. Можно использовать до 32 условий. Функция учитывает только те события, которые указаны в условиях. Функция пропускает данные из последовательности, если они не описаны ни в одном из условий.
+
+**Параметры**
+
+-   `pattern` — строка с шаблоном. Смотрите [Синтаксис шаблонов](#sequence-function-pattern-syntax).
 
 **Возвращаемое значение**
 
@@ -234,15 +243,21 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 **Синтаксис**
 
 ``` sql
-windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 ```
+
+**Аргументы**
+
+-   `timestamp` — имя столбца, содержащего временные отметки. [Date](../../sql-reference/aggregate-functions/parametric-functions.md), [DateTime](../../sql-reference/aggregate-functions/parametric-functions.md#data_type-datetime) и другие параметры с типом `Integer`. В случае хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
+-   `cond` — условия или данные, описывающие цепочку событий. [UInt8](../../sql-reference/aggregate-functions/parametric-functions.md).
 
 **Параметры**
 
--   `window` — ширина скользящего окна по времени. Единица измерения зависит от `timestamp` и может варьироваться. Должно соблюдаться условие `timestamp события cond2 <= timestamp события cond1 + window`.
--   `mode` - необязательный параметр. Если установлено значение `'strict'`, то функция `windowFunnel()` применяет условия только для уникальных значений.
--   `timestamp` — имя столбца, содержащего временные отметки. [Date](../../sql-reference/aggregate-functions/parametric-functions.md), [DateTime](../../sql-reference/aggregate-functions/parametric-functions.md#data_type-datetime) и другие параметры с типом `Integer`. В случае хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
--   `cond` — условия или данные, описывающие цепочку событий. [UInt8](../../sql-reference/aggregate-functions/parametric-functions.md).
+-   `window` — ширина скользящего окна по времени. Это время между первым и последним условием. Единица измерения зависит от `timestamp` и может варьироваться. Должно соблюдаться условие `timestamp события cond1 <= timestamp события cond2 <= ... <= timestamp события condN <= timestamp события cond1 + window`.
+-   `mode` — необязательный параметр. Может быть установленно несколько значений одновременно.
+    -   `'strict'` — не учитывать подряд идущие повторяющиеся события.
+    -   `'strict_order'` — запрещает посторонние события в искомой последовательности. Например, при поиске цепочки `A->B->C` в `A->B->D->C` поиск будет остановлен на `D` и функция вернет 2.
+    -   `'strict_increase'` — условия прменяются только для событий со строго возрастающими временными метками.
 
 **Возвращаемое значение**
 
@@ -296,7 +311,7 @@ FROM
     GROUP BY user_id
 )
 GROUP BY level
-ORDER BY level ASC
+ORDER BY level ASC;
 ```
 
 ## retention {#retention}
@@ -306,7 +321,7 @@ ORDER BY level ASC
 
 Функция принимает набор (от 1 до 32) логических условий, как в [WHERE](../../sql-reference/statements/select/where.md#select-where), и применяет их к заданному набору данных.
 
-Условия, кроме первого, применяются попарно: результат второго будет истинным, если истинно первое и второе, третьего - если истинно первое и третье и т. д.
+Условия, кроме первого, применяются попарно: результат второго будет истинным, если истинно первое и второе, третьего - если истинно первое и третье и т.д.
 
 **Синтаксис**
 
@@ -314,7 +329,7 @@ ORDER BY level ASC
 retention(cond1, cond2, ..., cond32)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `cond` — вычисляемое условие или выражение, которое возвращает `UInt8` результат (1/0).
 
@@ -481,4 +496,258 @@ FROM
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/parametric_functions/) <!--hide-->
+## sequenceNextNode {#sequenceNextNode}
+
+Возвращает значение следующего события, соответствующего цепочке событий.
+
+_Экспериментальная функция, чтобы включить ее, выполните: `SET allow_experimental_funnel_functions = 1`._
+
+**Синтаксис**
+
+``` sql
+sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
+```
+
+**Параметры**
+
+-   `direction` — используется для навигации по направлениям.
+    - forward — двигаться вперед.
+    - backward — двигаться назад.
+
+-   `base` — используется для задания начальной точки.
+    - head — установить начальную точку на первое событие цепочки.
+    - tail — установить начальную точку на последнее событие цепочки.
+    - first_match — установить начальную точку на первое соответствующее событие `event1`.
+    - last_match — установить начальную точку на последнее соответствующее событие `event1`.
+
+**Аргументы**
+
+-   `timestamp` — название столбца, содержащего `timestamp`. Поддерживаемые типы данных: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) и другие беззнаковые целые типы.
+-   `event_column` — название столбца, содержащего значение следующего возвращаемого события. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) и [Nullable(String)](../../sql-reference/data-types/nullable.md).
+-   `base_condition` — условие, которому должна соответствовать исходная точка.
+-   `event1`, `event2`, ... — условия, описывающие цепочку событий. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-  `event_column[next_index]` — если есть совпадение с шаблоном и существует следующее значение.
+-  `NULL` — если нет совпадений с шаблоном или следующего значения не существует.
+
+Тип: [Nullable(String)](../../sql-reference/data-types/nullable.md).
+
+**Пример**
+
+Функцию можно использовать, если есть цепочка событий A->B->C->D->E, и вы хотите определить событие, следующее за B->C, то есть D.
+
+Запрос ищет событие после A->B:
+
+``` sql
+CREATE TABLE test_flow (
+    dt DateTime,
+    id int,
+    page String)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
+
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
+```
+
+Результат:
+
+``` text
+┌─id─┬─next_flow─┐
+│  1 │ C         │
+└────┴───────────┘
+```
+
+**Поведение для `forward` и `head`**
+
+``` sql
+ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
+
+INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
+INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2, 'Basket');
+INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
+
+                  dt   id   page
+ 1970-01-01 09:00:01    1   Home // Исходная точка, совпадение с Home
+ 1970-01-01 09:00:02    1   Gift // Совпадение с Gift
+ 1970-01-01 09:00:03    1   Exit // Результат
+
+ 1970-01-01 09:00:01    2   Home // Исходная точка, совпадение с Home
+ 1970-01-01 09:00:02    2   Home // Несовпадение с Gift
+ 1970-01-01 09:00:03    2   Gift
+ 1970-01-01 09:00:04    2   Basket
+
+ 1970-01-01 09:00:01    3   Gift // Исходная точка, несовпадение с Home
+ 1970-01-01 09:00:02    3   Home
+ 1970-01-01 09:00:03    3   Gift
+ 1970-01-01 09:00:04    3   Basket
+```
+
+**Поведение для `backward` и `tail`**
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift
+1970-01-01 09:00:03    1   Exit // Исходная точка, несовпадение с Basket
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // Результат
+1970-01-01 09:00:03    2   Gift // Совпадение с Gift
+1970-01-01 09:00:04    2   Basket // Исходная точка, совпадение с Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift // Исходная точка, совпадение с Gift
+1970-01-01 09:00:04    3   Basket // Исходная точка, совпадение с Basket
+```
+
+
+**Поведение для `forward` и `first_match`**
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit // Результат
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket  Результат
+
+1970-01-01 09:00:01    3   Gift // Исходная точка
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift
+1970-01-01 09:00:04    3   Basket
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit // Несовпадение с Home
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket // Несовпадение с Home
+
+1970-01-01 09:00:01    3   Gift // Исходная точка
+1970-01-01 09:00:02    3   Home // Совпадение с Home
+1970-01-01 09:00:03    3   Gift // Результат
+1970-01-01 09:00:04    3   Basket
+```
+
+
+**Поведение для `backward` и `last_match`**
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Результат
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // Результат
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift // Исходная точка
+1970-01-01 09:00:04    3   Basket
+```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Совпадение с Home, результат `Null`
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home // Результат
+1970-01-01 09:00:02    2   Home // Совпадение с Home
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift // Результат
+1970-01-01 09:00:02    3   Home // Совпадение с Home
+1970-01-01 09:00:03    3   Gift // Исходная точка
+1970-01-01 09:00:04    3   Basket
+```
+
+
+**Поведение для `base_condition`**
+
+``` sql
+CREATE TABLE test_flow_basecond
+(
+    `dt` DateTime,
+    `id` int,
+    `page` String,
+    `ref` String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // Начало не может быть исходной точкой, поскольку столбец ref не соответствует 'ref1'.
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1
+ ```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1 // Конец не может быть исходной точкой, поскольку столбец ref не соответствует 'ref4'.
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // Эта строка не может быть исходной точкой, поскольку столбец ref не соответствует 'ref3'.
+ 1970-01-01 09:00:02    1   A      ref3 // Исходная точка
+ 1970-01-01 09:00:03    1   B      ref2 // Результат
+ 1970-01-01 09:00:04    1   B      ref1
+```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3 // Результат
+ 1970-01-01 09:00:03    1   B      ref2 // Исходная точка
+ 1970-01-01 09:00:04    1   B      ref1 // Эта строка не может быть исходной точкой, поскольку столбец ref не соответствует 'ref2'.
+```

@@ -8,43 +8,48 @@ Example:
 ``` sql
 SELECT *
 FROM system.replicas
-WHERE table = 'visits'
+WHERE table = 'test_table'
 FORMAT Vertical
 ```
 
 ``` text
+Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
+
 Row 1:
-──────
-database:                   merge
-table:                      visits
-engine:                     ReplicatedCollapsingMergeTree
-is_leader:                  1
-can_become_leader:          1
-is_readonly:                0
-is_session_expired:         0
-future_parts:               1
-parts_to_check:             0
-zookeeper_path:             /clickhouse/tables/01-06/visits
-replica_name:               example01-06-1.yandex.ru
-replica_path:               /clickhouse/tables/01-06/visits/replicas/example01-06-1.yandex.ru
-columns_version:            9
-queue_size:                 1
-inserts_in_queue:           0
-merges_in_queue:            1
-part_mutations_in_queue:    0
-queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        1970-01-01 00:00:00
-merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 1970-01-01 00:00:00
-oldest_part_to_get:
-oldest_part_to_merge_to:    20200220_20284_20840_7
-oldest_part_to_mutate_to:
-log_max_index:              596273
-log_pointer:                596274
-last_queue_update:          2020-02-20 08:34:32
-absolute_delay:             0
-total_replicas:             2
-active_replicas:            2
+───────
+database:                    db
+table:                       test_table
+engine:                      ReplicatedMergeTree
+is_leader:                   1
+can_become_leader:           1
+is_readonly:                 0
+is_session_expired:          0
+future_parts:                0
+parts_to_check:              0
+zookeeper_path:              /test/test_table
+replica_name:                r1
+replica_path:                /test/test_table/replicas/r1
+columns_version:             -1
+queue_size:                  27
+inserts_in_queue:            27
+merges_in_queue:             0
+part_mutations_in_queue:     0
+queue_oldest_time:           2021-10-12 14:48:48
+inserts_oldest_time:         2021-10-12 14:48:48
+merges_oldest_time:          1970-01-01 03:00:00
+part_mutations_oldest_time:  1970-01-01 03:00:00
+oldest_part_to_get:          1_17_17_0
+oldest_part_to_merge_to:     
+oldest_part_to_mutate_to:    
+log_max_index:               206
+log_pointer:                 207
+last_queue_update:           2021-10-12 14:50:08
+absolute_delay:              99
+total_replicas:              5
+active_replicas:             5
+last_queue_update_exception: 
+zookeeper_exception:         
+replica_is_active:           {'r1':1,'r2':1}
 ```
 
 Columns:
@@ -57,7 +62,7 @@ Columns:
     Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
 -   `can_become_leader` (`UInt8`) - Whether the replica can be a leader.
 -   `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
-    This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
+    This mode is turned on if the config does not have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
 -   `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
 -   `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
 -   `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
@@ -82,9 +87,12 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
 -   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
+-   `last_queue_update_exception` (`String`) - When the queue contains broken entries. Especially important when ClickHouse breaks backward compatibility between versions and log entries written by newer versions aren't parseable by old versions.
+-   `zookeeper_exception` (`String`) - The last exception message, got if the error happened when fetching the info from ZooKeeper. 
+-   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — Map between replica name and is replica active.
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you don’t request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
+If you do not request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
 
 For example, you can check that everything is working correctly like this:
 
@@ -118,7 +126,7 @@ WHERE
     OR active_replicas < total_replicas
 ```
 
-If this query doesn’t return anything, it means that everything is fine.
+If this query does not return anything, it means that everything is fine.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/replicas) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/replicas) <!--hide-->
 

@@ -10,12 +10,17 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -44,17 +49,13 @@ void ORCOutputStream::write(const void* buf, size_t length)
 }
 
 ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_), data_types(header_.getDataTypes())
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_)
 {
-    schema = orc::createStructType();
-    options.setCompression(orc::CompressionKind::CompressionKind_NONE);
-    size_t columns_count = header_.columns();
-    for (size_t i = 0; i != columns_count; ++i)
-        schema->addStructField(header_.safeGetByPosition(i).name, getORCType(data_types[i]));
-    writer = orc::createWriter(*schema, &output_stream, options);
+    for (const auto & type : header_.getDataTypes())
+        data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
-ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type)
+ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
 {
     switch (type->getTypeId())
     {
@@ -86,6 +87,7 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         {
             return orc::createPrimitiveType(orc::TypeKind::DOUBLE);
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Date:
         {
             return orc::createPrimitiveType(orc::TypeKind::DATE);
@@ -102,27 +104,47 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         }
         case TypeIndex::Nullable:
         {
-            return getORCType(removeNullable(type));
+            return getORCType(removeNullable(type), column_name);
         }
         case TypeIndex::Array:
         {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-            return orc::createListType(getORCType(array_type->getNestedType()));
+            const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
+            return orc::createListType(getORCType(array_type->getNestedType(), column_name));
         }
         case TypeIndex::Decimal32:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal32> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal32> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
         }
         case TypeIndex::Decimal64:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal64> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal64> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
         }
         case TypeIndex::Decimal128:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal128> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal128> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
+            const auto & nested_types = tuple_type->getElements();
+            auto struct_type = orc::createStructType();
+            for (size_t i = 0; i < nested_types.size(); ++i)
+            {
+                String name = column_name + "." + std::to_string(i);
+                struct_type->addStructField(name, getORCType(nested_types[i], name));
+            }
+            return struct_type;
+        }
+        case TypeIndex::Map:
+        {
+            const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
+            return orc::createMapType(
+                getORCType(map_type->getKeyType(), column_name),
+                getORCType(map_type->getValueType(), column_name)
+                );
         }
         default:
         {
@@ -149,6 +171,8 @@ void ORCBlockOutputFormat::writeNumbers(
             number_orc_column.notNull[i] = 0;
             continue;
         }
+
+        number_orc_column.notNull[i] = 1;
         number_orc_column.data[i] = convert(number_column.getElement(i));
     }
     number_orc_column.numElements = number_column.size();
@@ -164,7 +188,7 @@ void ORCBlockOutputFormat::writeDecimals(
 {
     DecimalVectorBatch & decimal_orc_column = dynamic_cast<DecimalVectorBatch &>(orc_column);
     const auto & decimal_column = assert_cast<const ColumnDecimal<Decimal> &>(column);
-    const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal> *>(type.get());
+    const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal> *>(type.get());
     decimal_orc_column.precision = decimal_type->getPrecision();
     decimal_orc_column.scale = decimal_type->getScale();
     decimal_orc_column.resize(decimal_column.size());
@@ -175,6 +199,8 @@ void ORCBlockOutputFormat::writeDecimals(
             decimal_orc_column.notNull[i] = 0;
             continue;
         }
+
+        decimal_orc_column.notNull[i] = 1;
         decimal_orc_column.values[i] = convert(decimal_column.getElement(i).value);
     }
     decimal_orc_column.numElements = decimal_column.size();
@@ -197,6 +223,8 @@ void ORCBlockOutputFormat::writeStrings(
             string_orc_column.notNull[i] = 0;
             continue;
         }
+
+        string_orc_column.notNull[i] = 1;
         const StringRef & string = string_column.getDataAt(i);
         string_orc_column.data[i] = const_cast<char *>(string.data);
         string_orc_column.length[i] = string.size;
@@ -223,6 +251,8 @@ void ORCBlockOutputFormat::writeDateTimes(
             timestamp_orc_column.notNull[i] = 0;
             continue;
         }
+
+        timestamp_orc_column.notNull[i] = 1;
         timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
         timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
@@ -235,11 +265,10 @@ void ORCBlockOutputFormat::writeColumn(
     DataTypePtr & type,
     const PaddedPODArray<UInt8> * null_bytemap)
 {
+    orc_column.notNull.resize(column.size());
     if (null_bytemap)
-    {
         orc_column.hasNulls = true;
-        orc_column.notNull.resize(column.size());
-    }
+
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:
@@ -264,6 +293,7 @@ void ORCBlockOutputFormat::writeColumn(
             writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value; });
             break;
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int32 & value){ return value; });
@@ -374,10 +404,50 @@ void ORCBlockOutputFormat::writeColumn(
             for (size_t i = 0; i != list_column.size(); ++i)
             {
                 list_orc_column.offsets[i + 1] = offsets[i];
+                list_orc_column.notNull[i] = 1;
             }
             orc::ColumnVectorBatch & nested_orc_column = *list_orc_column.elements;
             writeColumn(nested_orc_column, list_column.getData(), nested_type, null_bytemap);
             list_orc_column.numElements = list_column.size();
+            break;
+        }
+        case TypeIndex::Tuple:
+        {
+            orc::StructVectorBatch & struct_orc_column = dynamic_cast<orc::StructVectorBatch &>(orc_column);
+            const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
+            auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
+            for (size_t i = 0; i != tuple_column.size(); ++i)
+                struct_orc_column.notNull[i] = 1;
+            for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
+                writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
+            break;
+        }
+        case TypeIndex::Map:
+        {
+            orc::MapVectorBatch & map_orc_column = dynamic_cast<orc::MapVectorBatch &>(orc_column);
+            const auto & list_column = assert_cast<const ColumnMap &>(column).getNestedColumn();
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            const ColumnArray::Offsets & offsets = list_column.getOffsets();
+
+            map_orc_column.resize(list_column.size());
+            /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
+            map_orc_column.offsets[0] = 0;
+            for (size_t i = 0; i != list_column.size(); ++i)
+            {
+                map_orc_column.offsets[i + 1] = offsets[i];
+                map_orc_column.notNull[i] = 1;
+            }
+            const auto nested_columns = assert_cast<const ColumnTuple *>(list_column.getDataPtr().get())->getColumns();
+
+            orc::ColumnVectorBatch & keys_orc_column = *map_orc_column.keys;
+            auto key_type = map_type.getKeyType();
+            writeColumn(keys_orc_column, *nested_columns[0], key_type, null_bytemap);
+
+            orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
+            auto value_type = map_type.getValueType();
+            writeColumn(values_orc_column, *nested_columns[1], value_type, null_bytemap);
+
+            map_orc_column.numElements = list_column.size();
             break;
         }
         default:
@@ -409,28 +479,46 @@ size_t ORCBlockOutputFormat::getMaxColumnSize(Chunk & chunk)
 
 void ORCBlockOutputFormat::consume(Chunk chunk)
 {
+    if (!writer)
+        prepareWriter();
     size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
     /// getMaxColumnSize is needed to write arrays.
     /// The size of the batch must be no less than total amount of array elements.
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveLowCardinality(column);
+
     for (size_t i = 0; i != columns_num; ++i)
-    {
-        writeColumn(*root.fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
-    }
+        writeColumn(*root.fields[i], *columns[i], data_types[i], nullptr);
     root.numElements = rows_num;
     writer->add(*batch);
 }
 
-void ORCBlockOutputFormat::finalize()
+void ORCBlockOutputFormat::finalizeImpl()
 {
+    if (!writer)
+        prepareWriter();
+
     writer->close();
 }
 
-void registerOutputFormatProcessorORC(FormatFactory & factory)
+void ORCBlockOutputFormat::prepareWriter()
 {
-    factory.registerOutputFormatProcessor("ORC", [](
+    const Block & header = getPort(PortKind::Main).getHeader();
+    schema = orc::createStructType();
+    options.setCompression(orc::CompressionKind::CompressionKind_NONE);
+    size_t columns_count = header.columns();
+    for (size_t i = 0; i != columns_count; ++i)
+        schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i]), header.safeGetByPosition(i).name));
+    writer = orc::createWriter(*schema, &output_stream, options);
+}
+
+void registerOutputFormatORC(FormatFactory & factory)
+{
+    factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -438,6 +526,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
     });
+    factory.markFormatHasNoAppendSupport("ORC");
 }
 
 }
@@ -447,7 +536,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProcessorORC(FormatFactory &)
+    void registerOutputFormatORC(FormatFactory &)
     {
     }
 }

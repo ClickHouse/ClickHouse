@@ -1,27 +1,103 @@
 ---
 toc_priority: 35
-toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
+toc_title: "Массивы"
 ---
 
 # Массивы {#functions-for-working-with-arrays}
 
 ## empty {#function-empty}
 
-Возвращает 1 для пустого массива, и 0 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Проверяет, является ли входной массив пустым.
+
+**Синтаксис**
+
+``` sql
+empty([x])
+```
+
+Массив считается пустым, если он не содержит ни одного элемента.
+
+!!! note "Примечание"
+    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+
+Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
+
+**Параметры**
+
+-   `[x]` — массив на входе функции. [Array](../data-types/array.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для пустого массива или `0` — для непустого массива.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT empty([]);
+```
+
+Ответ:
+
+```text
+┌─empty(array())─┐
+│              1 │
+└────────────────┘
+```
 
 ## notEmpty {#function-notempty}
 
-Возвращает 0 для пустого массива, и 1 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Проверяет, является ли входной массив непустым.
+
+**Синтаксис**
+
+``` sql
+notEmpty([x])
+```
+
+Массив считается непустым, если он содержит хотя бы один элемент.
+
+!!! note "Примечание"
+    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+
+Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
+
+**Параметры**
+
+-   `[x]` — массив на входе функции. [Array](../data-types/array.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для непустого массива или `0` — для пустого массива.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT notEmpty([1,2]);
+```
+
+Результат:
+
+```text
+┌─notEmpty([1, 2])─┐
+│                1 │
+└──────────────────┘
+```
 
 ## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
 Функция также работает для строк.
+
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -39,10 +115,46 @@ toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
 
 Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
 
-## range(N) {#rangen}
 
-Возвращает массив чисел от 0 до N-1.
-На всякий случай, если на блок данных, создаются массивы суммарной длины больше 100 000 000 элементов, то кидается исключение.
+## range(end), range(\[start, \] end \[, step\]) {#range}
+
+Возвращает массив чисел от `start` до `end - 1` с шагом `step`.
+
+**Синтаксис**
+
+``` sql
+range([start, ] end [, step])
+```
+
+**Аргументы**
+
+-   `start` — начало диапазона. Обязательно, когда указан `step`. По умолчанию равно `0`. Тип: [UInt](../data-types/int-uint.md)
+-   `end` — конец диапазона. Обязательный аргумент. Должен быть больше, чем `start`. Тип: [UInt](../data-types/int-uint.md)
+-   `step` — шаг обхода. Необязательный аргумент. По умолчанию равен `1`. Тип: [UInt](../data-types/int-uint.md)
+
+**Возвращаемые значения**
+
+-   массив `UInt` чисел от `start` до `end - 1` с шагом `step`
+
+**Особенности реализации**
+
+-   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
+
+-   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
+
+**Примеры**
+
+Запрос:
+``` sql
+SELECT range(5), range(1, 5), range(1, 5, 2);
+```
+Ответ:
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
+```
+
 
 ## array(x1, …), оператор \[x1, …\] {#arrayx1-operator-x1}
 
@@ -58,7 +170,7 @@ toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
 arrayConcat(arrays)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `arrays` – произвольное количество элементов типа [Array](../../sql-reference/functions/array-functions.md)
     **Пример**
@@ -108,7 +220,7 @@ SELECT has([1, 2, NULL], NULL)
 hasAll(set, subset)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `set` – массив любого типа с набором элементов.
 -   `subset` – массив любого типа со значениями, которые проверяются на вхождение в `set`.
@@ -146,7 +258,7 @@ hasAll(set, subset)
 hasAny(array1, array2)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `array1` – массив любого типа с набором элементов.
 -   `array2` – массив любого типа с набором элементов.
@@ -320,21 +432,21 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 arrayPopBack(array)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` - Массив.
+-   `array` – массив.
 
 **Пример**
 
 ``` sql
-SELECT arrayPopBack([1, 2, 3]) AS res
+SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
-text
-
-    ┌─res───┐
-    │ [1,2] │
-    └───────┘
+``` text
+┌─res───┐
+│ [1,2] │
+└───────┘
+```
 
 ## arrayPopFront {#arraypopfront}
 
@@ -344,14 +456,14 @@ text
 arrayPopFront(array)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` - Массив.
+-   `array` – массив.
 
 **Пример**
 
 ``` sql
-SELECT arrayPopFront([1, 2, 3]) AS res
+SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ``` text
@@ -368,15 +480,15 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 arrayPushBack(array, single_value)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` - Массив.
--   `single_value` - Одиночное значение. В массив с числам можно добавить только числа, в массив со строками только строки. При добавлении чисел ClickHouse автоматически приводит тип `single_value` к типу данных массива. Подробнее о типах данных в ClickHouse читайте в разделе «[Типы данных](../../sql-reference/functions/array-functions.md#data_types)». Может быть равно `NULL`. Функция добавит элемент `NULL` в массив, а тип элементов массива преобразует в `Nullable`.
+-   `array` – массив.
+-   `single_value` – значение добавляемого элемента. В массив с числам можно добавить только числа, в массив со строками только строки. При добавлении чисел ClickHouse автоматически приводит тип `single_value` к типу данных массива. Подробнее о типах данных в ClickHouse читайте в разделе «[Типы данных](../../sql-reference/functions/array-functions.md#data_types)». Может быть равно `NULL`, в этом случае функция добавит элемент `NULL` в массив, а тип элементов массива преобразует в `Nullable`.
 
 **Пример**
 
 ``` sql
-SELECT arrayPushBack(['a'], 'b') AS res
+SELECT arrayPushBack(['a'], 'b') AS res;
 ```
 
 ``` text
@@ -393,15 +505,15 @@ SELECT arrayPushBack(['a'], 'b') AS res
 arrayPushFront(array, single_value)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` - Массив.
--   `single_value` - Одиночное значение. В массив с числам можно добавить только числа, в массив со строками только строки. При добавлении чисел ClickHouse автоматически приводит тип `single_value` к типу данных массива. Подробнее о типах данных в ClickHouse читайте в разделе «[Типы данных](../../sql-reference/functions/array-functions.md#data_types)». Может быть равно `NULL`. Функция добавит элемент `NULL` в массив, а тип элементов массива преобразует в `Nullable`.
+-   `array` – массив.
+-   `single_value` – значение добавляемого элемента. В массив с числам можно добавить только числа, в массив со строками только строки. При добавлении чисел ClickHouse автоматически приводит тип `single_value` к типу данных массива. Подробнее о типах данных в ClickHouse читайте в разделе «[Типы данных](../../sql-reference/functions/array-functions.md#data_types)». Может быть равно `NULL`, в этом случае функция добавит элемент `NULL` в массив, а тип элементов массива преобразует в `Nullable`.
 
 **Пример**
 
 ``` sql
-SELECT arrayPushFront(['b'], 'a') AS res
+SELECT arrayPushFront(['b'], 'a') AS res;
 ```
 
 ``` text
@@ -418,7 +530,7 @@ SELECT arrayPushFront(['b'], 'a') AS res
 arrayResize(array, size[, extender])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `array` — массив.
 -   `size` — необходимая длина массива.
@@ -433,7 +545,7 @@ arrayResize(array, size[, extender])
 **Примеры вызовов**
 
 ``` sql
-SELECT arrayResize([1], 3)
+SELECT arrayResize([1], 3);
 ```
 
 ``` text
@@ -443,7 +555,7 @@ SELECT arrayResize([1], 3)
 ```
 
 ``` sql
-SELECT arrayResize([1], 3, NULL)
+SELECT arrayResize([1], 3, NULL);
 ```
 
 ``` text
@@ -460,16 +572,16 @@ SELECT arrayResize([1], 3, NULL)
 arraySlice(array, offset[, length])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` - Массив данных.
--   `offset` - Отступ от края массива. Положительное значение - отступ слева, отрицательное значение - отступ справа. Отсчет элементов массива начинается с 1.
--   `length` - Длина необходимого среза. Если указать отрицательное значение, то функция вернёт открытый срез `[offset, array_length - length)`. Если не указать значение, то функция вернёт срез `[offset, the_end_of_array]`.
+-   `array` – массив данных.
+-   `offset` – отступ от края массива. Положительное значение - отступ слева, отрицательное значение - отступ справа. Отсчет элементов массива начинается с 1.
+-   `length` – длина необходимого среза. Если указать отрицательное значение, то функция вернёт открытый срез `[offset, array_length - length)`. Если не указать значение, то функция вернёт срез `[offset, the_end_of_array]`.
 
 **Пример**
 
 ``` sql
-SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
+SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ``` text
@@ -702,9 +814,9 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 arrayDifference(array)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -715,10 +827,10 @@ arrayDifference(array)
 Запрос:
 
 ``` sql
-SELECT arrayDifference([1, 2, 3, 4])
+SELECT arrayDifference([1, 2, 3, 4]);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─arrayDifference([1, 2, 3, 4])─┐
@@ -731,10 +843,10 @@ SELECT arrayDifference([1, 2, 3, 4])
 Запрос:
 
 ``` sql
-SELECT arrayDifference([0, 10000000000000000000])
+SELECT arrayDifference([0, 10000000000000000000]);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─arrayDifference([0, 10000000000000000000])─┐
@@ -752,9 +864,9 @@ SELECT arrayDifference([0, 10000000000000000000])
 arrayDistinct(array)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -765,7 +877,7 @@ arrayDistinct(array)
 Запрос:
 
 ``` sql
-SELECT arrayDistinct([1, 2, 2, 3, 1])
+SELECT arrayDistinct([1, 2, 2, 3, 1]);
 ```
 
 Ответ:
@@ -794,7 +906,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах. Элементы на выходе следуют в порядке следования в первом массиве.
+Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах.
 
 Пример:
 
@@ -820,7 +932,7 @@ SELECT
 arrayReduce(agg_func, arr1, arr2, ..., arrN)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `agg_func` — Имя агрегатной функции, которая должна быть константой [string](../../sql-reference/data-types/string.md).
 -   `arr` — Любое количество столбцов типа [array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
@@ -832,10 +944,10 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 Запрос:
 
 ```sql
-SELECT arrayReduce('max', [1, 2, 3])
+SELECT arrayReduce('max', [1, 2, 3]);
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─arrayReduce('max', [1, 2, 3])─┐
@@ -850,10 +962,10 @@ SELECT arrayReduce('max', [1, 2, 3])
 Запрос:
 
 ```sql
-SELECT arrayReduce('maxIf', [3, 5], [1, 0])
+SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
@@ -866,10 +978,10 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 Запрос:
 
 ```sql
-SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
@@ -887,15 +999,15 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `agg_func` — Имя агрегатной функции, которая должна быть [строковой](../../sql-reference/data-types/string.md) константой.
--   `ranges` — Диапазоны для агрегирования, которые должны быть [массивом](../../sql-reference/data-types/array.md) of [кортежей](../../sql-reference/data-types/tuple.md) который содержит индекс и длину каждого диапазона.
--   `arr` — Любое количество столбцов типа [Array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
+-   `agg_func` — имя агрегатной функции, которая должна быть [строковой](../../sql-reference/data-types/string.md) константой.
+-   `ranges` — диапазоны для агрегирования, которые должны быть [массивом](../../sql-reference/data-types/array.md) of [кортежей](../../sql-reference/data-types/tuple.md) содержащих индекс и длину каждого диапазона.
+-   `arr` — любое количество столбцов типа [Array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
 
 **Возвращаемое значение**
 
-- Массив, содержащий результаты агрегатной функции для указанных диапазонов.
+-   Массив, содержащий результаты агрегатной функции для указанных диапазонов.
 
 Тип: [Array](../../sql-reference/data-types/array.md).
 
@@ -911,7 +1023,7 @@ SELECT arrayReduceInRanges(
 ) AS res
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─res─────────────────────────┐
@@ -958,14 +1070,14 @@ flatten(array_of_arrays)
 
 Синоним: `flatten`.
 
-**Параметры**
+**Аргументы**
 
--   `array_of_arrays` — [Массив](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
+-   `array_of_arrays` — [массив](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
 
 **Примеры**
 
 ``` sql
-SELECT flatten([[[1]], [[2], [3]]])
+SELECT flatten([[[1]], [[2], [3]]]);
 ```
 
 ``` text
@@ -984,9 +1096,9 @@ SELECT flatten([[[1]], [[2], [3]]])
 arrayCompact(arr)
 ```
 
-**Параметры**
+**Аргументы**
 
-`arr` — [Массив](../../sql-reference/functions/array-functions.md) для обхода.
+`arr` — [массив](../../sql-reference/functions/array-functions.md) для обхода.
 
 **Возвращаемое значение**
 
@@ -999,10 +1111,10 @@ arrayCompact(arr)
 Запрос:
 
 ``` sql
-SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
@@ -1020,9 +1132,9 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 arrayZip(arr1, arr2, ..., arrN)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `arrN` — [Массив](../data-types/array.md).
+-   `arrN` — [массив](../data-types/array.md).
 
 Функция принимает любое количество массивов, которые могут быть различных типов. Все массивы должны иметь одинаковую длину.
 
@@ -1037,10 +1149,10 @@ arrayZip(arr1, arr2, ..., arrN)
 Запрос:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
@@ -1067,7 +1179,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 Следующий пример показывает, как создать кортежи из элементов разных массивов:
 
 ``` sql
-SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
+SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res;
 ```
 
 ``` text
@@ -1111,6 +1223,78 @@ SELECT
 
 Функция `arrayFilter` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
+## arrayFill(func, arr1, …) {#array-fill}
+
+Перебирает `arr1` от первого элемента к последнему и заменяет `arr1[i]` на `arr1[i - 1]`, если `func` вернула 0. Первый элемент `arr1` остаётся неизменным.
+
+Примеры:
+
+``` sql
+SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+``` text
+┌─res──────────────────────────────┐
+│ [1,1,3,11,12,12,12,5,6,14,14,14] │
+└──────────────────────────────────┘
+```
+
+Функция `arrayFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
+
+Перебирает `arr1` от последнего элемента к первому и заменяет `arr1[i]` на `arr1[i + 1]`, если `func` вернула 0. Последний элемент `arr1` остаётся неизменным.
+
+Примеры:
+
+``` sql
+SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+``` text
+┌─res────────────────────────────────┐
+│ [1,3,3,11,12,5,5,5,6,14,NULL,NULL] │
+└────────────────────────────────────┘
+```
+
+Функция `arrayReverseFill` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arraySplit(func, arr1, …) {#array-split}
+
+Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в левую часть. Массив не разбивается по первому элементу.
+
+Примеры:
+
+``` sql
+SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+``` text
+┌─res─────────────┐
+│ [[1,2,3],[4,5]] │
+└─────────────────┘
+```
+
+Функция `arraySplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
+## arrayReverseSplit(func, arr1, …) {#array-reverse-split}
+
+Разделяет массив `arr1` на несколько. Если `func` возвращает не 0, то массив разделяется, а элемент помещается в правую часть. Массив не разбивается по последнему элементу.
+
+Примеры:
+
+``` sql
+SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+``` text
+┌─res───────────────┐
+│ [[1],[2,3,4],[5]] │
+└───────────────────┘
+```
+
+Функция `arrayReverseSplit` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
+
 ## arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
 Возвращает 1, если существует хотя бы один элемент массива `arr`, для которого функция func возвращает не 0. Иначе возвращает 0.
@@ -1137,7 +1321,7 @@ SELECT
 
 ## arrayMin {#array-min}
 
-Возвращает значение минимального элемента в исходном массиве. 
+Возвращает значение минимального элемента в исходном массиве.
 
 Если передана функция `func`, возвращается минимум из элементов массива, преобразованных этой функцией.
 
@@ -1149,7 +1333,7 @@ SELECT
 arrayMin([func,] arr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
 -   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
@@ -1192,7 +1376,7 @@ SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 
 ## arrayMax {#array-max}
 
-Возвращает значение максимального элемента в исходном массиве. 
+Возвращает значение максимального элемента в исходном массиве.
 
 Если передана функция `func`, возвращается максимум из элементов массива, преобразованных этой функцией.
 
@@ -1204,7 +1388,7 @@ SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 arrayMax([func,] arr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
 -   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
@@ -1247,7 +1431,7 @@ SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 
 ## arraySum {#array-sum}
 
-Возвращает сумму элементов в исходном массиве. 
+Возвращает сумму элементов в исходном массиве.
 
 Если передана функция `func`, возвращается сумма элементов массива, преобразованных этой функцией.
 
@@ -1259,10 +1443,10 @@ SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res;
 arraySum([func,] arr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
@@ -1302,7 +1486,7 @@ SELECT arraySum(x -> x*x, [2, 3]) AS res;
 
 ## arrayAvg {#array-avg}
 
-Возвращает среднее значение элементов в исходном массиве. 
+Возвращает среднее значение элементов в исходном массиве.
 
 Если передана функция `func`, возвращается среднее значение элементов массива, преобразованных этой функцией.
 
@@ -1314,10 +1498,10 @@ SELECT arraySum(x -> x*x, [2, 3]) AS res;
 arrayAvg([func,] arr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — массив. [Array](../../sql-reference/data-types/array.md).   
+-   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 
@@ -1355,7 +1539,7 @@ SELECT arrayAvg(x -> (x * x), [2, 4]) AS res;
 └─────┘
 ```
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 arraySum(arr)
@@ -1367,9 +1551,9 @@ arraySum(arr)
 
 Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
 
-**Параметры** 
+**Аргументы**
 
--   `arr` — [Массив](../../sql-reference/data-types/array.md).
+-   `arr` — [массив](../../sql-reference/data-types/array.md).
 
 **Примеры**
 
@@ -1429,7 +1613,8 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 arrayAUC(arr_scores, arr_labels)
 ```
 
-**Параметры**
+**Аргументы**
+
 - `arr_scores` — оценка, которую дает модель предсказания.
 - `arr_labels` — ярлыки выборок, обычно 1 для содержательных выборок и 0 для бессодержательных выборок.
 
@@ -1444,10 +1629,10 @@ arrayAUC(arr_scores, arr_labels)
 Запрос:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
+SELECT arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
@@ -1455,4 +1640,52 @@ select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
 └────────────────────────────────────────---──┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/array_functions/) <!--hide-->
+## arrayProduct {#arrayproduct}
+
+Возвращает произведение элементов [массива](../../sql-reference/data-types/array.md).
+
+**Синтаксис**
+
+``` sql
+arrayProduct(arr)
+```
+
+**Аргументы**
+
+-   `arr` — [массив](../../sql-reference/data-types/array.md) числовых значений.
+
+**Возвращаемое значение**
+
+-   Произведение элементов массива.
+
+Тип: [Float64](../../sql-reference/data-types/float.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayProduct([1,2,3,4,5,6]) as res;
+```
+
+Результат:
+
+``` text
+┌─res───┐
+│ 720   │
+└───────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
+```
+
+Возвращаемое значение всегда имеет тип [Float64](../../sql-reference/data-types/float.md). Результат:
+
+``` text
+┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
+│ 6   │ Float64                                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```

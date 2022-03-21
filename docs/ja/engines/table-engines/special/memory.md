@@ -16,4 +16,4 @@ toc_title: "\u30E1\u30E2\u30EA"
 
 メモリーのエンジンを使用するシステムの一時テーブルの外部クエリデータの項をご参照ください “External data for processing a query”グローバルでの実装については、セクションを参照 “IN operators”).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/memory/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/memory/) <!--hide-->

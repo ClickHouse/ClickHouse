@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -20,7 +20,7 @@ class FunctionGetSizeOfEnumType : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }
@@ -37,6 +37,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
@@ -51,17 +53,24 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return getResultIfAlwaysReturnsConstantAndHasArguments(arguments)->cloneResized(input_rows_count);
+        return getSizeOfEnumType(arguments[0].type, input_rows_count);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(arguments[0].type.get()))
-            return DataTypeUInt8().createColumnConst(1, type8->getValues().size());
-        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(arguments[0].type.get()))
-            return DataTypeUInt16().createColumnConst(1, type16->getValues().size());
+        return getSizeOfEnumType(arguments[0].type, 1);
+    }
+
+private:
+
+    ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const
+    {
+        if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(data_type.get()))
+            return DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());
+        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(data_type.get()))
+            return DataTypeUInt16().createColumnConst(input_rows_count, type16->getValues().size());
         else
-            throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
     }
 };
 

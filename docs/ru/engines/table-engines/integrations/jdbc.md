@@ -1,5 +1,5 @@
 ---
-toc_priority: 2
+toc_priority: 3
 toc_title: JDBC
 ---
 
@@ -7,7 +7,7 @@ toc_title: JDBC
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-Для реализации соединения по JDBC ClickHouse использует отдельную программу [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge), которая должна запускаться как демон.
+Для реализации соединения по JDBC ClickHouse использует отдельную программу [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge), которая должна запускаться как демон.
 
 Движок поддерживает тип данных [Nullable](../../../engines/table-engines/integrations/jdbc.md).
 
@@ -15,20 +15,20 @@ toc_title: JDBC
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
-ENGINE = JDBC(dbms_uri, external_database, external_table)
+ENGINE = JDBC(datasource_uri, external_database, external_table)
 ```
 
 **Параметры движка**
 
--   `dbms_uri` — URI внешней СУБД.
+-   `datasource_uri` — URI или имя внешней СУБД.
 
-        Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+    URI Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
 
     Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — база данных во внешней СУБД.
 
--   `external_table` — таблица в `external_database`.
+-   `external_table` — таблицы в `external_database` или запросе выбора, например` select * from table1, где column1 = 1`.
 
 ## Пример использования {#primer-ispolzovaniia}
 
@@ -85,8 +85,13 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
+``` sql
+INSERT INTO jdbc_table(`int_id`, `float`)
+SELECT toInt32(number), toFloat32(number * 1.0)
+FROM system.numbers
+```
+
 ## Смотрите также {#smotrite-takzhe}
 
 -   [Табличная функция JDBC](../../../engines/table-engines/integrations/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

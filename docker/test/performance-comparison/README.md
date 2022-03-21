@@ -116,7 +116,7 @@ pull requests (0 for master) manually.
 docker run --network=host --volume=$(pwd)/workspace:/workspace --volume=$(pwd)/output:/output
     [-e REF_PR={} -e REF_SHA={}]
     -e PR_TO_TEST={} -e SHA_TO_TEST={}
-    yandex/clickhouse-performance-comparison
+    clickhouse/performance-comparison
 ```
 
 Then see the `report.html` in the `output` directory.

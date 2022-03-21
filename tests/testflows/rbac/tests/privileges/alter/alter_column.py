@@ -202,7 +202,7 @@ def check_modify_column_when_privilege_is_granted(table, user, node, column=None
         column = 'modify'
 
     with Given(f"I add the column {column}"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String DEFAULT '0'")
 
     with When(f"I insert some data into column {column}"):
         node.query(f"INSERT INTO {table} ({column}) VALUES ('3.4')")
@@ -354,6 +354,10 @@ def check_add_column_when_privilege_is_not_granted(table, user, node, column=Non
         node.query(f"ALTER TABLE {table} ADD COLUMN {column} String",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with Then("I try to ADD COLUMN"):
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_clear_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures CLEAR COLUMN errors as expected without the required privilege
     for the specified user.
@@ -366,6 +370,13 @@ def check_clear_column_when_privilege_is_not_granted(table, user, node, column=N
         node.query(f"ALTER TABLE {table} CLEAR COLUMN {column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to CLEAR COLUMN"):
+        node.query(f"ALTER TABLE {table} CLEAR COLUMN {column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_modify_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures MODIFY COLUMN errors as expected without the required privilege
     for the specified user.
@@ -375,6 +386,13 @@ def check_modify_column_when_privilege_is_not_granted(table, user, node, column=
 
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
+        node.query(f"ALTER TABLE {table} MODIFY COLUMN {column} String",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to MODIFY COLUMN"):
         node.query(f"ALTER TABLE {table} MODIFY COLUMN {column} String",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
@@ -392,6 +410,13 @@ def check_rename_column_when_privilege_is_not_granted(table, user, node, column=
         node.query(f"ALTER TABLE {table} RENAME COLUMN {column} TO {new_column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to RENAME COLUMN"):
+        node.query(f"ALTER TABLE {table} RENAME COLUMN {column} TO {new_column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_comment_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures COMMENT COLUMN errors as expected without the required privilege
     for the specified user.
@@ -404,6 +429,13 @@ def check_comment_column_when_privilege_is_not_granted(table, user, node, column
         node.query(f"ALTER TABLE {table} COMMENT COLUMN {column} 'This is a comment.'",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with When("I try to COMMENT COLUMN"):
+        node.query(f"ALTER TABLE {table} COMMENT COLUMN {column} 'This is a comment.'",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_drop_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures DROP COLUMN errors as expected without the required privilege
     for the specified user.
@@ -413,6 +445,13 @@ def check_drop_column_when_privilege_is_not_granted(table, user, node, column=No
 
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
+        node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to DROP COLUMN"):
         node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
@@ -660,35 +699,30 @@ def user_with_privileges_on_cluster(self, permutation, table_type, node=None):
 
 @TestSuite
 def scenario_parallelization(self, table_type, permutation):
-    pool = Pool(7)
-    try:
-        tasks = []
+    args = {"table_type": table_type, "permutation": permutation}
+    with Pool(7) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log),
-                    {"table_type": table_type, "permutation": permutation})
+                Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
         finally:
-            join(tasks)
-    finally:
-        pool.close()
+            join()
 
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterColumn("1.0"),
     RQ_SRS_006_RBAC_Privileges_AlterColumn_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
 @Name("alter column")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Runs test suites above which check correctness over scenarios and permutations.
     """
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
@@ -699,16 +733,11 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            pool = Pool(10)
-            try:
-                tasks = []
+            with Pool(10) as pool:
                 try:
                     for permutation in permutations(table_type):
                         privileges = alter_column_privileges(permutation)
-
-                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=privileges),
-                            {"table_type": table_type, "permutation": permutation})
+                        args = {"table_type": table_type, "permutation": permutation}
+                        Suite(test=scenario_parallelization, name=privileges, parallel=True, executor=pool)(**args)
                 finally:
-                    join(tasks)
-            finally:
-                pool.close()
+                    join()

@@ -17,4 +17,4 @@ ClickHouseは次の種類のクエリをサポートします:
 -   [ALTER](statements/alter.md#query_language_queries_alter)
 -   [その他の種類のクエリ](statements/misc.md)
 
-[元の記事](https://clickhouse.tech/docs/en/sql-reference/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/sql-reference/) <!--hide-->

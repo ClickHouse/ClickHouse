@@ -74,4 +74,4 @@ UUIDデータ型は、以下の関数のみをサポートします [文字列](
 
 Uuidデータ型は、算術演算ではサポートされません(たとえば, [abs](../../sql-reference/functions/arithmetic-functions.md#arithm_func-abs)）または、以下のような集計関数 [和](../../sql-reference/aggregate-functions/reference.md#agg_function-sum) と [avg](../../sql-reference/aggregate-functions/reference.md#agg_function-avg).
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

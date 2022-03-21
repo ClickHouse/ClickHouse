@@ -50,6 +50,29 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
+    /// Set buffer to given piece of memory but with certain bytes ignored from beginning.
+    ///
+    /// internal_buffer: |__________________|
+    /// working_buffer:  |xxxxx|____________|
+    ///                  ^     ^
+    ///               bytes_to_ignore
+    ///
+    /// It's used for lazy seek. We also have another lazy seek mechanism that uses
+    /// `nextimpl_working_buffer_offset` to set offset in `next` method. It's important that we
+    /// don't do double lazy seek, which means `nextimpl_working_buffer_offset` should be zero. It's
+    /// useful to keep internal_buffer points to the real span of the underlying memory, because its
+    /// size might be used to allocate other buffers. It's also important to have pos starts at
+    /// working_buffer.begin(), because some buffers assume this condition to be true and uses
+    /// offset() to check read bytes.
+    void setWithBytesToIgnore(Position ptr, size_t size, size_t bytes_to_ignore)
+    {
+        assert(bytes_to_ignore < size);
+        assert(nextimpl_working_buffer_offset == 0);
+        internal_buffer = Buffer(ptr, ptr + size);
+        working_buffer = Buffer(ptr + bytes_to_ignore, ptr + size);
+        pos = ptr + bytes_to_ignore;
+    }
+
     /** read next data and fill a buffer with it; set position to the beginning;
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
@@ -63,7 +86,10 @@ public:
         if (!res)
             working_buffer = Buffer(pos, pos);
         else
+        {
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            assert(position() != working_buffer.end());
+        }
         nextimpl_working_buffer_offset = 0;
 
         assert(position() <= working_buffer.end());
@@ -197,6 +223,19 @@ public:
         return read(to, n);
     }
 
+    /** Do something to allow faster subsequent call to 'nextImpl' if possible.
+      * It's used for asynchronous readers with double-buffering.
+      */
+    virtual void prefetch() {}
+
+    /**
+     * Set upper bound for read range [..., position).
+     * Required for reading from remote filesystem, when it matters how much we read.
+     */
+    virtual void setReadUntilPosition(size_t /* position */) {}
+
+    virtual void setReadUntilEnd() {}
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -253,5 +292,33 @@ inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
     return std::make_unique<ReadBufferWrapper>(buf);
 }
 
+inline std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
+{
+    class ReadBufferWrapper : public ReadBuffer
+    {
+        public:
+            explicit ReadBufferWrapper(ReadBufferPtr ptr_) : ReadBuffer(ptr_->position(), 0), ptr(ptr_)
+            {
+                working_buffer = Buffer(ptr->position(), ptr->buffer().end());
+            }
+
+        private:
+            ReadBufferPtr ptr;
+
+            bool nextImpl() override
+            {
+                ptr->position() = position();
+
+                if (!ptr->next())
+                    return false;
+
+                working_buffer = ptr->buffer();
+
+                return true;
+            }
+    };
+
+    return std::make_unique<ReadBufferWrapper>(ptr);
+}
 
 }

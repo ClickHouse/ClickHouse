@@ -40,7 +40,7 @@ public:
         size_t min_concurrency = 1;
 
         /// Constants above is just an example.
-        BackoffSettings(const Settings & settings)
+        explicit BackoffSettings(const Settings & settings)
             : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
             max_throughput(settings.read_backoff_max_throughput),
             min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
@@ -63,44 +63,40 @@ private:
         Stopwatch time_since_prev_event {CLOCK_MONOTONIC_COARSE};
         size_t num_events = 0;
 
-        BackoffState(size_t threads) : current_threads(threads) {}
+        explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
 
     BackoffState backoff_state;
 
 public:
     MergeTreeReadPool(
-        const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
-        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_,
+        size_t threads_, size_t sum_marks_, size_t min_marks_for_concurrent_read_,
+        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const bool check_columns_, const Names & column_names_,
+        const Names & column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
-        const bool do_not_steal_tasks_ = false);
+        bool do_not_steal_tasks_ = false);
 
-    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
+    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
       * This allows to overcome excessive load to disk subsystem, when reads are not from page cache.
       */
-    void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
-
-    /// This method tells which mark ranges we have to read if we start from @from mark range
-    MarkRanges getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const;
+    void profileFeedback(ReadBufferFromFileBase::ProfileInfo info);
 
     Block getHeader() const;
 
 private:
-    std::vector<size_t> fillPerPartInfo(
-        const RangesInDataParts & parts, const bool check_columns);
+    std::vector<size_t> fillPerPartInfo(const RangesInDataParts & parts);
 
     void fillPerThreadInfo(
-        const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-        const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
+        size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+        const RangesInDataParts & parts, size_t min_marks_for_concurrent_read);
 
     const MergeTreeData & data;
-    StorageMetadataPtr metadata_snapshot;
-    Names column_names;
+    StorageSnapshotPtr storage_snapshot;
+    const Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;
@@ -139,6 +135,8 @@ private:
     mutable std::mutex mutex;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
+
+    std::vector<bool> is_part_on_remote_disk;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

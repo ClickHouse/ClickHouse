@@ -83,4 +83,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 -   [その ‘MySQL’ 表エンジン](../../engines/table-engines/integrations/mysql.md)
 -   [外部辞書のソースとしてMySQLを使用する](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/mysql/) <!--hide-->

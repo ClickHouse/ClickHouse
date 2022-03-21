@@ -9,7 +9,7 @@ toc_title: JDBC
 
 ClickHouseが外部データベースに接続できるようにする [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-JDBC接続を実装するには、ClickHouseは別のプログラムを使用します [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) うにしてくれました。
+JDBC接続を実装するには、ClickHouseは別のプログラムを使用します [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) うにしてくれました。
 
 このエンジンは [Null可能](../../../sql-reference/data-types/nullable.md) データ型。
 
@@ -20,19 +20,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(dbms_uri, external_database, external_table)
+ENGINE = JDBC(datasource_uri, external_database, external_table)
 ```
 
 **エンジン変数**
 
--   `dbms_uri` — URI of an external DBMS.
+-   `datasource_uri` — URI or name of an external DBMS.
 
-    形式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+    URI形式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     MySQLの例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — Database in an external DBMS.
 
--   `external_table` — Name of the table in `external_database`.
+-   `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
 ## 使用例 {#usage-example}
 
@@ -83,8 +83,14 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
+``` sql
+INSERT INTO jdbc_table(`int_id`, `float`)
+SELECT toInt32(number), toFloat32(number * 1.0)
+FROM system.numbers
+```
+
 ## も参照。 {#see-also}
 
 -   [JDBCテーブル関数](../../../sql-reference/table-functions/jdbc.md).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/jdbc/) <!--hide-->

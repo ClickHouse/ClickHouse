@@ -1,17 +1,27 @@
+#include <string_view>
+
 #include <Parsers/ExpressionListParsers.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
+
+using namespace std::literals;
 
 
 namespace DB
 {
-
 
 const char * ParserMultiplicativeExpression::operators[] =
 {
@@ -23,9 +33,10 @@ const char * ParserMultiplicativeExpression::operators[] =
     nullptr
 };
 
-const char * ParserUnaryMinusExpression::operators[] =
+const char * ParserUnaryExpression::operators[] =
 {
     "-",     "negate",
+    "NOT",   "not",
     nullptr
 };
 
@@ -108,12 +119,18 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserUnionQueryElement elem_parser;
+    ParserKeyword s_union_parser("UNION");
+    ParserKeyword s_all_parser("ALL");
+    ParserKeyword s_distinct_parser("DISTINCT");
+    ParserKeyword s_except_parser("EXCEPT");
+    ParserKeyword s_intersect_parser("INTERSECT");
     ASTs elements;
 
     auto parse_element = [&]
     {
         ASTPtr element;
-        if (!elem_parser->parse(pos, element, expected))
+        if (!elem_parser.parse(pos, element, expected))
             return false;
 
         elements.push_back(element);
@@ -123,21 +140,33 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse UNION type
     auto parse_separator = [&]
     {
-        if (s_union_parser->ignore(pos, expected))
+        if (s_union_parser.ignore(pos, expected))
         {
             // SELECT ... UNION ALL SELECT ...
-            if (s_all_parser->check(pos, expected))
+            if (s_all_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
+                union_modes.push_back(SelectUnionMode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
-            else if (s_distinct_parser->check(pos, expected))
+            else if (s_distinct_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
+                union_modes.push_back(SelectUnionMode::DISTINCT);
             }
             // SELECT ... UNION SELECT ...
             else
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
+            {
+                union_modes.push_back(SelectUnionMode::Unspecified);
+            }
+            return true;
+        }
+        else if (s_except_parser.check(pos, expected))
+        {
+            union_modes.push_back(SelectUnionMode::EXCEPT);
+            return true;
+        }
+        else if (s_intersect_parser.check(pos, expected))
+        {
+            union_modes.push_back(SelectUnionMode::INTERSECT);
             return true;
         }
         return false;
@@ -169,6 +198,91 @@ static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expect
     }
 }
 
+enum class SubqueryFunctionType
+{
+    NONE,
+    ANY,
+    ALL
+};
+
+static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
+{
+    /* Rewrite in AST:
+     *  = ANY --> IN
+     * != ALL --> NOT IN
+     *  = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+     * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
+    **/
+
+    auto * function = assert_cast<ASTFunction *>(ast.get());
+    String operator_name = function->name;
+
+    auto function_equals = operator_name == "equals";
+    auto function_not_equals = operator_name == "notEquals";
+
+    String aggregate_function_name;
+    if (function_equals || function_not_equals)
+    {
+        if (operator_name == "notEquals")
+            function->name = "notIn";
+        else
+            function->name = "in";
+
+        if ((type == SubqueryFunctionType::ANY && function_equals)
+            || (type == SubqueryFunctionType::ALL && function_not_equals))
+        {
+            return true;
+        }
+
+        aggregate_function_name = "singleValueOrNull";
+    }
+    else if (operator_name == "greaterOrEquals" || operator_name == "greater")
+    {
+        aggregate_function_name = (type == SubqueryFunctionType::ANY ? "min" : "max");
+    }
+    else if (operator_name == "lessOrEquals" || operator_name == "less")
+    {
+        aggregate_function_name = (type == SubqueryFunctionType::ANY ? "max" : "min");
+    }
+    else
+        return false;
+
+    /// subquery --> (SELECT aggregate_function(*) FROM subquery)
+    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
+    auto subquery_node = function->children[0]->children[1];
+
+    auto table_expression = std::make_shared<ASTTableExpression>();
+    table_expression->subquery = std::move(subquery_node);
+    table_expression->children.push_back(table_expression->subquery);
+
+    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    tables_in_select_element->table_expression = std::move(table_expression);
+    tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
+
+    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+    tables_in_select->children.push_back(std::move(tables_in_select_element));
+
+    auto select_exp_list = std::make_shared<ASTExpressionList>();
+    select_exp_list->children.push_back(aggregate_function);
+
+    auto select_query = std::make_shared<ASTSelectQuery>();
+    select_query->children.push_back(select_exp_list);
+    select_query->children.push_back(tables_in_select);
+
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
+
+    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+    auto new_subquery = std::make_shared<ASTSubquery>();
+    new_subquery->children.push_back(select_with_union_query);
+    ast->children[0]->children.back() = std::move(new_subquery);
+
+    return true;
+}
 
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -213,7 +327,15 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             auto exp_list = std::make_shared<ASTExpressionList>();
 
             ASTPtr elem;
-            if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+            SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+            if (allow_any_all_operators && ParserKeyword("ANY").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ANY;
+            else if (allow_any_all_operators && ParserKeyword("ALL").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ALL;
+            else if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+                return false;
+
+            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
@@ -224,10 +346,13 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
 
+            if (allow_any_all_operators && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
+                return false;
+
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
               */
-            if (0 == strcmp(it[0], "["))
+            if (it[0] == "["sv)
             {
                 if (pos->type != TokenType::ClosingSquareBracket)
                     return false;
@@ -277,7 +402,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// For the expression (subject [NOT] BETWEEN left AND right)
-    ///  create an AST the same as for (subject> = left AND subject <= right).
+    /// create an AST the same as for (subject >= left AND subject <= right).
 
     ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
@@ -490,14 +615,12 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
     /** This is done, because among the unary operators there is only a minus and NOT.
       * But for a minus the chain of unary operators does not need to be supported.
       */
+    size_t count = 1;
     if (it[0] && 0 == strncmp(it[0], "NOT", 3))
     {
-        /// Was there an even number of NOTs.
-        bool even = false;
-
-        const char ** jt;
         while (true)
         {
+            const char ** jt;
             for (jt = operators; *jt; jt += 2)
                 if (parseOperator(pos, *jt, expected))
                     break;
@@ -505,11 +628,8 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
             if (!*jt)
                 break;
 
-            even = !even;
+            ++count;
         }
-
-        if (even)
-            it = jt;    /// Zero the result of parsing the first NOT. It turns out, as if there is no `NOT` chain at all.
     }
 
     ASTPtr elem;
@@ -520,35 +640,43 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
         node = elem;
     else
     {
-        /// the function corresponding to the operator
-        auto function = std::make_shared<ASTFunction>();
+        for (size_t i = 0; i < count; ++i)
+        {
+            /// the function corresponding to the operator
+            auto function = std::make_shared<ASTFunction>();
 
-        /// function arguments
-        auto exp_list = std::make_shared<ASTExpressionList>();
+            /// function arguments
+            auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->name = it[1];
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
+            function->name = it[1];
+            function->arguments = exp_list;
+            function->children.push_back(exp_list);
 
-        exp_list->children.push_back(elem);
+            if (node)
+                exp_list->children.push_back(node);
+            else
+                exp_list->children.push_back(elem);
 
-        node = function;
+            node = function;
+        }
     }
 
     return true;
 }
 
 
-bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
 
     if (pos->type == TokenType::Minus)
     {
-        ParserLiteral lit_p;
         Pos begin = pos;
+        if (ParserCastOperator().parse(pos, node, expected))
+            return true;
 
-        if (lit_p.parse(pos, node, expected))
+        pos = begin;
+        if (ParserLiteral().parse(pos, node, expected))
             return true;
 
         pos = begin;
@@ -558,11 +686,32 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 }
 
 
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr expr_ast;
+    if (!elem_parser->parse(pos, expr_ast, expected))
+        return false;
+
+    ASTPtr type_ast;
+    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
+    {
+        node = createFunctionCast(expr_ast, type_ast);
+    }
+    else
+    {
+        node = expr_ast;
+    }
+
+    return true;
+}
+
+
 bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserExpressionElement>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserExpressionElement>()),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -572,7 +721,7 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserArrayElementExpression>(),
+        std::make_unique<ParserCastExpression>(std::make_unique<ParserArrayElementExpression>()),
         std::make_unique<ParserUnsignedInteger>()
     }.parse(pos, node, expected);
 }
@@ -833,4 +982,3 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 }
-

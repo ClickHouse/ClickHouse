@@ -20,9 +20,9 @@ NamesAndTypesList SystemMergeTreeSettings<replicated>::getNamesAndTypes()
 }
 
 template <bool replicated>
-void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto & settings = replicated ? context.getReplicatedMergeTreeSettings().all() : context.getMergeTreeSettings().all();
+    const auto & settings = replicated ? context->getReplicatedMergeTreeSettings().all() : context->getMergeTreeSettings().all();
     for (const auto & setting : settings)
     {
         res_columns[0]->insert(setting.getName());

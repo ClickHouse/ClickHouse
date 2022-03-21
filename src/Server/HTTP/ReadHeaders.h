@@ -8,10 +8,6 @@ namespace DB
 class ReadBuffer;
 
 void readHeaders(
-    Poco::Net::MessageHeader & headers,
-    ReadBuffer & in,
-    size_t max_fields_number = 100,
-    size_t max_name_length = 256,
-    size_t max_value_length = 8192);
+    Poco::Net::MessageHeader & headers, ReadBuffer & in, size_t max_fields_number, size_t max_name_length, size_t max_value_length);
 
 }

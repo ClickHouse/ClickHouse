@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Core/Types.h>
 #include <boost/container/flat_set.hpp>
 #include <memory>
 #include <optional>
@@ -9,38 +10,39 @@
 namespace DB
 {
 class ASTRolesOrUsersSet;
-class AccessControlManager;
+class AccessControl;
 
 
 /// Represents a set of users/roles like
-/// {user_name | role_name | CURRENT_USER} [,...] | NONE | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+/// {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]
+/// [EXCEPT {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]]
 /// Similar to ASTRolesOrUsersSet, but with IDs instead of names.
 struct RolesOrUsersSet
 {
     RolesOrUsersSet();
     RolesOrUsersSet(const RolesOrUsersSet & src);
     RolesOrUsersSet & operator =(const RolesOrUsersSet & src);
-    RolesOrUsersSet(RolesOrUsersSet && src);
-    RolesOrUsersSet & operator =(RolesOrUsersSet && src);
+    RolesOrUsersSet(RolesOrUsersSet && src) noexcept;
+    RolesOrUsersSet & operator =(RolesOrUsersSet && src) noexcept;
 
     struct AllTag {};
-    RolesOrUsersSet(AllTag);
+    RolesOrUsersSet(AllTag); /// NOLINT
 
-    RolesOrUsersSet(const UUID & id);
-    RolesOrUsersSet(const std::vector<UUID> & ids_);
+    RolesOrUsersSet(const UUID & id); /// NOLINT
+    RolesOrUsersSet(const std::vector<UUID> & ids_); /// NOLINT
 
-    /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast);
+    /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast); /// NOLINT
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::optional<UUID> & current_user_id);
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager);
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id);
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control);
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id);
 
     std::shared_ptr<ASTRolesOrUsersSet> toAST() const;
-    std::shared_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControlManager & manager) const;
+    std::shared_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControl & access_control) const;
 
     String toString() const;
-    String toStringWithNames(const AccessControlManager & manager) const;
-    Strings toStringsWithNames(const AccessControlManager & manager) const;
+    String toStringWithNames(const AccessControl & access_control) const;
+    Strings toStringsWithNames(const AccessControl & access_control) const;
 
     bool empty() const;
     void clear();
@@ -55,17 +57,17 @@ struct RolesOrUsersSet
     std::vector<UUID> getMatchingIDs() const;
 
     /// Returns a list of matching users and roles.
-    std::vector<UUID> getMatchingIDs(const AccessControlManager & manager) const;
+    std::vector<UUID> getMatchingIDs(const AccessControl & access_control) const;
 
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
 
-    boost::container::flat_set<UUID> ids;
     bool all = false;
+    boost::container::flat_set<UUID> ids;
     boost::container::flat_set<UUID> except_ids;
 
 private:
-    void init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager = nullptr, const std::optional<UUID> & current_user_id = {});
+    void init(const ASTRolesOrUsersSet & ast, const AccessControl * access_control = nullptr, const std::optional<UUID> & current_user_id = {});
 };
 
 }

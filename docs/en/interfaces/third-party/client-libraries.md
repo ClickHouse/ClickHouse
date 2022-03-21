@@ -6,7 +6,7 @@ toc_title: Client Libraries
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+    ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -23,9 +23,11 @@ toc_title: Client Libraries
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [one-ck](https://github.com/lizhichao/one-ck)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+    -   [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
+    -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
 -   Swift
@@ -34,6 +36,8 @@ toc_title: Client Libraries
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
+    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
+    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -41,6 +45,8 @@ toc_title: Client Libraries
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
+-   Rust
+    -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
@@ -64,4 +70,4 @@ toc_title: Client Libraries
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

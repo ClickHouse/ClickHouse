@@ -27,7 +27,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
-    else if (ast->as<ASTIdentifier>())
+    else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
     else
         visitChildren(ast);
@@ -61,7 +61,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    data_type->deserializeAsTextEscaped(temp_column, read_buffer, format_settings);
+    data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
@@ -69,7 +69,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
-    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
+    Field literal;
+    /// If data type has custom serialization, we should use CAST from String,
+    /// because CAST from field may not work correctly (for example for type IPv6).
+    if (data_type->getCustomSerialization())
+        literal = value;
+    else
+        literal = temp_column[0];
+    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
@@ -77,25 +84,26 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 {
-    auto & ast_identifier = ast->as<ASTIdentifier &>();
-    if (ast_identifier.children.empty())
+    auto ast_identifier = dynamic_pointer_cast<ASTIdentifier>(ast);
+    if (ast_identifier->children.empty())
         return;
 
-    auto & name_parts = ast_identifier.name_parts;
+    auto & name_parts = ast_identifier->name_parts;
     for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
     {
         if (name_parts[i].empty())
         {
-            const auto & ast_param = ast_identifier.children[j++]->as<ASTQueryParameter &>();
+            const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
         }
     }
 
-    if (!ast_identifier.semantic->special && name_parts.size() >= 2)
-        ast_identifier.semantic->table = ast_identifier.name_parts.end()[-2];
+    /// FIXME: what should this mean?
+    if (!ast_identifier->semantic->special && name_parts.size() >= 2)
+        ast_identifier->semantic->table = ast_identifier->name_parts.end()[-2];
 
-    ast_identifier.resetFullName();
-    ast_identifier.children.clear();
+    ast_identifier->resetFullName();
+    ast_identifier->children.clear();
 }
 
 }

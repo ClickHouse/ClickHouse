@@ -18,11 +18,11 @@ quantileDeterministic(level)(expr, determinator)
 
 Алиас: `medianDeterministic`.
 
-**Параметры**
+**Аргументы**
 
--   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
--   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types) или типов [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md).
--   `determinator` — Число, хэш которого используется при сэмплировании в алгоритме reservoir sampling, чтобы сделать результат детерминированным. В качестве детерминатора можно использовать любое определённое положительное число, например, идентификатор пользователя или события. Если одно и то же значение детерминатора попадается в выборке слишком часто, то функция выдаёт некорректный результат.
+-   `level` — уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — выражение, зависящее от значений столбцов, возвращающее данные [числовых типов](../../../sql-reference/data-types/index.md#data_types) или типов [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `determinator` — число, хэш которого используется при сэмплировании в алгоритме «Reservoir sampling», чтобы сделать результат детерминированным. В качестве значения можно использовать любое определённое положительное число, например, идентификатор пользователя или события. Если одно и то же значение попадается в выборке слишком часто, то функция выдаёт некорректный результат.
 
 **Возвращаемое значение**
 
@@ -65,4 +65,3 @@ SELECT quantileDeterministic(val, 1) FROM t
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/qurntiledeterministic/) <!--hide-->

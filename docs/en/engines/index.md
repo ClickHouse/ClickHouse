@@ -12,4 +12,4 @@ There are two key engine kinds in ClickHouse:
 -   [Table engines](../engines/table-engines/index.md)
 -   [Database engines](../engines/database-engines/index.md)
 
-{## [Original article](https://clickhouse.tech/docs/en/engines/) ##}
+{## [Original article](https://clickhouse.com/docs/en/engines/) ##}

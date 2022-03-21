@@ -1,4 +1,8 @@
-0
-0
-800000
-1600000
+Should throw 1
+    KO(241)
+Should throw 2
+    KO(241)
+Should pass 1
+    OK
+Should pass 2
+    OK

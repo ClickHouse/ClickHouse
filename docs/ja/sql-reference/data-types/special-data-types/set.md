@@ -9,4 +9,4 @@ toc_title: "\u30BB\u30C3\u30C8"
 
 の右半分に使用されます [IN](../../operators/in.md#select-in-operators) 式。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/special_data_types/set/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/special_data_types/set/) <!--hide-->

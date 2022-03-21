@@ -65,8 +65,6 @@ def build_for_lang(lang, args):
         languages = {
             'en': 'English',
             'zh': '中文',
-            'es': 'Español',
-            'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語'
         }
@@ -74,8 +72,6 @@ def build_for_lang(lang, args):
         site_names = {
             'en': 'ClickHouse %s Documentation',
             'zh': 'ClickHouse文档 %s',
-            'es': 'Documentación de ClickHouse %s',
-            'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'ja': 'ClickHouseドキュメント %s'
         }
@@ -88,9 +84,10 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        website_url = 'https://clickhouse.tech'
+        website_url = 'https://clickhouse.com'
         site_name = site_names.get(lang, site_names['en']) % ''
         site_name = site_name.replace('  ', ' ')
+
         raw_config = dict(
             site_name=site_name,
             site_url=f'{website_url}/docs/{lang}/',
@@ -98,7 +95,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2020 Yandex LLC',
+            copyright='©2016–2022 ClickHouse, Inc.',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
@@ -119,6 +116,9 @@ def build_for_lang(lang, args):
                 is_blog=False
             )
         )
+
+        # Clean to be safe if last build finished abnormally
+        single_page.remove_temporary_files(lang, args)
 
         raw_config['nav'] = nav.build_docs_nav(lang, args)
 
@@ -157,9 +157,6 @@ def build(args):
     if not args.skip_website:
         website.build_website(args)
 
-    if not args.skip_test_templates:
-        test.test_templates(args.website_dir)
-
     if not args.skip_docs:
         generate_cmake_flags_files()
 
@@ -183,8 +180,8 @@ if __name__ == '__main__':
     website_dir = os.path.join(src_dir, 'website')
 
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja')
-    arg_parser.add_argument('--blog-lang', default='en,ru')
+    arg_parser.add_argument('--lang', default='en,ru,zh,ja')
+    arg_parser.add_argument('--blog-lang', default='en')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
@@ -195,12 +192,10 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-multi-page', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-amp', action='store_true')
-    arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
     arg_parser.add_argument('--skip-docs', action='store_true')
-    arg_parser.add_argument('--skip-test-templates', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')
@@ -210,6 +205,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
+    args.minify = False  # TODO remove
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -231,7 +227,6 @@ if __name__ == '__main__':
         args.skip_multi_page = True
         args.skip_blog = True
         args.skip_website = True
-        args.skip_pdf = True
         args.skip_amp = True
 
     if args.skip_git_log or args.skip_amp:

@@ -1,7 +1,7 @@
 #include "SharedLibrary.h"
 #include <string>
 #include <boost/core/noncopyable.hpp>
-#include <common/phdr_cache.h>
+#include <base/phdr_cache.h>
 #include "Exception.h"
 
 
@@ -13,11 +13,11 @@ namespace ErrorCodes
     extern const int CANNOT_DLSYM;
 }
 
-SharedLibrary::SharedLibrary(const std::string & path, int flags)
+SharedLibrary::SharedLibrary(std::string_view path, int flags)
 {
-    handle = dlopen(path.c_str(), flags);
+    handle = dlopen(path.data(), flags);
     if (!handle)
-        throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
+        throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror());
 
     updatePHDRCache();
 
@@ -31,17 +31,18 @@ SharedLibrary::~SharedLibrary()
         std::terminate();
 }
 
-void * SharedLibrary::getImpl(const std::string & name, bool no_throw)
+void * SharedLibrary::getImpl(std::string_view name, bool no_throw)
 {
     dlerror();
 
-    auto * res = dlsym(handle, name.c_str());
+    auto * res = dlsym(handle, name.data());
 
     if (char * error = dlerror())
     {
         if (no_throw)
             return nullptr;
-        throw Exception(std::string("Cannot dlsym: ") + error, ErrorCodes::CANNOT_DLSYM);
+
+        throw Exception(ErrorCodes::CANNOT_DLSYM, "Cannot dlsym: ({})", error);
     }
 
     return res;

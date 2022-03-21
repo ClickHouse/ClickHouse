@@ -8,7 +8,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/tests/gtest_global_context.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <gtest/gtest.h>
 
@@ -19,10 +19,10 @@ static bool registered = false;
 #pragma GCC diagnostic ignored "-Wunused-function"
 static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
-    const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
+    const Poco::Util::XMLConfiguration & xml_config = dynamic_cast<const Poco::Util::XMLConfiguration &>(*config);
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
-    xml_config->save(oss);
+    xml_config.save(oss);
     return oss.str();
 }
 
@@ -44,7 +44,8 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
                    " SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' PASSWORD '' DB 'test' TABLE 'table_for_dict'))"
                    " LAYOUT(FLAT())"
                    " LIFETIME(MIN 1 MAX 10)"
-                   " RANGE(MIN second_column MAX third_column)";
+                   " RANGE(MIN second_column MAX third_column)"
+                   " COMMENT 'hello world!'";
 
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
@@ -92,6 +93,9 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 
     /// layout
     EXPECT_TRUE(config->has("dictionary.layout.flat"));
+
+    // comment
+    EXPECT_TRUE(config->has("dictionary.comment"));
 }
 
 

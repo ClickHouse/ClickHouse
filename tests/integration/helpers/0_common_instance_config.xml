@@ -1,5 +1,5 @@
-<yandex>
-    <timezone>Europe/Moscow</timezone>
+<clickhouse>
+    <timezone>Etc/UTC</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>
@@ -7,4 +7,15 @@
 
     <!-- For tests which check compatibility with older versions. -->
     <users_config>users.xml</users_config>
-</yandex>
+
+  <logger>
+        <level>test</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+        <stderr>/var/log/clickhouse-server/stderr.log</stderr>
+        <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+        <rotateOnOpen>true</rotateOnOpen>
+    </logger>
+</clickhouse>

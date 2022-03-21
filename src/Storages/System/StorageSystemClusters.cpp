@@ -23,21 +23,37 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"user", std::make_shared<DataTypeString>()},
         {"default_database", std::make_shared<DataTypeString>()},
         {"errors_count", std::make_shared<DataTypeUInt32>()},
+        {"slowdowns_count", std::make_shared<DataTypeUInt32>()},
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()}
     };
 }
 
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (const auto & name_and_cluster : context.getClusters().getContainer())
+    for (const auto & name_and_cluster : context->getClusters()->getContainer())
         writeCluster(res_columns, name_and_cluster);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
-            writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
+        {
+            // A quick fix for stateless tests with DatabaseReplicated. Its ZK
+            // node can be destroyed at any time. If another test lists
+            // system.clusters to get client command line suggestions, it will
+            // get an error when trying to get the info about DB from ZK.
+            // Just ignore these inaccessible databases. A good example of a
+            // failing test is `01526_client_start_and_exit`.
+            try
+            {
+                writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 }
 
@@ -71,6 +87,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             res_columns[i++]->insert(address.user);
             res_columns[i++]->insert(address.default_database);
             res_columns[i++]->insert(pool_status[replica_index].error_count);
+            res_columns[i++]->insert(pool_status[replica_index].slowdown_count);
             res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
         }
     }

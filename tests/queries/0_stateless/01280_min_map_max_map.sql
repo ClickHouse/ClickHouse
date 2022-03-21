@@ -38,3 +38,9 @@ select maxMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([
 select minMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
 select maxMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
 select sumMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
+
+-- check working with arrays and tuples as values
+select minMap([1, 1, 1], [[1, 2], [1], [1, 2, 3]]);
+select maxMap([1, 1, 1], [[1, 2], [1], [1, 2, 3]]);
+select minMap([1, 1, 1], [(1, 2), (1, 1), (1, 3)]);
+select maxMap([1, 1, 1], [(1, 2), (1, 1), (1, 3)]);

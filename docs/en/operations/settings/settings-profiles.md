@@ -76,4 +76,4 @@ The `default` profile has a special purpose: it must always be present and is ap
 
 The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->

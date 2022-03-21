@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
+#include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -23,7 +25,7 @@ class ConstantExpressionTemplate : boost::noncopyable
     struct TemplateStructure : boost::noncopyable
     {
         TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                          ASTPtr & expr, const IDataType & result_type, bool null_as_default_, const Context & context);
+                          ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
         static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
@@ -36,6 +38,7 @@ class ConstantExpressionTemplate : boost::noncopyable
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
+        Serializations serializations;
 
         std::vector<SpecialParserType> special_parser;
         bool null_as_default;
@@ -58,7 +61,7 @@ public:
                                                      TokenIterator expression_begin,
                                                      TokenIterator expression_end,
                                                      const ASTPtr & expression_,
-                                                     const Context & context,
+                                                     ContextPtr context,
                                                      bool * found_in_cache = nullptr,
                                                      const String & salt = {});
     };

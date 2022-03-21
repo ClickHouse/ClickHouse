@@ -3,15 +3,16 @@ import os
 from testflows.core import *
 from testflows.asserts import error
 
-from ldap.authentication.tests.common import getuid, create_ldap_servers_config_content, add_config, Config
+from helpers.common import create_xml_config_content, add_config
+from ldap.authentication.tests.common import getuid, create_ldap_servers_config_content, ldap_authenticated_users
 from ldap.external_user_directory.tests.common import rbac_roles, rbac_users, ldap_users
-from ldap.authentication.tests.common import xmltree, xml_indent, xml_append, xml_with_utf8
 
 @TestStep(Given)
-def create_table(self, name, create_statement, on_cluster=False):
+def create_table(self, name, create_statement, on_cluster=False, node=None):
     """Create table.
     """
-    node = current().context.node
+    if node is None:
+        node = current().context.node
     try:
         with Given(f"I have a {name} table"):
             node.query(create_statement.format(name=name))
@@ -24,12 +25,13 @@ def create_table(self, name, create_statement, on_cluster=False):
                 node.query(f"DROP TABLE IF EXISTS {name}")
 
 @TestStep(Given)
-def add_ldap_servers_configuration(self, servers, config_d_dir="/etc/clickhouse-server/config.d",
-        config_file="ldap_servers.xml", timeout=60, restart=False):
+def add_ldap_servers_configuration(self, servers, config=None, config_d_dir="/etc/clickhouse-server/config.d",
+        config_file="ldap_servers.xml", timeout=60, restart=False, node=None):
     """Add LDAP servers configuration to config.xml.
     """
-    config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
-    return add_config(config, restart=restart)
+    if config is None:
+        config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
+    return add_config(config, restart=restart, node=node)
 
 @TestStep(Given)
 def add_ldap_groups(self, groups, node=None):
@@ -49,7 +51,7 @@ def add_ldap_groups(self, groups, node=None):
 @TestStep(Given)
 def add_ldap_external_user_directory(self, server, roles=None, role_mappings=None,
         config_d_dir="/etc/clickhouse-server/config.d",
-        config_file=None, timeout=60, restart=True, config=None):
+        config_file=None, timeout=60, restart=True, config=None, node=None):
     """Add LDAP external user directory.
     """
     if config_file is None:
@@ -59,21 +61,35 @@ def add_ldap_external_user_directory(self, server, roles=None, role_mappings=Non
         config = create_ldap_external_user_directory_config_content(server=server, roles=roles,
             role_mappings=role_mappings, config_d_dir=config_d_dir, config_file=config_file)
 
-    return add_config(config, restart=restart)
+    return add_config(config, restart=restart, node=node)
 
 @TestStep(Given)
-def add_rbac_roles(self, roles):
+def add_rbac_roles(self, roles, node=None):
     """Add RBAC roles.
     """
-    with rbac_roles(*roles) as _roles:
+    with rbac_roles(*roles, node=node) as _roles:
         yield _roles
 
 @TestStep(Given)
-def add_rbac_users(self, users):
+def add_rbac_users(self, users, node=None):
     """Add RBAC users.
     """
-    with rbac_users(*users) as _users:
-        yield _users
+    if node is None:
+        node = self.context.node
+    try:
+        with Given(f"I create local users on {node}"):
+            for user in users:
+                username = user.get('username', None) or user['cn']
+                password = user.get('password', None) or user['userpassword'] 
+                with By(f"creating user {username}"):
+                    node.query(f"CREATE USER OR REPLACE {username} IDENTIFIED WITH PLAINTEXT_PASSWORD BY '{password}'")
+        yield users
+    finally:
+        with Finally(f"I drop local users on {node}"):
+            for user in users:
+                username = user.get('username', None) or user['cn']
+                with By(f"dropping user {username}", flags=TE):
+                    node.query(f"DROP USER IF EXISTS {username}")
 
 @TestStep(Given)
 def add_ldap_users(self, users, node=None):
@@ -81,6 +97,16 @@ def add_ldap_users(self, users, node=None):
     """
     with ldap_users(*users, node=node) as _users:
         yield _users
+
+@TestStep(Given)
+def add_ldap_authenticated_users(self, users, config_file=None, rbac=False, node=None, restart=True):
+    """Add LDAP authenticated users.
+    """
+    if config_file is None:
+        config_file = f"ldap_users_{getuid()}.xml"
+
+    with ldap_authenticated_users(*users, config_file=config_file, restart=restart, rbac=rbac, node=node):
+        yield users
 
 def add_group_to_ldap(cn, gidnumber=None, node=None, _gidnumber=[600], exitcode=0):
     """Add new group entry to LDAP.
@@ -192,39 +218,11 @@ def delete_user_from_group_in_ldap(user, group, node=None, exitcode=0):
     if exitcode is not None:
         assert r.exitcode == exitcode, error()
 
-def create_xml_config_content(entries, config_d_dir="/etc/clickhouse-server/config.d",
-        config_file="ldap_external_user_directories.xml"):
-    """Create XML configuration file from a dictionary.
-    """
-    uid = getuid()
-    path = os.path.join(config_d_dir, config_file)
-    name = config_file
-    root = xmltree.Element("yandex")
-    root.append(xmltree.Comment(text=f"config uid: {uid}"))
-
-    def create_xml_tree(entries, root):
-        for k,v in entries.items():
-            if type(v) is dict:
-                xml_element = xmltree.Element(k)
-                create_xml_tree(v, xml_element)
-                root.append(xml_element)
-            elif type(v) in (list, tuple):
-                xml_element = xmltree.Element(k)
-                for e in v:
-                    create_xml_tree(e, xml_element)
-                root.append(xml_element)
-            else:
-                xml_append(root, k, v)
-
-    create_xml_tree(entries, root)
-    xml_indent(root)
-    content = xml_with_utf8 + str(xmltree.tostring(root, short_empty_elements=False, encoding="utf-8"), "utf-8")
-
-    return Config(content, path, name, uid, "config.xml")
-
 def create_ldap_external_user_directory_config_content(server=None, roles=None, role_mappings=None, **kwargs):
     """Create LDAP external user directory configuration file content.
     """
+    kwargs["config_file"] = kwargs.pop("config_file", "external_ldap_user_directory.xml")
+
     entries = {
         "user_directories": {
             "ldap": {
@@ -249,4 +247,5 @@ def create_ldap_external_user_directory_config_content(server=None, roles=None, 
 def create_entries_ldap_external_user_directory_config_content(entries, **kwargs):
     """Create LDAP external user directory configuration file content.
     """
+    kwargs["config_file"] = kwargs.pop("config_file", "external_ldap_user_directory.xml")
     return create_xml_config_content(entries, **kwargs)

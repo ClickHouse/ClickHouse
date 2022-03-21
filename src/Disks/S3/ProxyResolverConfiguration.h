@@ -1,6 +1,12 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "ProxyConfiguration.h"
+
+#include <mutex>
 
 namespace DB::S3
 {
@@ -12,8 +18,9 @@ namespace DB::S3
 class ProxyResolverConfiguration : public ProxyConfiguration
 {
 public:
-    ProxyResolverConfiguration(const Poco::URI & endpoint_, String proxy_scheme_, unsigned proxy_port_);
+    ProxyResolverConfiguration(const Poco::URI & endpoint_, String proxy_scheme_, unsigned proxy_port_, unsigned cache_ttl_);
     Aws::Client::ClientConfigurationPerRequest getConfiguration(const Aws::Http::HttpRequest & request) override;
+    void errorReport(const Aws::Client::ClientConfigurationPerRequest & config) override;
 
 private:
     /// Endpoint to obtain a proxy host.
@@ -22,6 +29,14 @@ private:
     const String proxy_scheme;
     /// Port for obtained proxy.
     const unsigned proxy_port;
+
+    std::mutex cache_mutex;
+    bool cache_valid = false;
+    std::chrono::time_point<std::chrono::system_clock> cache_timestamp;
+    const std::chrono::seconds cache_ttl{0};
+    Aws::Client::ClientConfigurationPerRequest cached_config;
 };
 
 }
+
+#endif

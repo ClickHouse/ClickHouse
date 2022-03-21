@@ -15,10 +15,11 @@ services:
     image: confluentinc/cp-kafka:5.2.0
     hostname: kafka1
     ports:
-      - "9092:9092"
+      - ${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:9092,OUTSIDE://kafka1:19092
-      KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:19092
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:${KAFKA_EXTERNAL_PORT},OUTSIDE://kafka1:19092
+      KAFKA_ADVERTISED_HOST_NAME: kafka1
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:${KAFKA_EXTERNAL_PORT},OUTSIDE://0.0.0.0:19092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
       KAFKA_BROKER_ID: 1
@@ -34,7 +35,7 @@ services:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry
     ports:
-      - "8081:8081"
+      - ${SCHEMA_REGISTRY_EXTERNAL_PORT}:${SCHEMA_REGISTRY_INTERNAL_PORT}
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT

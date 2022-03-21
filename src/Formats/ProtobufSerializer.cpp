@@ -24,13 +24,19 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
+#   include <DataTypes/DataTypeString.h>
+#   include <DataTypes/Serializations/SerializationDecimal.h>
+#   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
+#   include <Formats/RowInputMissingColumnsFiller.h>
+#   include <IO/Operators.h>
 #   include <IO/ReadBufferFromString.h>
 #   include <IO/ReadHelpers.h>
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
-#   include <ext/range.h>
+#   include <base/range.h>
+#   include <base/sort.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -38,8 +44,8 @@
 #   include <boost/container/flat_set.hpp>
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
-
-#   include <common/logger_useful.h>
+#   include <boost/range/algorithm_ext/erase.hpp>
+#   include <base/logger_useful.h>
 
 namespace DB
 {
@@ -52,6 +58,7 @@ namespace ErrorCodes
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
     extern const int PROTOBUF_BAD_CAST;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -137,6 +144,15 @@ namespace
     }
 
 
+    WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
+
+
+    [[noreturn]] void wrongNumberOfColumns(size_t number_of_columns, const String & expected)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: expected {}, specified {}", expected, number_of_columns);
+    }
+
+
     struct ProtobufReaderOrWriter
     {
         ProtobufReaderOrWriter(ProtobufReader & reader_) : reader(&reader_) {} // NOLINT(google-explicit-constructor)
@@ -150,8 +166,12 @@ namespace
     class ProtobufSerializerSingleValue : public ProtobufSerializer
     {
     protected:
-        ProtobufSerializerSingleValue(const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
-            : field_descriptor(field_descriptor_)
+        ProtobufSerializerSingleValue(
+            const std::string_view & column_name_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : column_name(column_name_)
+            , field_descriptor(field_descriptor_)
             , field_typeid(field_descriptor_.type())
             , field_tag(field_descriptor.number())
             , reader(reader_or_writer_.reader)
@@ -162,13 +182,15 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0];
         }
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0]->getPtr();
         }
 
@@ -235,7 +257,7 @@ namespace
             }
             catch (...)
             {
-                cannotConvertValue(str, "String", TypeName<DestType>::get());
+                cannotConvertValue(str, "String", TypeName<DestType>);
             }
         }
 
@@ -252,19 +274,33 @@ namespace
             }
             catch (boost::numeric::bad_numeric_cast &)
             {
-                cannotConvertValue(toString(value), TypeName<SrcType>::get(), TypeName<DestType>::get());
+                cannotConvertValue(toString(value), TypeName<SrcType>, TypeName<DestType>);
             }
             return result;
+        }
+
+        [[noreturn]] void incompatibleColumnType(const std::string_view & column_type) const
+        {
+            throw Exception(
+                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                "The column {} ({}) cannot be serialized to the field {} ({}) due to their types are not compatible",
+                quoteString(column_name),
+                column_type,
+                quoteString(field_descriptor.full_name()),
+                field_descriptor.type_name());
         }
 
         [[noreturn]] void cannotConvertValue(const std::string_view & src_value, const std::string_view & src_type_name, const std::string_view & dest_type_name) const
         {
             throw Exception(
-                "Could not convert value '" + String{src_value} + "' from type " + String{src_type_name} + " to type " + String{dest_type_name} +
-                    " while " + (reader ? "reading" : "writing") + " field " + field_descriptor.name(),
+                "Could not convert value '" + String{src_value} + "' from type " + String{src_type_name} + " to type "
+                    + String{dest_type_name} + " while " + (reader ? "reading" : "writing") + " field "
+                    + quoteString(field_descriptor.name()) + " " + (reader ? "for inserting into" : "extracted from") + " column "
+                    + quoteString(column_name),
                 ErrorCodes::PROTOBUF_BAD_CAST);
         }
 
+        const String column_name;
         const FieldDescriptor & field_descriptor;
         const FieldTypeId field_typeid;
         const int field_tag;
@@ -287,8 +323,8 @@ namespace
     public:
         using ColumnType = ColumnVector<NumberType>;
 
-        ProtobufSerializerNumber(const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+        ProtobufSerializerNumber(const std::string_view & column_name_, const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
         {
             setFunctions();
         }
@@ -315,6 +351,13 @@ namespace
             if (row_num < column_vector.size())
                 return;
             column_vector.insertValue(getDefaultNumber());
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerNumber<" << TypeName<NumberType> << ">: column " << quoteString(column_name)
+                                     << " -> field " << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name()
+                                     << ")\n";
         }
 
     private:
@@ -427,7 +470,7 @@ namespace
                         else if (value == 1)
                             writeUInt(1);
                         else
-                            cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
+                            cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
                     };
 
                     read_function = [this]() -> NumberType
@@ -436,7 +479,7 @@ namespace
                         if (u64 < 2)
                             return static_cast<NumberType>(u64);
                         else
-                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>::get());
+                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
                     };
 
                     default_function = [this]() -> NumberType { return static_cast<NumberType>(field_descriptor.default_value_bool()); };
@@ -467,7 +510,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     if (std::is_floating_point_v<NumberType>)
-                        failedToSetFunctions();
+                        incompatibleColumnType(TypeName<NumberType>);
 
                     write_function = [this](NumberType value)
                     {
@@ -482,16 +525,8 @@ namespace
                 }
 
                 default:
-                    failedToSetFunctions();
+                    incompatibleColumnType(TypeName<NumberType>);
             }
-        }
-
-        [[noreturn]] void failedToSetFunctions() const
-        {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<NumberType>::get()),
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
         NumberType getDefaultNumber()
@@ -505,7 +540,7 @@ namespace
         {
             const auto * enum_value_descriptor = field_descriptor.enum_type()->FindValueByNumber(value);
             if (!enum_value_descriptor)
-                cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
+                cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
         }
 
     protected:
@@ -527,10 +562,11 @@ namespace
         using ColumnType = std::conditional_t<is_fixed_string, ColumnFixedString, ColumnString>;
 
         ProtobufSerializerString(
+            const std::string_view & column_name_,
             const std::shared_ptr<const DataTypeFixedString> & fixed_string_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , fixed_string_data_type(fixed_string_data_type_)
             , n(fixed_string_data_type->getN())
         {
@@ -540,8 +576,10 @@ namespace
         }
 
         ProtobufSerializerString(
-            const google::protobuf::FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            const std::string_view & column_name_,
+            const google::protobuf::FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
         {
             static_assert(!is_fixed_string, "This constructor for String only");
             setFunctions();
@@ -583,11 +621,11 @@ namespace
             {
                 if (row_num < old_size)
                 {
-                    fixed_string_data_type->alignStringLength(text_buffer, 0);
+                    SerializationFixedString::alignStringLength(n, text_buffer, 0);
                     memcpy(data.data() + row_num * n, text_buffer.data(), n);
                 }
                 else
-                    fixed_string_data_type->alignStringLength(data, old_data_size);
+                    SerializationFixedString::alignStringLength(n, data, old_data_size);
             }
             else
             {
@@ -645,6 +683,13 @@ namespace
                     throw;
                 }
             }
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerString<" << (is_fixed_string ? "fixed" : "") << ">: column "
+                                     << quoteString(column_name) << " -> field " << quoteString(field_descriptor.full_name()) << " ("
+                                     << field_descriptor.type_name() << ")\n";
         }
 
     private:
@@ -797,16 +842,8 @@ namespace
                 }
 
                 default:
-                    failedToSetFunctions();
+                    this->incompatibleColumnType(is_fixed_string ? "FixedString" : "String");
             }
-        }
-
-        [[noreturn]] void failedToSetFunctions()
-        {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(is_fixed_string ? "FixedString" : "String"),
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
         const PaddedPODArray<UInt8> & getDefaultString()
@@ -817,7 +854,7 @@ namespace
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
-                    fixed_string_data_type->alignStringLength(arr, 0);
+                    SerializationFixedString::alignStringLength(n, arr, 0);
                 default_string = std::move(arr);
             }
             return *default_string;
@@ -826,7 +863,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, WriteBufferFromVector<PaddedPODArray<UInt8>>::AppendModeTag{}};
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
@@ -888,14 +925,22 @@ namespace
         using BaseClass = ProtobufSerializerNumber<NumberType>;
 
         ProtobufSerializerEnum(
+            const std::string_view & column_name_,
             const std::shared_ptr<const EnumDataType> & enum_data_type_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : BaseClass(field_descriptor_, reader_or_writer_), enum_data_type(enum_data_type_)
+            : BaseClass(column_name_, field_descriptor_, reader_or_writer_), enum_data_type(enum_data_type_)
         {
             assert(enum_data_type);
             setFunctions();
             prepareEnumMapping();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerEnum<" << TypeName<NumberType> << ">: column " << quoteString(this->column_name)
+                                     << " -> field " << quoteString(this->field_descriptor.full_name()) << " ("
+                                     << this->field_descriptor.type_name() << ")\n";
         }
 
     private:
@@ -962,16 +1007,8 @@ namespace
                 }
 
                 default:
-                    failedToSetFunctions();
+                    this->incompatibleColumnType(enum_data_type->getName());
             }
-        }
-
-        [[noreturn]] void failedToSetFunctions()
-        {
-            throw Exception(
-                "The field " + quoteString(this->field_descriptor.full_name()) + " has an incompatible type " + this->field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(enum_data_type->getName()),
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
         void checkEnumDataTypeValue(NumberType value)
@@ -1005,7 +1042,7 @@ namespace
             auto iless = [](const std::string_view & s1, const std::string_view & s2) { return ColumnNameWithProtobufFieldNameComparator::less(s1, s2); };
             boost::container::flat_map<std::string_view, int, decltype(iless)> string_to_protobuf_enum_value_map;
             typename decltype(string_to_protobuf_enum_value_map)::sequence_type string_to_protobuf_enum_value_seq;
-            for (int i : ext::range(enum_descriptor.value_count()))
+            for (int i : collections::range(enum_descriptor.value_count()))
                 string_to_protobuf_enum_value_seq.emplace_back(enum_descriptor.value(i)->name(), enum_descriptor.value(i)->number());
             string_to_protobuf_enum_value_map.adopt_sequence(std::move(string_to_protobuf_enum_value_seq));
 
@@ -1087,10 +1124,11 @@ namespace
         using ColumnType = ColumnDecimal<DecimalType>;
 
         ProtobufSerializerDecimal(
+            const std::string_view & column_name_,
             const DataTypeDecimalBase<DecimalType> & decimal_data_type_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , precision(decimal_data_type_.getPrecision())
             , scale(decimal_data_type_.getScale())
         {
@@ -1119,6 +1157,13 @@ namespace
             if (row_num < column_decimal.size())
                 return;
             column_decimal.insertValue(getDefaultDecimal());
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDecimal<" << TypeName<DecimalType> << ">: column " << quoteString(column_name)
+                                     << " -> field " << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name()
+                                     << ")\n";
         }
 
     private:
@@ -1225,7 +1270,7 @@ namespace
                 case FieldTypeId::TYPE_BOOL:
                 {
                     if (std::is_same_v<DecimalType, DateTime64>)
-                        failedToSetFunctions();
+                        incompatibleColumnType(TypeName<DecimalType>);
                     else
                     {
                         write_function = [this](const DecimalType & decimal)
@@ -1237,8 +1282,8 @@ namespace
                             else
                             {
                                 WriteBufferFromOwnString buf;
-                                writeText(decimal, scale, buf);
-                                cannotConvertValue(buf.str(), TypeName<DecimalType>::get(), field_descriptor.type_name());
+                                writeText(decimal, scale, buf, false);
+                                cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
                             }
                         };
 
@@ -1248,7 +1293,7 @@ namespace
                             if (u64 < 2)
                                 return numberToDecimal(static_cast<UInt64>(u64 != 0));
                             else
-                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>::get());
+                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
                         };
 
                         default_function = [this]() -> DecimalType
@@ -1279,16 +1324,8 @@ namespace
                 }
 
                 default:
-                    failedToSetFunctions();
+                    incompatibleColumnType(TypeName<DecimalType>);
             }
-        }
-
-        [[noreturn]] void failedToSetFunctions()
-        {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<DecimalType>::get()),
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
         DecimalType getDefaultDecimal()
@@ -1314,9 +1351,9 @@ namespace
         {
             WriteBufferFromString buf{str};
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
-               writeDateTimeText(decimal, scale, buf);
+                writeDateTimeText(decimal, scale, buf);
             else
-                writeText(decimal, scale, buf);
+                writeText(decimal, scale, buf, false);
         }
 
         DecimalType stringToDecimal(const String & str) const
@@ -1326,7 +1363,7 @@ namespace
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
                 readDateTime64Text(decimal, scale, buf);
             else
-                DataTypeDecimal<DecimalType>::readText(decimal, buf, precision, scale);
+                SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
         }
 
@@ -1347,11 +1384,18 @@ namespace
     {
     public:
         ProtobufSerializerDate(
+            const std::string_view & column_name_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerNumber<UInt16>(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerNumber<UInt16>(column_name_, field_descriptor_, reader_or_writer_)
         {
             setFunctions();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDate: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
         }
 
     private:
@@ -1393,7 +1437,7 @@ namespace
                 }
 
                 default:
-                    failedToSetFunctions();
+                    incompatibleColumnType("Date");
             }
         }
 
@@ -1410,29 +1454,33 @@ namespace
             readDateText(date, buf);
             return date;
         }
-
-        [[noreturn]] void failedToSetFunctions()
-        {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type 'Date'",
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
-        }
     };
 
 
-    /// Serializes a ColumnVector<UInt32> containing dates to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
+    /// Serializes a ColumnVector<UInt32> containing datetimes to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
     class ProtobufSerializerDateTime : public ProtobufSerializerNumber<UInt32>
     {
     public:
         ProtobufSerializerDateTime(
-            const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerNumber<UInt32>(field_descriptor_, reader_or_writer_)
+            const std::string_view & column_name_,
+            const DataTypeDateTime & type,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<UInt32>(column_name_, field_descriptor_, reader_or_writer_),
+            date_lut(type.getTimeZone())
         {
             setFunctions();
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDateTime: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
     protected:
+        const DateLUTImpl & date_lut;
+
         void setFunctions()
         {
             switch (field_typeid)
@@ -1456,85 +1504,105 @@ namespace
                 {
                     write_function = [this](UInt32 value)
                     {
-                        dateTimeToString(value, text_buffer);
+                        dateTimeToString(value, text_buffer, date_lut);
                         writeStr(text_buffer);
                     };
 
                     read_function = [this]() -> UInt32
                     {
                         readStr(text_buffer);
-                        return stringToDateTime(text_buffer);
+                        return stringToDateTime(text_buffer, date_lut);
                     };
 
-                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string()); };
+                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string(), date_lut); };
                     break;
                 }
 
                 default:
-                    failedToSetFunctions();
+                    incompatibleColumnType("DateTime");
             }
         }
 
-        static void dateTimeToString(time_t tm, String & str)
+        static void dateTimeToString(time_t tm, String & str, const DateLUTImpl & lut)
         {
             WriteBufferFromString buf{str};
-            writeDateTimeText(tm, buf);
+            writeDateTimeText(tm, buf, lut);
         }
 
-        static time_t stringToDateTime(const String & str)
+        static time_t stringToDateTime(const String & str, const DateLUTImpl & lut)
         {
             ReadBufferFromString buf{str};
             time_t tm = 0;
-            readDateTimeText(tm, buf);
+            readDateTimeText(tm, buf, lut);
+            if (tm < 0)
+                tm = 0;
             return tm;
-        }
-
-        [[noreturn]] void failedToSetFunctions()
-        {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type 'DateTime'",
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
     };
 
 
-    /// Serializes a ColumnVector<UInt128> containing UUIDs to a field of type TYPE_STRING or TYPE_BYTES.
-    class ProtobufSerializerUUID : public ProtobufSerializerNumber<UInt128>
+    /// Serializes a ColumnVector<UUID> containing UUIDs to a field of type TYPE_STRING or TYPE_BYTES.
+    class ProtobufSerializerUUID : public ProtobufSerializerSingleValue
     {
     public:
         ProtobufSerializerUUID(
+            const std::string_view & column_name_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerNumber<UInt128>(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
         {
             setFunctions();
+        }
+
+        void writeRow(size_t row_num) override
+        {
+            const auto & column_vector = assert_cast<const ColumnVector<UUID> &>(*column);
+            write_function(column_vector.getElement(row_num));
+        }
+
+        void readRow(size_t row_num) override
+        {
+            UUID value = read_function();
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            if (row_num < column_vector.size())
+                column_vector.getElement(row_num) = value;
+            else
+                column_vector.insertValue(value);
+        }
+
+        void insertDefaults(size_t row_num) override
+        {
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            if (row_num < column_vector.size())
+                return;
+            column_vector.insertDefault();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerUUID: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
         }
 
     private:
         void setFunctions()
         {
             if ((field_typeid != FieldTypeId::TYPE_STRING) && (field_typeid != FieldTypeId::TYPE_BYTES))
-            {
-                throw Exception(
-                    "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                        + " for serialization of the data type UUID",
-                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
-            }
+                incompatibleColumnType("UUID");
 
-            write_function = [this](UInt128 value)
+            write_function = [this](UUID value)
             {
-                uuidToString(static_cast<UUID>(value), text_buffer);
+                uuidToString(value, text_buffer);
                 writeStr(text_buffer);
             };
 
-            read_function = [this]() -> UInt128
+            read_function = [this]() -> UUID
             {
                 readStr(text_buffer);
-                return stringToUUID(text_buffer);
+                return parse<UUID>(text_buffer);
             };
 
-            default_function = [this]() -> UInt128 { return stringToUUID(field_descriptor.default_value_string()); };
+            default_function = [this]() -> UUID { return parse<UUID>(field_descriptor.default_value_string()); };
         }
 
         static void uuidToString(const UUID & uuid, String & str)
@@ -1543,13 +1611,10 @@ namespace
             writeText(uuid, buf);
         }
 
-        static UUID stringToUUID(const String & str)
-        {
-            ReadBufferFromString buf{str};
-            UUID uuid;
-            readUUIDText(uuid, buf);
-            return uuid;
-        }
+        std::function<void(UUID)> write_function;
+        std::function<UUID()> read_function;
+        std::function<UUID()> default_function;
+        String text_buffer;
     };
 
 
@@ -1561,20 +1626,16 @@ namespace
     {
     public:
         ProtobufSerializerAggregateFunction(
+            const std::string_view & column_name_,
             const std::shared_ptr<const DataTypeAggregateFunction> & aggregate_function_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , aggregate_function_data_type(aggregate_function_data_type_)
             , aggregate_function(aggregate_function_data_type->getFunction())
         {
             if ((field_typeid != FieldTypeId::TYPE_STRING) && (field_typeid != FieldTypeId::TYPE_BYTES))
-            {
-                throw Exception(
-                    "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                        + " for serialization of the data type " + quoteString(aggregate_function_data_type->getName()),
-                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
-            }
+                incompatibleColumnType(aggregate_function_data_type->getName());
         }
 
         void writeRow(size_t row_num) override
@@ -1612,6 +1673,12 @@ namespace
             column_af.getData().push_back(data);
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerAggregateFunction: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
     private:
         void dataToString(ConstAggregateDataPtr data, String & str) const
         {
@@ -1627,7 +1694,7 @@ namespace
             {
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
-                aggregate_function->deserialize(data, buf, &arena);
+                aggregate_function->deserialize(data, buf, std::nullopt, &arena);
                 return data;
             }
             catch (...)
@@ -1654,7 +1721,8 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0];
             const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
             ColumnPtr nested_column = column_nullable.getNestedColumnPtr();
@@ -1663,7 +1731,8 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
@@ -1714,6 +1783,12 @@ namespace
             column_nullable.insertDefault();
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerNullable ->\n";
+            nested_serializer->describeTree(out, indent + 1);
+        }
+
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         ColumnPtr column;
@@ -1731,7 +1806,8 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             const auto & column_map = assert_cast<const ColumnMap &>(*columns[0]);
             ColumnPtr nested_column = column_map.getNestedColumnPtr();
             nested_serializer->setColumns(&nested_column, 1);
@@ -1739,7 +1815,8 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
@@ -1747,6 +1824,12 @@ namespace
         void writeRow(size_t row_num) override { nested_serializer->writeRow(row_num); }
         void readRow(size_t row_num) override { nested_serializer->readRow(row_num); }
         void insertDefaults(size_t row_num) override { nested_serializer->insertDefaults(row_num); }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerMap ->\n";
+            nested_serializer->describeTree(out, indent + 1);
+        }
 
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
@@ -1764,7 +1847,8 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0];
             const auto & column_lc = assert_cast<const ColumnLowCardinality &>(*column);
             ColumnPtr nested_column = column_lc.getDictionary().getNestedColumn();
@@ -1774,7 +1858,8 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
@@ -1832,6 +1917,12 @@ namespace
             column_lc.insertFromFullColumn(*default_value_column, 0);
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerLowCardinality ->\n";
+            nested_serializer->describeTree(out, indent + 1);
+        }
+
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         ColumnPtr column;
@@ -1852,7 +1943,8 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0];
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             ColumnPtr data_column = column_array.getDataPtr();
@@ -1861,7 +1953,8 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
@@ -1870,7 +1963,7 @@ namespace
         {
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
-            for (size_t i : ext::range(offsets[row_num - 1], offsets[row_num]))
+            for (size_t i : collections::range(offsets[row_num - 1], offsets[row_num]))
                 element_serializer->writeRow(i);
         }
 
@@ -1914,6 +2007,12 @@ namespace
             column_array.insertDefault();
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerArray ->\n";
+            element_serializer->describeTree(out, indent + 1);
+        }
+
     private:
         const std::unique_ptr<ProtobufSerializer> element_serializer;
         ColumnPtr column;
@@ -1925,10 +2024,12 @@ namespace
     {
     public:
         ProtobufSerializerTupleAsArray(
+            const std::string_view & column_name_,
             const std::shared_ptr<const DataTypeTuple> & tuple_data_type_,
             const FieldDescriptor & field_descriptor_,
             std::vector<std::unique_ptr<ProtobufSerializer>> element_serializers_)
-            : tuple_data_type(tuple_data_type_)
+            : column_name(column_name_)
+            , tuple_data_type(tuple_data_type_)
             , tuple_size(tuple_data_type->getElements().size())
             , field_descriptor(field_descriptor_)
             , element_serializers(std::move(element_serializers_))
@@ -1939,10 +2040,11 @@ namespace
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             column = columns[0];
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
-            for (size_t i : ext::range(tuple_size))
+            for (size_t i : collections::range(tuple_size))
             {
                 auto element_column = column_tuple.getColumnPtr(i);
                 element_serializers[i]->setColumns(&element_column, 1);
@@ -1952,14 +2054,15 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
 
         void writeRow(size_t row_num) override
         {
-            for (size_t i : ext::range(tuple_size))
+            for (size_t i : collections::range(tuple_size))
                 element_serializers[i]->writeRow(row_num);
         }
 
@@ -1976,9 +2079,12 @@ namespace
             if (current_element_index >= tuple_size)
             {
                 throw Exception(
-                    "Too many (" + std::to_string(current_element_index) + ") elements was read from the field "
-                        + field_descriptor.full_name() + " to fit in the data type " + tuple_data_type->getName(),
-                    ErrorCodes::PROTOBUF_BAD_CAST);
+                    ErrorCodes::PROTOBUF_BAD_CAST,
+                    "Column {}: More than {} elements was read from the field {} to fit in the data type {}",
+                    quoteString(column_name),
+                    tuple_size,
+                    quoteString(field_descriptor.full_name()),
+                    tuple_data_type->getName());
             }
 
             element_serializers[current_element_index]->readRow(row_num);
@@ -1995,12 +2101,12 @@ namespace
 
             try
             {
-                for (size_t i : ext::range(tuple_size))
+                for (size_t i : collections::range(tuple_size))
                     element_serializers[i]->insertDefaults(row_num);
             }
             catch (...)
             {
-                for (size_t i : ext::range(tuple_size))
+                for (size_t i : collections::range(tuple_size))
                 {
                     auto element_column = column_tuple.getColumnPtr(i)->assumeMutable();
                     if (element_column->size() > old_size)
@@ -2010,7 +2116,17 @@ namespace
             }
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerTupleAsArray: column " << quoteString(column_name) << " ("
+                                     << tuple_data_type->getName() << ") -> field " << quoteString(field_descriptor.full_name()) << " ("
+                                     << field_descriptor.type_name() << ") ->\n";
+            for (const auto & element_serializer : element_serializers)
+                element_serializer->describeTree(out, indent + 1);
+        }
+
     private:
+        const String column_name;
         const std::shared_ptr<const DataTypeTuple> tuple_data_type;
         const size_t tuple_size;
         const FieldDescriptor & field_descriptor;
@@ -2026,54 +2142,72 @@ namespace
     public:
         struct FieldDesc
         {
-            size_t column_index;
-            size_t num_columns;
+            std::vector<size_t> column_indices;
             const FieldDescriptor * field_descriptor;
             std::unique_ptr<ProtobufSerializer> field_serializer;
         };
 
         ProtobufSerializerMessage(
-            std::vector<FieldDesc> field_descs_,
+            std::vector<FieldDesc> && field_descs_,
             const FieldDescriptor * parent_field_descriptor_,
             bool with_length_delimiter_,
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
+            , missing_columns_filler(std::move(missing_columns_filler_))
             , should_skip_if_empty(parent_field_descriptor ? shouldSkipZeroOrEmpty(*parent_field_descriptor) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
         {
             field_infos.reserve(field_descs_.size());
             for (auto & desc : field_descs_)
-                field_infos.emplace_back(desc.column_index, desc.num_columns, *desc.field_descriptor, std::move(desc.field_serializer));
+                field_infos.emplace_back(std::move(desc.column_indices), *desc.field_descriptor, std::move(desc.field_serializer));
 
-            std::sort(field_infos.begin(), field_infos.end(),
+            ::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
 
-            for (size_t i : ext::range(field_infos.size()))
+            for (size_t i : collections::range(field_infos.size()))
                 field_index_by_field_tag.emplace(field_infos[i].field_tag, i);
+        }
+
+        void setHasEnvelopeAsParent()
+        {
+            has_envelope_as_parent = true;
         }
 
         void setColumns(const ColumnPtr * columns_, size_t num_columns_) override
         {
-            columns.assign(columns_, columns_ + num_columns_);
+            if (!num_columns_)
+                wrongNumberOfColumns(num_columns_, ">0");
 
+            std::vector<ColumnPtr> field_columns;
             for (const FieldInfo & info : field_infos)
-                info.field_serializer->setColumns(columns.data() + info.column_index, info.num_columns);
+            {
+                field_columns.clear();
+                field_columns.reserve(info.column_indices.size());
+                for (size_t column_index : info.column_indices)
+                {
+                    if (column_index >= num_columns_)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column index {}, expected column indices <{}", column_index, num_columns_);
+                    field_columns.emplace_back(columns_[column_index]);
+                }
+                info.field_serializer->setColumns(field_columns.data(), field_columns.size());
+            }
 
             if (reader)
             {
-                missing_column_indices.clear();
-                missing_column_indices.reserve(num_columns_);
-                size_t current_idx = 0;
+                mutable_columns.resize(num_columns_);
+                for (size_t i : collections::range(num_columns_))
+                    mutable_columns[i] = columns_[i]->assumeMutable();
+
+                std::vector<UInt8> column_is_missing;
+                column_is_missing.resize(num_columns_, true);
                 for (const FieldInfo & info : field_infos)
-                {
-                    while (current_idx < info.column_index)
-                        missing_column_indices.push_back(current_idx++);
-                    current_idx = info.column_index + info.num_columns;
-                }
-                while (current_idx < num_columns_)
-                    missing_column_indices.push_back(current_idx++);
+                    for (size_t i : info.column_indices)
+                        column_is_missing[i] = false;
+
+                has_missing_columns = (std::find(column_is_missing.begin(), column_is_missing.end(), true) != column_is_missing.end());
             }
         }
 
@@ -2081,14 +2215,14 @@ namespace
         {
             Columns cols;
             cols.reserve(num_columns_);
-            for (size_t i : ext::range(num_columns_))
+            for (size_t i : collections::range(num_columns_))
                 cols.push_back(columns_[i]->getPtr());
             setColumns(cols.data(), cols.size());
         }
 
         void writeRow(size_t row_num) override
         {
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 writer->startNestedMessage();
             else
                 writer->startMessage();
@@ -2107,13 +2241,17 @@ namespace
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
                 writer->endNestedMessage(parent_field_descriptor->number(), is_group, should_skip_if_empty);
             }
+            else if (has_envelope_as_parent)
+            {
+                writer->endNestedMessage(1, false, should_skip_if_empty);
+            }
             else
                 writer->endMessage(with_length_delimiter);
         }
 
         void readRow(size_t row_num) override
         {
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 reader->startNestedMessage();
             else
                 reader->startMessage(with_length_delimiter);
@@ -2122,7 +2260,7 @@ namespace
             {
                 last_field_index = 0;
                 last_field_tag = field_infos[0].field_tag;
-                size_t old_size = columns.empty() ? 0 : columns[0]->size();
+                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
 
                 try
                 {
@@ -2147,19 +2285,20 @@ namespace
                 }
                 catch (...)
                 {
-                    for (auto & column : columns)
+                    for (auto & column : mutable_columns)
                     {
                         if (column->size() > old_size)
-                            column->assumeMutableRef().popBack(column->size() - old_size);
+                            column->popBack(column->size() - old_size);
                     }
                     throw;
                 }
             }
 
-            if (parent_field_descriptor)
+            if (parent_field_descriptor || has_envelope_as_parent)
                 reader->endNestedMessage();
             else
                 reader->endMessage(false);
+
             addDefaultsToMissingColumns(row_num);
         }
 
@@ -2168,6 +2307,31 @@ namespace
             for (const FieldInfo & info : field_infos)
                 info.field_serializer->insertDefaults(row_num);
             addDefaultsToMissingColumns(row_num);
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            size_t num_columns = 0;
+            for (const auto & field_info : field_infos)
+                num_columns += field_info.column_indices.size();
+
+            writeIndent(out, indent) << "ProtobufSerializerMessage: " << num_columns << " columns ->";
+            if (parent_field_descriptor)
+                out << " field " << quoteString(parent_field_descriptor->full_name()) << " (" << parent_field_descriptor->type_name() << ")";
+
+            for (const auto & field_info : field_infos)
+            {
+                out << "\n";
+                writeIndent(out, indent + 1) << "Columns #";
+                for (size_t j = 0; j != field_info.column_indices.size(); ++j)
+                {
+                    if (j)
+                        out << ", ";
+                    out << field_info.column_indices[j];
+                }
+                out << " ->\n";
+                field_info.field_serializer->describeTree(out, indent + 2);
+            }
         }
 
     private:
@@ -2194,32 +2358,24 @@ namespace
 
         void addDefaultsToMissingColumns(size_t row_num)
         {
-            for (size_t column_idx : missing_column_indices)
-            {
-                auto & column = columns[column_idx];
-                size_t old_size = column->size();
-                if (row_num >= old_size)
-                    column->assumeMutableRef().insertDefault();
-            }
+            if (has_missing_columns)
+                missing_columns_filler->addDefaults(mutable_columns, row_num);
         }
 
         struct FieldInfo
         {
             FieldInfo(
-                size_t column_index_,
-                size_t num_columns_,
+                std::vector<size_t> && column_indices_,
                 const FieldDescriptor & field_descriptor_,
                 std::unique_ptr<ProtobufSerializer> field_serializer_)
-                : column_index(column_index_)
-                , num_columns(num_columns_)
+                : column_indices(std::move(column_indices_))
                 , field_descriptor(&field_descriptor_)
                 , field_tag(field_descriptor_.number())
                 , should_pack_repeated(shouldPackRepeated(field_descriptor_))
                 , field_serializer(std::move(field_serializer_))
             {
             }
-            size_t column_index;
-            size_t num_columns;
+            std::vector<size_t> column_indices;
             const FieldDescriptor * field_descriptor;
             int field_tag;
             bool should_pack_repeated;
@@ -2228,54 +2384,144 @@ namespace
         };
 
         const FieldDescriptor * const parent_field_descriptor;
+        bool has_envelope_as_parent = false;
         const bool with_length_delimiter;
+        const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
         ProtobufReader * const reader;
         ProtobufWriter * const writer;
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
-        Columns columns;
-        std::vector<size_t> missing_column_indices;
+        MutableColumns mutable_columns;
+        bool has_missing_columns = false;
         int last_field_tag = 0;
         size_t last_field_index = static_cast<size_t>(-1);
     };
 
+    /// Serializes a top-level envelope message in the protobuf schema.
+    /// "Envelope" means that the contained subtree of serializers is enclosed in a message just once,
+    /// i.e. only when the first and the last row read/write trigger a read/write of the msg header.
+    class ProtobufSerializerEnvelope : public ProtobufSerializer
+    {
+    public:
+        ProtobufSerializerEnvelope(
+            std::unique_ptr<ProtobufSerializerMessage>&& serializer_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : serializer(std::move(serializer_))
+            , reader(reader_or_writer_.reader)
+            , writer(reader_or_writer_.writer)
+        {
+            // The inner serializer has a backreference of type protobuf::FieldDescriptor * to it's parent
+            // serializer. If it is unset, it considers itself the top-level message, otherwise a nested
+            // message and accordingly it makes start/endMessage() vs. startEndNestedMessage() calls into
+            // Protobuf(Writer|Reader). There is no field descriptor because Envelopes merely forward calls
+            // but don't contain data to be serialized. We must still force the inner serializer to act
+            // as nested message.
+            serializer->setHasEnvelopeAsParent();
+        }
+
+        void setColumns(const ColumnPtr * columns_, size_t num_columns_) override
+        {
+            serializer->setColumns(columns_, num_columns_);
+        }
+
+        void setColumns(const MutableColumnPtr * columns_, size_t num_columns_) override
+        {
+            serializer->setColumns(columns_, num_columns_);
+        }
+
+        void writeRow(size_t row_num) override
+        {
+            if (first_call_of_write_row)
+            {
+                writer->startMessage();
+                first_call_of_write_row = false;
+            }
+
+            serializer->writeRow(row_num);
+        }
+
+        void finalizeWrite() override
+        {
+            writer->endMessage(/*with_length_delimiter = */ true);
+        }
+
+        void readRow(size_t row_num) override
+        {
+            if (first_call_of_read_row)
+            {
+                reader->startMessage(/*with_length_delimiter = */ true);
+                first_call_of_read_row = false;
+            }
+
+            int field_tag;
+            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
+            assert(ret);
+
+            serializer->readRow(row_num);
+        }
+
+        void insertDefaults(size_t row_num) override
+        {
+            serializer->insertDefaults(row_num);
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerEnvelope ->\n";
+            serializer->describeTree(out, indent + 1);
+        }
+
+        std::unique_ptr<ProtobufSerializerMessage> serializer;
+        ProtobufReader * const reader;
+        ProtobufWriter * const writer;
+        bool first_call_of_write_row = true;
+        bool first_call_of_read_row = true;
+    };
 
     /// Serializes a tuple with explicit names as a nested message.
     class ProtobufSerializerTupleAsNestedMessage : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerTupleAsNestedMessage(std::unique_ptr<ProtobufSerializerMessage> nested_message_serializer_)
-            : nested_message_serializer(std::move(nested_message_serializer_))
+        explicit ProtobufSerializerTupleAsNestedMessage(std::unique_ptr<ProtobufSerializerMessage> message_serializer_)
+            : message_serializer(std::move(message_serializer_))
         {
         }
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*columns[0]);
             size_t tuple_size = column_tuple.tupleSize();
             assert(tuple_size);
             Columns element_columns;
             element_columns.reserve(tuple_size);
-            for (size_t i : ext::range(tuple_size))
+            for (size_t i : collections::range(tuple_size))
                 element_columns.emplace_back(column_tuple.getColumnPtr(i));
-            nested_message_serializer->setColumns(element_columns.data(), element_columns.size());
+            message_serializer->setColumns(element_columns.data(), element_columns.size());
         }
 
         void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
         {
-            assert(num_columns == 1);
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
             ColumnPtr column0 = columns[0]->getPtr();
             setColumns(&column0, 1);
         }
 
-        void writeRow(size_t row_num) override { nested_message_serializer->writeRow(row_num); }
-        void readRow(size_t row_num) override { nested_message_serializer->readRow(row_num); }
-        void insertDefaults(size_t row_num) override { nested_message_serializer->insertDefaults(row_num); }
+        void writeRow(size_t row_num) override { message_serializer->writeRow(row_num); }
+        void readRow(size_t row_num) override { message_serializer->readRow(row_num); }
+        void insertDefaults(size_t row_num) override { message_serializer->insertDefaults(row_num); }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerTupleAsNestedMessage ->\n";
+            message_serializer->describeTree(out, indent + 1);
+        }
 
     private:
-        const std::unique_ptr<ProtobufSerializerMessage> nested_message_serializer;
+        const std::unique_ptr<ProtobufSerializerMessage> message_serializer;
     };
 
 
@@ -2285,37 +2531,61 @@ namespace
     {
     public:
         explicit ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages(
-            std::unique_ptr<ProtobufSerializerMessage> nested_message_serializer_)
-            : nested_message_serializer(std::move(nested_message_serializer_))
+            const std::vector<std::string_view> & column_names_,
+            const FieldDescriptor * parent_field_descriptor_,
+            std::unique_ptr<ProtobufSerializerMessage> message_serializer_,
+            const std::function<String(size_t)> & get_root_desc_function_)
+            : parent_field_descriptor(parent_field_descriptor_)
+            , message_serializer(std::move(message_serializer_))
+            , get_root_desc_function(get_root_desc_function_)
         {
+            column_names.reserve(column_names_.size());
+            for (const auto & column_name : column_names_)
+                column_names.emplace_back(column_name);
         }
 
         void setColumns(const ColumnPtr * columns, size_t num_columns) override
         {
-            assert(num_columns);
+            if (!num_columns)
+                wrongNumberOfColumns(num_columns, ">0");
             data_columns.clear();
             data_columns.reserve(num_columns);
             offset_columns.clear();
             offset_columns.reserve(num_columns);
 
-            for (size_t i : ext::range(num_columns))
+            for (size_t i : collections::range(num_columns))
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(*columns[i]);
                 data_columns.emplace_back(column_array.getDataPtr());
-                offset_columns.emplace_back(column_array.getOffsetsPtr());
+
+                auto offset_column = column_array.getOffsetsPtr();
+                if (std::binary_search(offset_columns.begin(), offset_columns.end(), offset_column))
+                    continue;
+
+                /// Keep `offset_columns` sorted.
+                offset_columns.insert(std::upper_bound(offset_columns.begin(), offset_columns.end(), offset_column), offset_column);
+
+                /// All the columns listed in `offset_columns` should have equal offsets.
+                if (i >= 1)
+                {
+                    const auto & column_array0 = assert_cast<const ColumnArray &>(*columns[0]);
+                    if (!column_array0.hasEqualOffsets(column_array))
+                    {
+                        throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
+                                        "Column #{} {} and column #{} {} are supposed to have equal offsets according to the following serialization tree:\n{}",
+                                        0, quoteString(column_names[0]), i, quoteString(column_names[i]), get_root_desc_function(0));
+                    }
+                }
             }
 
-            std::sort(offset_columns.begin(), offset_columns.end());
-            offset_columns.erase(std::unique(offset_columns.begin(), offset_columns.end()), offset_columns.end());
-
-            nested_message_serializer->setColumns(data_columns.data(), data_columns.size());
+            message_serializer->setColumns(data_columns.data(), data_columns.size());
         }
 
         void setColumns(const MutableColumnPtr * columns, size_t num_columns) override
         {
             Columns cols;
             cols.reserve(num_columns);
-            for (size_t i : ext::range(num_columns))
+            for (size_t i : collections::range(num_columns))
                 cols.push_back(columns[i]->getPtr());
             setColumns(cols.data(), cols.size());
         }
@@ -2325,14 +2595,8 @@ namespace
             const auto & offset_column0 = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[0]);
             size_t start_offset = offset_column0.getElement(row_num - 1);
             size_t end_offset = offset_column0.getElement(row_num);
-            for (size_t i : ext::range(1, offset_columns.size()))
-            {
-                const auto & offset_column = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[i]);
-                if (offset_column.getElement(row_num) != end_offset)
-                    throw Exception("Components of FlattenedNested have different sizes", ErrorCodes::PROTOBUF_BAD_CAST);
-            }
-            for (size_t i : ext::range(start_offset, end_offset))
-                nested_message_serializer->writeRow(i);
+            for (size_t i : collections::range(start_offset, end_offset))
+                message_serializer->writeRow(i);
         }
 
         void readRow(size_t row_num) override
@@ -2345,7 +2609,7 @@ namespace
 
             try
             {
-                nested_message_serializer->readRow(old_data_size);
+                message_serializer->readRow(old_data_size);
                 size_t data_size = data_columns[0]->size();
                 if (data_size != old_data_size + 1)
                     throw Exception("Unexpected number of elements of ColumnArray has been read", ErrorCodes::LOGICAL_ERROR);
@@ -2400,8 +2664,26 @@ namespace
             }
         }
 
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages: columns ";
+            for (size_t i = 0; i != column_names.size(); ++i)
+            {
+                if (i)
+                    out << ", ";
+                out << "#" << i << " " << quoteString(column_names[i]);
+            }
+            out << " ->";
+            if (parent_field_descriptor)
+                out << " field " << quoteString(parent_field_descriptor->full_name()) << " (" << parent_field_descriptor->type_name() << ") ->\n";
+            message_serializer->describeTree(out, indent + 1);
+        }
+
     private:
-        const std::unique_ptr<ProtobufSerializerMessage> nested_message_serializer;
+        Strings column_names;
+        const FieldDescriptor * parent_field_descriptor;
+        const std::unique_ptr<ProtobufSerializerMessage> message_serializer;
+        const std::function<String(size_t)> get_root_desc_function;
         Columns data_columns;
         Columns offset_columns;
     };
@@ -2413,24 +2695,35 @@ namespace
     public:
         explicit ProtobufSerializerBuilder(const ProtobufReaderOrWriter & reader_or_writer_) : reader_or_writer(reader_or_writer_) {}
 
-        std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializer(
+        std::unique_ptr<ProtobufSerializer> buildMessageSerializer(
             const Strings & column_names,
             const DataTypes & data_types,
             std::vector<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
-            bool with_length_delimiter)
+            bool with_length_delimiter,
+            bool with_envelope)
         {
+            root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
+            get_root_desc_function = [root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
+            {
+                WriteBufferFromOwnString buf;
+                (*root_serializer_ptr)->describeTree(buf, indent);
+                return buf.str();
+            };
+
             std::vector<size_t> used_column_indices;
-            auto serializer = buildMessageSerializerImpl(
+            auto message_serializer = buildMessageSerializerImpl(
                 /* num_columns = */ column_names.size(),
                 column_names.data(),
                 data_types.data(),
-                used_column_indices,
                 message_descriptor,
                 with_length_delimiter,
-                /* parent_field_descriptor = */ nullptr);
+                /* parent_field_descriptor = */ nullptr,
+                used_column_indices,
+                /* columns_are_reordered_outside = */ false,
+                /* check_nested_while_filling_missing_columns = */ true);
 
-            if (!serializer)
+            if (!message_serializer)
             {
                 throw Exception(
                     "Not found matches between the names of the columns {" + boost::algorithm::join(column_names, ", ")
@@ -2441,10 +2734,28 @@ namespace
 
             missing_column_indices.clear();
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
-            boost::range::set_difference(ext::range(column_names.size()), used_column_indices,
+            auto used_column_indices_sorted = std::move(used_column_indices);
+            ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
+            boost::range::set_difference(collections::range(column_names.size()), used_column_indices_sorted,
                                          std::back_inserter(missing_column_indices));
 
-            return serializer;
+            if (!with_envelope)
+            {
+                *root_serializer_ptr = message_serializer.get();
+#if 0
+                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+#endif
+                return message_serializer;
+            }
+            else
+            {
+                auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
+                *root_serializer_ptr = envelope_serializer.get();
+#if 0
+                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+#endif
+                return envelope_serializer;
+            }
         }
 
     private:
@@ -2453,7 +2764,7 @@ namespace
         {
             Strings field_names;
             field_names.reserve(message_descriptor.field_count());
-            for (int i : ext::range(message_descriptor.field_count()))
+            for (int i : collections::range(message_descriptor.field_count()))
                 field_names.emplace_back(message_descriptor.field(i)->name());
             return field_names;
         }
@@ -2520,7 +2831,7 @@ namespace
 
             /// Find all fields which have the same name as column's name (case-insensitively); i.e. we're checking
             /// field_name == column_name.
-            for (int i : ext::range(message_descriptor.field_count()))
+            for (int i : collections::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
                 if (columnNameEqualsToFieldName(column_name, field_descriptor))
@@ -2535,7 +2846,7 @@ namespace
 
             /// Find all fields which name is used as prefix in column's name; i.e. we're checking
             /// column_name == field_name + '.' + nested_message_field_name
-            for (int i : ext::range(message_descriptor.field_count()))
+            for (int i : collections::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
                 std::string_view suffix;
@@ -2546,7 +2857,7 @@ namespace
             }
 
             /// Shorter suffixes first.
-            std::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
+            ::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
                       [](const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f1,
                          const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f2)
             {
@@ -2556,26 +2867,99 @@ namespace
             return !out_field_descriptors_with_suffixes.empty();
         }
 
+        /// Removes TypeIndex::Array from the specified vector of data types,
+        /// and also removes corresponding elements from two other vectors.
+        template <typename T1, typename T2>
+        static void removeNonArrayElements(DataTypes & data_types, std::vector<T1> & elements1, std::vector<T2> & elements2)
+        {
+            size_t initial_size = data_types.size();
+            assert(initial_size == elements1.size() && initial_size == elements2.size());
+            data_types.reserve(initial_size * 2);
+            elements1.reserve(initial_size * 2);
+            elements2.reserve(initial_size * 2);
+            for (size_t i : collections::range(initial_size))
+            {
+                if (data_types[i]->getTypeId() == TypeIndex::Array)
+                {
+                    data_types.push_back(std::move(data_types[i]));
+                    elements1.push_back(std::move(elements1[i]));
+                    elements2.push_back(std::move(elements2[i]));
+                }
+            }
+            data_types.erase(data_types.begin(), data_types.begin() + initial_size);
+            elements1.erase(elements1.begin(), elements1.begin() + initial_size);
+            elements2.erase(elements2.begin(), elements2.begin() + initial_size);
+        }
+
+        /// Treats specified column indices as indices in another vector of column indices.
+        /// Useful for handling of nested messages.
+        static void transformColumnIndices(std::vector<size_t> & column_indices, const std::vector<size_t> & outer_indices)
+        {
+            for (size_t & idx : column_indices)
+                idx = outer_indices[idx];
+        }
+
         /// Builds a serializer for a protobuf message (root or nested).
-        template <typename StringOrStringViewT>
+        ///
+        /// Some of the passed columns might be skipped, the function sets `used_column_indices` to
+        /// the list of those columns which match any fields in the protobuf message.
+        ///
+        /// Normally `columns_are_reordered_outside` should be false - if it's false it means that
+        /// the used column indices will be passed to ProtobufSerializerMessage, which will write/read
+        /// only those columns and set the rest of columns by default.
+        /// Set `columns_are_reordered_outside` to true if you're going to reorder columns
+        /// according to `used_column_indices` returned and pass to
+        /// ProtobufSerializerMessage::setColumns() only the columns which are actually used.
         std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
             size_t num_columns,
-            const StringOrStringViewT * column_names,
+            const String * column_names,
             const DataTypePtr * data_types,
-            std::vector<size_t> & used_column_indices,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
-            const FieldDescriptor * parent_field_descriptor)
+            const FieldDescriptor * parent_field_descriptor,
+            std::vector<size_t> & used_column_indices,
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
+        {
+            std::vector<std::string_view> column_names_sv;
+            column_names_sv.reserve(num_columns);
+            for (size_t i = 0; i != num_columns; ++i)
+                column_names_sv.emplace_back(column_names[i]);
+
+            return buildMessageSerializerImpl(
+                num_columns,
+                column_names_sv.data(),
+                data_types,
+                message_descriptor,
+                with_length_delimiter,
+                parent_field_descriptor,
+                used_column_indices,
+                columns_are_reordered_outside,
+                check_nested_while_filling_missing_columns);
+        }
+
+        std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
+            size_t num_columns,
+            const std::string_view * column_names,
+            const DataTypePtr * data_types,
+            const MessageDescriptor & message_descriptor,
+            bool with_length_delimiter,
+            const FieldDescriptor * parent_field_descriptor,
+            std::vector<size_t> & used_column_indices,
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
 
             used_column_indices.clear();
             used_column_indices.reserve(num_columns);
+            boost::container::flat_set<size_t> used_column_indices_sorted;
+            used_column_indices_sorted.reserve(num_columns);
+            size_t sequential_column_index = 0;
 
-            auto add_field_serializer = [&](size_t column_index_,
-                                            const std::string_view & column_name_,
-                                            size_t num_columns_,
+            auto add_field_serializer = [&](const std::string_view & column_name_,
+                                            std::vector<size_t> && column_indices_,
                                             const FieldDescriptor & field_descriptor_,
                                             std::unique_ptr<ProtobufSerializer> field_serializer_)
             {
@@ -2583,24 +2967,35 @@ namespace
                 if (it != field_descriptors_in_use.end())
                 {
                     throw Exception(
-                        "Multiple columns (" + backQuote(StringRef{field_descriptors_in_use[&field_descriptor_]}) + ", "
+                        "Multiple columns (" + backQuote(StringRef{it->second}) + ", "
                             + backQuote(StringRef{column_name_}) + ") cannot be serialized to a single protobuf field "
                             + quoteString(field_descriptor_.full_name()),
                         ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD);
                 }
 
-                field_descs.push_back({column_index_, num_columns_, &field_descriptor_, std::move(field_serializer_)});
+                used_column_indices.insert(used_column_indices.end(), column_indices_.begin(), column_indices_.end());
+                used_column_indices_sorted.insert(column_indices_.begin(), column_indices_.end());
+
+                auto column_indices_to_pass_to_message_serializer = std::move(column_indices_);
+                if (columns_are_reordered_outside)
+                {
+                    for (auto & index : column_indices_to_pass_to_message_serializer)
+                        index = sequential_column_index++;
+                }
+
+                field_descs.push_back({std::move(column_indices_to_pass_to_message_serializer), &field_descriptor_, std::move(field_serializer_)});
                 field_descriptors_in_use.emplace(&field_descriptor_, column_name_);
             };
 
             std::vector<std::pair<const FieldDescriptor *, std::string_view>> field_descriptors_with_suffixes;
 
             /// We're going through all the passed columns.
-            size_t column_idx = 0;
-            size_t next_column_idx = 1;
-            for (; column_idx != num_columns; column_idx = next_column_idx++)
+            for (size_t column_idx : collections::range(num_columns))
             {
-                auto column_name = column_names[column_idx];
+                if (used_column_indices_sorted.count(column_idx))
+                    continue;
+
+                const auto & column_name = column_names[column_idx];
                 const auto & data_type = data_types[column_idx];
 
                 if (!findFieldsByColumnName(column_name, message_descriptor, field_descriptors_with_suffixes))
@@ -2614,8 +3009,7 @@ namespace
 
                     if (field_serializer)
                     {
-                        add_field_serializer(column_idx, column_name, 1, field_descriptor, std::move(field_serializer));
-                        used_column_indices.push_back(column_idx);
+                        add_field_serializer(column_name, {column_idx}, field_descriptor, std::move(field_serializer));
                         continue;
                     }
                 }
@@ -2625,54 +3019,72 @@ namespace
                     if (!suffix.empty())
                     {
                         /// Complex case: one or more columns are serialized as a nested message.
-                        std::vector<std::string_view> names_relative_to_nested_message;
-                        names_relative_to_nested_message.reserve(num_columns - column_idx);
-                        names_relative_to_nested_message.emplace_back(suffix);
+                        std::vector<size_t> nested_column_indices;
+                        std::vector<std::string_view> nested_column_names;
+                        nested_column_indices.reserve(num_columns - used_column_indices.size());
+                        nested_column_names.reserve(num_columns - used_column_indices.size());
+                        nested_column_indices.push_back(column_idx);
+                        nested_column_names.push_back(suffix);
 
-                        for (size_t j : ext::range(column_idx + 1, num_columns))
+                        for (size_t j : collections::range(column_idx + 1, num_columns))
                         {
-                            std::string_view next_suffix;
-                            if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, next_suffix))
-                                break;
-                            names_relative_to_nested_message.emplace_back(next_suffix);
+                            if (used_column_indices_sorted.count(j))
+                                continue;
+                            std::string_view other_suffix;
+                            if (!columnNameStartsWithFieldName(column_names[j], *field_descriptor, other_suffix))
+                                continue;
+                            nested_column_indices.push_back(j);
+                            nested_column_names.push_back(other_suffix);
                         }
 
-                        /// Now we have up to `names_relative_to_nested_message.size()` sequential columns
+                        DataTypes nested_data_types;
+                        nested_data_types.reserve(nested_column_indices.size());
+                        for (size_t j : nested_column_indices)
+                            nested_data_types.push_back(data_types[j]);
+
+                        /// Now we have up to `nested_message_column_names.size()` columns
                         /// which can be serialized as a nested message.
 
-                        /// Calculate how many of those sequential columns are arrays.
-                        size_t num_arrays = 0;
-                        for (size_t j : ext::range(column_idx, column_idx + names_relative_to_nested_message.size()))
+                        /// We will try to serialize those columns as one nested message,
+                        /// then, if failed, as an array of nested messages (on condition if those columns are array).
+                        bool has_fallback_to_array_of_nested_messages = false;
+                        if (field_descriptor->is_repeated())
                         {
-                            if (data_types[j]->getTypeId() != TypeIndex::Array)
-                                break;
-                            ++num_arrays;
+                            bool has_arrays
+                                = boost::range::find_if(
+                                      nested_data_types, [](const DataTypePtr & dt) { return (dt->getTypeId() == TypeIndex::Array); })
+                                != nested_data_types.end();
+                            if (has_arrays)
+                                has_fallback_to_array_of_nested_messages = true;
                         }
 
-                        /// We will try to serialize the sequential columns as one nested message,
-                        /// then, if failed, as an array of nested messages (on condition those columns are array).
-                        bool has_fallback_to_array_of_nested_messages = num_arrays && field_descriptor->is_repeated();
-
-                        /// Try to serialize the sequential columns as one nested message.
+                        /// Try to serialize those columns as one nested message.
                         try
                         {
                             std::vector<size_t> used_column_indices_in_nested;
                             auto nested_message_serializer = buildMessageSerializerImpl(
-                                names_relative_to_nested_message.size(),
-                                names_relative_to_nested_message.data(),
-                                &data_types[column_idx],
-                                used_column_indices_in_nested,
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
                                 *field_descriptor->message_type(),
-                                false,
-                                field_descriptor);
+                                /* with_length_delimiter = */ false,
+                                field_descriptor,
+                                used_column_indices_in_nested,
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
+
+                            /// `columns_are_reordered_outside` is true because column indices are
+                            /// going to be transformed and then written to the outer message,
+                            /// see add_field_serializer() below.
 
                             if (nested_message_serializer)
                             {
-                                for (size_t & idx_in_nested : used_column_indices_in_nested)
-                                    used_column_indices.push_back(idx_in_nested + column_idx);
-
-                                next_column_idx = used_column_indices.back() + 1;
-                                add_field_serializer(column_idx, column_name, next_column_idx - column_idx, *field_descriptor, std::move(nested_message_serializer));
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(
+                                    column_name,
+                                    std::move(used_column_indices_in_nested),
+                                    *field_descriptor,
+                                    std::move(nested_message_serializer));
                                 break;
                             }
                         }
@@ -2684,31 +3096,37 @@ namespace
 
                         if (has_fallback_to_array_of_nested_messages)
                         {
-                            /// Try to serialize the sequential columns as an array of nested messages.
-                            DataTypes array_nested_data_types;
-                            array_nested_data_types.reserve(num_arrays);
-                            for (size_t j : ext::range(column_idx, column_idx + num_arrays))
-                                array_nested_data_types.emplace_back(assert_cast<const DataTypeArray &>(*data_types[j]).getNestedType());
+                            /// Try to serialize those columns as an array of nested messages.
+                            removeNonArrayElements(nested_data_types, nested_column_names, nested_column_indices);
+                            for (DataTypePtr & dt : nested_data_types)
+                                dt = assert_cast<const DataTypeArray &>(*dt).getNestedType();
 
                             std::vector<size_t> used_column_indices_in_nested;
                             auto nested_message_serializer = buildMessageSerializerImpl(
-                                array_nested_data_types.size(),
-                                names_relative_to_nested_message.data(),
-                                array_nested_data_types.data(),
-                                used_column_indices_in_nested,
+                                nested_column_names.size(),
+                                nested_column_names.data(),
+                                nested_data_types.data(),
                                 *field_descriptor->message_type(),
-                                false,
-                                field_descriptor);
+                                /* with_length_delimiter = */ false,
+                                field_descriptor,
+                                used_column_indices_in_nested,
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
+
+                            /// `columns_are_reordered_outside` is true because column indices are
+                            /// going to be transformed and then written to the outer message,
+                            /// see add_field_serializer() below.
 
                             if (nested_message_serializer)
                             {
-                                auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(std::move(nested_message_serializer));
-
-                                for (size_t & idx_in_nested : used_column_indices_in_nested)
-                                    used_column_indices.push_back(idx_in_nested + column_idx);
-
-                                next_column_idx = used_column_indices.back() + 1;
-                                add_field_serializer(column_idx, column_name, next_column_idx - column_idx, *field_descriptor, std::move(field_serializer));
+                                std::vector<std::string_view> column_names_used;
+                                column_names_used.reserve(used_column_indices_in_nested.size());
+                                for (size_t i : used_column_indices_in_nested)
+                                    column_names_used.emplace_back(nested_column_names[i]);
+                                auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
+                                    std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
+                                transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
+                                add_field_serializer(column_name, std::move(used_column_indices_in_nested), *field_descriptor, std::move(field_serializer));
                                 break;
                             }
                         }
@@ -2720,7 +3138,7 @@ namespace
             if ((message_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO2)
                     && reader_or_writer.writer)
             {
-                for (int i : ext::range(message_descriptor.field_count()))
+                for (int i : collections::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
@@ -2733,8 +3151,18 @@ namespace
             if (field_descs.empty())
                 return nullptr;
 
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
+            if (reader_or_writer.reader)
+            {
+                if (check_nested_while_filling_missing_columns)
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
+                else
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+            }
+
             return std::make_unique<ProtobufSerializerMessage>(
-                std::move(field_descs), parent_field_descriptor, with_length_delimiter, reader_or_writer);
+                std::move(field_descs), parent_field_descriptor, with_length_delimiter,
+                std::move(missing_columns_filler), reader_or_writer);
         }
 
         /// Builds a serializer for one-to-one match:
@@ -2748,34 +3176,34 @@ namespace
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
             {
-                case TypeIndex::UInt8: return std::make_unique<ProtobufSerializerNumber<UInt8>>(field_descriptor, reader_or_writer);
-                case TypeIndex::UInt16: return std::make_unique<ProtobufSerializerNumber<UInt16>>(field_descriptor, reader_or_writer);
-                case TypeIndex::UInt32: return std::make_unique<ProtobufSerializerNumber<UInt32>>(field_descriptor, reader_or_writer);
-                case TypeIndex::UInt64: return std::make_unique<ProtobufSerializerNumber<UInt64>>(field_descriptor, reader_or_writer);
-                case TypeIndex::UInt128: return std::make_unique<ProtobufSerializerNumber<UInt128>>(field_descriptor, reader_or_writer);
-                case TypeIndex::UInt256: return std::make_unique<ProtobufSerializerNumber<UInt256>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int8: return std::make_unique<ProtobufSerializerNumber<Int8>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int16: return std::make_unique<ProtobufSerializerNumber<Int16>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int32: return std::make_unique<ProtobufSerializerNumber<Int32>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int64: return std::make_unique<ProtobufSerializerNumber<Int64>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int128: return std::make_unique<ProtobufSerializerNumber<Int128>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Int256: return std::make_unique<ProtobufSerializerNumber<Int256>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(field_descriptor, reader_or_writer);
-                case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(field_descriptor, reader_or_writer);
-                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Enum16: return std::make_unique<ProtobufSerializerEnum<Int16>>(typeid_cast<std::shared_ptr<const DataTypeEnum16>>(data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Decimal32: return std::make_unique<ProtobufSerializerDecimal<Decimal32>>(assert_cast<const DataTypeDecimal<Decimal32> &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Decimal64: return std::make_unique<ProtobufSerializerDecimal<Decimal64>>(assert_cast<const DataTypeDecimal<Decimal64> &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Decimal128: return std::make_unique<ProtobufSerializerDecimal<Decimal128>>(assert_cast<const DataTypeDecimal<Decimal128> &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::Decimal256: return std::make_unique<ProtobufSerializerDecimal<Decimal256>>(assert_cast<const DataTypeDecimal<Decimal256> &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::UUID: return std::make_unique<ProtobufSerializerUUID>(field_descriptor, reader_or_writer);
-                case TypeIndex::Interval: return std::make_unique<ProtobufSerializerInterval>(field_descriptor, reader_or_writer);
-                case TypeIndex::AggregateFunction: return std::make_unique<ProtobufSerializerAggregateFunction>(typeid_cast<std::shared_ptr<const DataTypeAggregateFunction>>(data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::UInt8: return std::make_unique<ProtobufSerializerNumber<UInt8>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UInt16: return std::make_unique<ProtobufSerializerNumber<UInt16>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UInt32: return std::make_unique<ProtobufSerializerNumber<UInt32>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UInt64: return std::make_unique<ProtobufSerializerNumber<UInt64>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UInt128: return std::make_unique<ProtobufSerializerNumber<UInt128>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UInt256: return std::make_unique<ProtobufSerializerNumber<UInt256>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int8: return std::make_unique<ProtobufSerializerNumber<Int8>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int16: return std::make_unique<ProtobufSerializerNumber<Int16>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int32: return std::make_unique<ProtobufSerializerNumber<Int32>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int64: return std::make_unique<ProtobufSerializerNumber<Int64>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int128: return std::make_unique<ProtobufSerializerNumber<Int128>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Int256: return std::make_unique<ProtobufSerializerNumber<Int256>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(column_name, assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(column_name, assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(column_name, typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(column_name, typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Enum16: return std::make_unique<ProtobufSerializerEnum<Int16>>(column_name, typeid_cast<std::shared_ptr<const DataTypeEnum16>>(data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Decimal32: return std::make_unique<ProtobufSerializerDecimal<Decimal32>>(column_name, assert_cast<const DataTypeDecimal<Decimal32> &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Decimal64: return std::make_unique<ProtobufSerializerDecimal<Decimal64>>(column_name, assert_cast<const DataTypeDecimal<Decimal64> &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Decimal128: return std::make_unique<ProtobufSerializerDecimal<Decimal128>>(column_name, assert_cast<const DataTypeDecimal<Decimal128> &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::Decimal256: return std::make_unique<ProtobufSerializerDecimal<Decimal256>>(column_name, assert_cast<const DataTypeDecimal<Decimal256> &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::UUID: return std::make_unique<ProtobufSerializerUUID>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Interval: return std::make_unique<ProtobufSerializerInterval>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::AggregateFunction: return std::make_unique<ProtobufSerializerAggregateFunction>(column_name, typeid_cast<std::shared_ptr<const DataTypeAggregateFunction>>(data_type), field_descriptor, reader_or_writer);
 
                 case TypeIndex::Nullable:
                 {
@@ -2832,16 +3260,18 @@ namespace
                     {
                         /// Try to serialize as a nested message.
                         std::vector<size_t> used_column_indices;
-                        auto nested_message_serializer = buildMessageSerializerImpl(
+                        auto message_serializer = buildMessageSerializerImpl(
                             size_of_tuple,
                             tuple_data_type.getElementNames().data(),
                             tuple_data_type.getElements().data(),
-                            used_column_indices,
                             *field_descriptor.message_type(),
-                            false,
-                            &field_descriptor);
+                            /* with_length_delimiter = */ false,
+                            &field_descriptor,
+                            used_column_indices,
+                            /* columns_are_reordered_outside = */ false,
+                            /* check_nested_while_filling_missing_columns = */ false);
 
-                        if (!nested_message_serializer)
+                        if (!message_serializer)
                         {
                             throw Exception(
                                 "Not found matches between the names of the tuple's elements {"
@@ -2851,7 +3281,7 @@ namespace
                                 ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS);
                         }
 
-                        return std::make_unique<ProtobufSerializerTupleAsNestedMessage>(std::move(nested_message_serializer));
+                        return std::make_unique<ProtobufSerializerTupleAsNestedMessage>(std::move(message_serializer));
                     }
 
                     /// Serialize as a repeated field.
@@ -2872,6 +3302,7 @@ namespace
                         return nullptr;
 
                     return std::make_unique<ProtobufSerializerTupleAsArray>(
+                        column_name,
                         typeid_cast<std::shared_ptr<const DataTypeTuple>>(data_type),
                         field_descriptor,
                         std::move(nested_serializers));
@@ -2898,9 +3329,108 @@ namespace
         }
 
         const ProtobufReaderOrWriter reader_or_writer;
+        std::function<String(size_t)> get_root_desc_function;
+        std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
     };
-}
 
+    template <typename Type>
+    DataTypePtr getEnumDataType(const google::protobuf::EnumDescriptor * enum_descriptor)
+    {
+        std::vector<std::pair<String, Type>> values;
+        for (int i = 0; i != enum_descriptor->value_count(); ++i)
+        {
+            const auto * enum_value_descriptor = enum_descriptor->value(i);
+            values.emplace_back(enum_value_descriptor->name(), enum_value_descriptor->number());
+        }
+        return std::make_shared<DataTypeEnum<Type>>(std::move(values));
+    }
+
+    NameAndTypePair getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool allow_repeat = true)
+    {
+        if (allow_repeat && field_descriptor->is_map())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type.type.get());
+            return {name_and_type.name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
+        }
+
+        if (allow_repeat && field_descriptor->is_repeated())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            return {name_and_type.name, std::make_shared<DataTypeArray>(name_and_type.type)};
+        }
+
+        switch (field_descriptor->type())
+        {
+            case FieldTypeId::TYPE_SFIXED32: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_INT32:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
+            case FieldTypeId::TYPE_SFIXED64: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_INT64:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
+            case FieldTypeId::TYPE_BOOL:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
+            case FieldTypeId::TYPE_FLOAT:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
+            case FieldTypeId::TYPE_DOUBLE:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
+            case FieldTypeId::TYPE_UINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED32:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
+            case FieldTypeId::TYPE_UINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED64:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
+            case FieldTypeId::TYPE_BYTES: [[fallthrough]];
+            case FieldTypeId::TYPE_STRING:
+                return {field_descriptor->name(), std::make_shared<DataTypeString>()};
+            case FieldTypeId::TYPE_ENUM:
+            {
+                const auto * enum_descriptor = field_descriptor->enum_type();
+                if (enum_descriptor->value_count() == 0)
+                    throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
+                int max_abs = std::abs(enum_descriptor->value(0)->number());
+                for (int i = 1; i != enum_descriptor->value_count(); ++i)
+                {
+                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
+                        max_abs = std::abs(enum_descriptor->value(i)->number());
+                }
+                if (max_abs < 128)
+                    return {field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
+                else if (max_abs < 32768)
+                    return {field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
+                else
+                    throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
+            }
+            case FieldTypeId::TYPE_GROUP: [[fallthrough]];
+            case FieldTypeId::TYPE_MESSAGE:
+            {
+                const auto * message_descriptor = field_descriptor->message_type();
+                if (message_descriptor->field_count() == 1)
+                {
+                    const auto * nested_field_descriptor = message_descriptor->field(0);
+                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor);
+                    return {field_descriptor->name() + "_" + nested_name_and_type.name, nested_name_and_type.type};
+                }
+                else
+                {
+                    DataTypes nested_types;
+                    Strings nested_names;
+                    for (int i = 0; i != message_descriptor->field_count(); ++i)
+                    {
+                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i));
+                        nested_types.push_back(nested_name_and_type.type);
+                        nested_names.push_back(nested_name_and_type.name);
+                    }
+                    return {field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                }
+            }
+        }
+
+        __builtin_unreachable();
+    }
+}
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
@@ -2908,9 +3438,10 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     std::vector<size_t> & missing_column_indices,
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
+    bool with_envelope,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -2918,10 +3449,20 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const DataTypes & data_types,
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
+    bool with_envelope,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
+    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
+
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)
+{
+    NamesAndTypesList schema;
+    for (int i = 0; i != message_descriptor->field_count(); ++i)
+        schema.push_back(getNameAndDataTypeFromField(message_descriptor->field(i)));
+    return schema;
+}
+
 }
 #endif

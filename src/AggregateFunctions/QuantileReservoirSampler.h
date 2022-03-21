@@ -5,6 +5,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -54,7 +55,7 @@ struct QuantileReservoirSampler
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
-        return data.quantileInterpolated(level);
+        return Value(data.quantileInterpolated(level));
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -62,7 +63,7 @@ struct QuantileReservoirSampler
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         for (size_t i = 0; i < size; ++i)
-            result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);
+            result[indices[i]] = Value(data.quantileInterpolated(levels[indices[i]]));
     }
 
     /// The same, but in the case of an empty state, NaN is returned.

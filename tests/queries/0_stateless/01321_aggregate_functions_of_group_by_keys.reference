@@ -74,7 +74,7 @@ GROUP BY
     number % 5
 ORDER BY a ASC
 SELECT foo
-FROM 
+FROM
 (
     SELECT number AS foo
     FROM numbers(1)
@@ -155,7 +155,7 @@ GROUP BY
     number % 5
 ORDER BY a ASC
 SELECT foo
-FROM 
+FROM
 (
     SELECT anyLast(number) AS foo
     FROM numbers(1)

@@ -48,9 +48,9 @@ public:
 
     ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    virtual void transformPipeline(QueryPipeline & pipeline) = 0;
+    virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }

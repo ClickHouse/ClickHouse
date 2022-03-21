@@ -1,6 +1,6 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
@@ -42,7 +42,15 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
-        LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+        if (topic_partitions.empty())
+        {
+            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
+        }
+        else
+        {
+            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+        }
+
         assignment = topic_partitions;
     });
 
@@ -63,7 +71,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
-        assignment.clear();
+        assignment.reset();
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -232,7 +240,16 @@ void ReadBufferFromKafkaConsumer::commit()
 void ReadBufferFromKafkaConsumer::subscribe()
 {
     LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
-    LOG_TRACE(log, "Already assigned to: {}", assignment);
+
+    if (assignment.has_value())
+    {
+        LOG_TRACE(log, "Already assigned to: {}", assignment.value());
+    }
+    else
+    {
+        LOG_TRACE(log, "No assignment");
+    }
+
 
     size_t max_retries = 5;
 
@@ -295,7 +312,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 
 void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
-    if (assignment.empty())
+    if (!assignment.has_value() || assignment->empty())
     {
         LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
         return;
@@ -360,7 +377,7 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             // While we wait for an assignment after subscription, we'll poll zero messages anyway.
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-            if (assignment.empty())
+            if (!assignment.has_value())
             {
                 waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
@@ -369,11 +386,15 @@ bool ReadBufferFromKafkaConsumer::poll()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Can't get assignment. It can be caused by some issue with consumer group (not enough partitions?). Will keep trying.");
+                    LOG_WARNING(log, "Can't get assignment. Will keep trying.");
                     stalled_status = NO_ASSIGNMENT;
                     return false;
                 }
-
+            }
+            else if (assignment->empty())
+            {
+                LOG_TRACE(log, "Empty assignment.");
+                return false;
             }
             else
             {
@@ -445,13 +466,19 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (!allowed || !hasMorePolledMessages())
         return false;
 
-    // XXX: very fishy place with const casting.
-    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
-    BufferBase::set(new_position, current->get_payload().get_size(), 0);
-    allowed = false;
+    const auto * message_data = current->get_payload().get_data();
+    size_t message_size = current->get_payload().get_size();
 
+    allowed = false;
     ++current;
 
+    /// If message is empty, return end of stream.
+    if (message_data == nullptr)
+        return false;
+
+    /// const_cast is needed, because ReadBuffer works with non-const char *.
+    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(message_data));
+    BufferBase::set(new_position, message_size, 0);
     return true;
 }
 

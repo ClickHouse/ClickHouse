@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/sort.h>
+
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
@@ -26,6 +28,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -51,13 +54,12 @@ private:
         Mean mean;
         Weight weight;
 
-        WeightedValue operator+ (const WeightedValue & other)
+        WeightedValue operator+(const WeightedValue & other) const
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
     };
 
-private:
     // quantity of stored weighted-values
     UInt32 size;
 
@@ -68,10 +70,9 @@ private:
     // Weighted values representation of histogram.
     WeightedValue points[0];
 
-private:
     void sort()
     {
-        std::sort(points, points + size,
+        ::sort(points, points + size,
             [](const WeightedValue & first, const WeightedValue & second)
             {
                 return first.mean < second.mean;
@@ -84,18 +85,18 @@ private:
         size_t size = 0;
         T * data_ptr;
 
-        PriorityQueueStorage(T * value)
+        explicit PriorityQueueStorage(T * value)
             : data_ptr(value)
         {
         }
 
-        void push_back(T val)
+        void push_back(T val) /// NOLINT
         {
             data_ptr[size] = std::move(val);
             ++size;
         }
 
-        void pop_back() { --size; }
+        void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
         T * end() const { return data_ptr + size; }
         bool empty() const { return size == 0; }
@@ -220,7 +221,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData()
+    AggregateFunctionHistogramData() //-V730
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
@@ -270,7 +271,7 @@ public:
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(upper_bound, other.upper_bound);
-        for (size_t i = 0; i < other.size; i++)
+        for (size_t i = 0; i < other.size; ++i)
             add(other.points[i].mean, other.points[i].weight, max_bins);
     }
 
@@ -332,6 +333,8 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto val = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
@@ -343,12 +346,12 @@ public:
         this->data(place).merge(this->data(rhs), max_bins);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf, max_bins);
     }

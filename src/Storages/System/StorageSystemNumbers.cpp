@@ -1,12 +1,12 @@
 #include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
+
 
 namespace DB
 {
@@ -124,14 +124,14 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 
 Pipe StorageSystemNumbers::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo &,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     if (limit && *limit < max_block_size)
     {
@@ -144,13 +144,20 @@ Pipe StorageSystemNumbers::read(
 
     Pipe pipe;
 
-    if (num_streams > 1 && !even_distribution && *limit)
+    if (num_streams > 1 && !even_distribution && limit)
     {
         auto state = std::make_shared<NumbersMultiThreadedState>(offset);
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            pipe.addSource(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
+        {
+            auto source = std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter);
+
+            if (i == 0)
+                source->addTotalRowsApprox(*limit);
+
+            pipe.addSource(std::move(source));
+        }
 
         return pipe;
     }

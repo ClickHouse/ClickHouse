@@ -9,8 +9,8 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <ext/chrono_io.h>
-#include <ext/scope_guard.h>
+#include <base/chrono_io.h>
+#include <base/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -56,7 +56,7 @@ namespace
             static_assert(std::is_same_v<ReturnType, ExternalLoader::Loadables>);
             ExternalLoader::Loadables objects;
             objects.reserve(results.size());
-            for (const auto & result : results)
+            for (auto && result : results)
             {
                 if (auto object = std::move(result.object))
                     objects.push_back(std::move(object));
@@ -133,7 +133,13 @@ public:
         settings = settings_;
     }
 
-    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>;
+    struct ObjectConfigs
+    {
+        std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>> configs_by_name;
+        size_t counter = 0;
+    };
+
+    using ObjectConfigsPtr = std::shared_ptr<const ObjectConfigs>;
 
     /// Reads all repositories.
     ObjectConfigsPtr read()
@@ -336,7 +342,7 @@ private:
         need_collect_object_configs = false;
 
         // Generate new result.
-        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>();
+        auto new_configs = std::make_shared<ObjectConfigs>();
 
         for (const auto & [repository, repository_info] : repositories)
         {
@@ -344,8 +350,8 @@ private:
             {
                 for (const auto & [object_name, key_in_config] : file_info.objects)
                 {
-                    auto already_added_it = new_configs->find(object_name);
-                    if (already_added_it == new_configs->end())
+                    auto already_added_it = new_configs->configs_by_name.find(object_name);
+                    if (already_added_it == new_configs->configs_by_name.end())
                     {
                         auto new_config = std::make_shared<ObjectConfig>();
                         new_config->config = file_info.file_contents;
@@ -353,7 +359,7 @@ private:
                         new_config->repository_name = repository->getName();
                         new_config->from_temp_repository = repository->isTemporary();
                         new_config->path = path;
-                        new_configs->emplace(object_name, std::move(new_config));
+                        new_configs->configs_by_name.emplace(object_name, std::move(new_config));
                     }
                     else
                     {
@@ -372,6 +378,7 @@ private:
             }
         }
 
+        new_configs->counter = counter++;
         object_configs = new_configs;
     }
 
@@ -383,6 +390,7 @@ private:
     std::unordered_map<Repository *, RepositoryInfo> repositories;
     ObjectConfigsPtr object_configs;
     bool need_collect_object_configs = false;
+    size_t counter = 0;
 };
 
 
@@ -433,13 +441,22 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The following check prevents a race when two threads are trying to update configuration
+        /// at almost the same time:
+        /// 1) first thread reads a configuration (for example as a part of periodic updates)
+        /// 2) second thread sets a new configuration (for example after executing CREATE DICTIONARY)
+        /// 3) first thread sets the configuration it read in 1) and thus discards the changes made in 2).
+        /// So we use `counter` here to ensure we exchange the current configuration only for a newer one.
+        if (configs && (configs->counter >= new_configs->counter))
+            return;
+
         configs = new_configs;
 
         std::vector<String> removed_names;
         for (auto & [name, info] : infos)
         {
-            auto new_config_it = new_configs->find(name);
-            if (new_config_it == new_configs->end())
+            auto new_config_it = new_configs->configs_by_name.find(name);
+            if (new_config_it == new_configs->configs_by_name.end())
             {
                 removed_names.emplace_back(name);
             }
@@ -462,7 +479,7 @@ public:
         }
 
         /// Insert to the map those objects which added to the new configuration.
-        for (const auto & [name, config] : *new_configs)
+        for (const auto & [name, config] : new_configs->configs_by_name)
         {
             if (infos.find(name) == infos.end())
             {
@@ -625,6 +642,12 @@ public:
         return collectLoadResults<ReturnType>(filter);
     }
 
+    bool has(const String & name) const
+    {
+        std::lock_guard lock{mutex};
+        return infos.contains(name);
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -679,7 +702,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, ext::to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, to_string(info.next_update_time));
                             continue;
                         }
 
@@ -812,12 +835,11 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
-            if (info->state_id >= min_id)
-                return true; /// stop
-
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
-            return false; /// wait for the next event
+
+            /// Wait for the next event if loading wasn't completed, or stop otherwise.
+            return (info->state_id >= min_id);
         };
 
         if (timeout == WAIT)
@@ -842,12 +864,10 @@ private:
                 if (filter && !filter(name))
                     continue;
 
-                if (info.state_id >= min_id)
-                    continue;
-
-                all_ready = false;
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
+
+                all_ready &= (info.state_id >= min_id);
             }
             return all_ready;
         };
@@ -907,7 +927,7 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true};
+            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -944,8 +964,16 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
         {
@@ -1079,7 +1107,7 @@ private:
             {
                 if (next_update_time == TimePoint::max())
                     return String();
-                return ", next update is scheduled at " + ext::to_string(next_update_time);
+                return ", next update is scheduled at " + to_string(next_update_time);
             };
             if (previous_version)
                 tryLogException(new_exception, log, "Could not update " + type_name + " '" + name + "'"
@@ -1099,7 +1127,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, ext::to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1148,18 +1176,18 @@ private:
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
                 LOG_TRACE(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
-                    loaded_object->getLoadableName(), ext::to_string(result), lifetime.min_sec, lifetime.max_sec);
+                    loaded_object->getLoadableName(), to_string(result), lifetime.min_sec, lifetime.max_sec);
                 return result;
             }
 
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), ext::to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
             return result;
         }
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", ext::to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", to_string(result), error_count);
             return result;
         }
     }
@@ -1239,7 +1267,6 @@ private:
 
     LoadablesConfigReader & config_files_reader;
     LoadingDispatcher & loading_dispatcher;
-
     mutable std::mutex mutex;
     bool enabled = false;
     ThreadFromGlobalPool thread;
@@ -1261,10 +1288,11 @@ ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
 
 ExternalLoader::~ExternalLoader() = default;
 
-ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
+scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
 {
     auto * ptr = repository.get();
     String name = ptr->getName();
+
     config_files_reader->addConfigRepository(std::move(repository));
     reloadConfig(name);
 
@@ -1389,6 +1417,11 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
     std::unordered_set<String> names;
     boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
     return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
+}
+
+bool ExternalLoader::has(const String & name) const
+{
+    return loading_dispatcher->has(name);
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const

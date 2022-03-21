@@ -1,9 +1,9 @@
 ---
 toc_priority: 38
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u044f\u0020\u0442\u0438\u043f\u043e\u0432"
+toc_title: "Функции преобразования типов"
 ---
 
-# Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
+# Функции преобразования типов {#type-conversion-functions}
 
 ## Общие проблемы преобразования чисел {#numeric-conversion-issues}
 
@@ -22,7 +22,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u
 -   `toInt128(expr)` — возвращает значение типа `Int128`.
 -   `toInt256(expr)` — возвращает значение типа `Int256`.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
@@ -90,6 +90,26 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 └─────────────────────────┴───────────────────────────┘
 ```
 
+## toInt(8\|16\|32\|64\|128\|256)OrDefault {#toint8163264128256orDefault}
+
+Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось —  возвращает значение по умолчанию.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe123', cast('-1' as Int8));
+```
+
+Результат:
+
+``` text
+┌─toInt64OrDefault('123123', CAST('-1', 'Int64'))─┬─toInt8OrDefault('123qwe123', CAST('-1', 'Int8'))─┐
+│                                          123123 │                                               -1 │
+└─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+```
+
 ## toUInt(8\|16\|32\|64\|256) {#touint8163264}
 
 Преобраует входное значение к типу [UInt](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает:
@@ -100,7 +120,7 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 -   `toUInt64(expr)` — возвращает значение типа `UInt64`.
 -   `toUInt256(expr)` — возвращает значение типа `UInt256`.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
@@ -132,11 +152,15 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 ## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264ornull}
 
+## toUInt(8\|16\|32\|64\|256)OrDefault {#touint8163264256ordefault}
+
 ## toFloat(32\|64) {#tofloat3264}
 
 ## toFloat(32\|64)OrZero {#tofloat3264orzero}
 
 ## toFloat(32\|64)OrNull {#tofloat3264ornull}
+
+## toFloat(32\|64)OrDefault {#tofloat3264ordefault}
 
 ## toDate {#todate}
 
@@ -146,11 +170,135 @@ Cиноним: `DATE`.
 
 ## toDateOrNull {#todateornull}
 
+## toDateOrDefault {#todateordefault}
+
 ## toDateTime {#todatetime}
 
 ## toDateTimeOrZero {#todatetimeorzero}
 
 ## toDateTimeOrNull {#todatetimeornull}
+
+## toDateTimeOrDefault {#todatetimeordefault}
+
+## toDate32 {#todate32}
+
+Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается пограничное значение `Date32`. Если аргумент имеет тип [Date](../../sql-reference/data-types/date.md), учитываются границы типа `Date`.
+
+**Синтаксис**
+
+``` sql
+toDate32(value)
+```
+
+**Аргументы**
+
+-   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/date.md).
+
+**Возвращаемое значение**
+
+-   Календарная дата.
+
+Тип: [Date32](../../sql-reference/data-types/date32.md).
+
+**Пример**
+
+1. Значение находится в границах диапазона:
+
+``` sql
+SELECT toDate32('1955-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1955-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+2. Значение выходит за границы диапазона:
+
+``` sql
+SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1925-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+3. С аргументом типа `Date`:
+
+``` sql
+SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+│ 1970-01-01 │ Date32                                     │
+└────────────┴────────────────────────────────────────────┘
+```
+
+## toDate32OrZero {#todate32-or-zero}
+
+То же самое, что и  [toDate32](#todate32), но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md), если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+```
+
+Результат:
+
+``` text
+┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
+│                   1925-01-01 │         1925-01-01 │
+└──────────────────────────────┴────────────────────┘
+```
+
+## toDate32OrNull {#todate32-or-null}
+
+То же самое, что и [toDate32](#todate32), но возвращает `NULL`, если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
+```
+
+Результат:
+
+``` text
+┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
+│                   1955-01-01 │               ᴺᵁᴸᴸ │
+└──────────────────────────────┴────────────────────┘
+```
+
+## toDate32OrDefault {#todate32-or-default}
+
+Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается нижнее пограничное значение `Date32`. Если аргумент имеет тип [Date](../../sql-reference/data-types/date.md), учитываются границы типа `Date`. Возвращает значение по умолчанию, если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT
+    toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
+    toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
+```
+
+Результат:
+
+``` text
+┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
+│                                              1930-01-01 │                                                2020-01-01 │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
 
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
@@ -172,7 +320,7 @@ Cиноним: `DATE`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `NULL` вместо исключения.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
@@ -195,9 +343,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 Результат:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.11100 │ Nullable(Decimal(9, 5))                            │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.111 │ Nullable(Decimal(9, 5))                            │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Запрос:
@@ -214,6 +362,59 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 └──────┴────────────────────────────────────────────────────┘
 ```
 
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
+
+Преобразует входную строку в значение с типом данных [Decimal(P,S)](../../sql-reference/data-types/decimal.md). Семейство функций включает в себя:
+
+-   `toDecimal32OrDefault(expr, S)` — возвращает значение типа `Decimal32(S)`.
+-   `toDecimal64OrDefault(expr, S)` — возвращает значение типа `Decimal64(S)`.
+-   `toDecimal128OrDefault(expr, S)` — возвращает значение типа `Decimal128(S)`.
+-   `toDecimal256OrDefault(expr, S)` — возвращает значение типа `Decimal256(S)`.
+
+Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать значение по умолчанию вместо исключения.
+
+**Аргументы**
+
+-   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
+-   `S` — количество десятичных знаков в результирующем значении.
+
+**Возвращаемое значение**
+
+Значение типа `Decimal(P,S)`. Значение содержит:
+
+-   Число с `S` десятичными знаками, если ClickHouse распознал число во входной строке.
+-   Значение по умолчанию типа `Decimal(P,S)`, если ClickHouse не смог распознать число во входной строке или входное число содержит больше чем `S` десятичных знаков.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 5) AS val, toTypeName(val);
+```
+
+Результат:
+
+``` text
+┌────val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                         │
+└────────┴───────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
+```
+
+Результат:
+
+``` text
+┌─val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 2))─┐
+│   0 │ Decimal(9, 2)                                         │
+└─────┴───────────────────────────────────────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128orzero}
 
 Преобразует тип входного значения в [Decimal (P, S)](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает в себя:
@@ -225,7 +426,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `0` вместо исключения.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
@@ -248,9 +449,9 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 Результат:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.11100 │ Decimal(9, 5)                                      │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                      │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Запрос:
@@ -369,7 +570,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Функция принимает шестнадцатибайтную строку и интерпретирует ее байты в network order (big-endian). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
+Функция принимает строку из 16 байт и интерпретирует ее байты в порядок от старшего к младшему. Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количеством нулевых байтов с конца. Если строка длиннее, чем 16 байтов, то лишние байты с конца игнорируются.
 
 **Синтаксис**
 
@@ -377,7 +578,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 reinterpretAsUUID(fixed_string)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `fixed_string` — cтрока с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
 
@@ -423,15 +624,87 @@ SELECT uuid = uuid2;
 └─────────────────────┘
 ```
 
+## reinterpret(x, T) {#type_conversion_function-reinterpret}
+
+Использует ту же самую исходную последовательность байтов в памяти для значения `x` и интерпретирует ее как конечный тип данных `T`.
+
+**Синтаксис**
+
+``` sql
+reinterpret(x, type)
+```
+
+**Аргументы**
+
+-   `x` — любой тип данных.
+-   `type` — конечный тип данных. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Значение конечного типа данных.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpret(toInt8(1), 'Float32') as int_to_float,
+    reinterpret('1', 'UInt32') as string_to_int;
+```
+
+Результат:
+
+```
+┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
+│         255 │        1e-45 │            49 │
+└─────────────┴──────────────┴───────────────┘
+```
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Преобразует входное значение `x` в указанный тип данных `T`.
+Преобразует входное значение к указанному типу данных. В отличие от функции [reinterpret](#type_conversion_function-reinterpret) `CAST` пытается представить то же самое значение в новом типе данных. Если преобразование невозможно, то возникает исключение.
+Поддерживается несколько вариантов синтаксиса.
 
-Поддерживается также синтаксис `CAST(x AS t)`.
+**Синтаксис**
 
-Обратите внимание, что если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
+``` sql
+CAST(x, T)
+CAST(x AS t)
+x::t
+```
 
-**Пример**
+**Аргументы**
+
+-   `x` — значение, которое нужно преобразовать. Может быть любого типа.
+-   `T` — имя типа данных. [String](../../sql-reference/data-types/string.md).
+-   `t` — тип данных.
+
+**Возвращаемое значение**
+
+-   Преобразованное значение.
+
+!!! note "Примечание"
+    Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT
+    CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
+    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
+    '1'::Int32 AS cast_string_to_int;
+```
+
+Результат:
+
+```
+┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
+│              255 │                  1.50 │                  1 │
+└──────────────────┴───────────────────────┴────────────────────┘
+```
 
 Запрос:
 
@@ -452,9 +725,9 @@ SELECT
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
+Преобразование в FixedString(N) работает только для аргументов типа [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Поддержано преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
+Поддерживается преобразование к типу [Nullable](../../sql-reference/data-types/nullable.md) и обратно.
 
 **Примеры**
 
@@ -488,7 +761,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 └─────────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
 -   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
 
@@ -503,7 +776,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 Запрос:
 
 ``` sql
-SELECT cast(-1, 'UInt8') as uint8; 
+SELECT cast(-1, 'UInt8') as uint8;
 ```
 
 Результат:
@@ -511,7 +784,8 @@ SELECT cast(-1, 'UInt8') as uint8;
 ``` text
 ┌─uint8─┐
 │   255 │
-└─────
+└───────┘
+```
 
 Запрос:
 
@@ -537,7 +811,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 accurateCastOrNull(x, T)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — входное значение.
 -   `T` — имя возвращаемого типа данных.
@@ -579,6 +853,63 @@ SELECT
 └───────┴──────┴──────────────┘
 ```
 
+
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
+
+Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если оно указано.
+
+**Синтаксис**
+
+```sql
+accurateCastOrDefault(x, T)
+```
+
+**Аргументы**
+
+-   `x` — входное значение.
+-   `T` — имя возвращаемого типа данных.
+-   `default_value` — значение по умолчанию возвращаемого типа данных.
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в указанный тип `T`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toTypeName(accurateCastOrDefault(5, 'UInt8'));
+```
+
+Результат:
+
+``` text
+┌─toTypeName(accurateCastOrDefault(5, 'UInt8'))─┐
+│ UInt8                                         │
+└───────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT
+    accurateCastOrDefault(-1, 'UInt8') as uint8,
+    accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
+    accurateCastOrDefault(128, 'Int8') as int8,
+    accurateCastOrDefault(128, 'Int8', 5) as int8_default,
+    accurateCastOrDefault('Test', 'FixedString(2)') as fixed_string,
+    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') as fixed_string_default;
+```
+
+Результат:
+
+``` text
+┌─uint8─┬─uint8_default─┬─int8─┬─int8_default─┬─fixed_string─┬─fixed_string_default─┐
+│     0 │             5 │    0 │            5 │              │ Te                   │
+└───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
+```
+
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
 Приводит аргумент из числового типа данных к типу данных [IntervalType](../../sql-reference/data-types/special-data-types/interval.md).
@@ -596,7 +927,7 @@ toIntervalQuarter(number)
 toIntervalYear(number)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `number` — длительность интервала. Положительное целое число.
 
@@ -627,6 +958,7 @@ SELECT
 ```
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
+## parseDateTime32BestEffort {#parsedatetime32besteffort}
 
 Преобразует дату и время в [строковом](../../sql-reference/functions/type-conversion-functions.md) представлении к типу данных [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime).
 
@@ -638,7 +970,7 @@ SELECT
 parseDateTimeBestEffort(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/functions/type-conversion-functions.md).
 -   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с заданным часовым поясом. [String](../../sql-reference/functions/type-conversion-functions.md).
@@ -733,7 +1065,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 └─────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
 -   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
@@ -750,7 +1082,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 parseDateTimeBestEffortUS(time_string [, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с часовым поясом. [String](../../sql-reference/data-types/string.md).
@@ -814,6 +1146,16 @@ AS parseDateTimeBestEffortUS;
 └─────────────────────────——┘
 ```
 
+## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
+## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
+
+Работает также как [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает `NULL` когда получает формат даты который не может быть обработан.
+
+## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
+## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
+
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевое значение, если формат даты не может быть обработан.
+
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
 Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает `NULL`, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
@@ -824,7 +1166,7 @@ AS parseDateTimeBestEffortUS;
 parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
@@ -910,7 +1252,7 @@ SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOr
 parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
@@ -986,20 +1328,117 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 └─────────────────────────────────┘
 ```
 
-## toUnixTimestamp64Milli
-## toUnixTimestamp64Micro
-## toUnixTimestamp64Nano
+## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
-Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что возвращаемое значение - это временная метка в UTC, а не в часовом поясе `DateTime64`.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но также принимает миллисекунды и микросекунды. Возвращает тип данных [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime).
 
 **Синтаксис**
 
 ``` sql
+parseDateTime64BestEffort(time_string [, precision [, time_zone]])
+```
+
+**Аргументы**
+
+-   `time_string` — строка, содержащая дату или дату со временем, которые нужно преобразовать. [String](../../sql-reference/data-types/string.md).
+-   `precision` — требуемая точность: `3` — для миллисекунд, `6` — для микросекунд. По умолчанию — `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Разбирает значение `time_string` в зависимости от часового пояса. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `time_string`, преобразованная в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT parseDateTime64BestEffort('2021-01-01') AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
+FORMAT PrettyCompactMonoBlock;
+```
+
+Результат:
+
+```
+┌──────────────────────────a─┬─t──────────────────────────────┐
+│ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
+│ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
+│ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
+│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Europe/Moscow') │
+└────────────────────────────┴────────────────────────────────┘
+```
+
+## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+
+## toLowCardinality {#tolowcardinality}
+
+Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+
+**Синтаксис**
+
+```sql
+toLowCardinality(expr)
+```
+
+**Аргументы**
+
+-   `expr` — [выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+
+**Возвращаемое значение**
+
+-   Результат преобразования `expr`.
+
+Тип: `LowCardinality(expr_result_type)`
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT toLowCardinality('1');
+```
+
+Результат:
+
+```text
+┌─toLowCardinality('1')─┐
+│ 1                     │
+└───────────────────────┘
+```
+
+## toUnixTimestamp64Milli {#tounixtimestamp64milli}
+
+## toUnixTimestamp64Micro {#tounixtimestamp64micro}
+
+## toUnixTimestamp64Nano {#tounixtimestamp64nano}
+
+Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды.
+Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности.
+
+!!! info "Примечание"
+    Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
+
+**Синтаксис**
+
+```sql
 toUnixTimestamp64Milli(value)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `value` — значение `DateTime64` с любой точностью.
 
@@ -1011,7 +1450,7 @@ toUnixTimestamp64Milli(value)
 
 Запрос:
 
-``` sql
+```sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Milli(dt64);
 ```
@@ -1024,7 +1463,7 @@ SELECT toUnixTimestamp64Milli(dt64);
 └──────────────────────────────┘
 ```
 
-Запрос: 
+Запрос:
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
@@ -1039,9 +1478,11 @@ SELECT toUnixTimestamp64Nano(dt64);
 └─────────────────────────────┘
 ```
 
-## fromUnixTimestamp64Milli
-## fromUnixTimestamp64Micro
-## fromUnixTimestamp64Nano
+## fromUnixTimestamp64Milli {#fromunixtimestamp64milli}
+
+## fromUnixTimestamp64Micro {#fromunixtimestamp64micro}
+
+## fromUnixTimestamp64Nano {#fromunixtimestamp64nano}
 
 Преобразует значение `Int64` в значение `DateTime64` с фиксированной точностью менее одной секунды и дополнительным часовым поясом. Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что входное значение обрабатывается как метка времени UTC, а не метка времени в заданном (или неявном) часовом поясе.
 
@@ -1051,7 +1492,7 @@ SELECT toUnixTimestamp64Nano(dt64);
 fromUnixTimestamp64Milli(value [, ti])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `value` — значение типы `Int64` с любой точностью.
 -   `timezone` — (не обязательный параметр) часовой пояс в формате `String` для возвращаемого результата.
@@ -1077,59 +1518,20 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 └──────────────────────────────────────┘
 ```
 
-## toLowCardinality {#tolowcardinality}
-
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
-
-Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
-
-**Синтаксис**
-
-```sql
-toLowCardinality(expr)
-```
-
-**Параметры**
-
-- `expr` — [Выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
-
-
-**Возвращаемое значение**
-
-- Результат преобразования `expr`.
-
-Тип: `LowCardinality(expr_result_type)`
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT toLowCardinality('1');
-```
-
-Результат:
-
-```text
-┌─toLowCardinality('1')─┐
-│ 1                     │
-└───────────────────────┘
-```
-
 ## formatRow {#formatrow}
 
 Преобразует произвольные выражения в строку заданного формата.
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 formatRow(format, x, y, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Выражения.
+-   `format` — текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — выражения.
 
 **Возвращаемое значение**
 
@@ -1161,16 +1563,16 @@ FROM numbers(3);
 
 Преобразует произвольные выражения в строку заданного формата. При этом удаляет лишние переводы строк `\n`, если они появились.
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 formatRowNoNewline(format, x, y, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Выражения.
+-   `format` — текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — выражения.
 
 **Возвращаемое значение**
 
@@ -1195,4 +1597,143 @@ FROM numbers(3);
 └───────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
+## snowflakeToDateTime {#snowflaketodatetime}
+
+Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime](../data-types/datetime.md).
+
+**Синтаксис**
+
+``` sql
+snowflakeToDateTime(value [, time_zone])
+```
+
+**Аргументы**
+
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-  Значение, преобразованное в фомат [DateTime](../data-types/datetime.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```
+
+Результат:
+
+``` text
+
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime64 {#snowflaketodatetime64}
+
+Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime64](../data-types/datetime64.md).
+
+**Синтаксис**
+
+``` sql
+snowflakeToDateTime64(value [, time_zone])
+```
+
+**Аргументы**
+
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-  Значение, преобразованное в фомат [DateTime64](../data-types/datetime64.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+```
+
+Результат:
+
+``` text
+
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## dateTimeToSnowflake {#datetimetosnowflake}
+
+Преобразует значение [DateTime](../data-types/datetime.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflake(value)
+```
+
+**Аргументы**
+
+-   `value` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
+```
+
+Результат:
+
+``` text
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+```
+
+## dateTime64ToSnowflake {#datetime64tosnowflake}
+
+Преобразует значение [DateTime64](../data-types/datetime64.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
+
+**Синтаксис**
+
+``` sql
+dateTime64ToSnowflake(value)
+```
+
+**Аргументы**
+
+-   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
+
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
+```
+
+Результат:
+
+``` text
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
+```

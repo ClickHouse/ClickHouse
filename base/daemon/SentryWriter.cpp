@@ -1,29 +1,30 @@
 #include <daemon/SentryWriter.h>
 
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <common/defines.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/getMemoryAmount.h>
-#include <common/logger_useful.h>
+#include <base/defines.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/getMemoryAmount.h>
+#include <base/logger_useful.h>
 
+#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Core/ServerUUID.h>
+#include <Common/hex.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "Common/config_version.h"
-#    include <Common/config.h>
-#endif
+#include "Common/config_version.h"
+#include <Common/config.h>
 
-#if USE_SENTRY
+#if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
 
-#    include <sentry.h> // Y_IGNORE
+#    include <sentry.h>
 #    include <stdio.h>
 #    include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -36,6 +37,13 @@ void setExtras()
 {
     if (!anonymize)
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
+
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid != DB::UUIDHelpers::Nil)
+    {
+        std::string server_uuid_str = DB::toString(server_uuid);
+        sentry_set_extra("server_uuid", sentry_value_new_string(server_uuid_str.c_str()));
+    }
 
     sentry_set_tag("version", VERSION_STRING);
     sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
@@ -52,43 +60,7 @@ void setExtras()
     sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
 
     if (!server_data_path.empty())
-        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(
-            Poco::File(server_data_path).freeSpace()).c_str()));
-}
-
-void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
-{
-    auto * logger = &Poco::Logger::get("SentryWriter");
-    size_t size = 1024;
-    char buffer[size];
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#endif
-    if (vsnprintf(buffer, size, message, args) >= 0)
-    {
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-        switch (level)
-        {
-            case SENTRY_LEVEL_DEBUG:
-                logger->debug(buffer);
-                break;
-            case SENTRY_LEVEL_INFO:
-                logger->information(buffer);
-                break;
-            case SENTRY_LEVEL_WARNING:
-                logger->warning(buffer);
-                break;
-            case SENTRY_LEVEL_ERROR:
-                logger->error(buffer);
-                break;
-            case SENTRY_LEVEL_FATAL:
-                logger->fatal(buffer);
-                break;
-        }
-    }
+        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
 }
 
 }
@@ -99,26 +71,25 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
     auto * logger = &Poco::Logger::get("SentryWriter");
+
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0))
-        {
+        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
             enabled = true;
-        }
     }
+
     if (enabled)
     {
         server_data_path = config.getString("path", "");
-        const std::filesystem::path & default_tmp_path = std::filesystem::path(config.getString("tmp_path", Poco::Path::temp())) / "sentry";
+        const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
         const std::string & endpoint
             = config.getString("send_crash_reports.endpoint");
         const std::string & temp_folder_path
             = config.getString("send_crash_reports.tmp_path", default_tmp_path);
-        Poco::File(temp_folder_path).createDirectories();
+        fs::create_directories(temp_folder_path);
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        sentry_options_set_logger(options, &sentry_logger, nullptr);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
@@ -191,34 +162,34 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         if (stack_size > 0)
         {
             ssize_t offset = stack_trace.getOffset();
-            char instruction_addr[100];
+
+            char instruction_addr[19]
+            {
+                '0', 'x',
+                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+                '\0'
+            };
+
             StackTrace::Frames frames;
             StackTrace::symbolize(stack_trace.getFramePointers(), offset, stack_size, frames);
+
             for (ssize_t i = stack_size - 1; i >= offset; --i)
             {
                 const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
 
-                if (std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIx64, frame_ptr) >= 0)
-                {
-                    sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
-                }
+                writeHexUIntLowercase(frame_ptr, instruction_addr + 2);
+                sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
 
                 if (current_frame.symbol.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "function", sentry_value_new_string(current_frame.symbol.value().c_str()));
-                }
 
                 if (current_frame.file.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
-                }
 
                 if (current_frame.line.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
-                }
 
                 sentry_value_append(sentry_frames, sentry_frame);
             }

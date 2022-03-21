@@ -13,7 +13,7 @@ Syntax:
 DateTime([timezone])
 ```
 
-Supported range of values: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
+Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
 
 Resolution: 1 second.
 
@@ -23,7 +23,7 @@ The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/U
 
 Timezone agnostic unix timestamp is stored in tables, and the timezone is used to transform it to text format or back during data import/export or to make calendar calculations on the values (example: `toDate`, `toHour` functions et cetera). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
 
-A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`.
+A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
@@ -40,7 +40,7 @@ When inserting data into ClickHouse, you can use different formats of date and t
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime('Europe/Moscow'),
+    `timestamp` DateTime('Asia/Istanbul'),
     `event_id` UInt8
 )
 ENGINE = TinyLog;
@@ -61,13 +61,13 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000`.
+-   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+-   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
 ```
 
 ``` text
@@ -91,12 +91,12 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 **3.** Getting a time zone for a `DateTime`-type column:
 
 ``` sql
-SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
+SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────column─┬─x─────────────────────────┐
-│ 2019-10-16 04:12:04 │ DateTime('Europe/Moscow') │
+│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
 └─────────────────────┴───────────────────────────┘
 ```
 
@@ -105,7 +105,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ``` sql
 SELECT
 toDateTime(timestamp, 'Europe/London') as lon_time,
-toDateTime(timestamp, 'Europe/Moscow') as mos_time
+toDateTime(timestamp, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 
@@ -145,4 +145,4 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [The `Date` data type](../../sql-reference/data-types/date.md)
 
-[Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->

@@ -38,4 +38,4 @@ ClickHouseは、 `ALTER TABLE ... FREEZE PARTITION ...` クエリをコピーの
 
 第三者ツールを自動化するこのアプローチ: [clickhouse-バックアップ](https://github.com/AlexAkulov/clickhouse-backup).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/backup/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->

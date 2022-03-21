@@ -11,7 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -49,12 +49,12 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageLiveView>;
-friend class LiveViewBlockInputStream;
-friend class LiveViewEventsBlockInputStream;
-friend class LiveViewBlockOutputStream;
+friend struct shared_ptr_helper<StorageLiveView>;
+friend class LiveViewSource;
+friend class LiveViewEventsSource;
+friend class LiveViewSink;
 
 public:
     ~StorageLiveView() override;
@@ -142,21 +142,21 @@ public:
     void startup() override;
     void shutdown() override;
 
-    void refresh(const bool grab_lock = true);
+    void refresh(bool grab_lock = true);
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -165,9 +165,9 @@ public:
     MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
 
     /// Collect mergeable blocks and their sample. Must be called holding mutex
-    MergeableBlocksPtr collectMergeableBlocks(const Context & context);
+    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(Pipes pipes);
+    QueryPipelineBuilder completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
@@ -183,7 +183,7 @@ public:
     static void writeIntoLiveView(
         StorageLiveView & live_view,
         const Block & block,
-        const Context & context);
+        ContextPtr context);
 
 private:
     /// TODO move to common struct SelectQueryDescription
@@ -191,8 +191,7 @@ private:
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
-    Context & global_context;
-    std::unique_ptr<Context> live_view_context;
+    ContextMutablePtr live_view_context;
 
     Poco::Logger * log;
 
@@ -231,10 +230,10 @@ private:
 
     StorageLiveView(
         const StorageID & table_id_,
-        Context & local_context,
+        ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns
-    );
+        const ColumnsDescription & columns,
+        const String & comment);
 };
 
 }

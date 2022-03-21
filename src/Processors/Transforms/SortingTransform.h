@@ -3,7 +3,6 @@
 #include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Processors/ISource.h>
 
 

@@ -1,10 +1,10 @@
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test_executable</name>
         
         <source>
             <executable>
-		<command>cat /etc/clickhouse-server/config.d/source.csv</command>
+		<command>cat /etc/clickhouse-server/dictionaries/source.csv</command>
             	<format>CSVWithNames</format>
             </executable>
 
@@ -42,4 +42,4 @@
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>

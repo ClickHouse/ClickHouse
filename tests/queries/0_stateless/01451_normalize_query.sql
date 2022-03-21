@@ -20,3 +20,7 @@ SELECT normalizeQuery('SELECT 1 AS xyz11');
 SELECT normalizeQuery('SELECT 1 xyz11');
 SELECT normalizeQuery('SELECT 1, xyz11');
 SELECT normalizeQuery('SELECT 1, ''xyz11''');
+SELECT normalizeQuery('SELECT $doc$VALUE$doc$ xyz11');
+SELECT normalizeQuery('SELECT $doc$VALUE$doc$, xyz11');
+SELECT normalizeQuery('SELECT $doc$VALUE$doc$, ''xyz11''');
+

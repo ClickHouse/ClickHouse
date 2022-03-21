@@ -282,12 +282,12 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-ClickHouse在关闭连接之前等待传入请求的秒数。 默认为3秒。
+ClickHouse在关闭连接之前等待传入请求的秒数。默认为10秒。
 
 **示例**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -462,7 +462,7 @@ SSL客户端/服务器配置。
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
@@ -668,7 +668,7 @@ SSL客户端/服务器配置。
 **示例**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -796,7 +796,7 @@ ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
 -   `session_timeout` — Maximum timeout for the client session in milliseconds.
--   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) 隆隆隆隆路虏脢..陇.貌.垄拢卢虏禄.陇.貌路.隆拢脳枚脢虏.麓脢for脱 可选。
+-   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes)被用作根由ClickHouse服务器使用znodes 可选。
 -   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **配置示例**
@@ -823,7 +823,7 @@ ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复
 **另请参阅**
 
 -   [复制](../../engines/table-engines/mergetree-family/replication.md)
--   [动物园管理员程序员指南](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [zookeeper管理指南](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
@@ -867,4 +867,4 @@ ZooKeeper中数据部分头的存储方法。
 
 **默认值**: 15.
 
-[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

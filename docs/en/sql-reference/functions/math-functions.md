@@ -54,7 +54,7 @@ If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a ran
 Example (three sigma rule):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text
@@ -415,7 +415,7 @@ Result:
 
 ## sign(x) {#signx}
 
-The `sign` function can extract the sign of a real number.
+Returns the sign of a real number.
 
 **Syntax**
 
@@ -433,9 +433,9 @@ sign(x)
 -  0 for `x = 0`
 -  1 for `x > 0`
 
-**Example**
+**Examples**
 
-Query:
+Sign for the zero value:
 
 ``` sql
 SELECT sign(0);
@@ -449,7 +449,7 @@ Result:
 └─────────┘
 ```
 
-Query:
+Sign for the positive value:
 
 ``` sql
 SELECT sign(1);
@@ -463,7 +463,7 @@ Result:
 └─────────┘
 ```
 
-Query:
+Sign for the negative value:
 
 ``` sql
 SELECT sign(-1);
@@ -477,4 +477,74 @@ Result:
 └──────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->
+## degrees(x) {#degreesx}
+
+Converts the input value in radians to degrees.
+
+**Syntax**
+
+``` sql
+degrees(x)
+```
+
+**Arguments**
+
+-   `x` — Input in radians. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Value in degrees.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT degrees(3.141592653589793);
+```
+
+Result:
+
+``` text
+┌─degrees(3.141592653589793)─┐
+│                        180 │
+└────────────────────────────┘
+```
+
+## radians(x) {#radiansx}
+
+Converts the input value in degrees to radians.
+
+**Syntax**
+
+``` sql
+radians(x)
+```
+
+**Arguments**
+
+-   `x` — Input in degrees. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Value in radians.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT radians(180);
+```
+
+Result:
+
+``` text
+┌──────radians(180)─┐
+│ 3.141592653589793 │
+└───────────────────┘
+```

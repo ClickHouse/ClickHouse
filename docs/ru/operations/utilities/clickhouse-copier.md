@@ -44,7 +44,7 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 ## Формат Zookeeper.xml {#format-zookeeper-xml}
 
 ``` xml
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <size>100M</size>
@@ -57,21 +57,21 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
             <port>2181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>
 ```
 
 ## Конфигурация заданий на копирование {#konfiguratsiia-zadanii-na-kopirovanie}
 
 ``` xml
-<yandex>
+<clickhouse>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
 		    <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.tech/docs/ru/engines/table-engines/special/distributed/
-            --> 	
+                see https://clickhouse.com/docs/ru/engines/table-engines/special/distributed/
+            -->
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
@@ -171,14 +171,13 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
         </table_hits>
 
         <!-- Next table to copy. It is not copied until previous table is copying. -->
-        </table_visits>
+        <table_visits>
         ...
         </table_visits>
         ...
     </tables>
-</yandex>
+</clickhouse>
 ```
 
 `clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их «на лету». Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-copier/) <!--hide-->

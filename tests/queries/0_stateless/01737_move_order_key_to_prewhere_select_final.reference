@@ -1,0 +1,66 @@
+optimize_move_to_prewhere_if_final = 1
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+PREWHERE y > 100
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+PREWHERE y > 100
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+WHERE z > 400
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+PREWHERE y > 100
+WHERE (y > 100) AND (z > 400)
+
+optimize_move_to_prewhere_if_final = 0
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+PREWHERE y > 100
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+WHERE y > 100
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+WHERE z > 400
+
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+WHERE (y > 100) AND (z > 400)

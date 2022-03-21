@@ -1,13 +1,15 @@
 #pragma once
 
+#include <optional>
+#include <vector>
+#include <memory>
+#include <unordered_map>
+
+#include <base/shared_ptr_helper.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
-
-#include <optional>
-#include <unordered_map>
-
 
 namespace DB
 {
@@ -28,11 +30,14 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
+        MATERIALIZE_PROJECTION,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
+        DROP_PROJECTION,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
+        MATERIALIZE_COLUMN,
     };
 
     Type type = EMPTY;
@@ -43,8 +48,9 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX.
+    /// For MATERIALIZE INDEX and PROJECTION
     String index_name;
+    String projection_name;
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;
@@ -64,7 +70,7 @@ struct MutationCommand
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
-class MutationCommands : public std::vector<MutationCommand>
+class MutationCommands : public shared_ptr_helper<MutationCommands>, public std::vector<MutationCommand>
 {
 public:
     std::shared_ptr<ASTExpressionList> ast() const;
@@ -72,5 +78,7 @@ public:
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
 };
+
+using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
 
 }

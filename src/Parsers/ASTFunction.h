@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
 {
 
-class ASTIdentifier;
+class ASTSelectWithUnionQuery;
 
 /** AST for function application or operator.
   */
@@ -70,5 +70,15 @@ std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... arg
 
     return function;
 }
+
+/// ASTFunction Helpers: hide casts and semantic.
+
+String getFunctionName(const IAST * ast);
+std::optional<String> tryGetFunctionName(const IAST * ast);
+bool tryGetFunctionNameInto(const IAST * ast, String & name);
+
+inline String getFunctionName(const ASTPtr & ast) { return getFunctionName(ast.get()); }
+inline std::optional<String> tryGetFunctionName(const ASTPtr & ast) { return tryGetFunctionName(ast.get()); }
+inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return tryGetFunctionNameInto(ast.get(), name); }
 
 }

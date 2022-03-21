@@ -1,15 +1,15 @@
 ---
 toc_priority: 67
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448\u0438\u0444\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Функции для шифрования"
 ---
 
 # Функции шифрования {#encryption-functions}
 
-Даннвые функции реализуют шифрование и расшифровку данных с помощью AES (Advanced Encryption Standard) алгоритма.
+Данные функции реализуют шифрование и расшифровку данных с помощью AES (Advanced Encryption Standard) алгоритма.
 
 Длина ключа зависит от режима шифрования. Он может быть длинной в 16, 24 и 32 байта для режимов шифрования `-128-`, `-196-` и `-256-` соответственно.
 
-Длина инициализирующего вектора всегда 16 байт (лишнии байты игнорируются). 
+Длина инициализирующего вектора всегда 16 байт (лишние байты игнорируются).
 
 Обратите внимание, что до версии Clickhouse 21.1 эти функции работали медленно.
 
@@ -31,7 +31,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448
 encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — текст, который будет зашифрован. [String](../../sql-reference/data-types/string.md#string).
@@ -58,7 +58,7 @@ CREATE TABLE encryption_test
 ENGINE = Memory;
 ```
 
-Вставим некоторые данные (замечание: не храните ключи или инициализирующие векторы в базе данных, так как это компрометирует всю концепцию шифрования), также хранение "подсказок" небезопасно и используется только для наглядности: 
+Вставим некоторые данные (замечание: не храните ключи или инициализирующие векторы в базе данных, так как это компрометирует всю концепцию шифрования), также хранение "подсказок" небезопасно и используется только для наглядности:
 
 Запрос:
 
@@ -127,7 +127,7 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
 aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — текст, который будет зашифрован. [String](../../sql-reference/data-types/string.md#string).
@@ -168,7 +168,7 @@ SELECT encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 
 
 ``` text
 Received exception from server (version 21.1.2):
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123'). 
+Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
 Однако функция `aes_encrypt_mysql` в аналогичном случае возвращает результат, который может быть обработан MySQL:
@@ -236,13 +236,13 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — зашифрованный текст, который будет расшифрован. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — ключ шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — инициализирующий вектор. Обязателен для `-gcm` режимов, для остальных режимов опциональный. [String](../../sql-reference/data-types/string.md#string).
--   `aad` —  дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` — дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
@@ -297,7 +297,7 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 
 ## aes_decrypt_mysql {#aes_decrypt_mysql}
 
-Совместима с шифрованием myqsl и может расшифровать данные, зашифрованные функцией [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt). 
+Совместима с шифрованием myqsl и может расшифровать данные, зашифрованные функцией [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt).
 
 При одинаковых входящих значениях расшифрованный текст будет совпадать с результатом, возвращаемым функцией `decrypt`. Однако если `key` или `iv` длиннее, чем должны быть, `aes_decrypt_mysql` будет работать аналогично функции `aes_decrypt` в MySQL: свернет ключ и проигнорирует лишнюю часть `iv`.
 
@@ -316,7 +316,7 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — зашифрованный текст, который будет расшифрован. [String](../../sql-reference/data-types/string.md#string).
@@ -358,4 +358,4 @@ SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '1234567891012
 │ Secret    │
 └───────────┘
 ```
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->
+[Original article](https://clickhouse.com/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->

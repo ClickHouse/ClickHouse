@@ -1,6 +1,5 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
@@ -8,13 +7,14 @@
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <DataTypes/ObjectUtils.h>
 
-#include <common/logger_useful.h>
-#include <Processors/Pipe.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/DelayedSource.h>
+#include <base/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 
 namespace ProfileEvents
@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
 }
 
@@ -37,128 +36,99 @@ namespace ClusterProxy
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
-    QueryProcessingStage::Enum processed_stage_,
-    StorageID main_table_,
-    const Scalars & scalars_,
-    bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
+    const ColumnsDescriptionByShardNum & objects_by_shard_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    QueryProcessingStage::Enum processed_stage_)
     : header(header_),
-    processed_stage{processed_stage_},
-    main_table(std::move(main_table_)),
-    table_func_ptr{nullptr},
-    scalars{scalars_},
-    has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
+    objects_by_shard(objects_by_shard_),
+    storage_snapshot(storage_snapshot_),
+    processed_stage(processed_stage_)
 {
 }
 
-SelectStreamFactory::SelectStreamFactory(
-    const Block & header_,
-    QueryProcessingStage::Enum processed_stage_,
-    ASTPtr table_func_ptr_,
-    const Scalars & scalars_,
-    bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
-    : header(header_),
-    processed_stage{processed_stage_},
-    table_func_ptr{table_func_ptr_},
-    scalars{scalars_},
-    has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
-{
-}
 
 namespace
 {
 
+ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
+{
+    /// Convert header structure to expected.
+    /// Also we ignore constants from result and replace it with constants from header.
+    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
+    return ActionsDAG::makeConvertingActions(
+        block.getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+}
+
+void addConvertingActions(QueryPlan & plan, const Block & header)
+{
+    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
+        return;
+
+    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
+    plan.addStep(std::move(converting));
+}
+
 std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage)
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
     interpreter.buildQueryPlan(*query_plan);
 
-    /// Convert header structure to expected.
-    /// Also we ignore constants from result and replace it with constants from header.
-    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan->getCurrentDataStream().header.getColumnsWithTypeAndName(),
-            header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            true);
-
-    auto converting = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_actions_dag);
-    converting->setStepDescription("Convert block structure for query from local replica");
-    query_plan->addStep(std::move(converting));
+    addConvertingActions(*query_plan, header);
 
     return query_plan;
-}
-
-String formattedAST(const ASTPtr & ast)
-{
-    if (!ast)
-        return {};
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
 }
 
 }
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const String &, const ASTPtr & query_ast,
-    const std::shared_ptr<Context> & context_ptr, const ThrottlerPtr & throttler,
-    const SelectQueryInfo &,
-    std::vector<QueryPlanPtr> & plans,
-    Pipes & remote_pipes,
-    Pipes & delayed_pipes,
-    Poco::Logger * log)
+    const ASTPtr & query_ast,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count)
 {
-    const auto & context = *context_ptr;
-
-    bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals = false;
-    bool add_extremes = false;
-    bool async_read = context_ptr->getSettingsRef().async_socket_for_remote;
-    if (processed_stage == QueryProcessingStage::Complete)
-    {
-        add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context.getSettingsRef().extremes;
-    }
-
-    auto modified_query_ast = query_ast->clone();
-    if (has_virtual_shard_num_column)
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    if (it != objects_by_shard.end())
+        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
     auto emplace_local_stream = [&]()
     {
-        plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage));
+        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
-    String modified_query = formattedAST(modified_query_ast);
-
-    auto emplace_remote_stream = [&]()
+    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
     {
-        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard_info.pool, modified_query, header, context, throttler, scalars, external_tables, processed_stage);
-        remote_query_executor->setLogger(log);
-
-        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
-        if (!table_func_ptr)
-            remote_query_executor->setMainTable(main_table);
-
-        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
-        remote_pipes.back().addInterpreterContext(context_ptr);
+        remote_shards.emplace_back(Shard{
+            .query = query_ast,
+            .header = header,
+            .shard_num = shard_info.shard_num,
+            .num_replicas = shard_info.getAllNodeCount(),
+            .pool = shard_info.pool,
+            .per_replica_pools = shard_info.per_replica_pools,
+            .lazy = lazy,
+            .local_delay = local_delay,
+        });
     };
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
@@ -171,7 +141,7 @@ void SelectStreamFactory::createForShard(
         }
         else
         {
-            auto resolved_id = context.resolveStorageID(main_table);
+            auto resolved_id = context->resolveStorageID(main_table);
             main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         }
 
@@ -245,63 +215,7 @@ void SelectStreamFactory::createForShard(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-
-        auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast,
-                &context, context_ptr, throttler,
-                main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes, async_read]()
-            -> Pipe
-        {
-            auto current_settings = context.getSettingsRef();
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                current_settings).getSaturated(
-                    current_settings.max_execution_time);
-            std::vector<ConnectionPoolWithFailover::TryResult> try_results;
-            try
-            {
-                if (table_func_ptr)
-                    try_results = pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
-                else
-                    try_results = pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, main_table.getQualifiedName());
-            }
-            catch (const Exception & ex)
-            {
-                if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                    LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "Connections to remote replicas of local shard {} failed, will use stale local replica", shard_num);
-                else
-                    throw;
-            }
-
-            double max_remote_delay = 0.0;
-            for (const auto & try_result : try_results)
-            {
-                if (!try_result.is_up_to_date)
-                    max_remote_delay = std::max(try_result.staleness, max_remote_delay);
-            }
-
-            if (try_results.empty() || local_delay < max_remote_delay)
-            {
-                auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()))));
-            }
-            else
-            {
-                std::vector<IConnectionPool::Entry> connections;
-                connections.reserve(try_results.size());
-                for (auto & try_result : try_results)
-                    connections.emplace_back(std::move(try_result.entry));
-
-                auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
-
-                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
-            }
-        };
-
-        delayed_pipes.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
-        delayed_pipes.back().addInterpreterContext(context_ptr);
+        emplace_remote_stream(true /* lazy */, local_delay);
     }
     else
         emplace_remote_stream();

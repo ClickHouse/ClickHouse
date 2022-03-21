@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <settings>
         <allow_experimental_bigint_types>1</allow_experimental_bigint_types>
         <max_memory_usage>15G</max_memory_usage>
@@ -191,7 +191,7 @@
             toInt256(number) as d,
             toString(number) as f,
             toFixedString(f, 20) as g
-        FROM numbers_mt(200000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 8
         FORMAT Null
     </query>

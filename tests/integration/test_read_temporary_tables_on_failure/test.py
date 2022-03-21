@@ -24,3 +24,4 @@ def test_different_versions(start_cluster):
         node.query("SELECT 1", settings={'max_concurrent_queries_for_user': 1})
     assert node.contains_in_log('Too many simultaneous queries for user')
     assert not node.contains_in_log('Unknown packet')
+    assert not node.contains_in_log('Unexpected packet')

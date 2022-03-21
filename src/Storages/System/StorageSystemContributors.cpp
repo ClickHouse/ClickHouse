@@ -16,7 +16,7 @@ NamesAndTypesList StorageSystemContributors::getNamesAndTypes()
     };
 }
 
-void StorageSystemContributors::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     std::vector<const char *> contributors;
     for (auto * it = auto_contributors; *it; ++it)

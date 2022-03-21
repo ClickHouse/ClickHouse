@@ -606,7 +606,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 如果要获取数组中唯一项的列表，可以使用arrayReduce（‘groupUniqArray’，arr）。
 
-## arryjoin(arr) {#array-functions-join}
+## arrayJoin(arr) {#array-functions-join}
 
 一个特殊的功能。请参见[«ArrayJoin函数»](array-join.md#functions_arrayjoin)部分。
 
@@ -662,4 +662,4 @@ arrayReduce（‘agg_func’，arr1，…） - 将聚合函数`agg_func`应用�
 
 返回与源数组大小相同的数组，包含反转源数组的所有元素的结果。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/array_functions/) <!--hide-->

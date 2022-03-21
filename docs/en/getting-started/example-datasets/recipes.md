@@ -7,15 +7,17 @@ toc_title: Recipes Dataset
 
 RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
 
-## Download and unpack the dataset
+## Download and Unpack the Dataset
 
-Accept Terms and Conditions and download it [here](https://recipenlg.cs.put.poznan.pl/dataset). Unpack the zip file with `unzip`. You will get the `full_dataset.csv` file.
+1. Go to the download page [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
+1. Accept Terms and Conditions and download zip file.
+1. Unpack the zip file with `unzip`. You will get the `full_dataset.csv` file.
 
-## Create a table
+## Create a Table
 
 Run clickhouse-client and execute the following CREATE query:
 
-```
+``` sql
 CREATE TABLE recipes
 (
     title String,
@@ -27,11 +29,11 @@ CREATE TABLE recipes
 ) ENGINE = MergeTree ORDER BY title;
 ```
 
-## Insert the data
+## Insert the Data
 
 Run the following command:
 
-```
+``` bash
 clickhouse-client --query "
     INSERT INTO recipes
     SELECT
@@ -49,32 +51,41 @@ clickhouse-client --query "
 This is a showcase how to parse custom CSV, as it requires multiple tunes.
 
 Explanation:
-- the dataset is in CSV format, but it requires some preprocessing on insertion; we use table function [input](../../sql-reference/table-functions/input/) to perform preprocessing;
-- the structure of CSV file is specified in the argument of the table function `input`;
-- the field `num` (row number) is unneeded - we parse it from file and ignore;
-- we use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
-- file is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
-- some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
-- there are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions/) function to transform it to Array.
+-   The dataset is in CSV format, but it requires some preprocessing on insertion; we use table function [input](../../sql-reference/table-functions/input.md) to perform preprocessing;
+-   The structure of CSV file is specified in the argument of the table function `input`;
+-   The field `num` (row number) is unneeded - we parse it from file and ignore;
+-   We use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
+-   File is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
+-   Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
+-   There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions/) function to transform it to Array.
 
-## Validate the inserted data
+## Validate the Inserted Data
 
 By checking the row count:
 
-```
-SELECT count() FROM recipes
+Query:
 
+``` sql
+SELECT count() FROM recipes;
+```
+
+Result:
+
+``` text
 ┌─count()─┐
 │ 2231141 │
 └─────────┘
 ```
 
+## Example Queries
 
-## Example queries
+### Top Components by the Number of Recipes:
 
-### Top components by the number of recipes:
+In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to expand an array into a set of rows.
 
-```
+Query:
+
+``` sql
 SELECT
     arrayJoin(NER) AS k,
     count() AS c
@@ -82,7 +93,11 @@ FROM recipes
 GROUP BY k
 ORDER BY c DESC
 LIMIT 50
+```
 
+Result:
+
+``` text
 ┌─k────────────────────┬──────c─┐
 │ salt                 │ 890741 │
 │ sugar                │ 620027 │
@@ -139,11 +154,9 @@ LIMIT 50
 50 rows in set. Elapsed: 0.112 sec. Processed 2.23 million rows, 361.57 MB (19.99 million rows/s., 3.24 GB/s.)
 ```
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to multiply data by array elements.
+### The Most Complex Recipes with Strawberry
 
-### The most complex recipes with strawberry
-
-```
+``` sql
 SELECT
     title,
     length(NER),
@@ -152,7 +165,11 @@ FROM recipes
 WHERE has(NER, 'strawberry')
 ORDER BY length(directions) DESC
 LIMIT 10
+```
 
+Result:
+
+``` text
 ┌─title────────────────────────────────────────────────────────────┬─length(NER)─┬─length(directions)─┐
 │ Chocolate-Strawberry-Orange Wedding Cake                         │          24 │                126 │
 │ Strawberry Cream Cheese Crumble Tart                             │          19 │                 47 │
@@ -171,15 +188,19 @@ LIMIT 10
 
 In this example, we involve [has](../../sql-reference/functions/array-functions/#hasarr-elem) function to filter by array elements and sort by the number of directions.
 
-There is a wedding cake that requires the whole 126 steps to produce!
+There is a wedding cake that requires the whole 126 steps to produce! Show that directions:
 
-Show that directions:
+Query:
 
-```
+``` sql
 SELECT arrayJoin(directions)
 FROM recipes
 WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
+```
 
+Result:
+
+``` text
 ┌─arrayJoin(directions)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Position 1 rack in center and 1 rack in bottom third of oven and preheat to 350F.                                                                                           │
 │ Butter one 5-inch-diameter cake pan with 2-inch-high sides, one 8-inch-diameter cake pan with 2-inch-high sides and one 12-inch-diameter cake pan with 2-inch-high sides.   │
@@ -312,6 +333,8 @@ WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
 126 rows in set. Elapsed: 0.011 sec. Processed 8.19 thousand rows, 5.34 MB (737.75 thousand rows/s., 480.59 MB/s.)
 ```
 
-### Online playground
+### Online Playground
 
-The dataset is also available in the [Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+The dataset is also available in the [Online Playground](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+
+[Original article](https://clickhouse.com/docs/en/getting-started/example-datasets/recipes/) <!--hide-->

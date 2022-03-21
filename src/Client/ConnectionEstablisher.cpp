@@ -58,9 +58,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            const char * message_pattern = "There is no table {}.{} on server: {}";
-            fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            LOG_WARNING(log, fail_message);
+            fail_message = fmt::format("There is no table {}.{} on server: {}",
+                backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
+            LOG_WARNING(log, fmt::runtime(fail_message));
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             return;
         }
@@ -116,7 +116,7 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     epoll.add(receive_timeout.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, const Poco::Timespan & timeout, const std::string &)
+void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, Poco::Timespan timeout, const std::string &)
 {
     /// Check if it's the first time and we need to add socket fd to epoll.
     if (connection_establisher_async.socket_fd == -1)
@@ -165,7 +165,7 @@ std::variant<int, ConnectionEstablisher::TryResult> ConnectionEstablisherAsync::
     fiber = std::move(fiber).resume();
 
     if (exception)
-        std::rethrow_exception(std::move(exception));
+        std::rethrow_exception(exception);
 
     if (connection_establisher.isFinished())
     {

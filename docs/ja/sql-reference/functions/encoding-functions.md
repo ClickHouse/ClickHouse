@@ -172,4 +172,4 @@ FixedString(16)値を受け取ります。 36文字を含む文字列をテキ�
 
 整数を受け取ります。 合計されたときにソース番号を合計する二つのべき乗のリストを含むUInt64数値の配列を返します。 配列内の数値は昇順です。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/encoding_functions/) <!--hide-->

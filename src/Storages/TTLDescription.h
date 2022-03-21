@@ -75,12 +75,16 @@ struct TTLDescription
     /// Name of destination disk or volume
     String destination_name;
 
+    /// If true, do nothing if DISK or VOLUME doesn't exist .
+    /// Only valid for table MOVE TTLs.
+    bool if_exists = false;
+
     /// Codec name which will be used to recompress data
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table
     /// TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
+    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -117,7 +121,10 @@ struct TTLTableDescription
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
-        const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
+        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+
+    /// Parse description from string
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
 };
 
 }

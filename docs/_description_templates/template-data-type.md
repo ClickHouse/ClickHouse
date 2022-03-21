@@ -1,6 +1,6 @@
 ---
-toc_priority: 
-toc_title: 
+toc_priority:
+toc_title:
 ---
 
 # data_type_name {#data_type-name}
@@ -26,4 +26,4 @@ The name of an additional section can be any, for example, **Usage**.
 
 -   [link](#)
 
-[Original article](https://clickhouse.tech/docs/en/data-types/<data-type-name>/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data-types/<data-type-name>/) <!--hide-->

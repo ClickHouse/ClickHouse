@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
@@ -15,8 +15,6 @@
 
 namespace DB
 {
-using EntityType = IAccessEntity::Type;
-
 
 NamesAndTypesList StorageSystemRoleGrants::getNamesAndTypes()
 {
@@ -31,10 +29,10 @@ NamesAndTypesList StorageSystemRoleGrants::getNamesAndTypes()
 }
 
 
-void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
@@ -48,19 +46,19 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Conte
     auto & column_admin_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](const String & grantee_name,
-                       IAccessEntity::Type grantee_type,
+                       AccessEntityType grantee_type,
                        const String & granted_role_name,
                        bool is_default,
                        bool with_admin_option)
     {
-        if (grantee_type == EntityType::USER)
+        if (grantee_type == AccessEntityType::USER)
         {
             column_user_name.insertData(grantee_name.data(), grantee_name.length());
             column_user_name_null_map.push_back(false);
             column_role_name.insertDefault();
             column_role_name_null_map.push_back(true);
         }
-        else if (grantee_type == EntityType::ROLE)
+        else if (grantee_type == AccessEntityType::ROLE)
         {
             column_user_name.insertDefault();
             column_user_name_null_map.push_back(true);
@@ -76,19 +74,21 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Conte
     };
 
     auto add_rows = [&](const String & grantee_name,
-                        IAccessEntity::Type grantee_type,
+                        AccessEntityType grantee_type,
                         const GrantedRoles & granted_roles,
                         const RolesOrUsersSet * default_roles)
     {
-        for (const auto & role_id : granted_roles.roles)
+        for (const auto & element : granted_roles.getElements())
         {
-            auto role_name = access_control.tryReadName(role_id);
-            if (!role_name)
-                continue;
+            for (const auto & role_id : element.ids)
+            {
+                auto role_name = access_control.tryReadName(role_id);
+                if (!role_name)
+                    continue;
 
-            bool is_default = !default_roles || default_roles->match(role_id);
-            bool with_admin_option = granted_roles.roles_with_admin_option.count(role_id);
-            add_row(grantee_name, grantee_type, *role_name, is_default, with_admin_option);
+                bool is_default = !default_roles || default_roles->match(role_id);
+                add_row(grantee_name, grantee_type, *role_name, is_default, element.admin_option);
+            }
         }
     };
 

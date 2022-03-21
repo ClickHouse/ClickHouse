@@ -1,6 +1,6 @@
 ---
 toc_priority: 39
-toc_title: "\u0412\u043d\u0435\u0448\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0438"
+toc_title: "Внешние словари"
 ---
 
 
@@ -26,7 +26,7 @@ ClickHouse:
 Конфигурационный файл словарей имеет вид:
 
 ``` xml
-<yandex>
+<clickhouse>
     <comment>Необязательный элемент с любым содержимым. Игнорируется сервером ClickHouse.</comment>
 
     <!--Необязательный элемент, имя файла с подстановками-->
@@ -42,7 +42,7 @@ ClickHouse:
     <dictionary>
         <!-- Конфигурация словаря -->
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 В одном файле можно [сконфигурировать](external-dicts-dict.md) произвольное количество словарей.
@@ -61,4 +61,3 @@ ClickHouse:
 -   [Ключ и поля словаря](external-dicts-dict-structure.md)
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

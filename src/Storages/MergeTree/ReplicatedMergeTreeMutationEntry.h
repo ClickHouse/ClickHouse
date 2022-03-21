@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MutationCommands.h>
 #include <map>

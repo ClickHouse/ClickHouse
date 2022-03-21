@@ -10,7 +10,7 @@ from ldap.authentication.requirements import *
     RQ_SRS_007_LDAP_User_Configuration_Invalid("1.0"),
     RQ_SRS_007_LDAP_Configuration_User_Name_Empty("1.0")
 )
-def empty_user_name(self, timeout=20):
+def empty_user_name(self, timeout=300):
     """Check that empty string as a user name is not allowed.
     """
     servers = {"openldap1": {
@@ -26,7 +26,7 @@ def empty_user_name(self, timeout=20):
     RQ_SRS_007_LDAP_User_Configuration_Invalid("1.0"),
     RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_Empty("1.0")
 )
-def empty_server_name(self, timeout=20):
+def empty_server_name(self, timeout=300):
     """Check that if server name is an empty string then login is not allowed.
     """
     message = "Exception: LDAP server name cannot be empty for user"
@@ -46,7 +46,7 @@ def empty_server_name(self, timeout=20):
     RQ_SRS_007_LDAP_User_Configuration_Invalid("1.0"),
     RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_NotDefined("1.0")
 )
-def empty_server_not_defined(self, timeout=20):
+def empty_server_not_defined(self):
     """Check that if server is not defined then login is not allowed.
     """
     servers = {"openldap1": {
@@ -76,7 +76,7 @@ def valid_user_config(self):
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_User_OnlyOneServer("1.0")
 )
-def multiple_servers(self, timeout=20):
+def multiple_servers(self):
     """Check that user configuration allows to specify only one LDAP server for a given user
     and if multiple servers are specified then the first one is used."""
     servers = {

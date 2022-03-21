@@ -14,7 +14,7 @@ n2 = cluster.add_instance('n2', main_configs=['configs/remote_servers.xml'])
 n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers.xml'])
 
 nodes = len(cluster.instances)
-queries = nodes * 5
+queries = nodes * 10
 
 
 def bootstrap():
@@ -43,21 +43,21 @@ def bootstrap():
             replicas_cluster,
             currentDatabase(),
             data)
-        """.format())
+        """)
         n.query("""
         CREATE TABLE dist_priority AS data
         Engine=Distributed(
             replicas_priority_cluster,
             currentDatabase(),
             data)
-        """.format())
+        """)
         n.query("""
         CREATE TABLE dist_priority_negative AS data
         Engine=Distributed(
             replicas_priority_negative_cluster,
             currentDatabase(),
             data)
-        """.format())
+        """)
 
 
 def make_uuid():

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
  *
@@ -36,15 +36,15 @@
  * int func() {
  * #if USE_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::AVX2))
- *         return TargetSpecifc::AVX2::funcImpl();
+ *         return TargetSpecific::AVX2::funcImpl();
  * #endif
- *     return TargetSpecifc::Default::funcImpl();
+ *     return TargetSpecific::Default::funcImpl();
  * }
  *
  * Sometimes code may benefit from compiling with different options.
  * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
  * of the code for every supported target and compile it with different options.
- * These copies are available via TargetSpecifc namespaces described above.
+ * These copies are available via TargetSpecific namespaces described above.
  *
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
@@ -89,6 +89,7 @@ String toString(TargetArch arch);
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
+/// NOLINTNEXTLINE
 #define USE_MULTITARGET_CODE 1
 
 #if defined(__clang__)
@@ -106,7 +107,7 @@ String toString(TargetArch arch);
 /* Clang shows warning when there aren't any objects to apply pragma.
  * To prevent this warning we define this function inside every macros with pragmas.
  */
-#   define DUMMY_FUNCTION_DEFINITION void __dummy_function_definition();
+#   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 #else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
@@ -183,6 +184,7 @@ namespace TargetSpecific::Default { \
     __VA_ARGS__ \
 }
 
+/// NOLINTNEXTLINE
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
 DECLARE_SSE42_SPECIFIC_CODE  (__VA_ARGS__) \
@@ -191,23 +193,23 @@ DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
-    constexpr auto BuildArch = TargetArch::Default;
+    constexpr auto BuildArch = TargetArch::Default; /// NOLINT
 ) // DECLARE_DEFAULT_CODE
 
 DECLARE_SSE42_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::SSE42;
+    constexpr auto BuildArch = TargetArch::SSE42; /// NOLINT
 ) // DECLARE_SSE42_SPECIFIC_CODE
 
 DECLARE_AVX_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX;
+    constexpr auto BuildArch = TargetArch::AVX; /// NOLINT
 ) // DECLARE_AVX_SPECIFIC_CODE
 
 DECLARE_AVX2_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX2;
+    constexpr auto BuildArch = TargetArch::AVX2; /// NOLINT
 ) // DECLARE_AVX2_SPECIFIC_CODE
 
 DECLARE_AVX512F_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512F;
+    constexpr auto BuildArch = TargetArch::AVX512F; /// NOLINT
 ) // DECLARE_AVX512F_SPECIFIC_CODE
 
 }

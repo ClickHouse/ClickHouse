@@ -17,16 +17,18 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 Проверяется нулевая гипотеза, что генеральные совокупности стохастически равны. Наряду с двусторонней гипотезой могут быть проверены и односторонние.
 Для применения U-критерия Манна — Уитни закон распределения генеральных совокупностей не обязан быть нормальным.
 
+**Аргументы**
+
+-   `sample_data` — данные выборок. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — индексы выборок. [Integer](../../../sql-reference/data-types/int-uint.md).
+
 **Параметры**
 
 -   `alternative` — альтернативная гипотеза. (Необязательный параметр, по умолчанию: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
     -   `'two-sided'`;
     -   `'greater'`;
     -   `'less'`.
--   `continuity_correction` - если не 0, то при вычислении p-значения применяется коррекция непрерывности. (Необязательный параметр, по умолчанию: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `sample_data` — данные выборок. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — индексы выборок. [Integer](../../../sql-reference/data-types/int-uint.md).
-
+-   `continuity_correction` — если не 0, то при вычислении p-значения применяется коррекция непрерывности. (Необязательный параметр, по умолчанию: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -69,4 +71,3 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
 
 -   [U-критерий Манна — Уитни](https://ru.wikipedia.org/wiki/U-%D0%BA%D1%80%D0%B8%D1%82%D0%B5%D1%80%D0%B8%D0%B9_%D0%9C%D0%B0%D0%BD%D0%BD%D0%B0_%E2%80%94_%D0%A3%D0%B8%D1%82%D0%BD%D0%B8)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->

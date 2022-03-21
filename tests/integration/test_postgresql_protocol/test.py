@@ -38,10 +38,10 @@ def server_address():
 
 @pytest.fixture(scope='module')
 def psql_client():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgresql.yml')
     run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
-    yield docker.from_env().containers.get(cluster.project_name + '_psql_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=600).containers.get(cluster.project_name + '_psql_1')
 
 
 @pytest.fixture(scope='module')
@@ -62,10 +62,10 @@ def psql_server(psql_client):
 
 @pytest.fixture(scope='module')
 def java_container():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql_java_client.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgresql_java_client.yml')
     run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
-    yield docker.from_env().containers.get(cluster.project_name + '_java_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=600).containers.get(cluster.project_name + '_java_1')
 
 
 def test_psql_is_ready(psql_server):

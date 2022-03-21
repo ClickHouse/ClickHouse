@@ -10,8 +10,8 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
--   When you have strict timing requirements (like \<100ms) but you can’t justify the cost of additional hardware resources to meet them.
--   When your raw data is not accurate, so approximation doesn’t noticeably degrade the quality.
+-   When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
+-   When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 -   Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
 !!! note "Note"
@@ -59,7 +59,7 @@ In this case, the query is executed on a sample of at least `n` rows (but not si
 
 Since the minimum unit for data reading is one granule (its size is set by the `index_granularity` setting), it makes sense to set a sample that is much larger than the size of the granule.
 
-When using the `SAMPLE n` clause, you don’t know which relative percent of data was processed. So you don’t know the coefficient the aggregate functions should be multiplied by. Use the `_sample_factor` virtual column to get the approximate result.
+When using the `SAMPLE n` clause, you do not know which relative percent of data was processed. So you do not know the coefficient the aggregate functions should be multiplied by. Use the `_sample_factor` virtual column to get the approximate result.
 
 The `_sample_factor` column contains relative coefficients that are calculated dynamically. This column is created automatically when you [create](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) a table with the specified sampling key. The usage examples of the `_sample_factor` column are shown below.
 
@@ -79,7 +79,7 @@ FROM visits
 SAMPLE 10000000
 ```
 
-The example below shows how to calculate the average session duration. Note that you don’t need to use the relative coefficient to calculate the average values.
+The example below shows how to calculate the average session duration. Note that you do not need to use the relative coefficient to calculate the average values.
 
 ``` sql
 SELECT avg(Duration)

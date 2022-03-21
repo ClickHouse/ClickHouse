@@ -1,127 +1,60 @@
-#include "DictionaryStructure.h"
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Functions/FunctionHelpers.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
-#include <ext/range.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <Common/StringUtils/StringUtils.h>
+
+#include <Formats/FormatSettings.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
-    DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & default_type)
-    {
-        const auto name = config.getString(config_prefix + ".name", "");
-        const auto expression = config.getString(config_prefix + ".expression", "");
 
-        if (name.empty() && !expression.empty())
-            throw Exception{"Element " + config_prefix + ".name is empty", ErrorCodes::BAD_ARGUMENTS};
+DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & default_type)
+{
+    auto name = config.getString(config_prefix + ".name", "");
+    auto expression = config.getString(config_prefix + ".expression", "");
 
-        const auto type_name = config.getString(config_prefix + ".type", default_type);
-        return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
-    }
+    if (name.empty() && !expression.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
 
+    const auto type_name = config.getString(config_prefix + ".type", default_type);
+    return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
 }
 
-
-AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
+std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex index)
 {
-    auto type_index = type->getTypeId();
-
-    switch (type_index)
+    switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
     {
-        case TypeIndex::UInt8:          return AttributeUnderlyingType::utUInt8;
-        case TypeIndex::UInt16:         return AttributeUnderlyingType::utUInt16;
-        case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
-        case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
-        case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
-
-        case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
-        case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
-        case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
-        case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
-
-        case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
-        case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
-
-        case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
-        case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
-        case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
-
-        case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
-        case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
-        case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
-
-        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
-
-        case TypeIndex::String:         return AttributeUnderlyingType::utString;
-
-        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-        // TODO: This should be fixed by fully supporting arrays in dictionaries.
-        case TypeIndex::Array:          return AttributeUnderlyingType::utString;
-
+        case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
+        case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
+        case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
         default: break;
     }
 
-    throw Exception{"Unknown type for dictionary" + type->getName(), ErrorCodes::UNKNOWN_TYPE};
+    return magic_enum::enum_cast<AttributeUnderlyingType>(static_cast<TypeIndexUnderlying>(index));
 }
-
-
-std::string toString(const AttributeUnderlyingType type)
-{
-    switch (type)
-    {
-        case AttributeUnderlyingType::utUInt8:
-            return "UInt8";
-        case AttributeUnderlyingType::utUInt16:
-            return "UInt16";
-        case AttributeUnderlyingType::utUInt32:
-            return "UInt32";
-        case AttributeUnderlyingType::utUInt64:
-            return "UInt64";
-        case AttributeUnderlyingType::utUInt128:
-            return "UUID";
-        case AttributeUnderlyingType::utInt8:
-            return "Int8";
-        case AttributeUnderlyingType::utInt16:
-            return "Int16";
-        case AttributeUnderlyingType::utInt32:
-            return "Int32";
-        case AttributeUnderlyingType::utInt64:
-            return "Int64";
-        case AttributeUnderlyingType::utFloat32:
-            return "Float32";
-        case AttributeUnderlyingType::utFloat64:
-            return "Float64";
-        case AttributeUnderlyingType::utDecimal32:
-            return "Decimal32";
-        case AttributeUnderlyingType::utDecimal64:
-            return "Decimal64";
-        case AttributeUnderlyingType::utDecimal128:
-            return "Decimal128";
-        case AttributeUnderlyingType::utString:
-            return "String";
-    }
-
-    throw Exception{"Unknown attribute_type " + toString(static_cast<int>(type)), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 }
 
 
@@ -129,7 +62,7 @@ DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::Abstrac
     : name{config.getString(config_prefix + ".name", "")}, expression{config.getString(config_prefix + ".expression", "")}
 {
     if (name.empty() && !expression.empty())
-        throw Exception{"Element " + config_prefix + ".name is empty", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
 }
 
 
@@ -137,118 +70,142 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 {
     std::string structure_prefix = config_prefix + ".structure";
 
-    const auto has_id = config.has(structure_prefix + ".id");
-    const auto has_key = config.has(structure_prefix + ".key");
+    const bool has_id = config.has(structure_prefix + ".id");
+    const bool has_key = config.has(structure_prefix + ".key");
 
     if (has_key && has_id)
-        throw Exception{"Only one of 'id' and 'key' should be specified", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one of 'id' and 'key' should be specified");
 
     if (has_id)
+    {
         id.emplace(config, structure_prefix + ".id");
+    }
     else if (has_key)
     {
-        key.emplace(getAttributes(config, structure_prefix + ".key", false, false));
+        key.emplace(getAttributes(config, structure_prefix + ".key", /*complex_key_attributes =*/ true));
         if (key->empty())
-            throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'key' supplied");
     }
     else
-        throw Exception{"Dictionary structure should specify either 'id' or 'key'", ErrorCodes::BAD_ARGUMENTS};
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary structure should specify either 'id' or 'key'");
+    }
 
     if (id)
     {
         if (id->name.empty())
-            throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'id' cannot be empty");
 
-        const char * range_default_type = "Date";
-        if (config.has(structure_prefix + ".range_min"))
-            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
-
-        if (config.has(structure_prefix + ".range_max"))
-            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
-
-        if (range_min.has_value() != range_max.has_value())
-        {
-            throw Exception{"Dictionary structure should have both 'range_min' and 'range_max' either specified or not.",
-                            ErrorCodes::BAD_ARGUMENTS};
-        }
-
-        if (range_min && range_max && !range_min->type->equals(*range_max->type))
-        {
-            throw Exception{"Dictionary structure 'range_min' and 'range_max' should have same type, "
-                            "'range_min' type: "
-                                + range_min->type->getName()
-                                + ", "
-                                  "'range_max' type: "
-                                + range_max->type->getName(),
-                            ErrorCodes::BAD_ARGUMENTS};
-        }
-
-        if (range_min)
-        {
-            if (!range_min->type->isValueRepresentedByInteger())
-                throw Exception{"Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
-                                " Actual 'range_min' and 'range_max' type is "
-                                    + range_min->type->getName(),
-                                ErrorCodes::BAD_ARGUMENTS};
-        }
-
-        if (!id->expression.empty() || (range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
+        if (!id->expression.empty())
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, structure_prefix);
+    parseRangeConfiguration(config, structure_prefix);
+    attributes = getAttributes(config, structure_prefix, /*complex_key_attributes =*/ false);
 
-    if (attributes.empty())
-        throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
+    size_t attributes_size = attributes.size();
+    for (size_t i = 0; i < attributes_size; ++i)
+    {
+        const auto & attribute = attributes[i];
+        const auto & attribute_name = attribute.name;
+        attribute_name_to_index[attribute_name] = i;
+
+        if (attribute.hierarchical)
+        {
+            if (id && attribute.underlying_type != AttributeUnderlyingType::UInt64)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual {}",
+                    attribute.underlying_type);
+            else if (key)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary with complex key does not support hierarchy");
+
+            hierarchical_attribute_index = i;
+        }
+    }
 
     if (config.getBool(config_prefix + ".layout.ip_trie.access_to_key_from_attributes", false))
         access_to_key_from_attributes = true;
 }
 
+DataTypes DictionaryStructure::getKeyTypes() const
+{
+    if (id)
+        return {std::make_shared<DataTypeUInt64>()};
+
+    const auto & key_attributes = *key;
+    size_t key_attributes_size = key_attributes.size();
+
+    DataTypes result;
+    result.reserve(key_attributes_size);
+
+    for (size_t i = 0; i < key_attributes_size; ++i)
+        result.emplace_back(key_attributes[i].type);
+
+    return result;
+}
 
 void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 {
-    if (key_types.size() != key->size())
-        throw Exception{"Key structure does not match, expected " + getKeyDescription(), ErrorCodes::TYPE_MISMATCH};
+    auto key_attributes_types = getKeyTypes();
+    size_t key_attributes_types_size = key_attributes_types.size();
 
-    for (const auto i : ext::range(0, key_types.size()))
+    size_t key_types_size = key_types.size();
+    if (key_types_size != key_attributes_types_size)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
+
+    for (size_t i = 0; i < key_types_size; ++i)
     {
-        const auto & expected_type = (*key)[i].type;
+        const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
         if (!areTypesEqual(expected_type, actual_type))
-            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type->getName() + ", found "
-                    + actual_type->getName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Key type for complex key at position {} does not match, expected {}, found {}",
+            std::to_string(i),
+            expected_type->getName(),
+            actual_type->getName());
     }
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
 {
-    auto find_iter
-        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-    if (find_iter != attributes.end())
-        return *find_iter;
+    auto it = attribute_name_to_index.find(attribute_name);
 
-    if (key && access_to_key_from_attributes)
+    if (it == attribute_name_to_index.end())
     {
-        find_iter = std::find_if(key->begin(), key->end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-        if (find_iter != key->end())
-            return *find_iter;
+        if (!access_to_key_from_attributes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such attribute '{}'", attribute_name);
+
+        for (const auto & key_attribute : *key)
+            if (key_attribute.name == attribute_name)
+                return key_attribute;
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such attribute '{}' in keys", attribute_name);
     }
 
-    throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    size_t attribute_index = it->second;
+    return attributes[attribute_index];
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name, const DataTypePtr & type) const
 {
     const auto & attribute = getAttribute(attribute_name);
 
     if (!areTypesEqual(attribute.type, type))
-        throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Attribute type does not match, expected {}, found {}",
+            attribute.type->getName(),
+            type->getName());
 
     return attribute;
+}
+
+size_t DictionaryStructure::getKeysSize() const
+{
+    if (id)
+        return 1;
+    else
+        return key->size();
 }
 
 std::string DictionaryStructure::getKeyDescription() const
@@ -276,27 +233,6 @@ std::string DictionaryStructure::getKeyDescription() const
     return out.str();
 }
 
-
-bool DictionaryStructure::isKeySizeFixed() const
-{
-    if (!key)
-        return true;
-
-    for (const auto & key_i : *key)
-        if (key_i.underlying_type == AttributeUnderlyingType::utString)
-            return false;
-
-    return true;
-}
-
-size_t DictionaryStructure::getKeySize() const
-{
-    return std::accumulate(std::begin(*key), std::end(*key), size_t{}, [](const auto running_size, const auto & key_i)
-    {
-        return running_size + key_i.type->getSizeOfValueInMemory();
-    });
-}
-
 Strings DictionaryStructure::getKeysNames() const
 {
     if (id)
@@ -315,27 +251,30 @@ Strings DictionaryStructure::getKeysNames() const
 
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
-    static const std::unordered_set<std::string> valid_keys
+    static const std::unordered_set<std::string_view> valid_keys
         = {"name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id"};
 
     for (const auto & key : keys)
     {
         if (valid_keys.find(key) == valid_keys.end())
-            throw Exception{"Unknown key '" + key + "' inside attribute section", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown key '{}' inside attribute section", key);
     }
 }
-
 
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const bool hierarchy_allowed,
-    const bool allow_null_values)
+    bool complex_key_attributes)
 {
+    /// If we request complex key attributes they does not support hierarchy and does not allow null values
+    const bool hierarchy_allowed = !complex_key_attributes;
+    const bool allow_null_values = !complex_key_attributes;
+
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(config_prefix, config_elems);
-    auto has_hierarchy = false;
+    bool has_hierarchy = false;
 
+    std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings;
@@ -358,20 +297,26 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
+        auto insert_result = attribute_names.insert(name);
+        bool inserted = insert_result.second;
+
+        if (!inserted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary attributes names must be unique. Attribute name {} is not unique",
+                name);
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
-        auto type = initial_type;
-        bool is_array = false;
-        bool is_nullable = false;
+        const auto initial_type_serialization = initial_type->getDefaultSerialization();
+        bool is_nullable = initial_type->isNullable();
 
-        if (type->isNullable())
-        {
-            is_nullable = true;
-            type = removeNullable(type);
-        }
+        auto non_nullable_type = removeNullable(initial_type);
 
-        const auto underlying_type = getAttributeUnderlyingType(type);
+        const auto underlying_type_opt = tryGetAttributeUnderlyingType(non_nullable_type->getTypeId());
+
+        if (!underlying_type_opt)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                "Unknown type {} for dictionary attribute", non_nullable_type->getName());
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -381,25 +326,25 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if (allow_null_values)
         {
             const auto null_value_string = config.getString(prefix + "null_value");
+
             try
             {
                 if (null_value_string.empty())
                 {
-                    null_value = type->getDefault();
+                    null_value = initial_type->getDefault();
                 }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = type->createColumn();
-                    type->deserializeAsTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    auto column_with_null_value = initial_type->createColumn();
+                    initial_type_serialization->deserializeWholeText(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }
             catch (Exception & e)
             {
                 String dictionary_name = config.getString(".dictionary.name", "");
-                e.addMessage("While parsing null_value for attribute with name " + name
-                    + " in dictionary " + dictionary_name);
+                e.addMessage(fmt::format("While parsing null_value for attribute with name {} in dictionary {}", name, dictionary_name));
                 throw;
             }
         }
@@ -407,32 +352,78 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         const auto hierarchical = config.getBool(prefix + "hierarchical", false);
         const auto injective = config.getBool(prefix + "injective", false);
         const auto is_object_id = config.getBool(prefix + "is_object_id", false);
+
         if (name.empty())
-            throw Exception{"Properties 'name' and 'type' of an attribute cannot be empty", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Properties 'name' and 'type' of an attribute cannot be empty");
 
         if (has_hierarchy && !hierarchy_allowed)
-            throw Exception{"Hierarchy not allowed in '" + prefix, ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchy not allowed in '{}'", prefix);
 
         if (has_hierarchy && hierarchical)
-            throw Exception{"Only one hierarchical attribute supported", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one hierarchical attribute supported");
 
         has_hierarchy = has_hierarchy || hierarchical;
 
         res_attributes.emplace_back(DictionaryAttribute{
             name,
-            underlying_type,
+            *underlying_type_opt,
             initial_type,
-            type,
+            initial_type_serialization,
             expression,
             null_value,
             hierarchical,
             injective,
             is_object_id,
-            is_nullable,
-            is_array});
+            is_nullable});
     }
 
     return res_attributes;
+}
+
+void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix)
+{
+    static constexpr auto range_default_type = "Date";
+
+    if (config.has(structure_prefix + ".range_min"))
+        range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
+
+    if (config.has(structure_prefix + ".range_max"))
+        range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
+
+    if (range_min.has_value() != range_max.has_value())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
+    }
+
+    if (!range_min)
+        return;
+
+    if (!range_min->type->equals(*range_max->type))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary structure 'range_min' and 'range_max' should have same type, "
+            "'range_min' type: {},"
+            "'range_max' type: {}",
+            range_min->type->getName(),
+            range_max->type->getName());
+    }
+
+    WhichDataType range_type(range_min->type);
+
+    bool valid_range = range_type.isInt() || range_type.isUInt() || range_type.isDecimal() || range_type.isFloat() || range_type.isEnum()
+        || range_type.isDate() || range_type.isDate32() || range_type.isDateTime() || range_type.isDateTime64();
+
+    if (!valid_range)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+            " Actual 'range_min' and 'range_max' type is {}",
+            range_min->type->getName());
+    }
+
+    if (!range_min->expression.empty() || !range_max->expression.empty())
+        has_expressions = true;
 }
 
 }

@@ -2,12 +2,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
-#include <Common/FieldVisitors.h>
-#include "registerAggregateFunctions.h"
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params)
+AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     if (params.size() != 1)
         throw Exception("Function " + name + " requires single parameter: bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

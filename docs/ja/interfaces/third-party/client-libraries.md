@@ -59,4 +59,4 @@ toc_title: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
 -   Nim
     -   [ニム-クリックハウス](https://github.com/leonardoce/nim-clickhouse)
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

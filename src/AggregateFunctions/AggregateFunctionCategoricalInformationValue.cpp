@@ -3,11 +3,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -21,8 +21,8 @@ namespace
 AggregateFunctionPtr createAggregateFunctionCategoricalIV(
     const std::string & name,
     const DataTypes & arguments,
-    const Array & params
-)
+    const Array & params,
+    const Settings *)
 {
     assertNoParameters(name, params);
 

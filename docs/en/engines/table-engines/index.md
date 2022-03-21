@@ -47,12 +47,17 @@ Engines for communicating with other data storage and processing systems.
 
 Engines in the family:
 
--   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka)
--   [MySQL](../../engines/table-engines/integrations/mysql.md#mysql)
--   [ODBC](../../engines/table-engines/integrations/odbc.md#table-engine-odbc)
--   [JDBC](../../engines/table-engines/integrations/jdbc.md#table-engine-jdbc)
--   [HDFS](../../engines/table-engines/integrations/hdfs.md#hdfs)
--   [S3](../../engines/table-engines/integrations/s3.md#table_engines-s3)
+
+-   [ODBC](../../engines/table-engines/integrations/odbc.md)
+-   [JDBC](../../engines/table-engines/integrations/jdbc.md)
+-   [MySQL](../../engines/table-engines/integrations/mysql.md)
+-   [MongoDB](../../engines/table-engines/integrations/mongodb.md)
+-   [HDFS](../../engines/table-engines/integrations/hdfs.md)
+-   [S3](../../engines/table-engines/integrations/s3.md)
+-   [Kafka](../../engines/table-engines/integrations/kafka.md)
+-   [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
+-   [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
 
 ### Special Engines {#special-engines}
 
@@ -77,8 +82,8 @@ Virtual column is an integral table engine attribute that is defined in the engi
 
 You shouldn’t specify virtual columns in the `CREATE TABLE` query and you can’t see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can’t insert data into virtual columns.
 
-To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` doesn’t return values from virtual columns.
+To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
-If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We don’t recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/) <!--hide-->

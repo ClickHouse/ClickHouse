@@ -25,8 +25,8 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
-    assert(n.high != 0);
-    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.high) >> 3)};
+    assert(n.items[1] != 0);
+    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.items[1]) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
@@ -46,8 +46,8 @@ struct StringHashTableHash
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
         size_t res = -1ULL;
-        res = _mm_crc32_u64(res, key.low);
-        res = _mm_crc32_u64(res, key.high);
+        res = _mm_crc32_u64(res, key.items[0]);
+        res = _mm_crc32_u64(res, key.items[1]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
@@ -79,7 +79,7 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty
+struct StringHashTableEmpty //-V730
 {
     using Self = StringHashTableEmpty;
 
@@ -160,16 +160,16 @@ template <typename Mapped>
 struct StringHashTableLookupResult
 {
     Mapped * mapped_ptr;
-    StringHashTableLookupResult() {}
-    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {}
-    StringHashTableLookupResult(std::nullptr_t) {}
-    const VoidKey getKey() const { return {}; }
+    StringHashTableLookupResult() {} /// NOLINT
+    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {} /// NOLINT
+    StringHashTableLookupResult(std::nullptr_t) {} /// NOLINT
+    const VoidKey getKey() const { return {}; } /// NOLINT
     auto & getMapped() { return *mapped_ptr; }
     auto & operator*() { return *this; }
     auto & operator*() const { return *this; }
     auto * operator->() { return this; }
     auto * operator->() const { return this; }
-    operator bool() const { return mapped_ptr; }
+    operator bool() const { return mapped_ptr; } /// NOLINT
     friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
     friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
     friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
@@ -214,7 +214,7 @@ public:
 
     StringHashTable() = default;
 
-    StringHashTable(size_t reserve_for_num_elements)
+    explicit StringHashTable(size_t reserve_for_num_elements)
         : m1{reserve_for_num_elements / 4}
         , m2{reserve_for_num_elements / 4}
         , m3{reserve_for_num_elements / 4}
@@ -222,7 +222,7 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs)
+    StringHashTable(StringHashTable && rhs) noexcept
         : m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
@@ -232,12 +232,16 @@ public:
 
     ~StringHashTable() = default;
 
-public:
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
+    //
     // NOTE: It relies on Little Endianness
+    //
+    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
+    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
+    // since it copies 8 bytes at a time.
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
@@ -275,7 +279,7 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ul >> s;
+                    n[0] &= -1ULL >> s;
                 }
                 else
                 {

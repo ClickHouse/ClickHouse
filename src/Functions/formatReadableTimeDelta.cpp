@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -38,11 +38,13 @@ class FunctionFormatReadableTimeDelta : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 

@@ -41,6 +41,13 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+## geoDistance
+
+Similar to `greatCircleDistance` but calculates the distance on WGS-84 ellipsoid instead of sphere. This is more precise approximation of the Earth Geoid.
+The performance is the same as for `greatCircleDistance` (no performance drawback). It is recommended to use `geoDistance` to calculate the distances on Earth.
+
+Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
+
 ## greatCircleAngle {#greatcircleangle}
 
 Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
@@ -137,4 +144,4 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->

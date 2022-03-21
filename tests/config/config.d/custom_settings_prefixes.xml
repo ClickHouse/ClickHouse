@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- Comma-separated list of prefixes for user-defined settings. -->
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
-</yandex>
+</clickhouse>

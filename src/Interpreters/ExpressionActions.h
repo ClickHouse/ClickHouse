@@ -3,12 +3,11 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB
@@ -29,7 +28,6 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -38,7 +36,6 @@ class ExpressionActions
 {
 public:
     using Node = ActionsDAG::Node;
-    using Index = ActionsDAG::Index;
 
     struct Argument
     {
@@ -57,7 +54,12 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        bool is_lazy_executed;
+
         std::string toString() const;
+        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -68,7 +70,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -78,10 +79,12 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
+    ExpressionActionsSettings settings;
+
 public:
     ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_);
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 
@@ -89,6 +92,7 @@ public:
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
+    const ExpressionActionsSettings & getSettings() const { return settings; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;
@@ -100,11 +104,13 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
+    void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
+    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
@@ -117,7 +123,7 @@ public:
 private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 
@@ -130,29 +136,34 @@ private:
   *     2) calculate the expression in the SELECT section,
   * and between the two steps do the filtering by value in the WHERE clause.
   */
-struct ExpressionActionsChain
+struct ExpressionActionsChain : WithContext
 {
-    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
+    explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
 
 
     struct Step
     {
         virtual ~Step() = default;
-        explicit Step(Names required_output_) : required_output(std::move(required_output_)) {}
+        explicit Step(Names required_output_)
+        {
+            for (const auto & name : required_output_)
+                required_output[name] = true;
+        }
 
         /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
         /// Columns which are required in the result of current step.
-        Names required_output;
-        /// True if column from required_output is needed only for current step and not used in next actions
+        /// Flag is true if column from required_output is needed only for current step and not used in next actions
         /// (and can be removed from block). Example: filter column for where actions.
         /// If not empty, has the same size with required_output; is filled in finalize().
-        std::vector<bool> can_remove_required_output;
+        std::unordered_map<std::string, bool> required_output;
+
+        void addRequiredOutput(const std::string & name) { required_output[name] = true; }
 
         virtual NamesAndTypesList getRequiredColumns() const = 0;
         virtual ColumnsWithTypeAndName getResultColumns() const = 0;
         /// Remove unused result and update required columns
-        virtual void finalize(const Names & required_output_) = 0;
+        virtual void finalize(const NameSet & required_output_) = 0;
         /// Add projections to expression
         virtual void prependProjectInput() const = 0;
         virtual std::string dump() const = 0;
@@ -182,9 +193,9 @@ struct ExpressionActionsChain
             return actions_dag->getResultColumns();
         }
 
-        void finalize(const Names & required_output_) override
+        void finalize(const NameSet & required_output_) override
         {
-            if (!actions_dag->getSettings().projected_output)
+            if (!actions_dag->isOutputProjected())
                 actions_dag->removeUnusedActions(required_output_);
         }
 
@@ -209,7 +220,7 @@ struct ExpressionActionsChain
 
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const Names & required_output_) override;
+        void finalize(const NameSet & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
     };
@@ -225,7 +236,7 @@ struct ExpressionActionsChain
         JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const Names & required_output_) override;
+        void finalize(const NameSet & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
         std::string dump() const override { return "JOIN"; }
     };
@@ -233,7 +244,6 @@ struct ExpressionActionsChain
     using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
-    const Context & context;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});
@@ -245,7 +255,7 @@ struct ExpressionActionsChain
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
     {
         if (steps.empty())
         {

@@ -79,8 +79,8 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        Reader(DB::ReadBuffer & in_)
-        : in(in_)
+        explicit Reader(DB::ReadBuffer & in_)
+            : in(in_)
         {
         }
 
@@ -124,20 +124,20 @@ public:
         DB::ReadBuffer & in;
         Cell cell;
         size_t read_count = 0;
-        size_t size;
+        size_t size = 0;
         bool is_eof = false;
         bool is_initialized = false;
     };
 
-    class iterator
+    class iterator /// NOLINT
     {
-        Self * container;
-        Cell * ptr;
+        Self * container = nullptr;
+        Cell * ptr = nullptr;
 
         friend class SmallTable;
 
     public:
-        iterator() {}
+        iterator() {} /// NOLINT
         iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
 
         bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
@@ -156,17 +156,17 @@ public:
     };
 
 
-    class const_iterator
+    class const_iterator /// NOLINT
     {
-        const Self * container;
-        const Cell * ptr;
+        const Self * container = nullptr;
+        const Cell * ptr = nullptr;
 
         friend class SmallTable;
 
     public:
-        const_iterator() {}
-        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
-        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
+        const_iterator() = default;
+        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {} /// NOLINT
+        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {} /// NOLINT
 
         bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const const_iterator & rhs) const { return ptr != rhs.ptr; }
@@ -184,16 +184,16 @@ public:
     };
 
 
-    const_iterator begin() const     { return iteratorTo(buf); }
-    iterator begin()                 { return iteratorTo(buf); }
+    const_iterator begin() const { return iteratorTo(buf); }
+    iterator begin()             { return iteratorTo(buf); }
 
-    const_iterator end() const         { return iteratorTo(buf + m_size); }
-    iterator end()                     { return iteratorTo(buf + m_size); }
+    const_iterator end() const   { return iteratorTo(buf + m_size); }
+    iterator end()               { return iteratorTo(buf + m_size); }
 
 
 protected:
-    const_iterator iteratorTo(const Cell * ptr) const     { return const_iterator(this, ptr); }
-    iterator iteratorTo(Cell * ptr)                     { return iterator(this, ptr); }
+    const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
+    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
 
 
 public:

@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: Does not support renaming of multiple tables in single query
 
 DROP TABLE IF EXISTS test1_00634;
 DROP TABLE IF EXISTS test2_00634;

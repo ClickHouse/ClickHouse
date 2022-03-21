@@ -1,14 +1,15 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
 
 log_user 0
-set timeout 5
+set timeout 60
 match_max 100000
 
 if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
 
-set env(EDITOR) [file dirname [file normalize [info script]]]"/01610_client_spawn_editor_open.editor"
+set env(EDITOR) [file dirname [file normalize [info script]]]/01610_client_spawn_editor_open.editor
 
-spawn clickhouse-client
+spawn clickhouse-client --disable_suggestion
 expect ":) "
 
 # Open EDITOR

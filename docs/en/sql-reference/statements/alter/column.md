@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -20,12 +20,12 @@ The following actions are supported:
 
 -   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
--   [RENAME COLUMN](#alter_rename-column) — Renames the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
--   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
+-   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
@@ -35,11 +35,11 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../../../sql-reference/statements/create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
-Adding a column just changes the table structure, without performing any actions with data. The data doesn’t appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)).
+Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)).
 
 This approach allows us to complete the `ALTER` query instantly, without increasing the volume of old data.
 
@@ -64,15 +64,19 @@ Added2  UInt32
 ToDrop  UInt32
 Added3  UInt32
 ```
+
 ## DROP COLUMN {#alter_drop-column}
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
 ```
 
-Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
+Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
+
+!!! warning "Warning"
+    You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
 
 Example:
 
@@ -86,9 +90,9 @@ ALTER TABLE visits DROP COLUMN browser
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
-Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
 
-**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`. 
+**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 
 Example:
 
@@ -104,7 +108,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Example:
 
@@ -115,10 +119,10 @@ ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ## COMMENT COLUMN {#alter_comment-column}
 
 ``` sql
-COMMENT COLUMN [IF EXISTS] name 'comment'
+COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
-Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
+Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
@@ -133,7 +137,8 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 This query changes the `name` column properties:
@@ -142,15 +147,19 @@ This query changes the `name` column properties:
 
 -   Default expression
 
+-   Compression Codec
+
 -   TTL
 
-        For examples of columns TTL modifying, see [Column TTL](../../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md#codecs).
 
-If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
+For examples of columns TTL modifying, see [Column TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
+
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description.
 
-When changing the type, values are converted as if the [toType](../../../sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query doesn’t do anything complex, and is completed almost instantly.
+When changing the type, values are converted as if the [toType](../../../sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
 Example:
 
@@ -176,29 +185,66 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 
 **Example**
 
+Remove TTL:
+
 ```sql
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-## See Also
+**See Also**
 
 - [REMOVE TTL](ttl.md).
 
-## RENAME COLUMN {#alter_rename-column}
+## MATERIALIZE COLUMN {#materialize-column}
 
-Renames an existing column.
+Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
+It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
 
 Syntax:
 
 ```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name;
+ALTER TABLE table MATERIALIZE COLUMN col;
 ```
 
 **Example**
 
 ```sql
-ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
+DROP TABLE IF EXISTS tmp;
+SET mutations_sync = 2;
+CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5;
+ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM (select x,s from tmp order by x);
+
+┌─groupArray(x)─┬─groupArray(s)─────────┐
+│ [0,1,2,3,4]   │ ['0','1','2','3','4'] │
+└───────────────┴───────────────────────┘
+
+ALTER TABLE tmp MODIFY COLUMN s String MATERIALIZED toString(round(100/x));
+
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5,5;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)──────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','20','17','14','12','11'] │
+└───────────────────────┴────────────────────────────────────────────────┘
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['inf','100','50','33','25','20','17','14','12','11'] │
+└───────────────────────┴───────────────────────────────────────────────────────┘
 ```
+
+**See Also**
+
+- [MATERIALIZED](../../statements/create/table.md#materialized).
 
 ## Limitations {#alter-query-limitations}
 
@@ -210,4 +256,4 @@ If the `ALTER` query is not sufficient to make the table changes you need, you c
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
-For tables that don’t store data themselves (such as `Merge` and `Distributed`), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
+For tables that do not store data themselves (such as [Merge](../../../sql-reference/statements/alter/index.md) and [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.

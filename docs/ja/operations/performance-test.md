@@ -20,9 +20,21 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
 <!-- -->
 
       # For amd64:
-      wget https://clickhouse-builds.s3.yandex.net/0/00ba767f5d2a929394ea3be193b1f79074a1c4bc/1578163263_binary/clickhouse
+      wget https://builds.clickhouse.com/master/amd64/clickhouse
       # For aarch64:
-      wget https://clickhouse-builds.s3.yandex.net/0/00ba767f5d2a929394ea3be193b1f79074a1c4bc/1578161264_binary/clickhouse
+      wget https://builds.clickhouse.com/master/aarch64/clickhouse
+      # For powerpc64le:
+      wget https://builds.clickhouse.com/master/powerpc64le/clickhouse
+      # For freebsd:
+      wget https://builds.clickhouse.com/master/freebsd/clickhouse
+      # For freebsd-aarch64:
+      wget https://builds.clickhouse.com/master/freebsd-aarch64/clickhouse
+      # For freebsd-powerpc64le:
+      wget https://builds.clickhouse.com/master/freebsd-powerpc64le/clickhouse
+      # For macos:
+      wget https://builds.clickhouse.com/master/macos/clickhouse
+      # For macos-aarch64:
+      wget https://builds.clickhouse.com/master/macos-aarch64/clickhouse
       # Then do:
       chmod a+x clickhouse
 
@@ -48,7 +60,7 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
 
 <!-- -->
 
-      wget https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+      wget https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 

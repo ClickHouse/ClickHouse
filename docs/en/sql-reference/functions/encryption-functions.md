@@ -9,7 +9,7 @@ These functions  implement encryption and decryption of data with AES (Advanced 
 
 Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
 
-Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored). 
+Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored).
 
 Note that these functions work slowly until ClickHouse 21.1.
 
@@ -168,7 +168,7 @@ Result:
 
 ``` text
 Received exception from server (version 21.1.2):
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123'). 
+Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
 While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
@@ -358,4 +358,4 @@ Result:
 └───────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->

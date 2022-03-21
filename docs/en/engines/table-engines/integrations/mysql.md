@@ -1,11 +1,11 @@
 ---
-toc_priority: 3
+toc_priority: 4
 toc_title: MySQL
 ---
 
 # MySQL {#mysql}
 
-The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
+The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
 ## Creating a Table {#creating-a-table}
 
@@ -15,7 +15,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+SETTINGS
+    [connection_pool_size=16, ]
+    [connection_max_tries=3, ]
+    [connection_wait_timeout=5, ] /* 0 -- do not wait */
+    [connection_auto_close=true ]
+;
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
@@ -23,7 +29,8 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 The table structure can differ from the original MySQL table structure:
 
 -   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
+-   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
@@ -48,6 +55,12 @@ The table structure can differ from the original MySQL table structure:
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+Supports multiple replicas that must be listed by `|`. For example:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
 
 ## Usage Example {#usage-example}
 
@@ -95,9 +108,43 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
+## Settings {#mysql-settings}
+
+Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
+
+### connection_auto_close {#connection-auto-close}
+
+Allows to automatically close the connection after query execution, i.e. disable connection reuse.
+
+Possible values:
+
+-   1 — Auto-close connection is allowed, so the connection reuse is disabled
+-   0 — Auto-close connection is not allowed, so the connection reuse is enabled
+
+Default value: `1`.
+
+### connection_max_tries {#connection-max-tries}
+
+Sets the number of retries for pool with failover.
+
+Possible values:
+
+-   Positive integer.
+-   0 — There are no retries for pool with failover.
+
+Default value: `3`.
+
+### connection_pool_size {#connection-pool-size}
+
+Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `16`.
+
 ## See Also {#see-also}
 
--   [The ‘mysql’ table function](../../../sql-reference/table-functions/mysql.md)
+-   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
-
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mysql/) <!--hide-->

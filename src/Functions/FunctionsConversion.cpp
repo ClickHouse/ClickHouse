@@ -7,12 +7,15 @@ namespace DB
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
+void registerCastOverloadResolvers(FunctionFactory & factory);
+
 void registerFunctionsConversion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToUInt8>();
     factory.registerFunction<FunctionToUInt16>();
     factory.registerFunction<FunctionToUInt32>();
     factory.registerFunction<FunctionToUInt64>();
+    factory.registerFunction<FunctionToUInt128>();
     factory.registerFunction<FunctionToUInt256>();
     factory.registerFunction<FunctionToInt8>();
     factory.registerFunction<FunctionToInt16>();
@@ -29,9 +32,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
-    /// MysQL compatibility alias.
+    /// MySQL compatibility alias.
     factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
-
+    factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
@@ -42,14 +45,13 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToUnixTimestamp>();
 
-    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
-    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
+    registerCastOverloadResolvers(factory);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
     factory.registerFunction<FunctionToUInt32OrZero>();
     factory.registerFunction<FunctionToUInt64OrZero>();
+    factory.registerFunction<FunctionToUInt128OrZero>();
     factory.registerFunction<FunctionToUInt256OrZero>();
     factory.registerFunction<FunctionToInt8OrZero>();
     factory.registerFunction<FunctionToInt16OrZero>();
@@ -60,6 +62,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
+    factory.registerFunction<FunctionToDate32OrZero>();
     factory.registerFunction<FunctionToDateTimeOrZero>();
     factory.registerFunction<FunctionToDateTime64OrZero>();
 
@@ -74,6 +77,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16OrNull>();
     factory.registerFunction<FunctionToUInt32OrNull>();
     factory.registerFunction<FunctionToUInt64OrNull>();
+    factory.registerFunction<FunctionToUInt128OrNull>();
     factory.registerFunction<FunctionToUInt256OrNull>();
     factory.registerFunction<FunctionToInt8OrNull>();
     factory.registerFunction<FunctionToInt16OrNull>();
@@ -84,6 +88,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
+    factory.registerFunction<FunctionToDate32OrNull>();
     factory.registerFunction<FunctionToDateTimeOrNull>();
     factory.registerFunction<FunctionToDateTime64OrNull>();
 

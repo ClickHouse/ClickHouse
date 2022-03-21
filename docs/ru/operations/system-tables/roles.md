@@ -14,4 +14,3 @@
 
 -   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/roles) <!--hide-->

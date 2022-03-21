@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
 from helpers.test_tools import assert_eq_with_retry
 
-cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
+cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", with_zookeeper=True)
 
 
@@ -31,7 +31,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
     )
 
     # Add an auxiliary zookeeper
-    new_config = """<yandex>
+    new_config = """<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo1</host>
@@ -59,11 +59,12 @@ def test_reload_auxiliary_zookeepers(start_cluster):
             </node>
         </zookeeper2>
     </auxiliary_zookeepers>
-</yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+</clickhouse>"""
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
 
-    # Hopefully it has finished the configuration reload
-    time.sleep(2)
+    node.query("SYSTEM RELOAD CONFIG")
+
+    time.sleep(5)
 
     node.query(
         "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
@@ -71,7 +72,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
     node.query("ALTER TABLE simple2 ATTACH PARTITION '2020-08-27';")
     assert node.query("SELECT id FROM simple2").strip() == "1"
 
-    new_config = """<yandex>
+    new_config = """<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo2</host>
@@ -79,9 +80,11 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         </node>
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
-</yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-    time.sleep(2)
+</clickhouse>"""
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
+    node.query("SYSTEM RELOAD CONFIG")
+    time.sleep(5)
+
     with pytest.raises(QueryRuntimeException):
         node.query(
             "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper2:/clickhouse/tables/0/simple';"

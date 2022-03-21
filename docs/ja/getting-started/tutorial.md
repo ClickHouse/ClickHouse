@@ -92,8 +92,8 @@ ClickHouseサーバーにいくつかのサンプルデータを入れてみま�
 ### テーブルデータのダウンロードと展開 {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 展開されたファイルのサイズは約10GBです。
@@ -547,19 +547,19 @@ ClickHouseクラスタは均質なクラスタ(homogenous cluster)です。セ�
     <perftest_3shards_1replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
             </replica>
         </shard>
@@ -607,15 +607,15 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
     <perftest_1shards_3replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j</host>
                 <port>9000</port>
              </replica>
         </shard>
@@ -637,15 +637,15 @@ ZooKeeperの場所は設定ファイルで指定します:
 ``` xml
 <zookeeper>
     <node>
-        <host>zoo01.yandex.ru</host>
+        <host>zoo01</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo02.yandex.ru</host>
+        <host>zoo02</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo03.yandex.ru</host>
+        <host>zoo03</host>
         <port>2181</port>
     </node>
 </zookeeper>
@@ -687,4 +687,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 他のレプリカはデータを同期させ、再びアクティブになると整合性を修復します。
 この方法では、最近挿入されたデータが失われる可能性が低いことに注意してください。
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

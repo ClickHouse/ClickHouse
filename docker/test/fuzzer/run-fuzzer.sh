@@ -1,48 +1,79 @@
 #!/bin/bash
-# shellcheck disable=SC2086
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
 set -eux
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
 {
-(
-    rm -rf ch ||:
-    mkdir ch
-    cd ch
+    # For local runs, start directly from the "fuzz" stage.
+    rm -rf "$repo_dir" ||:
+    mkdir "$repo_dir" ||:
 
-    git init
-    git remote add origin https://github.com/ClickHouse/ClickHouse
+    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
+    (
+        cd "$repo_dir"
+        if [ "$PR_TO_TEST" != "0" ]; then
+            if git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/merge"; then
+                git checkout FETCH_HEAD
+                echo "Checked out pull/$PR_TO_TEST/merge ($(git rev-parse FETCH_HEAD))"
+            else
+                git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/head"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
+            fi
+            git diff --name-only master HEAD | tee ci-changed-files.txt
+        else
+            if [ -v SHA_TO_TEST ]; then
+                git fetch --depth 2 origin "$SHA_TO_TEST"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for master"
+            else
+                git fetch --depth 2 origin
+                echo "Using default repository head $(git rev-parse HEAD)"
+            fi
+            git diff --name-only HEAD~1 HEAD | tee ci-changed-files.txt
+        fi
+        cd -
+    )
 
-    # Network is unreliable. GitHub neither.
-    for _ in {1..100}; do git fetch --depth=100 origin "$SHA_TO_TEST" && break; sleep 1; done
-    # Used to obtain the list of modified or added tests
-    for _ in {1..100}; do git fetch --depth=100 origin master && break; sleep 1; done
+    ls -lath ||:
 
-    # If not master, try to fetch pull/.../{head,merge}
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        for _ in {1..100}; do git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*" && break; sleep 1; done
-    fi
+}
 
-    git checkout "$SHA_TO_TEST"
-)
+function wget_with_retry
+{
+    for _ in 1 2 3 4; do
+        if wget -nv -nd -c "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
 }
 
 function download
 {
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"
+    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
+
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
+
+    # clickhouse-server is in the current dir
+    export PATH="$PWD:$PATH"
 }
 
 function configure
@@ -58,67 +89,42 @@ function configure
 
 function watchdog
 {
-    sleep 3600
+    sleep 1800
 
     echo "Fuzzing run has timed out"
-    killall clickhouse-client ||:
     for _ in {1..10}
     do
-        if ! pgrep -f clickhouse-client
+        # Only kill by pid the particular client that runs the fuzzing, or else
+        # we can kill some clickhouse-client processes this script starts later,
+        # e.g. for checking server liveness.
+        if ! kill $fuzzer_pid
         then
             break
         fi
         sleep 1
     done
 
-    killall -9 clickhouse-client ||:
+    kill -9 -- $fuzzer_pid ||:
 }
 
-function fuzz
+function filter_exists_and_template
 {
-    # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
-    cd ch
-    NEW_TESTS=$(git diff --name-only "$(git merge-base origin/master "$SHA_TO_TEST"~)" "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
-    cd ..
-    if [[ -n "$NEW_TESTS" ]]
-    then
-        NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
-    else
-        NEW_TESTS_OPT=""
-    fi
+    local path
+    for path in "$@"; do
+        if [ -e "$path" ]; then
+            # SC2001 shellcheck suggests:
+            # echo ${path//.sql.j2/.gen.sql}
+            # but it doesn't allow to use regex
+            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
+        else
+            echo "'$path' does not exists" >&2
+        fi
+    done
+}
 
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
-
-    server_pid=$!
-    kill -0 $server_pid
-    while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
-    ./clickhouse-client --query "select 1"
-    kill -0 $server_pid
-    echo Server started
-
-    echo "
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$(pidof clickhouse-server)" &
-
-    fuzzer_exit_code=0
-    # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
-    # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
-    # shellcheck disable=SC2012,SC2046
-    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
-        > >(tail -n 100000 > fuzzer.log) \
-        2>&1 \
-        || fuzzer_exit_code=$?
-
-    echo "Fuzzer exit code is $fuzzer_exit_code"
-
-    ./clickhouse-client --query "select elapsed, query from system.processes" ||:
+function stop_server
+{
+    clickhouse-client --query "select elapsed, query from system.processes" ||:
     killall clickhouse-server ||:
     for _ in {1..10}
     do
@@ -129,6 +135,189 @@ continue
         sleep 1
     done
     killall -9 clickhouse-server ||:
+
+    # Debug.
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
+}
+
+function fuzz
+{
+    /generate-test-j2.py --path ch/tests/queries/0_stateless
+
+    # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
+    # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
+    # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
+    NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
+    if [[ -n "$NEW_TESTS" ]]
+    then
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
+    else
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
+    fi
+
+    # interferes with gdb
+    export CLICKHOUSE_WATCHDOG_ENABLE=0
+    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
+    clickhouse-server --config-file db/config.xml -- --path db > >(tail -100000 > server.log) 2>&1 &
+    server_pid=$!
+
+    kill -0 $server_pid
+
+    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+    # and clickhouse-server can do fork-exec, for example, to run some bridge.
+    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+    # explicitly ignore non-fatal signals that are used by server.
+    # Number of SIGRTMIN can be determined only in runtime.
+    RTMIN=$(kill -l SIGRTMIN)
+    echo "
+set follow-fork-mode parent
+handle SIGHUP nostop noprint pass
+handle SIGINT nostop noprint pass
+handle SIGQUIT nostop noprint pass
+handle SIGPIPE nostop noprint pass
+handle SIGTERM nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+handle SIG$RTMIN nostop noprint pass
+info signals
+continue
+gcore
+backtrace full
+thread apply all backtrace full
+info registers
+disassemble /s
+up
+disassemble /s
+up
+disassemble /s
+p \"done\"
+detach
+quit
+" > script.gdb
+
+    gdb -batch -command script.gdb -p $server_pid  &
+    sleep 5
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+
+    # Check connectivity after we attach gdb, because it might cause the server
+    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    for _ in {1..180}
+    do
+        sleep 1
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+    done
+    clickhouse-client --query "select 1" # This checks that the server is responding
+    kill -0 $server_pid # This checks that it is our server that is started and not some other one
+    echo Server started and responded
+
+    # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
+    # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
+    # shellcheck disable=SC2012,SC2046
+    clickhouse-client \
+        --receive_timeout=10 \
+        --receive_data_timeout_ms=10000 \
+        --stacktrace \
+        --query-fuzzer-runs=1000 \
+        --testmode \
+        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
+        $NEW_TESTS_OPT \
+        > >(tail -n 100000 > fuzzer.log) \
+        2>&1 &
+    fuzzer_pid=$!
+    echo "Fuzzer pid is $fuzzer_pid"
+
+    # Start a watchdog that should kill the fuzzer on timeout.
+    # The shell won't kill the child sleep when we kill it, so we have to put it
+    # into a separate process group so that we can kill them all.
+    set -m
+    watchdog &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog has started.
+    kill -0 $watchdog_pid
+
+    # Wait for the fuzzer to complete.
+    # Note that the 'wait || ...' thing is required so that the script doesn't
+    # exit because of 'set -e' when 'wait' returns nonzero code.
+    fuzzer_exit_code=0
+    wait "$fuzzer_pid" || fuzzer_exit_code=$?
+    echo "Fuzzer exit code is $fuzzer_exit_code"
+
+    kill -- -$watchdog_pid ||:
+
+    # If the server dies, most often the fuzzer returns code 210: connetion
+    # refused, and sometimes also code 32: attempt to read after eof. For
+    # simplicity, check again whether the server is accepting connections, using
+    # clickhouse-client. We don't check for existence of server process, because
+    # the process is still present while the server is terminating and not
+    # accepting the connections anymore.
+    if clickhouse-client --query "select 1 format Null"
+    then
+        server_died=0
+    else
+        echo "Server live check returns $?"
+        server_died=1
+    fi
+
+    # wait in background to call wait in foreground and ensure that the
+    # process is alive, since w/o job control this is the only way to obtain
+    # the exit code
+    stop_server &
+    server_exit_code=0
+    wait $server_pid || server_exit_code=$?
+    echo "Server exit code is $server_exit_code"
+
+    # Make files with status and description we'll show for this check on Github.
+    task_exit_code=$fuzzer_exit_code
+    if [ "$server_died" == 1 ]
+    then
+        # The server has died.
+        task_exit_code=210
+        echo "failure" > status.txt
+        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        then
+            echo "Lost connection to server. See the logs." > description.txt
+        fi
+    elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
+    then
+        # Variants of a normal run:
+        # 0 -- fuzzing ended earlier than timeout.
+        # 143 -- SIGTERM -- the fuzzer was killed by timeout.
+        task_exit_code=0
+        echo "success" > status.txt
+        echo "OK" > description.txt
+    elif [ "$fuzzer_exit_code" == "137" ]
+    then
+        # Killed.
+        task_exit_code=$fuzzer_exit_code
+        echo "failure" > status.txt
+        echo "Killed" > description.txt
+    else
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        task_exit_code=$fuzzer_exit_code
+        echo "failure" > status.txt
+        { grep --text -o "Found error:.*" fuzzer.log \
+            || grep --text -ao "Exception:.*" fuzzer.log \
+            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            | tail -1 > description.txt
+    fi
+
+    if test -f core.*; then
+        pigz core.*
+        mv core.*.gz core.gz
+    fi
 }
 
 case "$stage" in
@@ -157,52 +346,13 @@ case "$stage" in
     time configure
     ;&
 "fuzz")
-    # Start a watchdog that should kill the fuzzer on timeout.
-    # The shell won't kill the child sleep when we kill it, so we have to put it
-    # into a separate process group so that we can kill them all.
-    set -m
-    watchdog &
-    watchdog_pid=$!
-    set +m
-    # Check that the watchdog has started
-    kill -0 $watchdog_pid
-
-    fuzzer_exit_code=0
-    time fuzz || fuzzer_exit_code=$?
-    kill -- -$watchdog_pid ||:
-
-    # Debug
-    date
-    sleep 10
-    jobs
-    pstree -aspgT
-
-    # Make files with status and description we'll show for this check on Github
-    task_exit_code=$fuzzer_exit_code
-    if [ "$fuzzer_exit_code" == 143 ]
-    then
-        # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
-        echo "success" > status.txt
-        echo "OK" > description.txt
-        task_exit_code=0
-    elif [ "$fuzzer_exit_code" == 210 ]
-    then
-        # Lost connection to the server. This probably means that the server died
-        # with abort.
-        echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
-        then
-            echo "Lost connection to server. See the logs." > description.txt
-        fi
-    else
-        # Something different -- maybe the fuzzer itself died? Don't grep the
-        # server log in this case, because we will find a message about normal
-        # server termination (Received signal 15), which is confusing.
-        echo "failure" > status.txt
-        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
-    fi
+    time fuzz
     ;&
 "report")
+CORE_LINK=''
+if [ -f core.gz ]; then
+    CORE_LINK='<a href="core.gz">core.gz</a>'
+fi
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -244,6 +394,7 @@ th { cursor: pointer; }
 <a href="fuzzer.log">fuzzer.log</a>
 <a href="server.log">server.log</a>
 <a href="main.log">main.log</a>
+${CORE_LINK}
 </p>
 <table>
 <tr><th>Test name</th><th>Test status</th><th>Description</th></tr>

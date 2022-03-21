@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles replace="replace">
         <default>
             <max_memory_usage>a</max_memory_usage>
             <load_balancing>nearest_hostname</load_balancing>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

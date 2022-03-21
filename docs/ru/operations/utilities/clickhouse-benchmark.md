@@ -40,23 +40,23 @@ clickhouse-benchmark [keys] < queries_file;
 
 ## Ключи {#clickhouse-benchmark-keys}
 
--   `--query=QUERY` — исполняемый запрос. Если параметр не передан, `clickhouse-benchmark` будет считывать запросы из стандартного ввода. 
+-   `--query=QUERY` — исполняемый запрос. Если параметр не передан, `clickhouse-benchmark` будет считывать запросы из стандартного ввода.
 -   `-c N`, `--concurrency=N` — количество запросов, которые `clickhouse-benchmark` отправляет одновременно. Значение по умолчанию: 1.
 -   `-d N`, `--delay=N` — интервал в секундах между промежуточными отчетами (чтобы отключить отчеты, установите 0). Значение по умолчанию: 1.
--   `-h HOST`, `--host=HOST` — хост сервера. Значение по умолчанию: `localhost`. Для [режима сравнения](#clickhouse-benchmark-comparison-mode) можно использовать несколько `-h` ключей. 
--   `-p N`, `--port=N` — порт сервера. Значение по умолчанию: 9000. Для [режима сравнения](#clickhouse-benchmark-comparison-mode) можно использовать несколько `-p` ключей. 
+-   `-h HOST`, `--host=HOST` — хост сервера. Значение по умолчанию: `localhost`. Для [режима сравнения](#clickhouse-benchmark-comparison-mode) можно использовать несколько `-h` ключей.
+-   `-p N`, `--port=N` — порт сервера. Значение по умолчанию: 9000. Для [режима сравнения](#clickhouse-benchmark-comparison-mode) можно использовать несколько `-p` ключей.
 -   `-i N`, `--iterations=N` — общее число запросов. Значение по умолчанию: 0 (вечно будет повторяться).
 -   `-r`, `--randomize` — использовать случайный порядок выполнения запросов при наличии более одного входного запроса.
 -   `-s`, `--secure` — используется `TLS` соединение.
 -   `-t N`, `--timelimit=N` — лимит по времени в секундах. `clickhouse-benchmark` перестает отправлять запросы при достижении лимита по времени. Значение по умолчанию: 0 (лимит отключен).
 -   `--confidence=N` — уровень доверия для  T-критерия. Возможные значения: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Значение по умолчанию: 5. В [режиме сравнения](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` проверяет [двухвыборочный  t-критерий Стьюдента для независимых выборок](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) чтобы определить, различны ли две выборки при выбранном уровне доверия.
 -   `--cumulative` — выводить статистику за все время работы, а не за последний временной интервал.
--   `--database=DATABASE_NAME` — имя базы данных ClickHouse. Значение по умолчанию: `default`. 
+-   `--database=DATABASE_NAME` — имя базы данных ClickHouse. Значение по умолчанию: `default`.
 -   `--json=FILEPATH` — дополнительный вывод в формате `JSON`. Когда этот ключ указан, `clickhouse-benchmark` выводит отчет в указанный JSON-файл.
 -   `--user=USERNAME` — имя пользователя ClickHouse. Значение по умолчанию: `default`.
 -   `--password=PSWD` — пароль пользователя ClickHouse. Значение по умолчанию: пустая строка.
 -   `--stacktrace` — вывод трассировки стека исключений. Когда этот ключ указан, `clickhouse-bencmark` выводит трассировку стека исключений.
--   `--stage=WORD` — стадия обработки запроса на сервере. ClickHouse останавливает обработку запроса и возвращает ответ `clickhouse-benchmark` на заданной стадии. Возможные значения: `complete`, `fetch_columns`, `with_mergeable_state`. Значение по умолчанию: `complete`. 
+-   `--stage=WORD` — стадия обработки запроса на сервере. ClickHouse останавливает обработку запроса и возвращает ответ `clickhouse-benchmark` на заданной стадии. Возможные значения: `complete`, `fetch_columns`, `with_mergeable_state`. Значение по умолчанию: `complete`.
 -   `--help` — показывает справку.
 
 Если нужно применить [настройки](../../operations/settings/index.md) для запросов, их можно передать как ключ `--<session setting name>= SETTING_VALUE`. Например, `--max_memory_usage=1048576`.
@@ -65,7 +65,7 @@ clickhouse-benchmark [keys] < queries_file;
 
 По умолчанию, `clickhouse-benchmark` выводит сообщение для каждого `--delay` интервала.
 
-Пример сообщения: 
+Пример сообщения:
 
 ``` text
 Queries executed: 10.
@@ -160,4 +160,3 @@ localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, resu
 99.990%     0.172 sec.
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utilities/clickhouse-benchmark.md)

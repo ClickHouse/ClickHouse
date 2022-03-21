@@ -90,4 +90,4 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 
 チェックの場合は、利用できる `ulimit -n` コマンド
 
-[元の記事](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

@@ -867,7 +867,7 @@ RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
         'configuration file or of any configuration file inside the `config.d` directory.\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <my_ldap_server>\n'
         '        <host>localhost</host>\n'
         '        <port>636</port>\n'
@@ -883,7 +883,7 @@ RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
         '        <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>\n'
         '        <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>\n'
         '    </my_ldap_server>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -903,7 +903,7 @@ RQ_SRS_007_LDAP_Configuration_User_RBAC = Requirement(
         'the following RBAC command\n'
         '\n'
         '```sql\n'
-        "CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'\n"
+        "CREATE USER name IDENTIFIED WITH ldap SERVER 'server_name'\n"
         '```\n'
         '\n'
         ),
@@ -923,7 +923,7 @@ RQ_SRS_007_LDAP_Configuration_User_Syntax = Requirement(
         'an [LDAP] server inside the `users.xml` file or any configuration file inside the `users.d` directory.\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <users>\n'
         '        <user_name>\n'
         '            <ldap>\n'
@@ -931,7 +931,7 @@ RQ_SRS_007_LDAP_Configuration_User_Syntax = Requirement(
         '            </ldap>\n'
         '        </user_name>\n'
         '    </users>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -1815,7 +1815,7 @@ version: 2.0
 configuration file or of any configuration file inside the `config.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <my_ldap_server>
         <host>localhost</host>
         <port>636</port>
@@ -1831,7 +1831,7 @@ configuration file or of any configuration file inside the `config.d` directory.
         <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
         <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
     </my_ldap_server>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.RBAC
@@ -1841,7 +1841,7 @@ version: 1.0
 the following RBAC command
 
 ```sql
-CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'
+CREATE USER name IDENTIFIED WITH ldap SERVER 'server_name'
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.Syntax
@@ -1851,7 +1851,7 @@ version: 1.0
 an [LDAP] server inside the `users.xml` file or any configuration file inside the `users.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <users>
         <user_name>
             <ldap>
@@ -1859,7 +1859,7 @@ an [LDAP] server inside the `users.xml` file or any configuration file inside th
             </ldap>
         </user_name>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.Name.Empty
@@ -1966,7 +1966,7 @@ to result in contacting the [LDAP] server to verify user's username and password
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 
 [Anonymous Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-AnonymousAuthenticationMechanismOfSimpleBind
 [Unauthenticated Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-UnauthenticatedAuthenticationMechanismOfSimpleBind
@@ -1977,7 +1977,7 @@ to result in contacting the [LDAP] server to verify user's username and password
 [CA]: https://en.wikipedia.org/wiki/Certificate_authority
 [TLS]: https://en.wikipedia.org/wiki/Transport_Layer_Security
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub]: https://github.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/authentication/requirements/requirements.md

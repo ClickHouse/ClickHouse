@@ -1,12 +1,15 @@
-#include <common/logger_useful.h>
+#include <base/scope_guard.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Poco/File.h>
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -16,13 +19,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, const Context & context)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context)
+DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
@@ -33,7 +36,7 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     const String & table_name,
     bool /*no_delay*/)
 {
@@ -41,13 +44,25 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
+        /// Remove table w/o lock since:
+        /// - it does not require it
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
+        SCOPE_EXIT(lock.lock());
+        lock.unlock();
         table->drop();
-        Poco::File table_data_dir{getTableDataPath(table_name)};
-        if (table_data_dir.exists())
-            table_data_dir.remove(true);
+
+        if (table->storesDataOnDisk())
+        {
+            assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
+            fs::path table_data_dir{getTableDataPath(table_name)};
+            if (fs::exists(table_data_dir))
+                fs::remove_all(table_data_dir);
+        }
     }
     catch (...)
     {
+        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table, lock);
         throw;
     }
@@ -61,20 +76,26 @@ void DatabaseMemory::dropTable(
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
-    create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
+    auto engine = makeASTFunction(getEngineName());
+    engine->no_empty_args = true;
+    create_query->storage->set(create_query->storage->engine, engine);
+
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
     if (it == create_queries.end() || !it->second)
     {
         if (throw_on_error)
-            throw Exception("There is no metadata of table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
         else
             return {};
     }
@@ -83,15 +104,27 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const 
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, global_context))
+    if (auto table = tryGetTable(table_name, getContext()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::drop(const Context & context)
+void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(context.getPath() + data_path);
+    std::filesystem::remove_all(local_context->getPath() + data_path);
+}
+
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+{
+    std::lock_guard lock{mutex};
+    auto it = create_queries.find(table_id.table_name);
+    if (it == create_queries.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+    applyMetadataChangesToCreateQuery(it->second, metadata);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
 }

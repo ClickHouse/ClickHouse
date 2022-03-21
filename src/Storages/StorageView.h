@@ -4,15 +4,15 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class StorageView final : public ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageView>;
+    friend struct shared_ptr_helper<StorageView>;
 public:
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -23,9 +23,9 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -33,14 +33,14 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot) const
+    static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot)
     {
         replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name);
     }
@@ -52,7 +52,8 @@ protected:
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const String & comment);
 };
 
 }

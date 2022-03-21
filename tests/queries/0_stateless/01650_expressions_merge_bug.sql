@@ -7,7 +7,7 @@ SELECT
             9223372036854775807
     ),
     NULL
-FROM 
+FROM
 (
     SELECT DISTINCT
         NULL,

@@ -4,12 +4,11 @@
 
 #include <Common/SipHash.h>
 #include <Common/Arena.h>
-#include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
@@ -18,11 +17,6 @@
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
 #endif
-
-
-template <>
-struct DefaultHash<StringRef> : public StringRefHash {};
-
 
 namespace DB
 {
@@ -48,9 +42,6 @@ using Sizes = std::vector<size_t>;
 /// 2,1,1
 ///
 
-namespace
-{
-
 template <typename T>
 constexpr auto getBitmapSize()
 {
@@ -68,6 +59,55 @@ constexpr auto getBitmapSize()
         0)));
 }
 
+template<typename T, size_t step>
+void fillFixedBatch(size_t num_rows, const T * source, T * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        *dest = *source;
+        ++source;
+        dest += step;
+    }
+}
+
+/// Move keys of size T into binary blob, starting from offset.
+/// It is assumed that offset is aligned to sizeof(T).
+/// Example: sizeof(key) = 16, sizeof(T) = 4, offset = 8
+/// out[0] : [--------****----]
+/// out[1] : [--------****----]
+/// ...
+template<typename T, typename Key>
+void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
+{
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (key_sizes[i] == sizeof(T))
+        {
+            const auto * column = key_columns[i];
+            size_t num_rows = column->size();
+            out.resize_fill(num_rows);
+
+            /// Note: here we violate strict aliasing.
+            /// It should be ok as log as we do not reffer to any value from `out` before filling.
+            const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            offset += sizeof(T);
+        }
+    }
+}
+
+/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
+/// binary blob. Keys are placed starting from the longest one.
+template <typename T>
+void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
+{
+    size_t offset = 0;
+    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
 }
 
 template <typename T>
@@ -210,7 +250,7 @@ static inline T ALWAYS_INLINE packFixed(
 
 
 /// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128(
+static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
     UInt128 key;
@@ -219,34 +259,14 @@ static inline UInt128 ALWAYS_INLINE hash128(
     for (size_t j = 0; j < keys_size; ++j)
         key_columns[j]->updateHashWithValue(i, hash);
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }
 
-
-/// Copy keys to the pool. Then put into pool StringRefs to them and return the pointer to the first.
-static inline StringRef * ALWAYS_INLINE placeKeysInPool(
-    size_t keys_size, StringRefs & keys, Arena & pool)
-{
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        char * place = pool.alloc(keys[j].size);
-        memcpySmallAllowReadWriteOverflow15(place, keys[j].data, keys[j].size);
-        keys[j].data = place;
-    }
-
-    /// Place the StringRefs on the newly copied keys in the pool.
-    char * res = pool.alignedAlloc(keys_size * sizeof(StringRef), alignof(StringRef));
-    memcpySmallAllowReadWriteOverflow15(res, keys.data(), keys_size * sizeof(StringRef));
-
-    return reinterpret_cast<StringRef *>(res);
-}
-
-
 /** Serialize keys into a continuous chunk of memory.
   */
-static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
+static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool)
 {
     const char * begin = nullptr;

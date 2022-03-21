@@ -1,3 +1,5 @@
+-- Tags: shard
+
 SELECT * FROM (SELECT * WHERE dummy GLOBAL IN (SELECT 0));
 SELECT * FROM (SELECT * WHERE dummy GLOBAL IN (SELECT toUInt8(number) FROM system.numbers LIMIT 10));
 SELECT * FROM (SELECT * FROM (SELECT * FROM system.numbers LIMIT 20) WHERE number GLOBAL IN (SELECT number FROM system.numbers LIMIT 10));

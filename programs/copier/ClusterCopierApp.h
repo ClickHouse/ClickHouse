@@ -76,11 +76,17 @@ private:
 
     std::string config_xml_path;
     std::string task_path;
-    std::string log_level = "trace";
+    std::string log_level = "info";
     bool is_safe_mode = false;
+    bool is_status_mode = false;
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
     bool is_help = false;
+
+    UInt64 max_table_tries = 3;
+    UInt64 max_shard_partition_tries = 3;
+    UInt64 max_shard_partition_piece_tries_for_alter = 10;
+    std::chrono::milliseconds retry_delay_ms{1000};
 
     bool experimental_use_sample_offset{false};
 

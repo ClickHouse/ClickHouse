@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
 
@@ -19,6 +20,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_syntax("SYNTAX");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
+    ParserKeyword s_estimates("ESTIMATE");
+    ParserKeyword s_table_override("TABLE OVERRIDE");
 
     if (s_explain.ignore(pos, expected))
     {
@@ -31,7 +34,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryPlan;
+            kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
+        else if (s_estimates.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
+        else if (s_table_override.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::TableOverride;
     }
     else
         return false;
@@ -51,15 +58,30 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
+    ParserInsertQuery insert_p(end);
     ASTPtr query;
     if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
         ParserQuery p(end);
         if (p.parse(pos, query, expected))
             explain_query->setExplainedQuery(std::move(query));
+        else
+            return false;
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::TableOverride)
+    {
+        ASTPtr table_function;
+        if (!ParserFunction(true, true).parse(pos, table_function, expected))
+            return false;
+        ASTPtr table_override;
+        if (!ParserTableOverrideDeclaration(false).parse(pos, table_override, expected))
+            return false;
+        explain_query->setTableFunction(table_function);
+        explain_query->setTableOverride(table_override);
     }
     else if (select_p.parse(pos, query, expected) ||
-        create_p.parse(pos, query, expected))
+        create_p.parse(pos, query, expected) ||
+        insert_p.parse(pos, query, expected))
         explain_query->setExplainedQuery(std::move(query));
     else
         return false;

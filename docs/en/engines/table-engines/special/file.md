@@ -24,7 +24,7 @@ The `Format` parameter specifies one of the available file formats. To perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
 
-ClickHouse does not allow to specify filesystem path for`File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
+ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
 
@@ -85,4 +85,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   Indices
     -   Replication
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/file/) <!--hide-->

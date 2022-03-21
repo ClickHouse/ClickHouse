@@ -133,7 +133,7 @@ When ClickHouse inserts data, it orders rows by the primary key. If the `Version
 
 ## Selecting Data {#selecting-data}
 
-ClickHouse doesn’t guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
+ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
 
 To finalize collapsing, write a query with a `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and add `HAVING sum(Sign) > 0`.
 
@@ -219,7 +219,7 @@ HAVING sum(Sign) > 0
 └─────────────────────┴───────────┴──────────┴─────────┘
 ```
 
-If we don’t need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
+If we do not need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
 
 ``` sql
 SELECT * FROM UAct FINAL
@@ -233,4 +233,4 @@ SELECT * FROM UAct FINAL
 
 This is a very inefficient way to select data. Don’t use it for large tables.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

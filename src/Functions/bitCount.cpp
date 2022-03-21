@@ -1,4 +1,4 @@
-#include <ext/bit_cast.h>
+#include <base/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 
@@ -14,6 +14,7 @@ struct BitCountImpl
 {
     using ResultType = UInt8;
     static constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply(A a)
     {
@@ -29,7 +30,7 @@ struct BitCountImpl
         if constexpr (std::is_same_v<A, Int8>)
             return __builtin_popcount(static_cast<UInt8>(a));
         else
-            return __builtin_popcountll(ext::bit_cast<uint64_t>(a));
+            return __builtin_popcountll(bit_cast<uint64_t>(a));
     }
 
 #if USE_EMBEDDED_COMPILER

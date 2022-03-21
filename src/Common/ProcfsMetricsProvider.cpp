@@ -6,8 +6,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <common/find_symbols.h>
-#include <common/logger_useful.h>
+#include <base/find_symbols.h>
+#include <base/logger_useful.h>
 
 #include <cassert>
 #include <sys/types.h>
@@ -92,7 +92,7 @@ bool ProcfsMetricsProvider::isAvailable() noexcept
 }
 
 
-ProcfsMetricsProvider::ProcfsMetricsProvider(const pid_t /*tid*/)
+ProcfsMetricsProvider::ProcfsMetricsProvider(pid_t /*tid*/)
 {
     thread_schedstat_fd = ::open(thread_schedstat, O_RDONLY | O_CLOEXEC);
     if (-1 == thread_schedstat_fd)

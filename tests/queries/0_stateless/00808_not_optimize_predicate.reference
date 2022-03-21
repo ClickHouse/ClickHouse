@@ -18,7 +18,7 @@
 SELECT
     n,
     `finalizeAggregation(s)`
-FROM 
+FROM
 (
     SELECT
         n,

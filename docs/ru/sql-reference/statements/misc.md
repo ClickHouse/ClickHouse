@@ -19,4 +19,3 @@ toc_priority: 41
 -   [TRUNCATE](../../sql-reference/statements/truncate.md)
 -   [USE](../../sql-reference/statements/use.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/misc/) <!--hide-->

@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
@@ -25,6 +26,10 @@ struct StorageInMemoryMetadata
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
+    /// Table projections. Currently supported for MergeTree only.
+    ProjectionsDescription projections;
+    /// Table minmax_count projection. Currently supported for MergeTree only.
+    std::optional<ProjectionDescription> minmax_count_projection;
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -38,19 +43,27 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
-    /// SETTINGS expression. Supported for MergeTree, Buffer and Kafka.
+    /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
+
+    String comment;
 
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
+
+    /// Sets a user-defined comment for a table
+    void setComment(const String & comment_);
 
     /// Sets only real columns, possibly overwrites virtual ones.
     void setColumns(ColumnsDescription columns_);
@@ -60,6 +73,9 @@ struct StorageInMemoryMetadata
 
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
+
+    /// Sets projections
+    void setProjections(ProjectionsDescription projections_);
 
     /// Set partition key for storage (methods below, are just wrappers for this struct).
     void setPartitionKey(const KeyDescription & partition_key_);
@@ -85,14 +101,20 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
-    /// Returns secondary indices
 
+    /// Returns secondary indices
     const IndicesDescription & getSecondaryIndices() const;
+
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
     /// Return table constraints
     const ConstraintsDescription & getConstraints() const;
+
+    const ProjectionsDescription & getProjections() const;
+
+    /// Has at least one projection
+    bool hasProjections() const;
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
@@ -127,10 +149,13 @@ struct StorageInMemoryMetadata
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
+
+    /// Block with ordinary + ephemeral.
+    Block getSampleBlockInsertable() const;
 
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
@@ -139,14 +164,6 @@ struct StorageInMemoryMetadata
     /// explicitly specified, because they are part of Storage type, not
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
-
-
-    /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
-    /// to be explicitly specified, because they are part of Storage type, not
-    /// Storage metadata. StorageID required only for more clear exception
-    /// message.
-    Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -210,10 +227,6 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
-    /// Verify that all the requested names are in the table and are set correctly:
-    /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;
 
@@ -228,5 +241,7 @@ struct StorageInMemoryMetadata
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+String listOfColumns(const NamesAndTypesList & available_columns);
 
 }

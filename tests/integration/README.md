@@ -5,14 +5,14 @@ This directory contains tests that involve several ClickHouse instances, custom 
 ### Running natively
 
 Prerequisites:
-* Ubuntu 14.04 (Trusty) or higher.
+* Ubuntu 20.04 (Focal) or higher.
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
 
 You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
@@ -25,24 +25,29 @@ sudo -H pip install \
     confluent-kafka \
     dicttoxml \
     docker \
-    docker-compose==1.22.0 \
+    docker-compose \
     grpcio \
     grpcio-tools \
     kafka-python \
     kazoo \
     minio \
     protobuf \
-    psycopg2-binary==2.7.5 \
+    psycopg2-binary \
     pymongo \
+    pytz \
     pytest \
     pytest-timeout \
     redis \
-    tzlocal \
+    tzlocal==2.1 \
     urllib3 \
-    requests-kerberos
+    requests-kerberos \
+    dict2xml \
+    hypothesis \
+    pyhdfs \
+    pika
 ```
 
-(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
+(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
@@ -51,18 +56,17 @@ To check, that you have access to Docker, run `docker ps`.
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
 By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:`
+set the following environment variables:
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
-* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
-  `users.xml`) are taken.
+* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
 For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
 ### Running with runner script
 
 The only requirement is fresh configured docker and
-docker pull yandex/clickhouse-integration-tests-runner
+docker pull clickhouse/integration-tests-runner
 
 Notes:
 * If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
@@ -118,7 +122,7 @@ You can just open shell inside a container by overwritting the command:
 The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
 ```
 cd docker/test/integration
-docker build -t yandex/clickhouse-integration-test .
+docker build -t clickhouse/integration-test .
 ```
 
 The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
@@ -145,4 +149,12 @@ If tests failing for misterious reasons, this may help:
 sudo service docker stop
 sudo bash -c 'rm -rf /var/lib/docker/*'
 sudo service docker start
+```
+
+#### `iptables-nft`
+
+On Ubuntu 20.10 and later in host network mode (default) one may encounter problem with nested containers not seeing each other. It happens because legacy and nftables rules are out of sync. Problem can be solved by:
+
+```
+sudo iptables -P FORWARD ACCEPT
 ```

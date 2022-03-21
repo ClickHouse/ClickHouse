@@ -17,9 +17,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
+
 
 namespace po = boost::program_options;
 
@@ -855,7 +857,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 std::string value = applyVisitor(DB::FieldVisitorToString(), literal->value);
                 std::string example{};
-                for (size_t i = 0; i != value.size(); ++i)
+                for (size_t i = 0; i != value.size(); ++i) /// NOLINT
                 {
                     if (value[i] == '%')
                         example += randomString(rng() % 10);

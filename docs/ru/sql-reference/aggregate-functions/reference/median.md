@@ -1,17 +1,18 @@
 # median {#median}
 
-Функции `median*` — алиасы для соответствущих функций `quantile*`. Они вычисляют медиану числовой последовательности.
+Функции `median*` — синонимы для соответствущих функций `quantile*`. Они вычисляют медиану числовой последовательности.
 
-Functions:
+Функции:
 
--   `median` — алиас [quantile](#quantile).
--   `medianDeterministic` — алиас [quantileDeterministic](#quantiledeterministic).
--   `medianExact` — алиас [quantileExact](#quantileexact).
--   `medianExactWeighted` — алиас [quantileExactWeighted](#quantileexactweighted).
--   `medianTiming` — алиас [quantileTiming](#quantiletiming).
--   `medianTimingWeighted` — алиас [quantileTimingWeighted](#quantiletimingweighted).
--   `medianTDigest` — алиас [quantileTDigest](#quantiletdigest).
--   `medianTDigestWeighted` — алиас [quantileTDigestWeighted](#quantiletdigestweighted).
+-   `median` — синоним для [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+-   `medianDeterministic` — синоним для [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
+-   `medianExact` — синоним для [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
+-   `medianExactWeighted` — синоним для [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md#quantileexactweighted).
+-   `medianTiming` — синоним для [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming).
+-   `medianTimingWeighted` — синоним для [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md#quantiletimingweighted).
+-   `medianTDigest` — синоним для [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
+-   `medianTDigestWeighted` — синоним для [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
+-   `medianBFloat16` — синоним для [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16).
 
 **Пример**
 
@@ -29,7 +30,7 @@ Functions:
 Запрос:
 
 ``` sql
-SELECT medianDeterministic(val, 1) FROM t
+SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Результат:
@@ -39,5 +40,3 @@ SELECT medianDeterministic(val, 1) FROM t
 │                         1.5 │
 └─────────────────────────────┘
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/median/) <!--hide-->

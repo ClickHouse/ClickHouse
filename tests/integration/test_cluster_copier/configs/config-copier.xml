@@ -1,6 +1,6 @@
-<yandex>
+<clickhouse>
     <logger>
-        <level>trace</level>
+        <level>information</level>
         <log>/var/log/clickhouse-server/copier/log.log</log>
         <errorlog>/var/log/clickhouse-server/copier/log.err.log</errorlog>
         <size>1000M</size>
@@ -8,4 +8,4 @@
         <stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/copier/stdout.log</stdout>
     </logger>
-</yandex>
+</clickhouse>

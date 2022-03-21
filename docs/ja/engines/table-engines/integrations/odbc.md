@@ -129,4 +129,4 @@ SELECT * FROM odbc_t
 -   [ODBC外部辞書](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBCテーブル関数](../../../sql-reference/table-functions/odbc.md)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/odbc/) <!--hide-->

@@ -1,16 +1,18 @@
+#include <functional>
 #include <iostream>
 #include <string_view>
-#include <functional>
 #include <boost/program_options.hpp>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/obfuscateQueries.h>
+#include <Parsers/parseQuery.h>
+#include <Common/ErrorCodes.h>
 #include <Common/TerminalSize.h>
 
 #include <Interpreters/Context.h>
@@ -23,10 +25,20 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/registerFormats.h>
 
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int INVALID_FORMAT_INSERT_QUERY_WITH_DATA;
+}
+}
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -34,17 +46,27 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
+        ("query", po::value<std::string>(), "query to format")
         ("help,h", "produce help message")
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")
         ("oneline", "format in single line")
         ("quiet,q", "just check syntax, no output on success")
         ("multiquery,n", "allow multiple queries in the same file")
         ("obfuscate", "obfuscate instead of formatting")
+        ("backslash", "add a backslash at the end of each line of the formatted query")
         ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
     ;
 
+    Settings cmd_settings;
+    for (const auto & field : cmd_settings.all())
+    {
+        if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
+            cmd_settings.addProgramOption(desc, field);
+    }
+
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+    po::notify(options);
 
     if (options.count("help"))
     {
@@ -60,6 +82,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.count("quiet");
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
+        bool backslash = options.count("backslash");
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -74,8 +97,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         }
 
         String query;
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        readStringUntilEOF(query, in);
+
+        if (options.count("query"))
+        {
+            query = options["query"].as<std::string>();
+        }
+        else
+        {
+            ReadBufferFromFileDescriptor in(STDIN_FILENO);
+            readStringUntilEOF(query, in);
+        }
 
         if (obfuscate)
         {
@@ -89,14 +120,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
-            SharedContextHolder shared_context = Context::createShared();
-            Context context = Context::createGlobal(shared_context.get());
-            context.makeGlobalContext();
-
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
             registerStorages();
+            registerFormats();
 
             std::unordered_set<std::string> additional_names;
 
@@ -110,9 +138,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().tryGet(what, context) != nullptr
+                return FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
+                    || FormatFactory::instance().isOutputFormat(what)
+                    || FormatFactory::instance().isInputFormat(what)
                     || additional_names.count(what);
             };
 
@@ -127,16 +157,72 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ParserQuery parser(end);
             do
             {
-                ASTPtr res = parseQueryAndMovePosition(parser, pos, end, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr res = parseQueryAndMovePosition(
+                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
+                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
+                /// should throw exception early and make exception message more readable.
+                if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                {
+                    throw Exception(
+                        "Can't format ASTInsertQuery with data, since data will be lost",
+                        DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA);
+                }
                 if (!quiet)
                 {
-                    WriteBufferFromOStream res_buf(std::cout, 4096);
-                    formatAST(*res, res_buf, hilite, oneline);
-                    res_buf.next();
-                    if (multiple)
-                        std::cout << "\n;\n";
-                    std::cout << std::endl;
+                    if (!backslash)
+                    {
+                        WriteBufferFromOStream res_buf(std::cout, 4096);
+                        formatAST(*res, res_buf, hilite, oneline);
+                        res_buf.next();
+                        if (multiple)
+                            std::cout << "\n;\n";
+                        std::cout << std::endl;
+                    }
+                    /// add additional '\' at the end of each line;
+                    else
+                    {
+                        WriteBufferFromOwnString str_buf;
+                        formatAST(*res, str_buf, hilite, oneline);
+
+                        auto res_string = str_buf.str();
+                        WriteBufferFromOStream res_cout(std::cout, 4096);
+
+                        const char * s_pos= res_string.data();
+                        const char * s_end = s_pos + res_string.size();
+
+                        while (s_pos != s_end)
+                        {
+                            if (*s_pos == '\n')
+                                res_cout.write(" \\", 2);
+                            res_cout.write(*s_pos++);
+                        }
+
+                        res_cout.next();
+                        if (multiple)
+                            std::cout << " \\\n;\n";
+                        std::cout << std::endl;
+                    }
                 }
+
+                do
+                {
+                    /// skip spaces to avoid throw exception after last query
+                    while (pos != end && std::isspace(*pos))
+                        ++pos;
+
+                    /// for skip comment after the last query and to not throw exception
+                    if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+                    {
+                        pos += 2;
+                        /// skip until the end of the line
+                        while (pos != end && *pos != '\n')
+                            ++pos;
+                    }
+                    /// need to parse next sql
+                    else
+                        break;
+                } while (pos != end);
+
             } while (multiple && pos != end);
         }
     }
@@ -145,6 +231,5 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         std::cerr << getCurrentExceptionMessage(true) << '\n';
         return getCurrentExceptionCode();
     }
-
     return 0;
 }

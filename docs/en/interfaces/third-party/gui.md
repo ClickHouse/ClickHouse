@@ -84,6 +84,8 @@ Features:
 -   Table data preview.
 -   Full-text search.
 
+By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set `session_id` to a random string (it uses the http connection under the hood). Then you can use any setting from the query window.
+
 ### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
@@ -110,6 +112,40 @@ Features:
 ### MindsDB Studio {#mindsdb}
 
 [MindsDB](https://mindsdb.com/) is an open-source AI layer for databases including ClickHouse that allows you to effortlessly develop, train and deploy state-of-the-art machine learning models. MindsDB Studio(GUI) allows you to train new models from database, interpret predictions made by the model, identify potential data biases, and evaluate and visualize model accuracy using the Explainable AI function to adapt and tune your Machine Learning models faster.
+
+### DBM {#dbm}
+
+[DBM](https://dbm.incubator.edurt.io/) DBM is a visual management tool for ClickHouse!
+
+Features:
+
+-   Support query history (pagination, clear all, etc.)
+-   Support selected sql clauses query
+-   Support terminating query
+-   Support table management (metadata, delete, preview)
+-   Support database management (delete, create)
+-   Support custom query
+-   Support multiple data sources management(connection test, monitoring)
+-   Support monitor (processor, connection, query)
+-   Support migrate data
+
+### Bytebase {#bytebase}
+
+[Bytebase](https://bytebase.com) is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
+
+Features:
+
+-   Schema review between developers and DBAs.
+-   Database-as-Code, version control the schema in VCS such GitLab and trigger the deployment upon code commit.
+-   Streamlined deployment with per-environment policy.
+-   Full migration history.
+-   Schema drift detection.
+-   Backup and restore.
+-   RBAC.
+
+### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
+
+[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
 ## Commercial {#commercial}
 
@@ -167,4 +203,45 @@ Features:
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
+### SeekTable {#seektable}
+
+[SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. It is available both as a cloud service and a self-hosted version. Reports from SeekTable may be embedded into any web-app.
+
+Features:
+
+-   Business users-friendly reports builder.
+-   Powerful report parameters for SQL filtering and report-specific query customizations.
+-   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
+-   It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
+-   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
+-   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
+
+SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/individual usage.
+
+[How to configure ClickHouse connection in SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
+### Chadmin {#chadmin}
+
+[Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
+
+### TABLUM.IO {#tablum_io}
+
+[TABLUM.IO](https://tablum.io/) — an online query and analytics tool for ETL and visualization. It allows connecting to ClickHouse, query data via a versatile SQL console as well as to load data from static files and 3rd party services. TABLUM.IO can visualize data results as charts and tables.
+
+Features:
+- ETL: data loading from popular databases, local and remote files, API invocations.
+- Versatile SQL console with syntax highlight and visual query builder.
+- Data visualization as charts and tables.
+- Data materialization and sub-queries.
+- Data reporting to Slack, Telegram or email.
+- Data pipelining via proprietary API.
+- Data export in JSON, CSV, SQL, HTML formats.
+- Web-based interface.
+
+TABLUM.IO can be run as a self-hosted solution (as a docker image) or in the cloud.
+License: [commercial](https://tablum.io/pricing) product with 3-month free period. 
+
+Try it out for free [in the cloud](https://tablum.io/try).
+Learn more about the product at [TABLUM.IO](https://tablum.io/)
+
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

@@ -77,4 +77,3 @@ SELECT * FROM url_engine_table
     -   индексы;
     -   репликация.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/url/) <!--hide-->

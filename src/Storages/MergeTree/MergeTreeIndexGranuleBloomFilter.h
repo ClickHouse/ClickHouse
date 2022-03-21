@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
 {
 public:
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);
@@ -16,8 +16,7 @@ public:
     bool empty() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 

@@ -8,13 +8,14 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <base/logger_useful.h>
 
 #include <array>
 
 namespace DB
 {
 
-Block TextLogElement::createBlock()
+NamesAndTypesList TextLogElement::getNamesAndTypes()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -26,28 +27,29 @@ Block TextLogElement::createBlock()
                 {"Notice",         static_cast<Int8>(Message::PRIO_NOTICE)},
                 {"Information",    static_cast<Int8>(Message::PRIO_INFORMATION)},
                 {"Debug",          static_cast<Int8>(Message::PRIO_DEBUG)},
-                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)}
+                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)},
+                {"Test",           static_cast<Int8>(Message::PRIO_TEST)},
         });
 
     return
     {
-        {std::make_shared<DataTypeDate>(),                                                    "event_date"},
-        {std::make_shared<DataTypeDateTime>(),                                                "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                                             "event_time_microseconds"},
-        {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"microseconds", std::make_shared<DataTypeUInt32>()},
 
-        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
-        {std::make_shared<DataTypeUInt64>(),                                                  "thread_id"},
+        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
 
-        {std::move(priority_datatype),                                                        "level"},
-        {std::make_shared<DataTypeString>(),                                                  "query_id"},
-        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "logger_name"},
-        {std::make_shared<DataTypeString>(),                                                  "message"},
+        {"level", std::move(priority_datatype)},
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"message", std::make_shared<DataTypeString>()},
 
-        {std::make_shared<DataTypeUInt32>(),                                                  "revision"},
+        {"revision", std::make_shared<DataTypeUInt32>()},
 
-        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "source_file"},
-        {std::make_shared<DataTypeUInt64>(),                                                  "source_line"}
+        {"source_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"source_line", std::make_shared<DataTypeUInt64>()}
     };
 }
 
@@ -55,7 +57,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(microseconds);
@@ -74,7 +76,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_line);
 }
 
-TextLog::TextLog(Context & context_, const String & database_name_,
+TextLog::TextLog(ContextPtr context_, const String & database_name_,
         const String & table_name_, const String & storage_def_,
         size_t flush_interval_milliseconds_)
   : SystemLog<TextLogElement>(context_, database_name_, table_name_,

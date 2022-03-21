@@ -7,7 +7,9 @@ import xml.etree.ElementTree as ET
 
 import helpers.client
 import helpers.cluster
+from helpers.test_tools import TSV
 import pytest
+
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 
@@ -64,13 +66,44 @@ def add_disk(node, name, path, separate_file=False):
             tree = ET.parse(os.path.join(node.config_d_dir, "storage_configuration.xml"))
     except:
         tree = ET.ElementTree(
-            ET.fromstring('<yandex><storage_configuration><disks/><policies/></storage_configuration></yandex>'))
+            ET.fromstring('<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>'))
     root = tree.getroot()
     new_disk = ET.Element(name)
     new_path = ET.Element("path")
     new_path.text = path
     new_disk.append(new_path)
     root.find("storage_configuration").find("disks").append(new_disk)
+    if separate_file:
+        tree.write(separate_configuration_path)
+    else:
+        tree.write(os.path.join(node.config_d_dir, "storage_configuration.xml"))
+
+def update_disk(node, name, path, keep_free_space_bytes, separate_file=False):
+    separate_configuration_path = os.path.join(node.config_d_dir,
+                                               "separate_configuration.xml")
+
+    try:
+        if separate_file:
+            tree = ET.parse(separate_configuration_path)
+        else:
+            tree = ET.parse(
+                os.path.join(node.config_d_dir, "storage_configuration.xml"))
+    except:
+        tree = ET.ElementTree(
+            ET.fromstring('<clickhouse><storage_configuration><disks/><policies/></storage_configuration></clickhouse>'))
+
+    root = tree.getroot()
+    disk = root.find("storage_configuration").find("disks").find(name)
+    assert disk is not None
+
+    new_path = disk.find("path")
+    assert new_path is not None
+    new_path.text = path
+
+    new_keep_free_space_bytes = disk.find("keep_free_space_bytes")
+    assert new_keep_free_space_bytes is not None
+    new_keep_free_space_bytes.text = keep_free_space_bytes
+
     if separate_file:
         tree.write(separate_configuration_path)
     else:
@@ -123,6 +156,36 @@ def test_add_disk(started_cluster):
         except:
             """"""
 
+def test_update_disk(started_cluster):
+    try:
+        name = "test_update_disk"
+        engine = "MergeTree()"
+
+        start_over()
+        node1.restart_clickhouse(kill=True)
+        time.sleep(2)
+
+        node1.query("""
+            CREATE TABLE {name} (
+                d UInt64
+            ) ENGINE = {engine}
+            ORDER BY d
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        assert node1.query("SELECT path, keep_free_space FROM system.disks where name = 'jbod2'") == TSV([
+                ["/jbod2/", "10485760"]])
+
+        update_disk(node1, "jbod2", "/jbod2/", "20971520")
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        assert node1.query("SELECT path, keep_free_space FROM system.disks where name = 'jbod2'") == TSV([
+                ["/jbod2/", "20971520"]])
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {}".format(name))
+        except:
+            """"""
 
 def test_add_disk_to_separate_config(started_cluster):
     try:

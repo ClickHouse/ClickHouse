@@ -11,40 +11,42 @@ namespace ErrorCodes
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_to_read_, storage_.getVirtuals(), storage_.getStorageID()))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.global_context.getMarkCache())
+    , mark_cache(storage.getContext()->getMarkCache())
 {
     if (!quiet)
     {
         /// Print column name but don't pollute logs in case of many columns.
         if (columns_to_read.size() == 1)
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
         else
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
+    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
+    /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, metadata_snapshot, data_part, columns_to_read);
+    injectRequiredColumns(storage, storage_snapshot->metadata, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
-        columns_for_reader = physical_columns.addTypes(columns_to_read);
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
     {
@@ -52,15 +54,17 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
+    ReadSettings read_settings;
+    if (read_with_direct_io)
+        read_settings.direct_io_threshold = 1;
+
     MergeTreeReaderSettings reader_settings =
     {
-        /// bytes to use AIO (this is hack)
-        .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
+        .read_settings = read_settings,
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader, metadata_snapshot,
+    reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
@@ -77,7 +81,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
@@ -122,7 +126,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
     throw;
 }
 

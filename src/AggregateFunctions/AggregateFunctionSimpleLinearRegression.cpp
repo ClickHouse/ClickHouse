@@ -3,11 +3,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <Core/TypeListNumber.h>
-#include "registerAggregateFunctions.h"
-
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -19,8 +18,8 @@ namespace
 AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
     const String & name,
     const DataTypes & arguments,
-    const Array & params
-)
+    const Array & params,
+    const Settings *)
 {
     assertNoParameters(name, params);
     assertBinary(name, arguments);

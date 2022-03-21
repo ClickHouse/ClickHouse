@@ -23,11 +23,13 @@ class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringReplace>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringReplace>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 3; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }

@@ -1,12 +1,12 @@
 ---
 toc_priority: 27
-toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u0434\u043b\u044f\u0020\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+toc_title: "Библиотеки для интеграции от сторонних разработчиков"
 ---
 
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
 
 !!! warning "Disclaimer"
-    Яндекс не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
+    ClickHouse, Inc. не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
 
 ## Инфраструктурные продукты {#infrastrukturnye-produkty}
 
@@ -42,8 +42,8 @@ toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u
         -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 -   Мониторинг
     -   [Graphite](https://graphiteapp.org)
-        -   [graphouse](https://github.com/yandex/graphouse)
-        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        -   [graphouse](https://github.com/ClickHouse/graphouse)
+        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration)
     -   [Grafana](https://grafana.com/)
@@ -69,6 +69,9 @@ toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u
 -   Гео
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+-   AutoML
+    -   [MindsDB](https://mindsdb.com/)
+        -   [MindsDB](https://github.com/mindsdb/mindsdb) - Слой предиктивной аналитики и искусственного интеллекта для СУБД ClickHouse.
 
 ## Экосистемы вокруг языков программирования {#ekosistemy-vokrug-iazykov-programmirovaniia}
 
@@ -101,8 +104,7 @@ toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u
 -   Ruby
     -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
-        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-        
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->
+

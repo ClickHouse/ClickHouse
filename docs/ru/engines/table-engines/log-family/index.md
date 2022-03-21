@@ -1,6 +1,6 @@
 ---
-toc_folder_title: "\u0421\u0435\u043c\u0435\u0439\u0441\u0442\u0432\u043e\u0020\u004c\u006f\u0067"
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
+toc_folder_title: "Семейство Log"
+toc_title: "Введение"
 toc_priority: 29
 ---
 
@@ -13,6 +13,8 @@ toc_priority: 29
 -   [StripeLog](stripelog.md)
 -   [Log](log.md)
 -   [TinyLog](tinylog.md)
+
+Табличные движки семейства `Log` могут хранить данные в распределенных файловых системах [HDFS](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-hdfs) или [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3).
 
 ## Общие свойства {#obshchie-svoistva}
 
@@ -42,4 +44,3 @@ toc_priority: 29
 
 Движки `Log` и `StripeLog` поддерживают параллельное чтение. При чтении данных, ClickHouse использует множество потоков. Каждый поток обрабатывает отдельный блок данных. Движок `Log` сохраняет каждый столбец таблицы в отдельном файле. Движок `StripeLog` хранит все данные в одном файле. Таким образом, движок `StripeLog` использует меньше дескрипторов в операционной системе, а движок `Log` обеспечивает более эффективное считывание данных.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/log_family/) <!--hide-->

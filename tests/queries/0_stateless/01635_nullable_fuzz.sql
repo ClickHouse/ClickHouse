@@ -4,7 +4,7 @@ SELECT
     '',
     number,
     NULL AS k
-FROM 
+FROM
 (
     SELECT
         materialize(NULL) OR materialize(-9223372036854775808),

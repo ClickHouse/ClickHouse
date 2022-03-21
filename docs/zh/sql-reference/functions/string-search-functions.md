@@ -119,4 +119,4 @@
 !!! note "注意"
     对于UTF-8，我们使用3-gram。所有这些都不是完全公平的n-gram距离。我们使用2字节哈希来散列n-gram，然后计算这些哈希表之间的（非）对称差异 - 可能会发生冲突。对于UTF-8不区分大小写的格式，我们不使用公平的`tolower`函数 - 我们将每个Unicode字符字节的第5位（从零开始）和字节的第一位归零 - 这适用于拉丁语，主要用于所有西里尔字母。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/string_search_functions/) <!--hide-->

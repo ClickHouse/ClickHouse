@@ -71,4 +71,4 @@ Functions can't change the values of their arguments – any changes are returne
 
 クエリ内の関数がリクエスタサーバで実行されているが、リモートサーバで実行する必要がある場合は、リクエスタサーバにラップすることができます。 ‘any’ 関数を集計するか、キーに追加します `GROUP BY`.
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/) <!--hide-->

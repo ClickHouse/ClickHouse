@@ -1,7 +1,6 @@
 import json
 
 from testflows.core import *
-from testflows.core import threading
 from testflows.asserts import error
 
 from rbac.requirements import *
@@ -16,7 +15,7 @@ subprivileges = {
 
 aliases = {
     "TTL" : ["ALTER TTL", "ALTER MODIFY TTL", "MODIFY TTL"],
-    "MATERIALIZE TTL": ["ALTER MATERIALIZE TTL", "MATERIALIZE TTL"],
+    "MATERIALIZE TTL": ["ALTER MATERIALIZE TTL", "MATERIALIZE TTL", "ALL"],
 }
 
 permutation_count = (1 << len(subprivileges))
@@ -250,17 +249,17 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterTTL("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterTTL_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
 @Name("alter ttl")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
@@ -270,14 +269,12 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
         if table_type != "MergeTree" and not self.context.stress:
             continue
 
+        args = {"table_type" : table_type}
+
         with Example(str(example)):
-            pool = Pool(5)
-            try:
-                tasks = []
+            with Pool(5) as pool:
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                        Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
                 finally:
-                    join(tasks)
-            finally:
-                pool.close()
+                    join()

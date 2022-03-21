@@ -21,5 +21,5 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 **Example**
 
 ``` sql
-SELECT skewPop(value) FROM series_with_value_column
+SELECT skewPop(value) FROM series_with_value_column;
 ```

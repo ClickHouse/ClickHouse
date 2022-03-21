@@ -2,25 +2,19 @@
 
 #include <vector>
 
-#include <common/types.h>
-
-#include <Poco/File.h>
+#include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
+#include <Processors/ISimpleTransform.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {
-class IBlockOutputStream;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 struct DictionaryStructure;
-class Context;
-
-/// Write keys to block output stream.
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block);
+class SettingsChanges;
 
 /// For simple key
 
@@ -36,14 +30,25 @@ Block blockForKeys(
     const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
-Context copyContextAndApplySettings(
-    const std::string & config_prefix,
-    const Context & context,
-    const Poco::Util::AbstractConfiguration & config);
+SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
-void applySettingsToContext(
-    const std::string & config_prefix,
-    Context & context,
-    const Poco::Util::AbstractConfiguration & config);
+/** A stream, adds additional columns to each block that it will read from inner stream.
+     *
+     *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
+     */
+class TransformWithAdditionalColumns final : public ISimpleTransform
+{
+public:
+    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
+
+    void transform(Chunk & chunk) override;
+
+    String getName() const override;
+
+private:
+    Block block_to_add;
+    size_t current_range_index = 0;
+};
 
 }

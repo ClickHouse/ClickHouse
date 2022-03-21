@@ -1,10 +1,12 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -23,7 +25,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {
@@ -31,13 +33,14 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() == 1)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -45,7 +48,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -56,7 +59,7 @@ public:
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
+            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>))
                 throw Exception(
                     "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -102,11 +105,14 @@ public:
 
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDate32())
+            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
+
             const TransformDateTime64<Transform> transformer(scale);
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
@@ -122,18 +128,14 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        IFunction::Monotonicity is_monotonic { true };
-        IFunction::Monotonicity is_not_monotonic;
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-        {
-            is_monotonic.is_always_monotonic = true;
-            return is_monotonic;
-        }
+        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
+        const IFunction::Monotonicity is_not_monotonic;
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
-
         if (left.isNull() || right.isNull())
             return is_not_monotonic;
 
@@ -145,6 +147,12 @@ public:
                 == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
+        else if (checkAndGetDataType<DataTypeDate32>(&type))
+        {
+            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), date_lut)
+                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), date_lut)
+                   ? is_monotonic : is_not_monotonic;
+        }
         else
         {
             return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
@@ -155,4 +163,3 @@ public:
 };
 
 }
-

@@ -5,9 +5,10 @@
 #include <Core/Names.h>
 #include <Core/Types.h>
 
-
 namespace DB
 {
+
+namespace JSONBuilder { class JSONMap; }
 
 struct AggregateDescription
 {
@@ -18,6 +19,7 @@ struct AggregateDescription
     String column_name;      /// What name to use for a column with aggregate function values
 
     void explain(WriteBuffer & out, size_t indent) const; /// Get description for EXPLAIN query.
+    void explain(JSONBuilder::JSONMap & map) const;
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;

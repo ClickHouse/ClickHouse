@@ -1,24 +1,22 @@
-#include <Common/FieldVisitors.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -34,10 +32,36 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::doGetName() const
+String DataTypeAggregateFunction::doGetName() const
+{
+    return getNameImpl(true);
+}
+
+
+String DataTypeAggregateFunction::getNameWithoutVersion() const
+{
+    return getNameImpl(false);
+}
+
+
+size_t DataTypeAggregateFunction::getVersion() const
+{
+    if (version)
+        return *version;
+    return function->getDefaultVersion();
+}
+
+
+String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << function->getName();
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    auto data_type_version = getVersion();
+    if (with_version && data_type_version)
+        stream << data_type_version << ", ";
+    stream << function->getName();
 
     if (!parameters.empty())
     {
@@ -46,7 +70,7 @@ std::string DataTypeAggregateFunction::doGetName() const
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
         }
         stream << ')';
     }
@@ -58,210 +82,10 @@ std::string DataTypeAggregateFunction::doGetName() const
     return stream.str();
 }
 
-void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
-{
-    const String & s = get<const String &>(field);
-    writeVarUInt(s.size(), ostr);
-    writeString(s, ostr);
-}
-
-void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
-{
-    UInt64 size;
-    readVarUInt(size, istr);
-    field = String();
-    String & s = get<String &>(field);
-    s.resize(size);
-    istr.readStrict(s.data(), size);
-}
-
-void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
-}
-
-void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
-{
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-
-    function->create(place);
-    try
-    {
-        function->deserialize(place, istr, &arena);
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-
-    column_concrete.getData().push_back(place);
-}
-
-void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
-{
-    const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
-    const ColumnAggregateFunction::Container & vec = real_column.getData();
-
-    ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
-    ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
-
-    if (end > vec.end())
-        end = vec.end();
-
-    for (; it != end; ++it)
-        function->serialize(*it, ostr);
-}
-
-void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
-{
-    ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
-    ColumnAggregateFunction::Container & vec = real_column.getData();
-
-    Arena & arena = real_column.createOrGetArena();
-    real_column.set(function);
-    vec.reserve(vec.size() + limit);
-
-    size_t size_of_state = function->sizeOfData();
-    size_t align_of_state = function->alignOfData();
-
-    for (size_t i = 0; i < limit; ++i)
-    {
-        if (istr.eof())
-            break;
-
-        AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
-
-        function->create(place);
-
-        try
-        {
-            function->deserialize(place, istr, &arena);
-        }
-        catch (...)
-        {
-            function->destroy(place);
-            throw;
-        }
-
-        vec.push_back(place);
-    }
-}
-
-static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
-{
-    WriteBufferFromOwnString buffer;
-    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
-    return buffer.str();
-}
-
-static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s)
-{
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-
-    function->create(place);
-
-    try
-    {
-        ReadBufferFromString istr(s);
-        function->deserialize(place, istr, &arena);
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-
-    column_concrete.getData().push_back(place);
-}
-
-void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeString(serializeToString(function, column, row_num), ostr);
-}
-
-
-void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeEscapedString(serializeToString(function, column, row_num), ostr);
-}
-
-
-void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    String s;
-    readEscapedString(s, istr);
-    deserializeFromString(function, column, s);
-}
-
-
-void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeQuotedString(serializeToString(function, column, row_num), ostr);
-}
-
-
-void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    String s;
-    readQuotedStringWithSQLStyle(s, istr);
-    deserializeFromString(function, column, s);
-}
-
-
-void DataTypeAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    String s;
-    readStringUntilEOF(s, istr);
-    deserializeFromString(function, column, s);
-}
-
-
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    writeJSONString(serializeToString(function, column, row_num), ostr, settings);
-}
-
-
-void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    String s;
-    readJSONString(s, istr);
-    deserializeFromString(function, column, s);
-}
-
-
-void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeXMLStringForTextElement(serializeToString(function, column, row_num), ostr);
-}
-
-
-void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    writeCSV(serializeToString(function, column, row_num), ostr);
-}
-
-
-void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String s;
-    readCSV(s, istr, settings.csv);
-    deserializeFromString(function, column, s);
-}
-
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return ColumnAggregateFunction::create(function);
+    return ColumnAggregateFunction::create(function, getVersion());
 }
 
 
@@ -279,7 +103,7 @@ Field DataTypeAggregateFunction::getDefault() const
     try
     {
         WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
-        function->serialize(place, buffer_from_field);
+        function->serialize(place, buffer_from_field, version);
     }
     catch (...)
     {
@@ -295,7 +119,13 @@ Field DataTypeAggregateFunction::getDefault() const
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+    return typeid(rhs) == typeid(*this) && getNameWithoutVersion() == typeid_cast<const DataTypeAggregateFunction &>(rhs).getNameWithoutVersion();
+}
+
+
+SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
 }
 
 
@@ -305,15 +135,34 @@ static DataTypePtr create(const ASTPtr & arguments)
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
+    std::optional<size_t> version;
 
     if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
-            "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            "version(optionally), name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const auto * parametric = arguments->children[0]->as<ASTFunction>())
+    ASTPtr data_type_ast = arguments->children[0];
+    size_t argument_types_start_idx = 1;
+
+    /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
+     * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
+     * [ASTLiteral, ASTFunction (or ASTIdentifier), types...].
+     */
+    if (auto * version_ast = arguments->children[0]->as<ASTLiteral>())
+    {
+        if (arguments->children.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Data type AggregateFunction has version, but it requires at least one more parameter - name of aggregate function");
+        version = version_ast->value.safeGet<UInt64>();
+        data_type_ast = arguments->children[1];
+        argument_types_start_idx = 2;
+    }
+
+    if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
+
         function_name = parametric->name;
 
         if (parametric->arguments)
@@ -335,11 +184,11 @@ static DataTypePtr create(const ASTPtr & arguments)
             }
         }
     }
-    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(data_type_ast))
     {
         function_name = *opt_name;
     }
-    else if (arguments->children[0]->as<ASTLiteral>())
+    else if (data_type_ast->as<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
             ErrorCodes::BAD_ARGUMENTS);
@@ -348,7 +197,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
             ErrorCodes::BAD_ARGUMENTS);
 
-    for (size_t i = 1; i < arguments->children.size(); ++i)
+    for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
@@ -356,13 +205,13 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
-    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
+    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
+
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
 }
-
 
 }

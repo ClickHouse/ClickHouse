@@ -10,19 +10,15 @@ node = cluster.add_instance('node_default')
 
 system_logs = [
     # disabled by default
-    ('system.part_log', 0),
     ('system.text_log', 0),
 
     # enabled by default
     ('system.query_log', 1),
     ('system.query_thread_log', 1),
+    ('system.part_log', 1),
     ('system.trace_log', 1),
     ('system.metric_log', 1),
 ]
-
-# Default timeout for flush is 60
-# decrease timeout for the test to show possible issues.
-timeout = pytest.mark.timeout(30)
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -39,7 +35,6 @@ def flush_logs():
     node.query('SYSTEM FLUSH LOGS')
 
 
-@timeout
 @pytest.mark.parametrize('table,exists', system_logs)
 def test_system_logs(flush_logs, table, exists):
     q = 'SELECT * FROM {}'.format(table)
@@ -51,7 +46,6 @@ def test_system_logs(flush_logs, table, exists):
 
 # Logic is tricky, let's check that there is no hang in case of message queue
 # is not empty (this is another code path in the code).
-@timeout
 def test_system_logs_non_empty_queue():
     node.query('SELECT 1', settings={
         # right now defaults are the same,
@@ -60,3 +54,11 @@ def test_system_logs_non_empty_queue():
         'log_queries_min_type': 'QUERY_START',
     })
     node.query('SYSTEM FLUSH LOGS')
+
+
+def test_system_suspend():
+    node.query("CREATE TABLE t (x DateTime) ENGINE=Memory;")
+    node.query("INSERT INTO t VALUES (now());")
+    node.query("SYSTEM SUSPEND FOR 1 SECOND;")
+    node.query("INSERT INTO t VALUES (now());")
+    assert "1\n" == node.query("SELECT max(x) - min(x) >= 1 FROM t;")

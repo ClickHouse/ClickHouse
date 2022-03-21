@@ -7,6 +7,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Aggregate function combinator allows to take one aggregate function
   *  and transform it to another aggregate function.
@@ -33,6 +34,10 @@ public:
     virtual String getName() const = 0;
 
     virtual bool isForInternalUsageOnly() const { return false; }
+
+    /** Does combinator supports nesting (of itself, i.e. ArrayArray or IfIf)
+     */
+    virtual bool supportsNesting() const { return false; }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).
@@ -63,7 +68,7 @@ public:
         const DataTypes & arguments,
         const Array & params) const = 0;
 
-    virtual ~IAggregateFunctionCombinator() {}
+    virtual ~IAggregateFunctionCombinator() = default;
 };
 
 using AggregateFunctionCombinatorPtr = std::shared_ptr<const IAggregateFunctionCombinator>;

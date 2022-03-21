@@ -19,22 +19,23 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"CPU", static_cast<UInt8>(TraceType::CPU)},
     {"Memory", static_cast<UInt8>(TraceType::Memory)},
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
+    {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
 };
 
-Block TraceLogElement::createBlock()
+NamesAndTypesList TraceLogElement::getNamesAndTypes()
 {
     return
     {
-        {std::make_shared<DataTypeDate>(),                                    "event_date"},
-        {std::make_shared<DataTypeDateTime>(),                                "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                             "event_time_microseconds"},
-        {std::make_shared<DataTypeUInt64>(),                                  "timestamp_ns"},
-        {std::make_shared<DataTypeUInt32>(),                                  "revision"},
-        {std::make_shared<TraceDataType>(trace_values),                       "trace_type"},
-        {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
-        {std::make_shared<DataTypeString>(),                                  "query_id"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"},
-        {std::make_shared<DataTypeInt64>(),                                   "size"},
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"timestamp_ns", std::make_shared<DataTypeUInt64>()},
+        {"revision", std::make_shared<DataTypeUInt32>()},
+        {"trace_type", std::make_shared<TraceDataType>(trace_values)},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"size", std::make_shared<DataTypeInt64>()},
     };
 }
 
@@ -42,7 +43,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(timestamp_ns);

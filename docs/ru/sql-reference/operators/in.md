@@ -215,3 +215,25 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 5.  Если в GLOBAL IN есть частая необходимость, то спланируйте размещение кластера ClickHouse таким образом, чтобы в каждом дата-центре была хотя бы одна реплика каждого шарда, и среди них была быстрая сеть - чтобы запрос целиком можно было бы выполнить, передавая данные в пределах одного дата-центра.
 
 В секции `GLOBAL IN` также имеет смысл указывать локальную таблицу - в случае, если эта локальная таблица есть только на сервере-инициаторе запроса, и вы хотите воспользоваться данными из неё на удалённых серверах.
+
+### Распределенные подзапросы и max_parallel_replicas {#max_parallel_replica-subqueries}
+
+Когда настройка max_parallel_replicas больше чем 1, распределенные запросы преобразуются. Например, следующий запрос:
+
+```sql
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+преобразуются на каждом сервере в
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+где M значение между 1 и 3 зависящее от того на какой реплике выполняется локальный запрос. Эти параметры влияют на каждую таблицу семейства MergeTree в запросе и имеют тот же эффект, что и применение `SAMPLE 1/3 OFFSET (M-1)/3` для каждой таблицы.
+
+Поэтому применение настройки max_parallel_replicas даст корректные результаты если обе таблицы имеют одинаковую схему репликации и семплированы по UserID выражению от UserID. В частности, если local_table_2 не имеет семплирующего ключа, будут получены неверные результаты. Тоже правило применяется для JOIN.
+
+Один из способов избежать этого, если local_table_2 не удовлетворяет требованиям, использовать `GLOBAL IN` или `GLOBAL JOIN`.

@@ -2,7 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 
 
@@ -14,18 +14,24 @@ namespace ProfileEvents
 namespace DB
 {
 
-StoragePtr ITableFunction::execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name,
-                                   ColumnsDescription cached_columns) const
+StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
+                                   ColumnsDescription cached_columns, bool use_global_context) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
-    context.checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
+    context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
 
-    if (cached_columns.empty() || (hasStaticStructure() && cached_columns == getActualTableStructure(context)))
+    auto context_to_use = use_global_context ? context->getGlobalContext() : context;
+
+    if (cached_columns.empty())
         return executeImpl(ast_function, context, table_name, std::move(cached_columns));
 
-    auto get_storage = [=, tf = shared_from_this()]() -> StoragePtr
+    if (hasStaticStructure() && cached_columns == getActualTableStructure(context))
+        return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns));
+
+    auto this_table_function = shared_from_this();
+    auto get_storage = [=]() -> StoragePtr
     {
-        return tf->executeImpl(ast_function, context, table_name, cached_columns);
+        return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns);
     };
 
     /// It will request actual table structure and create underlying storage lazily

@@ -38,4 +38,4 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 │ Olga Khvostikova │
 └──────────────────┘
 ```
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/contributors) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/contributors) <!--hide-->

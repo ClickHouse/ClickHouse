@@ -1,6 +1,6 @@
 ---
 toc_priority: 42
-toc_title: "\u041a\u0432\u043e\u0442\u0430"
+toc_title: "Квота"
 ---
 
 # CREATE QUOTA {#create-quota-statement}
@@ -13,13 +13,13 @@ toc_title: "\u041a\u0432\u043e\u0442\u0430"
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] |
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 Ключи `user_name`, `ip_address`, `client_key`, `client_key, user_name` и `client_key, ip_address` соответствуют полям таблицы [system.quotas](../../../operations/system-tables/quotas.md).
 
-Параметры `queries`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time` соответствуют полям таблицы [system.quotas_usage](../../../operations/system-tables/quotas_usage.md).
+Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time` соответствуют полям таблицы [system.quotas_usage](../../../operations/system-tables/quotas_usage.md).
 
 В секции `ON CLUSTER` можно указать кластеры, на которых создается квота, см. [Распределенные DDL запросы](../../../sql-reference/distributed-ddl.md).
 
@@ -36,6 +36,3 @@ CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
 ``` sql
 CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/quota) 
-<!--hide-->

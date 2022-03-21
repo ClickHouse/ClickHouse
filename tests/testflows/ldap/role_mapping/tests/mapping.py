@@ -2,11 +2,9 @@
 from testflows.core import *
 from testflows.asserts import error
 
-from multiprocessing.dummy import Pool
-
 from ldap.role_mapping.requirements import *
 from ldap.role_mapping.tests.common import *
-from ldap.external_user_directory.tests.common import join, randomword
+from ldap.external_user_directory.tests.common import randomword
 
 from ldap.external_user_directory.tests.authentications import login_with_valid_username_and_password
 from ldap.external_user_directory.tests.authentications import login_with_invalid_username_and_valid_password
@@ -626,6 +624,82 @@ def role_not_present(self, ldap_server, ldap_user):
 
 @TestScenario
 @Requirements(
+    RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_NotPresent("1.0")
+)
+def add_new_role_not_present(self, ldap_server, ldap_user):
+    """Check that LDAP user can still authenticate when the LDAP
+    user is added to a new LDAP group that does not match any existing
+    RBAC roles while having other role being already mapped.
+    """
+    uid = getuid()
+    role_name = f"role_{uid}"
+
+    role_mappings = [
+        {
+            "base_dn": "ou=groups,dc=company,dc=com",
+            "attribute": "cn",
+            "search_filter": "(&(objectClass=groupOfUniqueNames)(uniquemember={bind_dn}))",
+            "prefix": "clickhouse_"
+        }
+    ]
+
+    with Given("I add LDAP group"):
+        groups = add_ldap_groups(groups=({"cn": "clickhouse_" + role_name},))
+
+    with And("I add LDAP user to the group"):
+        add_user_to_group_in_ldap(user=ldap_user, group=groups[0])
+
+    with And("I add matching RBAC role"):
+        roles = add_rbac_roles(roles=(f"{role_name}",))
+
+    with And("I add LDAP external user directory configuration"):
+        add_ldap_external_user_directory(server=ldap_server,
+            role_mappings=role_mappings, restart=True)
+
+    with When(f"I login as an LDAP user"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should have the mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+    with When("I add LDAP group that maps to unknown role"):
+        unknown_groups = add_ldap_groups(groups=({"cn": "clickhouse_" + role_name + "_unknown"},))
+
+    with And("I add LDAP user to the group that maps to unknown role"):
+        add_user_to_group_in_ldap(user=ldap_user, group=unknown_groups[0])
+
+    with And(f"I again login as an LDAP user"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should still have the present mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+    with When("I add matching previously unknown RBAC role"):
+        unknown_roles = add_rbac_roles(roles=(f"{role_name}_unknown",))
+
+    with And(f"I again login as an LDAP user after previously unknown RBAC role has been added"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should still have the first mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+        with And("the user should have the previously unknown mapped LDAP role"):
+            assert f"{role_name}_unknown" in r.output, error()
+
+@TestScenario
+@Requirements(
     RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_Removed("1.0"),
     RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_Readded("1.0")
 )
@@ -973,17 +1047,17 @@ def group_removed_and_added_in_parallel(self, ldap_server, ldap_user, count=20, 
                 role_mappings=role_mappings, restart=True)
 
         tasks = []
-        try:
-            with When("user try to login while LDAP groups are added and removed in parallel"):
-                p = Pool(15)
-                for i in range(15):
-                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(remove_ldap_groups_in_parallel, (groups, i, 10,)))
-                    tasks.append(p.apply_async(add_ldap_groups_in_parallel,(ldap_user, role_names, i, 10,)))
-
-        finally:
-            with Finally("it should work", flags=TE):
-                join(tasks, timeout)
+        with Pool(4) as pool:
+            try:
+                with When("user try to login while LDAP groups are added and removed in parallel"):
+                    for i in range(10):
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(remove_ldap_groups_in_parallel, (groups, i, 10,)))
+                        tasks.append(pool.submit(add_ldap_groups_in_parallel,(ldap_user, role_names, i, 10,)))
+            finally:
+                with Finally("it should work", flags=TE):
+                    for task in tasks:
+                        task.result(timeout=timeout)
     finally:
         with Finally("I clean up all LDAP groups"):
             for group in groups:
@@ -1026,17 +1100,17 @@ def user_removed_and_added_in_ldap_groups_in_parallel(self, ldap_server, ldap_us
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("user try to login while user is added and removed from LDAP groups in parallel"):
-            p = Pool(15)
-            for i in range(15):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(remove_user_from_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
-                tasks.append(p.apply_async(add_user_to_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
-
-    finally:
-        with Finally("it should work", flags=TE):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("user try to login while user is added and removed from LDAP groups in parallel"):
+                for i in range(10):
+                    tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.submit(remove_user_from_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
+                    tasks.append(pool.submit(add_user_to_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
+        finally:
+            with Finally("it should work", flags=TE):
+                for task in tasks:
+                    task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -1076,22 +1150,22 @@ def roles_removed_and_added_in_parallel(self, ldap_server, ldap_user, count=20, 
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("user try to login while mapped roles are added and removed in parallel"):
-            p = Pool(15)
-            for i in range(15):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(remove_roles_in_parallel, (role_names, i, 10,)))
-                tasks.append(p.apply_async(add_roles_in_parallel, (role_names, i, 10,)))
+    with Pool(4) as pool:
+        try:
+            with When("user try to login while mapped roles are added and removed in parallel"):
+                for i in range(10):
+                    tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.submit(remove_roles_in_parallel, (role_names, i, 10,)))
+                    tasks.append(pool.submit(add_roles_in_parallel, (role_names, i, 10,)))
+        finally:
+            with Finally("it should work", flags=TE):
+                for task in tasks:
+                    task.result(timeout=timeout)
 
-    finally:
-        with Finally("it should work", flags=TE):
-            join(tasks, timeout)
-
-        with And("I clean up all the roles"):
-            for role_name in role_names:
-                with By(f"dropping role {role_name}", flags=TE):
-                    self.context.node.query(f"DROP ROLE IF EXISTS {role_name}")
+            with And("I clean up all the roles"):
+                for role_name in role_names:
+                    with By(f"dropping role {role_name}", flags=TE):
+                        self.context.node.query(f"DROP ROLE IF EXISTS {role_name}")
 
 @TestOutline
 def parallel_login(self, ldap_server, ldap_user, user_count=10, timeout=200, role_count=10):
@@ -1132,21 +1206,21 @@ def parallel_login(self, ldap_server, ldap_user, user_count=10, timeout=200, rol
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("users try to login in parallel", description="""
-            * with valid username and password
-            * with invalid username and valid password
-            * with valid username and invalid password
-            """):
-            p = Pool(15)
-            for i in range(25):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-
-    finally:
-        with Then("it should work"):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("users try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                for i in range(10):
+                    tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                for task in tasks:
+                    task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -1313,22 +1387,21 @@ def parallel_login_with_multiple_servers(self, ldap_server, ldap_user, user_coun
                     self.context.node.query(f"GRANT {role_name} TO {user['cn']}")
 
     tasks = []
-
-    try:
-        with When("users in each group try to login in parallel", description="""
-            * with valid username and password
-            * with invalid username and valid password
-            * with valid username and invalid password
-            """):
-            p = Pool(15)
-            for i in range(25):
-                for users in user_groups.values():
-                    for check in checks:
-                        tasks.append(p.apply_async(check, (users, i, 50,)))
-
-    finally:
-        with Then("it should work"):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("users in each group try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                for i in range(10):
+                    for users in user_groups.values():
+                        for check in checks:
+                            tasks.append(pool.submit(check, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                for task in tasks:
+                    task.result(timeout=timeout)
 
 @TestFeature
 @Name("mapping")

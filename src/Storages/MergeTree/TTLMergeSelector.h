@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Storages/MergeTree/MergeSelector.h>
 #include <Storages/TTLDescription.h>
 
@@ -30,7 +30,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        const size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) override;
 
     /// Get TTL value for part, may depend on child type and some settings in
     /// constructor.

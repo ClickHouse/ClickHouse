@@ -483,6 +483,22 @@ select 1 = position('abab', materialize('ab'));
 select 1 = position('abababababababababababab', materialize('abab'));
 select 1 = position('abababababababababababab', materialize('abababababababababa'));
 
+select 0 = multiSearchAny('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchAnyCaseInsensitive('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchAnyCaseInsensitiveUTF8('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchAnyUTF8('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstIndex('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstIndexCaseInsensitive('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstIndexCaseInsensitiveUTF8('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstIndexUTF8('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstPosition('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstPositionCaseInsensitive('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstPositionCaseInsensitiveUTF8('\0', CAST([], 'Array(String)'));
+select 0 = multiSearchFirstPositionUTF8('\0', CAST([], 'Array(String)'));
+select [] = multiSearchAllPositions('\0', CAST([], 'Array(String)'));
+select [] = multiSearchAllPositionsCaseInsensitive('\0', CAST([], 'Array(String)'));
+select [] = multiSearchAllPositionsCaseInsensitiveUTF8('\0', CAST([], 'Array(String)'));
+select [] = multiSearchAllPositionsUTF8('\0', CAST([], 'Array(String)'));
 
 select [2] = multiSearchAllPositions(materialize('abcdefgh'), ['b']);
 select [2] = multiSearchAllPositions(materialize('abcdefgh'), ['bc']);
@@ -1176,7 +1192,6 @@ select 1 = multiSearchAnyCaseInsensitiveUTF8(materialize('ЩГТРШКИОРБР
 select 0 = multiSearchAnyCaseInsensitiveUTF8(materialize('ШНвпкфЗвгДжУЙГлрТШаШЛгНЗг'), ['нЗБенВшщрЛАрблцщшБАдзччммсцКЖ', 'бЗЩхзЗЗбФЕйМоазщугБбмМ', 'рЙсВжВсхдйлЩгБтХлчсщФ', 'пиБшКРнбВБгЕуЖ', 'жПшнхпШзУБрУЛРНЩДиаГШщКдЕвшоуПС', 'чЕщкЗмДуузуСдддзгКлИнгРмЙщВКТчхзЗЛ', 'кЖУЗЖС', 'щххОВМшуажвН', 'фбцЖМ', 'ДШитЧЩДсйНбдШеООУдг', 'ЛХПфБВХЦТИаФПЕвгкпкпщлхмЙхГбц', 'чЦсщЗщрМ']) from system.numbers limit 10;
 select 1 = multiSearchAnyCaseInsensitiveUTF8(materialize('ФРХгаСлчЧОцкШгзмКЗшФфББвЧ'), ['кзШфФб', 'ГАслЧЧОцкшг', 'ФфббВЧ', 'ЦкШ', '', 'АслчЧОЦКШгзМкЗШффбБвч', 'РХгаслЧчОЦКШГз', 'РхгаслчЧОцКШгзМкзшФфБбВ', 'Шг', 'Ф', 'ХГАслчЧоцКШГзМкзш', 'ШгЗмКЗшфФб']) from system.numbers limit 10;
 select 1 = multiSearchAnyCaseInsensitiveUTF8(materialize('ЧдйШкхОлалщНйбССХКаФзОМрКЕЙР'), ['бссХкафзОм', 'ХОЛаЛщнйБссХкаФз', 'лаЛщнйБсСХ', 'ЩнЙбСсхКаФЗО', 'йБСсХКАФЗОмР', 'йшкХолаЛЩНйбсСхК', 'С', '', 'ЙшкхОлалщНЙБсСхКаФзом', 'Йр', 'щнЙБссхКАфзоМрК', 'рКе']) from system.numbers limit 10;
-
 
 select 1 = multiSearchFirstIndex(materialize('alhpvldsiwsydwhfdasqju'), ['sydwh', 'dwh', 'dwhfdasqj', 'w', 'briozrtpq', 'fdasq', 'lnuvpuxdhhuxjbolw', 'vldsiws', 'dasqju', 'uancllygwoifwnnp', 'wfxputfnen', 'hzaclvjumecnmweungz']) from system.numbers limit 10;
 select 0 = multiSearchFirstIndex(materialize('kcwchxxyujbhrxkxgnomg'), ['jmvqipszutxfnhdfaxqwoxcz', 'nrgzkbsakdtdiiyphozjoauyughyvlz', 'qbszx', 'sllthykcnttqecpequommemygee', 'bvsbdiufrrrjxaxzxgbd', 'hdkpcmpdyjildw', 'frxkyukiywngfcxfzwkcun', 'dmvxf', 'esamivybor', 'eoggdynqwlnlxr']) from system.numbers limit 10;

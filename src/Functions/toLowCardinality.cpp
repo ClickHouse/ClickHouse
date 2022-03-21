@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -14,7 +14,7 @@ class FunctionToLowCardinality: public IFunction
 {
 public:
     static constexpr auto name = "toLowCardinality";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToLowCardinality>(); }
 
     String getName() const override { return name; }
 
@@ -23,6 +23,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -13,7 +13,7 @@ To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md)
 ## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `privilege` — Type of privilege.
@@ -21,17 +21,19 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 -   `user` — ClickHouse user account.
 
 The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
+The `WITH REPLACE OPTION` clause replace old privileges by new privileges for the `user` or `role`, if is not specified it appends privileges.
 
 ## Assigning Role Syntax {#assign-role-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `role` — ClickHouse user role.
 -   `user` — ClickHouse user account.
 
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
+The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Usage {#grant-usage}
 
@@ -49,7 +51,7 @@ It means that `john` has the permission to execute:
 -   `SELECT x FROM db.table`.
 -   `SELECT y FROM db.table`.
 
-`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
+`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
@@ -91,7 +93,7 @@ Hierarchy of privileges:
             -   `ALTER ADD CONSTRAINT`
             -   `ALTER DROP CONSTRAINT`
         -   `ALTER TTL`
-        -   `ALTER MATERIALIZE TTL`
+            -   `ALTER MATERIALIZE TTL`
         -   `ALTER SETTINGS`
         -   `ALTER MOVE PARTITION`
         -   `ALTER FETCH PARTITION`
@@ -102,14 +104,16 @@ Hierarchy of privileges:
 -   [CREATE](#grant-create)
     -   `CREATE DATABASE`
     -   `CREATE TABLE`
+        -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
-    -   `CREATE TEMPORARY TABLE`
+    -   `CREATE FUNCTION`
 -   [DROP](#grant-drop)
     -   `DROP DATABASE`
     -   `DROP TABLE`
     -   `DROP VIEW`
     -   `DROP DICTIONARY`
+    -   `DROP FUNCTION`
 -   [TRUNCATE](#grant-truncate)
 -   [OPTIMIZE](#grant-optimize)
 -   [SHOW](#grant-show)
@@ -150,7 +154,9 @@ Hierarchy of privileges:
     -   `SYSTEM RELOAD`
         -   `SYSTEM RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`
-        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+            -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     -   `SYSTEM MERGES`
     -   `SYSTEM TTL MERGES`
     -   `SYSTEM FETCHES`
@@ -166,6 +172,7 @@ Hierarchy of privileges:
         -   `SYSTEM FLUSH LOGS`
 -   [INTROSPECTION](#grant-introspection)
     -   `addressToLine`
+    -   `addressToLineWithInlines`
     -   `addressToSymbol`
     -   `demangle`
 -   [SOURCES](#grant-sources)
@@ -230,7 +237,7 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT {#grant-insert}
 
@@ -240,7 +247,7 @@ Privilege level: `COLUMN`.
 
 **Description**
 
-User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn’t insert any data.
+User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query does not insert any data.
 
 **Example**
 
@@ -276,10 +283,10 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
             -   `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
             -   `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
         -   `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
-        -   `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
+            -   `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
         -   `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         -   `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        -   `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `FETCH PARTITION`
+        -   `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
         -   `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
     -   `ALTER VIEW` Level: `GROUP`
         -   `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
@@ -292,7 +299,7 @@ Examples of how this hierarchy is treated:
 
 **Notes**
 
--   The `MODIFY SETTING` privilege allows modifying table engine settings. It doesn’t affect settings or server configuration parameters.
+-   The `MODIFY SETTING` privilege allows modifying table engine settings. It does not affect settings or server configuration parameters.
 -   The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 -   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
 -   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
@@ -304,9 +311,9 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`
     -   `CREATE TABLE`. Level: `TABLE`
+        -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
     -   `CREATE VIEW`. Level: `VIEW`
     -   `CREATE DICTIONARY`. Level: `DICTIONARY`
-    -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
 
 **Notes**
 
@@ -316,7 +323,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
--   `DROP`. Level:
+-   `DROP`. Level: `GROUP`
     -   `DROP DATABASE`. Level: `DATABASE`
     -   `DROP TABLE`. Level: `TABLE`
     -   `DROP VIEW`. Level: `VIEW`
@@ -401,7 +408,7 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
     -   `SYSTEM RELOAD`. Level: `GROUP`
         -   `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: R`ELOAD EMBEDDED DICTIONARIES`
+            -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
     -   `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
     -   `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
     -   `SYSTEM FETCHES`. Level: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
@@ -424,6 +431,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 -   `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
     -   `addressToLine`. Level: `GLOBAL`
+    -   `addressToLineWithInlines`. Level: `GLOBAL`
     -   `addressToSymbol`. Level: `GLOBAL`
     -   `demangle`. Level: `GLOBAL`
 
@@ -473,4 +481,3 @@ Doesn’t grant any privileges.
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->

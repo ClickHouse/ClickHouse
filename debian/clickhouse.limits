@@ -1,2 +1,0 @@
-clickhouse	soft	nofile	262144
-clickhouse	hard	nofile	262144

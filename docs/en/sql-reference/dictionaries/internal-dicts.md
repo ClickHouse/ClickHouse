@@ -14,7 +14,7 @@ This allows you to:
 -   Check whether a region is part of another region.
 -   Get a chain of parent regions.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with Yandex.Metrica dictionaries”.
+All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
@@ -31,7 +31,7 @@ You can also create these files yourself. The file format is as follows:
 
 -   region ID (`UInt32`)
 -   parent region ID (`UInt32`)
--   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types don’t have values
+-   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
 -   population (`UInt32`) — optional column
 
 `regions_names_*.txt`: TabSeparated (no header), columns:
@@ -48,6 +48,3 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
-There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn’t be used.
-
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->
