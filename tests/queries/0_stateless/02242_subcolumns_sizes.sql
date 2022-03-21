@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_subcolumns_sizes;
 
 SET allow_experimental_object_type = 1;
