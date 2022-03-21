@@ -220,6 +220,12 @@ void SerializationObject<Parser>::deserializeTextCSV(IColumn & column, ReadBuffe
 }
 
 template <typename Parser>
+void SerializationObject<Parser>::deserializeTextHiveText(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
 template <typename TSettings, typename TStatePtr>
 void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings & settings, const TStatePtr & state) const
 {

@@ -14,6 +14,8 @@ template <typename Parser>
 class SerializationObject : public ISerialization
 {
 public:
+    String getName() const override { return "Object"; }
+
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
@@ -56,6 +58,7 @@ public:
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeTextHiveText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
 private:
     template <typename TSettings, typename TStatePtr>
