@@ -1,6 +1,6 @@
 ---
 toc_priority: 45
-toc_title: "\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433"
+toc_title: "Мониторинг"
 ---
 
 # Мониторинг {#monitoring}
@@ -37,10 +37,9 @@ ClickHouse собирает:
 
 Можно настроить экспорт метрик из ClickHouse в [Graphite](https://github.com/graphite-project). Смотрите секцию [graphite](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Graphite, как указано в [официальном руководстве](https://graphite.readthedocs.io/en/latest/install.html).
 
-Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите [prometheus](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
+Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите секцию [prometheus](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Также, можно отслеживать доступность сервера через HTTP API. Отправьте `HTTP GET` к ресурсу `/ping`. Если сервер доступен, он отвечает `200 OK`.
 
 Для мониторинга серверов в кластерной конфигурации необходимо установить параметр [max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries) и использовать HTTP ресурс `/replicas_status`. Если реплика доступна и не отстаёт от других реплик, то запрос к `/replicas_status` возвращает `200 OK`. Если реплика отстаёт, то запрос возвращает `503 HTTP_SERVICE_UNAVAILABLE`, включая информацию о размере отставания.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/monitoring) <!--hide-->

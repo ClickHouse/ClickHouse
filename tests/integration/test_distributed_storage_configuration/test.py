@@ -17,7 +17,7 @@ node = cluster.add_instance('node',
 def start_cluster():
     try:
         cluster.start()
-        node.query('CREATE DATABASE test ENGINE=Ordinary') # Different paths with Atomic
+        node.query('CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary') # Different paths with Atomic
         yield cluster
     finally:
         cluster.shutdown()

@@ -83,7 +83,7 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
-    void finalize() override;
+    void finalize(const String & reason) override;
 
     struct Node
     {

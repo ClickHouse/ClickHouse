@@ -1,9 +1,12 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS test_01109;
 CREATE DATABASE test_01109 ENGINE=Atomic;
 
 USE test_01109;
 
 CREATE TABLE t0 ENGINE=MergeTree() ORDER BY tuple() AS SELECT rowNumberInAllBlocks(), * FROM (SELECT toLowCardinality(arrayJoin(['exchange', 'tables'])));
+-- NOTE: database = currentDatabase() is not mandatory
 CREATE TABLE t1 ENGINE=Log() AS SELECT * FROM system.tables AS t JOIN system.databases AS d ON t.database=d.name;
 CREATE TABLE t2 ENGINE=MergeTree() ORDER BY tuple() AS SELECT rowNumberInAllBlocks() + (SELECT count() FROM t0), * FROM (SELECT arrayJoin(['hello', 'world']));
 
@@ -48,6 +51,19 @@ SELECT * FROM t2;
 SELECT * FROM test_01109_other_atomic.t3;
 SELECT * FROM test_01109_ordinary.t4;
 
+DROP DATABASE IF EXISTS test_01109_rename_exists;
+CREATE DATABASE test_01109_rename_exists ENGINE=Atomic;
+USE test_01109_rename_exists;
+CREATE TABLE t0 ENGINE=Log() AS SELECT * FROM system.numbers limit 2;
+RENAME TABLE t0_tmp TO t1; -- { serverError 60 }
+RENAME TABLE if exists t0_tmp TO t1;
+RENAME TABLE if exists t0 TO t1;
+SELECT * FROM t1;
+
 DROP DATABASE test_01109;
 DROP DATABASE test_01109_other_atomic;
 DROP DATABASE test_01109_ordinary;
+DROP DATABASE test_01109_rename_exists;
+
+
+

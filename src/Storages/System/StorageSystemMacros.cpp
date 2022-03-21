@@ -14,9 +14,9 @@ NamesAndTypesList StorageSystemMacros::getNamesAndTypes()
     };
 }
 
-void StorageSystemMacros::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    auto macros = context.getMacros();
+    auto macros = context->getMacros();
 
     for (const auto & macro : macros->getMacroMap())
     {

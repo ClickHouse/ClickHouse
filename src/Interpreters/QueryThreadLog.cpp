@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -18,57 +19,69 @@
 
 namespace DB
 {
-Block QueryThreadLogElement::createBlock()
+
+NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
 {
     return {
-        {std::make_shared<DataTypeDate>(),          "event_date"},
-        {std::make_shared<DataTypeDateTime>(),      "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6),   "event_time_microseconds"},
-        {std::make_shared<DataTypeDateTime>(),      "query_start_time"},
-        {std::make_shared<DataTypeDateTime64>(6),   "query_start_time_microseconds"},
-        {std::make_shared<DataTypeUInt64>(),        "query_duration_ms"},
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"query_start_time", std::make_shared<DataTypeDateTime>()},
+        {"query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"query_duration_ms", std::make_shared<DataTypeUInt64>()},
 
-        {std::make_shared<DataTypeUInt64>(),        "read_rows"},
-        {std::make_shared<DataTypeUInt64>(),        "read_bytes"},
-        {std::make_shared<DataTypeUInt64>(),        "written_rows"},
-        {std::make_shared<DataTypeUInt64>(),        "written_bytes"},
-        {std::make_shared<DataTypeInt64>(),         "memory_usage"},
-        {std::make_shared<DataTypeInt64>(),         "peak_memory_usage"},
+        {"read_rows", std::make_shared<DataTypeUInt64>()},
+        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"written_rows", std::make_shared<DataTypeUInt64>()},
+        {"written_bytes", std::make_shared<DataTypeUInt64>()},
+        {"memory_usage", std::make_shared<DataTypeInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
 
-        {std::make_shared<DataTypeString>(),        "thread_name"},
-        {std::make_shared<DataTypeUInt64>(),        "thread_id"},
-        {std::make_shared<DataTypeUInt64>(),        "master_thread_id"},
-        {std::make_shared<DataTypeString>(),        "current_database"},
-        {std::make_shared<DataTypeString>(),        "query"},
-        {std::make_shared<DataTypeUInt64>(),        "normalized_query_hash"},
+        {"thread_name", std::make_shared<DataTypeString>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"master_thread_id", std::make_shared<DataTypeUInt64>()},
+        {"current_database", std::make_shared<DataTypeString>()},
+        {"query", std::make_shared<DataTypeString>()},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
 
-        {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
-        {std::make_shared<DataTypeString>(),        "user"},
-        {std::make_shared<DataTypeString>(),        "query_id"},
-        {DataTypeFactory::instance().get("IPv6"),   "address"},
-        {std::make_shared<DataTypeUInt16>(),        "port"},
-        {std::make_shared<DataTypeString>(),        "initial_user"},
-        {std::make_shared<DataTypeString>(),        "initial_query_id"},
-        {DataTypeFactory::instance().get("IPv6"),   "initial_address"},
-        {std::make_shared<DataTypeUInt16>(),        "initial_port"},
-        {std::make_shared<DataTypeUInt8>(),         "interface"},
-        {std::make_shared<DataTypeString>(),        "os_user"},
-        {std::make_shared<DataTypeString>(),        "client_hostname"},
-        {std::make_shared<DataTypeString>(),        "client_name"},
-        {std::make_shared<DataTypeUInt32>(),        "client_revision"},
-        {std::make_shared<DataTypeUInt32>(),        "client_version_major"},
-        {std::make_shared<DataTypeUInt32>(),        "client_version_minor"},
-        {std::make_shared<DataTypeUInt32>(),        "client_version_patch"},
-        {std::make_shared<DataTypeUInt8>(),         "http_method"},
-        {std::make_shared<DataTypeString>(),        "http_user_agent"},
-        {std::make_shared<DataTypeString>(),        "http_referer"},
-        {std::make_shared<DataTypeString>(),        "forwarded_for"},
-        {std::make_shared<DataTypeString>(),        "quota_key"},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>()},
+        {"user", std::make_shared<DataTypeString>()},
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"address", DataTypeFactory::instance().get("IPv6")},
+        {"port", std::make_shared<DataTypeUInt16>()},
+        {"initial_user", std::make_shared<DataTypeString>()},
+        {"initial_query_id", std::make_shared<DataTypeString>()},
+        {"initial_address", DataTypeFactory::instance().get("IPv6")},
+        {"initial_port", std::make_shared<DataTypeUInt16>()},
+        {"initial_query_start_time", std::make_shared<DataTypeDateTime>()},
+        {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"interface", std::make_shared<DataTypeUInt8>()},
+        {"os_user", std::make_shared<DataTypeString>()},
+        {"client_hostname", std::make_shared<DataTypeString>()},
+        {"client_name", std::make_shared<DataTypeString>()},
+        {"client_revision", std::make_shared<DataTypeUInt32>()},
+        {"client_version_major", std::make_shared<DataTypeUInt32>()},
+        {"client_version_minor", std::make_shared<DataTypeUInt32>()},
+        {"client_version_patch", std::make_shared<DataTypeUInt32>()},
+        {"http_method", std::make_shared<DataTypeUInt8>()},
+        {"http_user_agent", std::make_shared<DataTypeString>()},
+        {"http_referer", std::make_shared<DataTypeString>()},
+        {"forwarded_for", std::make_shared<DataTypeString>()},
+        {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
-        {std::make_shared<DataTypeUInt32>(),        "revision"},
+        {"revision", std::make_shared<DataTypeUInt32>()},
 
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"}
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+    };
+}
+
+NamesAndAliases QueryThreadLogElement::getNamesAndAliases()
+{
+    return
+    {
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
     };
 }
 
@@ -76,7 +89,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
@@ -105,13 +118,11 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     if (profile_counters)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
-        dumpToArrayColumns(*profile_counters, column_names, column_values, true);
+        auto * column = columns[i++].get();
+        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
 }

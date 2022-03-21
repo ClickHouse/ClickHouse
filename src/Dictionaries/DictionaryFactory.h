@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include "IDictionary.h"
 #include "registerDictionaries.h"
 #include <Parsers/ASTCreateQuery.h>
@@ -21,8 +22,6 @@ class Logger;
 namespace DB
 {
 
-class Context;
-
 /** Create dictionary according to its layout.
   */
 class DictionaryFactory : private boost::noncopyable
@@ -37,30 +36,37 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const Context & context,
-        bool check_source_config = false) const;
+        ContextPtr global_context,
+        bool created_from_ddl) const;
 
     /// Create dictionary from DDL-query
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
-        const Context & context) const;
+        ContextPtr global_context) const;
 
-    using Creator = std::function<DictionaryPtr(
+    using LayoutCreateFunction = std::function<DictionaryPtr(
         const std::string & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        DictionarySourcePtr source_ptr)>;
+        DictionarySourcePtr source_ptr,
+        ContextPtr global_context,
+        bool created_from_ddl)>;
 
     bool isComplex(const std::string & layout_type) const;
 
-    void registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex);
+    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex);
 
 private:
-    using LayoutRegistry = std::unordered_map<std::string, Creator>;
+    struct RegisteredLayout
+    {
+        LayoutCreateFunction layout_create_function;
+        bool is_layout_complex;
+    };
+
+    using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;
     LayoutRegistry registered_layouts;
-    using LayoutComplexity = std::unordered_map<std::string, bool>;
-    LayoutComplexity layout_complexity;
+
 };
 
 }

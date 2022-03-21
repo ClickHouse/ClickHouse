@@ -1,84 +1,15 @@
 import uuid
 
+import testflows.settings as settings
+
 from contextlib import contextmanager
-from multiprocessing.dummy import Pool
 
 from testflows.core.name import basename, parentname
 from testflows._core.testtype import TestSubType
 from testflows.core import *
 
+from helpers.common import instrument_clickhouse_server_log
 from rbac.helper.tables import table_types
-
-@TestStep(Given)
-def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
-    """Instrument clickhouse-server.log for the current test
-    by adding start and end messages that include
-    current test name to the clickhouse-server.log of the specified node and
-    if the test fails then dump the messages from
-    the clickhouse-server.log for this test.
-    """
-    if node is None:
-        node = self.context.node
-
-    with By("getting current log size"):
-        cmd =  node.command(f"stat --format=%s {clickhouse_server_log}")
-        logsize = cmd.output.split(" ")[0].strip()
-
-    try:
-        with And("adding test name start message to the clickhouse-server.log"):
-            node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
-        yield
-
-    finally:
-        with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
-           node.command(f"echo -e \"\\n-- end: {current().name} --\\n\" >> {clickhouse_server_log}")
-
-        with And("checking if test has failing result"):
-            if not self.parent.result:
-                with Then("dumping clickhouse-server.log for this test"):
-                    node.command(f"tail -c +{logsize} {clickhouse_server_log}")
-
-def join(tasks):
-    """Join all parallel tests.
-    """
-    exc = None
-    while tasks:
-        try:
-            tasks[0].get()
-            tasks.pop(0)
-
-        except KeyboardInterrupt as e:
-            current().context.cluster.terminating = True
-            continue
-
-        except Exception as e:
-            tasks.pop(0)
-            if exc is None:
-                exc = e
-            current().context.cluster.terminating = True
-
-    if exc is not None:
-        raise exc
-
-def start(pool, tasks, scenario, kwargs=None):
-    """Start parallel test.
-    """
-    if kwargs is None:
-        kwargs = {}
-
-    task = pool.apply_async(scenario, [], kwargs)
-    tasks.append(task)
-
-    return task
-
-def run_scenario(pool, tasks, scenario, kwargs=None):
-    if kwargs is None:
-        kwargs = {}
-
-    if current().context.parallel:
-        start(pool, tasks, scenario, kwargs)
-    else:
-        scenario(**kwargs)
 
 def permutations(table_count=1):
     return [*range((1 << table_count)-1)]
@@ -133,6 +64,23 @@ def role(node, role):
         for role in roles:
             with Finally("I drop the role"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
+
+@TestStep(Given)
+def row_policy(self, name, table, node=None):
+    """Create a row policy with a given name on a given table.
+    """
+    if node is None:
+        node = self.context.node
+
+    try:
+        with Given(f"I create row policy {name}"):
+            node.query(f"CREATE ROW POLICY {name} ON {table}")
+        yield
+
+    finally:
+        with Finally(f"I delete row policy {name}"):
+            node.query(f"DROP ROW POLICY IF EXISTS {name} ON {table}")
+
 tables = {
     "table0" : 1 << 0,
     "table1" : 1 << 1,

@@ -18,13 +18,13 @@ namespace ErrorCodes
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
-    database_name = query.database;
-    table_name = query.table;
+    database_name = query.getDatabase();
+    table_name = query.getTable();
     uuid = query.uuid;
     assertNotEmpty();
 }
 
-StorageID::StorageID(const ASTIdentifier & table_identifier_node)
+StorageID::StorageID(const ASTTableIdentifier & table_identifier_node)
 {
     DatabaseAndTableWithAlias database_table(table_identifier_node);
     database_name = database_table.database;
@@ -35,7 +35,7 @@ StorageID::StorageID(const ASTIdentifier & table_identifier_node)
 
 StorageID::StorageID(const ASTPtr & node)
 {
-    if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(node.get()))
+    if (const auto * identifier = node->as<ASTTableIdentifier>())
         *this = StorageID(*identifier);
     else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
         *this = StorageID(*simple_query);
@@ -79,6 +79,15 @@ bool StorageID::operator<(const StorageID & rhs) const
         return !hasUUID();
 }
 
+bool StorageID::operator==(const StorageID & rhs) const
+{
+    assertNotEmpty();
+    if (hasUUID() && rhs.hasUUID())
+        return uuid == rhs.uuid;
+    else
+        return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
+}
+
 String StorageID::getFullTableName() const
 {
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
@@ -101,7 +110,7 @@ StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguratio
     return res;
 }
 
-String StorageID::getInternalDictionaryName() const
+String StorageID::getShortName() const
 {
     assertNotEmpty();
     if (hasUUID())

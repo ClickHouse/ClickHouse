@@ -9,7 +9,7 @@ The functions for working with UUID are listed below.
 
 ## generateUUIDv4 {#uuid-function-generate}
 
-Generates the [UUID](../../sql-reference/data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
 ``` sql
 generateUUIDv4()
@@ -35,6 +35,90 @@ SELECT * FROM t_uuid
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
+```
+
+## empty {#empty}
+
+Checks whether the input UUID is empty.
+
+**Syntax**
+
+```sql
+empty(UUID)
+```
+
+The UUID is considered empty if it contains all zeros (zero UUID).
+
+The function also works for [arrays](array-functions.md#function-empty) or [strings](string-functions.md#empty).
+
+**Arguments**
+
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
+
+**Returned value**
+
+-   Returns `1` for an empty UUID or `0` for a non-empty UUID. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+
+Query:
+
+```sql
+SELECT empty(generateUUIDv4());
+```
+
+Result:
+
+```text
+┌─empty(generateUUIDv4())─┐
+│                       0 │
+└─────────────────────────┘
+```
+
+## notEmpty {#notempty}
+
+Checks whether the input UUID is non-empty.
+
+**Syntax**
+
+```sql
+notEmpty(UUID)
+```
+
+The UUID is considered empty if it contains all zeros (zero UUID).
+
+The function also works for [arrays](array-functions.md#function-notempty) or [strings](string-functions.md#notempty).
+
+**Arguments**
+
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty UUID or `0` for an empty UUID. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
+
+Query:
+
+```sql
+SELECT notEmpty(generateUUIDv4());
+```
+
+Result:
+
+```text
+┌─notEmpty(generateUUIDv4())─┐
+│                          1 │
+└────────────────────────────┘
 ```
 
 ## toUUID (x) {#touuid-x}
@@ -161,8 +245,22 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
+## serverUUID() {#server-uuid}
+
+Returns the random and unique UUID, which is generated when the server is first started and stored forever. The result writes to the file `uuid` created in the ClickHouse server directory `/var/lib/clickhouse/`. 
+
+**Syntax**
+
+```sql
+serverUUID()
+```
+
+**Returned value**
+
+-   The UUID of the server. 
+
+Type: [UUID](../data-types/uuid.md).
+
 ## See Also {#see-also}
 
 -   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
-
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

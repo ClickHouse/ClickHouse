@@ -2,10 +2,11 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -24,11 +25,12 @@ struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitTestMany>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitTestMany>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -43,7 +45,7 @@ public:
             throw Exception{"Illegal type " + first_arg->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
-        for (const auto i : ext::range(1, arguments.size()))
+        for (const auto i : collections::range(1, arguments.size()))
         {
             const auto & pos_arg = arguments[i];
 
@@ -90,14 +92,14 @@ private:
 
             if (is_const)
             {
-                for (const auto i : ext::range(0, size))
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val[i], const_mask);
             }
             else
             {
                 const auto mask = createMask<T>(size, arguments);
 
-                for (const auto i : ext::range(0, size))
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
@@ -121,7 +123,7 @@ private:
 
                 auto & out = out_col->getData();
 
-                for (const auto i : ext::range(0, size))
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
                 return out_col;
@@ -137,7 +139,7 @@ private:
         out_is_const = true;
         ValueType mask = 0;
 
-        for (const auto i : ext::range(1, arguments.size()))
+        for (const auto i : collections::range(1, arguments.size()))
         {
             if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(arguments[i].column.get()))
             {
@@ -160,7 +162,7 @@ private:
     {
         PaddedPODArray<ValueType> mask(size, ValueType{});
 
-        for (const auto i : ext::range(1, arguments.size()))
+        for (const auto i : collections::range(1, arguments.size()))
         {
             const auto * pos_col = arguments[i].column.get();
 
@@ -181,7 +183,7 @@ private:
         {
             const auto & pos = pos_col->getData();
 
-            for (const auto i : ext::range(0, mask.size()))
+            for (const auto i : collections::range(0, mask.size()))
                 if (pos[i] < 8 * sizeof(ValueType))
                     mask[i] = mask[i] | (ValueType(1) << pos[i]);
 
@@ -192,7 +194,7 @@ private:
             const auto & pos = pos_col_const->template getValue<PosType>();
             const auto new_mask = pos < 8 * sizeof(ValueType) ? ValueType(1) << pos : 0;
 
-            for (const auto i : ext::range(0, mask.size()))
+            for (const auto i : collections::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;
 
             return true;

@@ -1,11 +1,9 @@
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
@@ -65,7 +63,12 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
 void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->is_window_function)
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)

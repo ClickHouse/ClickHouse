@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
@@ -11,6 +12,7 @@ namespace DB
 template <typename T>
 class DataTypeNumber final : public DataTypeNumberBase<T>
 {
+public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
@@ -25,6 +27,11 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
     }
+
+    SerializationPtr doGetDefaultSerialization() const override
+    {
+        return std::make_shared<SerializationNumber<T>>();
+    }
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;
@@ -38,6 +45,7 @@ using DataTypeInt64 = DataTypeNumber<Int64>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
 
+using DataTypeUInt128 = DataTypeNumber<UInt128>;
 using DataTypeInt128 = DataTypeNumber<Int128>;
 using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;

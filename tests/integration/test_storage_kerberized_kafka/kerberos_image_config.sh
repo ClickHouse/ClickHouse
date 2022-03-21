@@ -4,7 +4,7 @@
 set -x # trace
 
 : "${REALM:=TEST.CLICKHOUSE.TECH}"
-: "${DOMAIN_REALM:=test.clickhouse.tech}"
+: "${DOMAIN_REALM:=test.clickhouse.com}"
 : "${KERB_MASTER_KEY:=masterkey}"
 : "${KERB_ADMIN_USER:=admin}"
 : "${KERB_ADMIN_PASS:=admin}"
@@ -90,6 +90,7 @@ create_admin_user() {
 }
 
 create_keytabs() {
+  rm /tmp/keytab/*.keytab
 
   kadmin.local -q "addprinc -randkey zookeeper/kafka_kerberized_zookeeper@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kafka_kerberized_zookeeper.keytab zookeeper/kafka_kerberized_zookeeper@${REALM}"

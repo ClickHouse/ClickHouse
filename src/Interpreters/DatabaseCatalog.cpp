@@ -5,7 +5,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
@@ -15,19 +14,24 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-#    include <Storages/StorageMaterializeMySQL.h>
+#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Storages/StorageMaterializedMySQL.h>
 #endif
 
-#include <filesystem>
+#if USE_LIBPQXX
+#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#endif
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -46,25 +50,25 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
-TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
-                                           const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
-    : global_context(context_.getGlobalContext())
+TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
+    : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
     String global_name;
-    if (query)
+    if (create)
     {
         original_create = create->clone();
         if (create->uuid == UUIDHelpers::Nil)
             create->uuid = UUIDHelpers::generateV4();
         id = create->uuid;
-        create->table = "_tmp_" + toString(id);
-        global_name = create->table;
-        create->database = DatabaseCatalog::TEMPORARY_DATABASE;
+        create->setTable("_tmp_" + toString(id));
+        global_name = create->getTable();
+        create->setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
     }
     else
     {
@@ -73,42 +77,39 @@ TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    temporary_tables->createTable(global_context, global_name, table, original_create);
+    temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
 
 
 TemporaryTableHolder::TemporaryTableHolder(
-    const Context & context_,
+    ContextPtr context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
     bool create_for_global_subquery)
-    : TemporaryTableHolder
-      (
-          context_,
-          [&](const StorageID & table_id)
-          {
-              auto storage = StorageMemory::create(
-                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+    : TemporaryTableHolder(
+        context_,
+        [&](const StorageID & table_id)
+        {
+            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
-              if (create_for_global_subquery)
-                  storage->delayReadForGlobalSubqueries();
+            if (create_for_global_subquery)
+                storage->delayReadForGlobalSubqueries();
 
-              return storage;
-          },
-          query
-      )
+            return storage;
+        },
+        query)
 {
 }
 
-TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
-        : global_context(rhs.global_context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
 
-TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder && rhs)
+TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && rhs) noexcept
 {
     id = rhs.id;
     rhs.id = UUIDHelpers::Nil;
@@ -118,7 +119,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables->dropTable(global_context, "_tmp_" + toString(id));
+        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -128,22 +129,24 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), global_context);
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
 }
 
 
+void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
+{
+    drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
+
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
+    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
+}
+
 void DatabaseCatalog::loadDatabases()
 {
-    drop_delay_sec = global_context.getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
-
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, global_context);
-    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
-
-    loadMarkedAsDroppedTables();
-    auto task_holder = global_context.getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
@@ -152,7 +155,7 @@ void DatabaseCatalog::loadDatabases()
 
     /// Another background thread which drops temporary LiveViews.
     /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
-    TemporaryLiveViewCleaner::instance().startupIfNecessary();
+    TemporaryLiveViewCleaner::instance().startup();
 }
 
 void DatabaseCatalog::shutdownImpl()
@@ -212,7 +215,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context_,
     std::optional<Exception> * exception) const
 {
     if (!table_id)
@@ -234,16 +237,25 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
 
-#if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
+#if USE_LIBPQXX
+        if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
+                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
+                                        db_and_table.second->getStorageID().table_name);
+        }
+#endif
+
+#if USE_MYSQL
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
+        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
+        {
+            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
     }
+
 
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
@@ -268,7 +280,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(table_id.table_name, context);
+    auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
             exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
     if (!table)
@@ -315,7 +327,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop, bool check_empty)
+DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -351,19 +363,20 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (drop)
     {
         /// Delete the database.
-        db->drop(global_context);
+        db->drop(local_context);
 
         /// Old ClickHouse versions did not store database.sql files
-        Poco::File database_metadata_file(
-                global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
-        if (database_metadata_file.exists())
-            database_metadata_file.remove(false);
+        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::remove(database_metadata_dir);
+        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        fs::remove(database_metadata_file);
     }
 
     return db;
 }
 
-void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name)
+void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
     assert(databases.find(new_name) == databases.end());
@@ -372,6 +385,17 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     auto db = it->second;
     databases.erase(it);
     databases.emplace(new_name, db);
+
+    for (const auto & table_name : tables_in_database)
+    {
+        QualifiedTableName new_table_name{new_name, table_name};
+        auto dependencies = tryRemoveLoadingDependenciesUnlocked(QualifiedTableName{old_name, table_name}, /* check_dependencies */ false);
+        DependenciesInfos new_info;
+        for (const auto & dependency : dependencies)
+            new_info[dependency].dependent_database_objects.insert(new_table_name);
+        new_info[new_table_name].dependencies = std::move(dependencies);
+        mergeDependenciesGraphs(loading_dependencies, new_info);
+    }
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
@@ -423,7 +447,7 @@ Databases DatabaseCatalog::getDatabases() const
     return databases;
 }
 
-bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const Context & context) const
+bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
 {
     if (table_id.hasUUID())
         return tryGetByUUID(table_id.uuid).second != nullptr;
@@ -435,12 +459,12 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const Context
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(table_id.table_name, context);
+    return db && db->isTableExist(table_id.table_name, context_);
 }
 
-void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const Context & context) const
+void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, ContextPtr context_) const
 {
-    if (isTableExist(table_id, context))
+    if (isTableExist(table_id, context_))
         throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -528,13 +552,13 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 
-DatabaseCatalog::DatabaseCatalog(Context & global_context_)
-    : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
+DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
+    : WithMutableContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
-    TemporaryLiveViewCleaner::init(global_context);
+    TemporaryLiveViewCleaner::init(global_context_);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(Context & global_context_)
+DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
 {
     if (database_catalog)
     {
@@ -568,9 +592,9 @@ void DatabaseCatalog::shutdown()
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & local_context) const
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
 {
-    String resolved_database = local_context.resolveDatabase(database_name);
+    String resolved_database = local_context->resolveDatabase(database_name);
     return getDatabase(resolved_database);
 }
 
@@ -631,36 +655,38 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
-    auto db = tryGetDatabase(table_id.getDatabaseName());
-    return db && db->isDictionaryExist(table_id.getTableName());
+    auto storage = tryGetTable(table_id, getContext());
+    bool storage_is_dictionary = storage && storage->isDictionary();
+
+    return storage_is_dictionary;
 }
 
-StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context & context) const
+StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
 }
 
-StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, const Context & context) const
+StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableImpl(table_id, context, nullptr).second;
+    return getTableImpl(table_id, local_context, nullptr).second;
 }
 
-DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, const Context & context) const
+DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, context, &exc);
+    auto res = getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
 }
 
-DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const
+DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableImpl(table_id, context, nullptr);
+    return getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -673,7 +699,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = global_context.getPath() + "metadata_dropped/";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -728,7 +754,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return global_context.getPath() + "metadata_dropped/" +
+    return getContext()->getPath() + "metadata_dropped/" +
            escapeForFileName(table_id.getDatabaseName()) + "." +
            escapeForFileName(table_id.getTableName()) + "." +
            toString(table_id.uuid) + ".sql";
@@ -751,18 +777,19 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
-        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
+        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
+            log, getContext(), dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         assert(!create || create->uuid == table_id.uuid);
 
         if (create)
         {
             String data_path = "store/" + getPathForUUID(table_id.uuid);
-            create->database = table_id.database_name;
-            create->table = table_id.table_name;
+            create->setDatabase(table_id.database_name);
+            create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, global_context, false).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), false).second;
                 table->is_dropped = true;
             }
             catch (...)
@@ -780,7 +807,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
+        drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -889,16 +916,15 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     /// Even if table is not loaded, try remove its data from disk.
     /// TODO remove data from all volumes
-    String data_path = global_context.getPath() + "store/" + getPathForUUID(table.table_id.uuid);
-    Poco::File table_data_dir{data_path};
-    if (table_data_dir.exists())
+    fs::path data_path = fs::path(getContext()->getPath()) / "store" / getPathForUUID(table.table_id.uuid);
+    if (fs::exists(data_path))
     {
-        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path, table.table_id.getNameForLogs());
-        table_data_dir.remove(true);
+        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path.string(), table.table_id.getNameForLogs());
+        fs::remove_all(data_path);
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    Poco::File(table.metadata_path).remove();
+    fs::remove(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
@@ -908,31 +934,6 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
 {
     const size_t uuid_prefix_len = 3;
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
-}
-
-String DatabaseCatalog::resolveDictionaryName(const String & name) const
-{
-    /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
-    /// Try to split name and get id from associated StorageDictionary.
-    /// If something went wrong, return name as is.
-
-    /// TODO support dot in name for dictionaries in Atomic databases
-    auto pos = name.find('.');
-    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
-        return name;
-    String maybe_database_name = name.substr(0, pos);
-    String maybe_table_name = name.substr(pos + 1);
-
-    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, global_context);
-    if (!db_and_table.first)
-        return name;
-    assert(db_and_table.second);
-    if (db_and_table.first->getUUID() == UUIDHelpers::Nil)
-        return name;
-    if (db_and_table.second->getName() != "Dictionary")
-        return name;
-
-    return toString(db_and_table.second->getStorageID().uuid);
 }
 
 void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
@@ -946,6 +947,119 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     {
         return tables_marked_dropped_ids.count(uuid) == 0;
     });
+}
+
+void DatabaseCatalog::addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies)
+{
+    DependenciesInfos new_info;
+    for (const auto & dependency : dependencies)
+        new_info[dependency].dependent_database_objects.insert(table);
+    new_info[table].dependencies = std::move(dependencies);
+    addLoadingDependencies(new_info);
+}
+
+void DatabaseCatalog::addLoadingDependencies(const DependenciesInfos & new_infos)
+{
+    std::lock_guard lock{databases_mutex};
+    mergeDependenciesGraphs(loading_dependencies, new_infos);
+}
+
+DependenciesInfo DatabaseCatalog::getLoadingDependenciesInfo(const StorageID & table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(table_id.getQualifiedName());
+    if (it == loading_dependencies.end())
+        return {};
+    return it->second;
+}
+
+TableNamesSet DatabaseCatalog::tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database)
+{
+    QualifiedTableName removing_table = table_id.getQualifiedName();
+    std::lock_guard lock{databases_mutex};
+    return tryRemoveLoadingDependenciesUnlocked(removing_table, check_dependencies, is_drop_database);
+}
+
+TableNamesSet DatabaseCatalog::tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database)
+{
+    auto it = loading_dependencies.find(removing_table);
+    if (it == loading_dependencies.end())
+        return {};
+
+    TableNamesSet & dependent = it->second.dependent_database_objects;
+    if (!dependent.empty())
+    {
+        if (check_dependencies && !is_drop_database)
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
+                            removing_table, fmt::join(dependent, ", "));
+
+        /// For DROP DATABASE we should ignore dependent tables from the same database.
+        /// TODO unload tables in reverse topological order and remove this code
+        if (check_dependencies)
+        {
+            TableNames from_other_databases;
+            for (const auto & table : dependent)
+                if (table.database != removing_table.database)
+                    from_other_databases.push_back(table);
+
+            if (!from_other_databases.empty())
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
+                                removing_table, fmt::join(from_other_databases, ", "));
+        }
+
+        for (const auto & table : dependent)
+        {
+            [[maybe_unused]] bool removed = loading_dependencies[table].dependencies.erase(removing_table);
+            assert(removed);
+        }
+        dependent.clear();
+    }
+
+    TableNamesSet dependencies = it->second.dependencies;
+    for (const auto & table : dependencies)
+    {
+        [[maybe_unused]] bool removed = loading_dependencies[table].dependent_database_objects.erase(removing_table);
+        assert(removed);
+    }
+
+    loading_dependencies.erase(it);
+    return dependencies;
+}
+
+void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const
+{
+    QualifiedTableName removing_table = table_id.getQualifiedName();
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(removing_table);
+    if (it == loading_dependencies.end())
+        return;
+
+    const TableNamesSet & dependent = it->second.dependent_database_objects;
+    if (!dependent.empty())
+        throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
+                            table_id.getNameForLogs(), fmt::join(dependent, ", "));
+}
+
+void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies)
+{
+    if (new_dependencies.empty())
+        return;
+    QualifiedTableName table_name = table_id.getQualifiedName();
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(table_name);
+    if (it == loading_dependencies.end())
+        it = loading_dependencies.emplace(table_name, DependenciesInfo{}).first;
+
+    auto & old_dependencies = it->second.dependencies;
+    for (const auto & dependency : old_dependencies)
+        if (!new_dependencies.contains(dependency))
+            loading_dependencies[dependency].dependent_database_objects.erase(table_name);
+
+    for (const auto & dependency : new_dependencies)
+        if (!old_dependencies.contains(dependency))
+            loading_dependencies[dependency].dependent_database_objects.insert(table_name);
+
+    old_dependencies = std::move(new_dependencies);
 }
 
 

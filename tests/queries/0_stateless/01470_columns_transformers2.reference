@@ -1,1 +1,4 @@
 100	10	324	120.00 B	8.00 B	23.00 B
+0
+SELECT argMax(number, number)
+FROM numbers(1)

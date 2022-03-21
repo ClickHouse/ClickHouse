@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+            </hdfs>
+        </disks>
+    </storage_configuration>
+</clickhouse>

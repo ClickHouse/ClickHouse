@@ -29,4 +29,4 @@ Columns:
 
 -   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/quota_usage) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/quota_usage) <!--hide-->

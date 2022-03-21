@@ -1,22 +1,23 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionRankCorrelation.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 #include <AggregateFunctions/Helpers.h>
 
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB
 {
+struct Settings;
 
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionRankCorrelation(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);

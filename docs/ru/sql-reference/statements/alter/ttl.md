@@ -18,7 +18,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 Удалить табличный TTL можно запросом следующего вида:
 
 ```sql
-ALTER TABLE table_name REMOVE TTL 
+ALTER TABLE table_name REMOVE TTL
 ```
 
 **Пример**
@@ -64,7 +64,7 @@ ALTER TABLE table_with_ttl REMOVE TTL;
 
 Заново вставляем удаленную строку и снова принудительно запускаем очистку по `TTL` с помощью `OPTIMIZE`:
 
-```sql 
+```sql
 INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
 OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl;
@@ -81,6 +81,5 @@ SELECT * FROM table_with_ttl;
 
 ### Смотрите также
 
-- Подробнее о [свойстве TTL](../../../engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/ttl/) <!--hide-->
+- Подробнее о [свойстве TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
+- Изменить столбец [с TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).

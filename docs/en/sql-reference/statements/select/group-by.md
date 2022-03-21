@@ -10,6 +10,8 @@ toc_title: GROUP BY
 -   All the expressions in the [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md), and [ORDER BY](../../../sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
 -   Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually this signficantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.
 
+When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
+
 !!! note "Note"
     There’s an additional way to run aggregation over a table. If a query contains table columns only inside aggregate functions, the `GROUP BY clause` can be omitted, and aggregation by an empty set of keys is assumed. Such queries always return exactly one row.
 
@@ -49,14 +51,14 @@ If you pass several keys to `GROUP BY`, the result will give you all the combina
 
 `WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
 
-The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression. 
+The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression.
 
 In the subtotals rows the values of already "grouped" key expressions are set to `0` or empty line.
 
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**    
+**Example**
 
 Consider the table t:
 
@@ -115,7 +117,7 @@ In the subtotals rows the values of all "grouped" key expressions are set to `0`
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**      
+**Example**
 
 Consider the table t:
 
@@ -138,13 +140,13 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
 
-- `GROUP BY year, month, day`   
-- `GROUP BY year, month` 
+- `GROUP BY year, month, day`
+- `GROUP BY year, month`
 - `GROUP BY year, day`
-- `GROUP BY year` 
-- `GROUP BY month, day` 
-- `GROUP BY month` 
-- `GROUP BY day` 
+- `GROUP BY year`
+- `GROUP BY month, day`
+- `GROUP BY month`
+- `GROUP BY day`
 - and totals.
 
 Columns, excluded from `GROUP BY`, are filled with zeros.
@@ -204,11 +206,14 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
 -   In the other formats it is not available.
 
+!!! note "Note"
+    totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`. 
+
 `WITH TOTALS` can be run in different ways when [HAVING](../../../sql-reference/statements/select/having.md) is present. The behavior depends on the `totals_mode` setting.
 
 ### Configuring Totals Processing {#configuring-totals-processing}
 
-By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that don’t pass through HAVING and `max_rows_to_group_by`.
+By default, `totals_mode = 'before_having'`. In this case, ‘totals’ is calculated across all rows, including the ones that do not pass through HAVING and `max_rows_to_group_by`.
 
 The other alternatives include only the rows that pass through HAVING in ‘totals’, and behave differently with the setting `max_rows_to_group_by` and `group_by_overflow_mode = 'any'`.
 
@@ -257,7 +262,7 @@ Aggregation is one of the most important features of a column-oriented DBMS, and
 
 ### GROUP BY Optimization Depending on Table Sorting Key {#aggregation-in-order}
 
-The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution. 
+The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution.
 
 ### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
@@ -274,4 +279,4 @@ When merging data flushed to the disk, as well as when merging results from remo
 
 When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
-If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` doesn’t have `LIMIT`, don’t forget to enable external sorting (`max_bytes_before_external_sort`).
+If you have an [ORDER BY](../../../sql-reference/statements/select/order-by.md) with a [LIMIT](../../../sql-reference/statements/select/limit.md) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` does not have `LIMIT`, do not forget to enable external sorting (`max_bytes_before_external_sort`).

@@ -54,7 +54,7 @@ SELECT * FROM file_engine_table
 
 ## 在 Clickhouse-local 中的使用 {#zai-clickhouse-local-zhong-de-shi-yong}
 
-使用 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../../../engines/table-engines/special/file.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
+使用 [clickhouse-local](../../../operations/utilities/clickhouse-local.md) 时，File 引擎除了 `Format` 之外，还可以接收文件路径参数。可以使用数字或名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
 **例如：**
 
 ``` bash
@@ -70,4 +70,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   索引
     -   副本
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/file/) <!--hide-->

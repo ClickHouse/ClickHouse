@@ -5,8 +5,9 @@
 #include <climits>
 #include <random>
 #include <functional>
-#include <common/types.h>
-#include <ext/scope_guard.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -103,6 +104,7 @@ public:
         const PoolState * state{};
         size_t index = 0;
         size_t error_count = 0;
+        size_t slowdown_count = 0;
     };
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
@@ -132,6 +134,8 @@ protected:
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
+
+    void updateErrorCounts(PoolStates & states, time_t & last_decrease_time) const;
 
     std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority);
 
@@ -175,7 +179,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
-    std::sort(
+    ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
@@ -193,6 +197,7 @@ inline void PoolWithFailoverBase<TNestedPool>::updateSharedErrorCounts(std::vect
     {
         auto & pool_state = shared_pool_states[pool.index];
         pool_state.error_count = std::min<UInt64>(max_error_cap, pool_state.error_count + pool.error_count);
+        pool_state.slowdown_count += pool.slowdown_count;
     }
 }
 
@@ -332,6 +337,8 @@ template <typename TNestedPool>
 struct PoolWithFailoverBase<TNestedPool>::PoolState
 {
     UInt64 error_count = 0;
+    /// The number of slowdowns that led to changing replica in HedgedRequestsFactory
+    UInt64 slowdown_count = 0;
     /// Priority from the <remote_server> configuration.
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
@@ -345,8 +352,8 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
 
     static bool compare(const PoolState & lhs, const PoolState & rhs)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
-             < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
+             < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:
@@ -366,39 +373,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
         for (auto & state : shared_pool_states)
             state.randomize();
 
-        time_t current_time = time(nullptr);
-
-        if (last_error_decrease_time)
-        {
-            time_t delta = current_time - last_error_decrease_time;
-
-            if (delta >= 0)
-            {
-                const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-                size_t shift_amount = MAX_BITS;
-                /// Divide error counts by 2 every decrease_error_period seconds.
-                if (decrease_error_period)
-                    shift_amount = delta / decrease_error_period;
-                /// Update time but don't do it more often than once a period.
-                /// Else if the function is called often enough, error count will never decrease.
-                if (shift_amount)
-                    last_error_decrease_time = current_time;
-
-                if (shift_amount >= MAX_BITS)
-                {
-                    for (auto & state : shared_pool_states)
-                        state.error_count = 0;
-                }
-                else if (shift_amount)
-                {
-                    for (auto & state : shared_pool_states)
-                        state.error_count >>= shift_amount;
-                }
-            }
-        }
-        else
-            last_error_decrease_time = current_time;
-
+        updateErrorCounts(shared_pool_states, last_error_decrease_time);
         result.assign(shared_pool_states.begin(), shared_pool_states.end());
     }
 
@@ -407,4 +382,47 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
         state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
 
     return result;
+}
+
+template <typename TNestedPool>
+void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<TNestedPool>::PoolStates & states, time_t & last_decrease_time) const
+{
+    time_t current_time = time(nullptr);
+
+    if (last_decrease_time) //-V1051
+    {
+        time_t delta = current_time - last_decrease_time;
+
+        if (delta >= 0)
+        {
+            const UInt64 max_bits = sizeof(UInt64) * CHAR_BIT;
+            size_t shift_amount = max_bits;
+            /// Divide error counts by 2 every decrease_error_period seconds.
+            if (decrease_error_period)
+                shift_amount = delta / decrease_error_period;
+            /// Update time but don't do it more often than once a period.
+            /// Else if the function is called often enough, error count will never decrease.
+            if (shift_amount)
+                last_decrease_time = current_time;
+
+            if (shift_amount >= max_bits)
+            {
+                for (auto & state : states)
+                {
+                    state.error_count = 0;
+                    state.slowdown_count = 0;
+                }
+            }
+            else if (shift_amount)
+            {
+                for (auto & state : states)
+                {
+                    state.error_count >>= shift_amount;
+                    state.slowdown_count >>= shift_amount;
+                }
+            }
+        }
+    }
+    else
+        last_decrease_time = current_time;
 }

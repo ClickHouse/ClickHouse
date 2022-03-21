@@ -1,66 +1,59 @@
 #include <Access/AccessRights.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <unordered_map>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
-    using Kind = AccessRightsElementWithOptions::Kind;
-
     struct ProtoElement
     {
         AccessFlags access_flags;
         boost::container::small_vector<std::string_view, 3> full_name;
         bool grant_option = false;
-        Kind kind = Kind::GRANT;
+        bool is_partial_revoke = false;
 
         friend bool operator<(const ProtoElement & left, const ProtoElement & right)
         {
-            static constexpr auto compare_name = [](const boost::container::small_vector<std::string_view, 3> & left_name,
-                                                    const boost::container::small_vector<std::string_view, 3> & right_name,
-                                                    size_t i)
+            /// Compare components alphabetically.
+            size_t min_size = std::min(left.full_name.size(), right.full_name.size());
+            for (size_t i = 0; i != min_size; ++i)
             {
-                if (i < left_name.size())
-                {
-                    if (i < right_name.size())
-                        return left_name[i].compare(right_name[i]);
-                    else
-                        return 1; /// left_name is longer => left_name > right_name
-                }
-                else if (i < right_name.size())
-                    return 1; /// right_name is longer => left < right
-                else
-                    return 0; /// left_name == right_name
-            };
+                int cmp = left.full_name[i].compare(right.full_name[i]);
+                if (cmp != 0)
+                    return cmp < 0;
+            }
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 0))
-                return cmp < 0;
+            /// Names with less number of components first.
+            if (left.full_name.size() != right.full_name.size())
+                return left.full_name.size() < right.full_name.size();
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 1))
-                return cmp < 0;
+            /// Grants before partial revokes.
+            if (left.is_partial_revoke != right.is_partial_revoke)
+                return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            if (left.kind != right.kind)
-                return (left.kind == Kind::GRANT);
-
+            /// Grants with grant option after other grants.
+            /// Revoke grant option after normal revokes.
             if (left.grant_option != right.grant_option)
-                return right.grant_option;
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 2))
-                return cmp < 0;
+                return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
             return (left.access_flags < right.access_flags);
         }
 
-        AccessRightsElementWithOptions getResult() const
+        AccessRightsElement getResult() const
         {
-            AccessRightsElementWithOptions res;
+            AccessRightsElement res;
             res.access_flags = access_flags;
             res.grant_option = grant_option;
-            res.kind = kind;
+            res.is_partial_revoke = is_partial_revoke;
             switch (full_name.size())
             {
                 case 0:
@@ -105,11 +98,11 @@ namespace
     class ProtoElements : public std::vector<ProtoElement>
     {
     public:
-        AccessRightsElementsWithOptions getResult() const
+        AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
-            boost::range::sort(sorted);
-            AccessRightsElementsWithOptions res;
+            ::sort(sorted.begin(), sorted.end());
+            AccessRightsElements res;
             res.reserve(sorted.size());
 
             for (size_t i = 0; i != sorted.size();)
@@ -144,7 +137,7 @@ namespace
             {
                 return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
                     || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
-                    || (element.kind != start_element.kind);
+                    || (element.is_partial_revoke != start_element.is_partial_revoke);
             });
 
             return it - (begin() + start);
@@ -153,7 +146,7 @@ namespace
         /// Collects columns together to write multiple columns into one AccessRightsElement.
         /// That procedure allows to output access rights in more compact way,
         /// e.g. "SELECT(x, y)" instead of "SELECT(x), SELECT(y)".
-        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElementsWithOptions & res) const
+        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElements & res) const
         {
             const auto * pbegin = data() + start;
             const auto * pend = pbegin + count;
@@ -180,7 +173,7 @@ namespace
                 res.emplace_back();
                 auto & back = res.back();
                 back.grant_option = pbegin->grant_option;
-                back.kind = pbegin->kind;
+                back.is_partial_revoke = pbegin->is_partial_revoke;
                 back.any_database = false;
                 back.database = pbegin->full_name[0];
                 back.any_table = false;
@@ -515,10 +508,10 @@ private:
         auto grants = flags - parent_fl;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (node.children)
         {
@@ -550,16 +543,16 @@ private:
         auto grants = flags - parent_fl - grants_go;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (revokes_go)
-            res.push_back(ProtoElement{revokes_go, full_name, true, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes_go, full_name, true, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (grants_go)
-            res.push_back(ProtoElement{grants_go, full_name, true, Kind::GRANT});
+            res.push_back(ProtoElement{grants_go, full_name, true, false});
 
         if (node && node->children)
         {
@@ -652,7 +645,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
+                    lhs_child.addGrantsRec(rhs.flags);
             }
         }
     }
@@ -670,7 +663,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags &= rhs.flags;
+                    lhs_child.removeGrantsRec(~rhs.flags);
             }
         }
     }
@@ -713,8 +706,8 @@ private:
 
 AccessRights::AccessRights() = default;
 AccessRights::~AccessRights() = default;
-AccessRights::AccessRights(AccessRights && src) = default;
-AccessRights & AccessRights::operator =(AccessRights && src) = default;
+AccessRights::AccessRights(AccessRights && src) noexcept = default;
+AccessRights & AccessRights::operator =(AccessRights && src) noexcept = default;
 
 
 AccessRights::AccessRights(const AccessRights & src)
@@ -774,8 +767,10 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 }
 
 template <bool with_grant_option>
-void AccessRights::grantImpl(const AccessRightsElement & element)
+void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
+    assert(!element.is_partial_revoke);
+    assert(!element.grant_option || with_grant_option);
     if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
@@ -784,6 +779,24 @@ void AccessRights::grantImpl(const AccessRightsElement & element)
         grantImpl<with_grant_option>(element.access_flags, element.database, element.table);
     else
         grantImpl<with_grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool with_grant_option>
+void AccessRights::grantImpl(const AccessRightsElement & element)
+{
+    if (element.is_partial_revoke)
+        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::BAD_ARGUMENTS);
+    if constexpr (with_grant_option)
+    {
+        grantImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            grantImplHelper<true>(element);
+        else
+            grantImplHelper<false>(element);
+    }
 }
 
 template <bool with_grant_option>
@@ -830,8 +843,9 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 }
 
 template <bool grant_option>
-void AccessRights::revokeImpl(const AccessRightsElement & element)
+void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
+    assert(!element.grant_option || grant_option);
     if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -840,6 +854,22 @@ void AccessRights::revokeImpl(const AccessRightsElement & element)
         revokeImpl<grant_option>(element.access_flags, element.database, element.table);
     else
         revokeImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool grant_option>
+void AccessRights::revokeImpl(const AccessRightsElement & element)
+{
+    if constexpr (grant_option)
+    {
+        revokeImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            revokeImplHelper<true>(element);
+        else
+            revokeImplHelper<false>(element);
+    }
 }
 
 template <bool grant_option>
@@ -868,7 +898,7 @@ void AccessRights::revokeGrantOption(const AccessRightsElement & element) { revo
 void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { revokeImpl<true>(elements); }
 
 
-AccessRightsElementsWithOptions AccessRights::getElements() const
+AccessRightsElements AccessRights::getElements() const
 {
 #if 0
     logTree();
@@ -903,8 +933,9 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 }
 
 template <bool grant_option>
-bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
+bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
+    assert(!element.grant_option || grant_option);
     if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -913,6 +944,22 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
         return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table);
     else
         return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool grant_option>
+bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
+{
+    if constexpr (grant_option)
+    {
+        return isGrantedImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            return isGrantedImplHelper<true>(element);
+        else
+            return isGrantedImplHelper<false>(element);
+    }
 }
 
 template <bool grant_option>
@@ -984,17 +1031,15 @@ void AccessRights::makeIntersection(const AccessRights & other)
     auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
     {
         if (!root_node)
+            return;
+        if (!other_root_node)
         {
-            if (other_root_node)
-                root_node = std::make_unique<Node>(*other_root_node);
+            root_node = nullptr;
             return;
         }
-        if (other_root_node)
-        {
-            root_node->makeIntersection(*other_root_node);
-            if (!root_node->flags && !root_node->children)
-                root_node = nullptr;
-        }
+        root_node->makeIntersection(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);

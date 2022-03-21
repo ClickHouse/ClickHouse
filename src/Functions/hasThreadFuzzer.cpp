@@ -16,7 +16,7 @@ class FunctionHasThreadFuzzer : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionHasThreadFuzzer>();
     }
@@ -30,6 +30,8 @@ public:
     {
         return 0;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {

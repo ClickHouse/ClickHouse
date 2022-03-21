@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # https://github.com/ClickHouse/ClickHouse/issues/6497
 

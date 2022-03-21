@@ -3,9 +3,6 @@ import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
 
 def check_proxy_logs(cluster, proxy_instance):
     logs = cluster.get_container_logs(proxy_instance)
@@ -18,9 +15,8 @@ def check_proxy_logs(cluster, proxy_instance):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/log_conf.xml",
-                                                   "configs/config.d/ssl.xml"], with_minio=True,
-                             minio_certs_dir='minio_certs')
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/ssl.xml"],
+                             with_minio=True, minio_certs_dir="minio_certs")
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")

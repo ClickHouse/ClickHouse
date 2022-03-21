@@ -8,6 +8,8 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
   * The expression is evaluated and result chunks contain only the filtered rows.
@@ -22,7 +24,7 @@ public:
 
     static Block transformHeader(
             Block header,
-            const ExpressionActionsPtr & expression,
+            const ActionsDAG & expression,
             const String & filter_column_name,
             bool remove_filter_column);
 

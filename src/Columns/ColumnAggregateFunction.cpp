@@ -1,11 +1,12 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -13,7 +14,6 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
-#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -24,16 +24,24 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
-static std::string getTypeString(const AggregateFunctionPtr & func)
+static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << func->getName();
+
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    if (version && *version)
+        stream << *version << ", ";
+
+    stream << func->getName();
+
     const auto & parameters = func->getParameters();
     const auto & argument_types = func->getArgumentTypes();
-
     if (!parameters.empty())
     {
         stream << '(';
@@ -54,8 +62,8 @@ static std::string getTypeString(const AggregateFunctionPtr & func)
 }
 
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-    : func(func_), type_string(getTypeString(func))
+ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
+    : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }
 
@@ -65,10 +73,11 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
-    type_string = getTypeString(func);
+    version = version_;
+    type_string = getTypeString(func, version);
 }
 
 
@@ -161,12 +170,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto * machine_learning_function = func.get();
+    const auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -195,6 +204,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
 
 void ColumnAggregateFunction::ensureOwnership()
 {
+    force_data_ownership = true;
+
     if (src)
     {
         /// We must copy all data from src and take ownership.
@@ -260,7 +271,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
                 + ").",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (!empty() && src.get() != &from_concrete)
+    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -286,7 +297,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 {
     size_t size = data.size();
     if (size != filter.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter.size(), size);
 
     if (size == 0)
         return cloneEmpty();
@@ -308,26 +319,14 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
+void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
+{
+    expandDataByMask<char *>(data, mask, inverted);
+}
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
-    size_t size = data.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    auto res = createView();
-
-    res->data.resize(limit);
-    for (size_t i = 0; i < limit; ++i)
-        res->data[i] = data[perm[i]];
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
@@ -338,6 +337,7 @@ ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) 
 template <typename Type>
 ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
+    assert(limit <= indexes.size());
     auto res = createView();
 
     res->data.resize(limit);
@@ -353,7 +353,7 @@ INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
     WriteBufferFromOwnString wbuf;
-    func->serialize(data[n], wbuf);
+    func->serialize(data[n], wbuf, version);
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
@@ -370,7 +370,7 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
     for (size_t i = 0; i < s; ++i)
     {
         WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-        func->serialize(data[i], wbuf);
+        func->serialize(data[i], wbuf, version);
         wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
@@ -413,7 +413,7 @@ void ColumnAggregateFunction::protect()
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func);
+    return create(func, version);
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
@@ -422,7 +422,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
     field.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer);
+        func->serialize(data[n], buffer, version);
     }
     return field;
 }
@@ -433,7 +433,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
-        func->serialize(data[n], buffer);
+        func->serialize(data[n], buffer, version);
     }
 }
 
@@ -484,7 +484,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
@@ -501,8 +501,9 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
-        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
-                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
+            x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
@@ -513,7 +514,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
-    func->deserialize(data.back(), read_buffer, &arena);
+    func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
 void ColumnAggregateFunction::insertDefault()
@@ -526,8 +527,8 @@ void ColumnAggregateFunction::insertDefault()
 StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     WriteBufferFromArena out(arena, begin);
-    func->serialize(data[n], out);
-    return out.finish();
+    func->serialize(data[n], out, version);
+    return out.complete();
 }
 
 const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)
@@ -548,9 +549,14 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       *  Probably this will not work under UBSan.
       */
     ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
-    func->deserialize(data.back(), read_buffer, &dst_arena);
+    func->deserialize(data.back(), read_buffer, version, &dst_arena);
 
     return read_buffer.position();
+}
+
+const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
+{
+    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
@@ -614,7 +620,8 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     return columns;
 }
 
-void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                            size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -622,7 +629,8 @@ void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/,
         res[i] = i;
 }
 
-void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
+void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
+                                            size_t, int, Permutation &, EqualRanges&) const {}
 
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {
@@ -643,7 +651,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     try
     {
         WriteBufferFromString buffer(serialized.data);
-        func->serialize(place, buffer);
+        func->serialize(place, buffer, version);
     }
     catch (...)
     {

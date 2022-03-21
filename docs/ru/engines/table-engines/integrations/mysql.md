@@ -1,11 +1,11 @@
 ---
-toc_priority: 3
+toc_priority: 4
 toc_title: MySQL
 ---
 
 # MySQL {#mysql}
 
-Движок MySQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
+Движок MySQL позволяет выполнять запросы `SELECT` и `INSERT` над данными, хранящимися на удалённом MySQL сервере.
 
 ## Создание таблицы {#sozdanie-tablitsy}
 
@@ -15,15 +15,22 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+SETTINGS
+    [connection_pool_size=16, ]
+    [connection_max_tries=3, ]
+    [connection_wait_timeout=5, ] /* 0 -- не ждать */
+    [connection_auto_close=true ]
+;
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table-engines/integrations/mysql.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
 
-Структура таблицы может отличаться от исходной структуры таблицы MySQL:
+Структура таблицы может отличаться от структуры исходной таблицы MySQL:
 
--   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../engines/table-engines/integrations/mysql.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но можно использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [привести](../../../engines/database-engines/mysql.md#data_types-support) значения к типам данных ClickHouse.
+-   Настройка [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
 
 **Параметры движка**
 
@@ -48,6 +55,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
+
+Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
 
 ## Пример использования {#primer-ispolzovaniia}
 
@@ -95,9 +108,43 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Смотрите также {#smotrite-takzhe}
+## Настройки {#mysql-settings}
 
--   [Табличная функция ‘mysql’](../../../engines/table-engines/integrations/mysql.md)
+Настройки по умолчанию не очень эффективны, так как они не используют повторное соединение. Эти настройки позволяют увеличить количество запросов, выполняемых сервером в секунду.
+
+### connection_auto_close {#connection-auto-close}
+
+Позволяет автоматически закрыть соединение после выполнения запроса, то есть отключить повторное использование соединения.
+
+Возможные значения:
+
+-   1 — автоматическое закрытие соединения разрешено (повторное использование отключается).
+-   0 — автоматическое закрытие соединения запрещено (повторное использование включается).
+
+Значение по умолчанию: `1`.
+
+### connection_max_tries {#connection-max-tries}
+
+Устанавливает количество повторных попыток для пула со сбоями соединения.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — отсутствуют повторные попытки для пула со сбоями соединения.
+
+Значение по умолчанию: `3`.
+
+### connection_pool_size {#connection-pool-size}
+
+Задает размер пула соединений (если используются все соединения, запрос будет ждать, пока какое-либо соединение не будет освобождено).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `16`.
+
+## См. также {#see-also}
+
+-   [Табличная функция mysql](../../../engines/table-engines/integrations/mysql.md)
 -   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

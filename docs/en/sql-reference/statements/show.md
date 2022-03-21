@@ -8,10 +8,12 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+
+Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -91,7 +93,7 @@ Result:
 
 ### See Also {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -190,8 +192,8 @@ Result:
 
 ### See Also {#see-also}
 
--   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -240,7 +242,7 @@ If user is not specified, the query returns privileges for the current user.
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
-`SHOW CREATE USER` doesn’t output user passwords.
+`SHOW CREATE USER` does not output user passwords.
 
 ### Syntax {#show-create-user-syntax}
 
@@ -297,7 +299,7 @@ Returns a list of [user account](../../operations/access-rights.md#user-account-
 ``` sql
 SHOW USERS
 ```
- 
+
 ## SHOW ROLES {#show-roles-statement}
 
 Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
@@ -335,8 +337,8 @@ Returns a list of [quotas](../../operations/access-rights.md#quotas-management).
 
 ``` sql
 SHOW QUOTAS
-```  
-    
+```
+
 ## SHOW QUOTA {#show-quota-statement}
 
 Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
@@ -366,9 +368,9 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 
 ``` sql
 SHOW CLUSTER '<name>'
-SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Examples 
+### Examples {#show-cluster-examples}
 
 Query:
 
@@ -428,4 +430,69 @@ errors_count:            0
 estimated_recovery_time: 0
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+## SHOW SETTINGS {#show-settings}
+
+Returns a list of system settings and their values. Selects data from the [system.settings](../../operations/system-tables/settings.md) table.
+
+**Syntax**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Clauses**
+
+`LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
+
+When the `CHANGED` clause is used, the query returns only settings changed from their default values.
+
+**Examples**
+
+Query with the `LIKE` clause:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Result:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Query with the `ILIKE` clause:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Result:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Query with the `CHANGED` clause:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Result:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**See Also**
+
+-   [system.settings](../../operations/system-tables/settings.md) table
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->

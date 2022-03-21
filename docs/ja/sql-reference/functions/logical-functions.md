@@ -19,4 +19,4 @@ toc_title: "\u8AD6\u7406"
 
 ## xor {#xor}
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/logical_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/logical_functions/) <!--hide-->

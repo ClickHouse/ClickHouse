@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct Settings;
 
 class Context;
 class IDataType;
@@ -26,7 +27,7 @@ using DataTypes = std::vector<DataTypePtr>;
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
-using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
+using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 
 struct AggregateFunctionWithProperties
 {
@@ -37,8 +38,9 @@ struct AggregateFunctionWithProperties
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
     AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
 
-    template <typename Creator, std::enable_if_t<!std::is_same_v<Creator, AggregateFunctionWithProperties>> * = nullptr>
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {})
+    template <typename Creator>
+    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
     {
     }

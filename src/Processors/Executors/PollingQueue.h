@@ -17,7 +17,7 @@ class PollingQueue
 public:
     struct TaskData
     {
-        size_t thread_num;
+        size_t thread_num = 0;
 
         void * data = nullptr;
         int fd = -1;

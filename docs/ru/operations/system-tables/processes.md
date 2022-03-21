@@ -14,4 +14,3 @@
 -   `query` (String) – текст запроса. Для запросов `INSERT` не содержит встаявляемые данные.
 -   `query_id` (String) – идентификатор запроса, если был задан.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/processes) <!--hide-->

@@ -1,150 +1,170 @@
 #include "ODBCBlockInputStream.h"
 #include <vector>
+#include <IO/ReadBufferFromString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include <ext/range.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNKNOWN_TYPE;
 }
 
 
-ODBCBlockInputStream::ODBCBlockInputStream(
-    Poco::Data::Session && session_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
-    : session{session_}
-    , statement{(this->session << query_str, Poco::Data::Keywords::now)}
-    , result{statement}
-    , iterator{result.begin()}
+ODBCSource::ODBCSource(
+    nanodbc::ConnectionHolderPtr connection_holder, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
+    : ISource(sample_block)
+    , log(&Poco::Logger::get("ODBCSource"))
     , max_block_size{max_block_size_}
-    , log(&Poco::Logger::get("ODBCBlockInputStream"))
+    , query(query_str)
 {
-    if (sample_block.columns() != result.columnCount())
-        throw Exception{"RecordSet contains " + toString(result.columnCount()) + " columns while " + toString(sample_block.columns())
-                            + " expected",
-                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
-
     description.init(sample_block);
+    result = execute<nanodbc::result>(connection_holder,
+                     [&](nanodbc::connection & connection) { return execute(connection, query); });
 }
 
 
-namespace
+Chunk ODBCSource::generate()
 {
-    using ValueType = ExternalResultDescription::ValueType;
-
-    void insertValue(IColumn & column, const ValueType type, const Poco::Dynamic::Var & value)
-    {
-        switch (type)
-        {
-            case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
-                break;
-            case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
-                break;
-            case ValueType::vtUInt32:
-                assert_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
-                break;
-            case ValueType::vtUInt64:
-                assert_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
-                break;
-            case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
-                break;
-            case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
-                break;
-            case ValueType::vtInt32:
-                assert_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
-                break;
-            case ValueType::vtInt64:
-                assert_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
-                break;
-            case ValueType::vtFloat32:
-                assert_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
-                break;
-            case ValueType::vtFloat64:
-                assert_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
-                break;
-            case ValueType::vtString:
-                assert_cast<ColumnString &>(column).insert(value.convert<String>());
-                break;
-            case ValueType::vtDate:
-            {
-                Poco::DateTime date = value.convert<Poco::DateTime>();
-                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate(date.year(), date.month(), date.day()).getDayNum()});
-                break;
-            }
-            case ValueType::vtDateTime:
-            {
-                Poco::DateTime datetime = value.convert<Poco::DateTime>();
-                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime(
-                    datetime.year(), datetime.month(), datetime.day(), datetime.hour(), datetime.minute(), datetime.second())});
-                break;
-            }
-            case ValueType::vtUUID:
-                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
-                break;
-            default:
-                throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
-        }
-    }
-
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
-}
-
-
-Block ODBCBlockInputStream::readImpl()
-{
-    if (iterator == result.end())
+    if (is_finished)
         return {};
 
-    MutableColumns columns(description.sample_block.columns());
-    for (const auto i : ext::range(0, columns.size()))
-        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
-
+    MutableColumns columns(description.sample_block.cloneEmptyColumns());
     size_t num_rows = 0;
-    while (iterator != result.end())
+
+    while (true)
     {
-        Poco::Data::Row & row = *iterator;
-
-        for (const auto idx : ext::range(0, row.fieldCount()))
+        if (!result.next())
         {
-            /// TODO This is extremely slow.
-            const Poco::Dynamic::Var & value = row[idx];
+            is_finished = true;
+            break;
+        }
 
-            if (!value.isEmpty())
+        for (int idx = 0; idx < result.columns(); ++idx)
+        {
+            const auto & sample = description.sample_block.getByPosition(idx);
+
+            if (!result.is_null(idx))
             {
-                if (description.types[idx].second)
+                bool is_nullable = description.types[idx].second;
+
+                if (is_nullable)
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                    insertValue(column_nullable.getNestedColumn(), data_type.getNestedType(), description.types[idx].first, result, idx);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                    insertValue(*columns[idx], description.types[idx].first, value);
+                {
+                    insertValue(*columns[idx], sample.type, description.types[idx].first, result, idx);
+                }
             }
             else
-                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                insertDefaultValue(*columns[idx], *sample.column);
         }
 
-        ++iterator;
-
-        ++num_rows;
-        if (num_rows == max_block_size)
+        if (++num_rows == max_block_size)
             break;
     }
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
+}
+
+
+void ODBCSource::insertValue(
+        IColumn & column, const DataTypePtr data_type, const ValueType type, nanodbc::result & row, size_t idx)
+{
+    switch (type)
+    {
+        case ValueType::vtUInt8:
+            assert_cast<ColumnUInt8 &>(column).insertValue(row.get<uint16_t>(idx));
+            break;
+        case ValueType::vtUInt16:
+            assert_cast<ColumnUInt16 &>(column).insertValue(row.get<uint16_t>(idx));
+            break;
+        case ValueType::vtUInt32:
+            assert_cast<ColumnUInt32 &>(column).insertValue(row.get<uint32_t>(idx));
+            break;
+        case ValueType::vtUInt64:
+            assert_cast<ColumnUInt64 &>(column).insertValue(row.get<uint64_t>(idx));
+            break;
+        case ValueType::vtInt8:
+            assert_cast<ColumnInt8 &>(column).insertValue(row.get<int16_t>(idx));
+            break;
+        case ValueType::vtInt16:
+            assert_cast<ColumnInt16 &>(column).insertValue(row.get<int16_t>(idx));
+            break;
+        case ValueType::vtInt32:
+            assert_cast<ColumnInt32 &>(column).insertValue(row.get<int32_t>(idx));
+            break;
+        case ValueType::vtInt64:
+            assert_cast<ColumnInt64 &>(column).insertValue(row.get<int64_t>(idx));
+            break;
+        case ValueType::vtFloat32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(row.get<float>(idx));
+            break;
+        case ValueType::vtFloat64:
+            assert_cast<ColumnFloat64 &>(column).insertValue(row.get<double>(idx));
+            break;
+        case ValueType::vtFixedString:[[fallthrough]];
+        case ValueType::vtEnum8:
+        case ValueType::vtEnum16:
+        case ValueType::vtString:
+            assert_cast<ColumnString &>(column).insert(row.get<std::string>(idx));
+            break;
+        case ValueType::vtUUID:
+        {
+            auto value = row.get<std::string>(idx);
+            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            break;
+        }
+        case ValueType::vtDate:
+            assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{row.get<std::string>(idx)}.getDayNum()});
+            break;
+        case ValueType::vtDateTime:
+        {
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString in(value);
+            time_t time = 0;
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
+            assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            break;
+        }
+        case ValueType::vtDateTime64:
+        {
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString in(value);
+            DateTime64 time = 0;
+            const auto * datetime_type = assert_cast<const DataTypeDateTime64 *>(data_type.get());
+            readDateTime64Text(time, datetime_type->getScale(), in, datetime_type->getTimeZone());
+            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
+            break;
+        }
+        case ValueType::vtDecimal32: [[fallthrough]];
+        case ValueType::vtDecimal64: [[fallthrough]];
+        case ValueType::vtDecimal128: [[fallthrough]];
+        case ValueType::vtDecimal256:
+        {
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString istr(value);
+            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
+            break;
+        }
+        default:
+            throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
+    }
 }
 
 }

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import random
 
-from multiprocessing.dummy import Pool
 from testflows.core import *
 from testflows.asserts import error
 
@@ -83,7 +82,7 @@ def login_with_invalid_username_and_valid_password(users, i, iterations=10):
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login(self, server, user_count=10, timeout=200):
+def parallel_login(self, server, user_count=10, timeout=300):
     """Check that login of valid and invalid LDAP authenticated users works in parallel.
     """
     self.context.ldap_node = self.context.cluster.node(server)
@@ -94,28 +93,29 @@ def parallel_login(self, server, user_count=10, timeout=200):
 
     with ldap_users(*users):
         tasks = []
-        try:
-            with When("users try to login in parallel", description="""
-                * with valid username and password
-                * with invalid username and valid password
-                * with valid username and invalid password
-                """):
-                p = Pool(15)
-                for i in range(25):
-                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-
-        finally:
-            with Then("it should work"):
-                join(tasks, timeout)
-
+        with Pool(4) as pool:
+            try:
+                with When("users try to login in parallel", description="""
+                    * with valid username and password
+                    * with invalid username and valid password
+                    * with valid username and invalid password
+                    """):
+                    for i in range(10):
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+    
+            finally:
+                with Then("it should work"):
+                    for task in tasks:
+                        task.result(timeout=timeout)
+    
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login_with_the_same_user(self, server, timeout=200):
+def parallel_login_with_the_same_user(self, server, timeout=300):
     """Check that valid and invalid logins of the same
     LDAP authenticated user works in parallel.
     """
@@ -127,21 +127,21 @@ def parallel_login_with_the_same_user(self, server, timeout=200):
 
     with ldap_users(*users):
         tasks = []
-        try:
-            with When("the same user tries to login in parallel", description="""
-                * with valid username and password
-                * with invalid username and valid password
-                * with valid username and invalid password
-                """):
-                p = Pool(15)
-                for i in range(25):
-                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-
-        finally:
-            with Then("it should work"):
-                join(tasks, timeout)
+        with Pool(4) as pool:
+            try:
+                with When("the same user tries to login in parallel", description="""
+                    * with valid username and password
+                    * with invalid username and valid password
+                    * with valid username and invalid password
+                    """):
+                    for i in range(10):
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+            finally:
+                with Then("it should work"):
+                    for task in tasks:
+                        task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -164,7 +164,7 @@ def login_after_ldap_external_user_directory_is_removed(self, server):
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=200):
+def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=300):
     """Check that valid and invalid logins of the same
     user defined in multiple LDAP external user directories
     works in parallel.
@@ -185,21 +185,21 @@ def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=200
         with ldap_users(*users, node=self.context.cluster.node("openldap1")):
             with ldap_users(*users, node=self.context.cluster.node("openldap2")):
                 tasks = []
-                try:
-                    with When("the same user tries to login in parallel", description="""
-                        * with valid username and password
-                        * with invalid username and valid password
-                        * with valid username and invalid password
-                        """):
-                        p = Pool(15)
-                        for i in range(25):
-                            tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-
-                finally:
-                    with Then("it should work"):
-                        join(tasks, timeout)
+                with Pool(4) as pool:                
+                    try:
+                        with When("the same user tries to login in parallel", description="""
+                            * with valid username and password
+                            * with invalid username and valid password
+                            * with valid username and invalid password
+                            """):
+                            for i in range(10):
+                                tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                                tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                                tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                    finally:
+                        with Then("it should work"):
+                            for task in tasks:
+                                task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -207,7 +207,7 @@ def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=200
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_MultipleServers("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=200):
+def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=300):
     """Check that login of valid and invalid LDAP authenticated users works in parallel
     using multiple LDAP external user directories.
     """
@@ -237,22 +237,21 @@ def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=20
         with ldap_users(*user_groups["openldap1_users"], node=self.context.cluster.node("openldap1")):
             with ldap_users(*user_groups["openldap2_users"], node=self.context.cluster.node("openldap2")):
                 tasks = []
-
-                try:
-                    with When("users in each group try to login in parallel", description="""
-                        * with valid username and password
-                        * with invalid username and valid password
-                        * with valid username and invalid password
-                        """):
-                        p = Pool(15)
-                        for i in range(25):
-                            for users in user_groups.values():
-                                for check in checks:
-                                    tasks.append(p.apply_async(check, (users, i, 50,)))
-
-                finally:
-                    with Then("it should work"):
-                        join(tasks, timeout)
+                with Pool(4) as pool:
+                    try:
+                        with When("users in each group try to login in parallel", description="""
+                            * with valid username and password
+                            * with invalid username and valid password
+                            * with valid username and invalid password
+                            """):
+                            for i in range(10):
+                                for users in user_groups.values():
+                                    for check in checks:
+                                        tasks.append(pool.submit(check, (users, i, 50,)))
+                    finally:
+                        with Then("it should work"):
+                            for task in tasks:
+                                task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -260,7 +259,7 @@ def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=20
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalAndMultipleLDAP("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
 )
-def parallel_login_with_rbac_and_multiple_servers(self, server, user_count=10, timeout=200):
+def parallel_login_with_rbac_and_multiple_servers(self, server, user_count=10, timeout=300):
     """Check that login of valid and invalid users works in parallel
     using local users defined using RBAC and LDAP users authenticated using
     multiple LDAP external user directories.
@@ -293,28 +292,27 @@ def parallel_login_with_rbac_and_multiple_servers(self, server, user_count=10, t
             with ldap_users(*user_groups["openldap2_users"], node=self.context.cluster.node("openldap2")):
                 with rbac_users(*user_groups["local_users"]):
                     tasks = []
-
-                    try:
-                        with When("users in each group try to login in parallel", description="""
-                            * with valid username and password
-                            * with invalid username and valid password
-                            * with valid username and invalid password
-                            """):
-                            p = Pool(15)
-                            for i in range(25):
-                                for users in user_groups.values():
-                                    for check in checks:
-                                        tasks.append(p.apply_async(check, (users, i, 50,)))
-
-                    finally:
-                        with Then("it should work"):
-                            join(tasks, timeout)
+                    with Pool(4) as pool:
+                        try:
+                            with When("users in each group try to login in parallel", description="""
+                                * with valid username and password
+                                * with invalid username and valid password
+                                * with valid username and invalid password
+                                """):
+                                for i in range(10):
+                                    for users in user_groups.values():
+                                        for check in checks:
+                                            tasks.append(pool.submit(check, (users, i, 50,)))
+                        finally:
+                            with Then("it should work"):
+                                for task in tasks:
+                                    task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalOnly("1.0")
 )
-def parallel_login_with_rbac_users(self, server, user_count=10, timeout=200):
+def parallel_login_with_rbac_users(self, server, user_count=10, timeout=300):
     """Check that login of only valid and invalid local users created using RBAC
     works in parallel when server configuration includes LDAP external user directory.
     """
@@ -325,16 +323,17 @@ def parallel_login_with_rbac_users(self, server, user_count=10, timeout=200):
 
     with rbac_users(*users):
         tasks = []
-        try:
-            with When("I login in parallel"):
-                p = Pool(15)
-                for i in range(25):
-                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-        finally:
-            with Then("it should work"):
-                join(tasks, timeout)
+        with Pool(4) as pool:
+            try:
+                with When("I login in parallel"):
+                    for i in range(10):
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+            finally:
+                with Then("it should work"):
+                    for task in tasks:
+                        task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -703,7 +702,7 @@ def empty_username_and_empty_password(self, server=None):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown_Default("1.0")
 )
-def default_verification_cooldown_value(self, server, rbac=False, timeout=20):
+def default_verification_cooldown_value(self, server, rbac=False):
     """Check that the default value (0) for the verification cooldown parameter
     disables caching and forces contacting the LDAP server for each
     authentication request.
@@ -748,7 +747,7 @@ def default_verification_cooldown_value(self, server, rbac=False, timeout=20):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_cn_change(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_cn_change(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set and the user cn is changed.
@@ -803,7 +802,7 @@ def valid_verification_cooldown_value_cn_change(self, server, rbac=False, timeou
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_password_change(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_password_change(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set and the user password is changed.
@@ -857,7 +856,7 @@ def valid_verification_cooldown_value_password_change(self, server, rbac=False, 
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set, even when the LDAP server is offline.

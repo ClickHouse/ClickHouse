@@ -3,11 +3,9 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
-#include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsGeneric.h>
-#include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQL/PacketsProtocolText.h>
-#include <Formats/FormatSettings.h>
+#include <Core/MySQL/PacketEndpoint.h>
+#include <Processors/Formats/IOutputFormat.h>
+
 
 namespace DB
 {
@@ -15,38 +13,32 @@ namespace DB
 class IColumn;
 class IDataType;
 class WriteBuffer;
-class Context;
+struct FormatSettings;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
-class MySQLOutputFormat final : public IOutputFormat
+class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
     MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
-    void setContext(const Context & context_)
-    {
-        context = &context_;
-        packet_endpoint = std::make_unique<MySQLProtocol::PacketEndpoint>(out, const_cast<uint8_t &>(context_.mysql.sequence_id)); /// TODO: fix it
-    }
+    void setContext(ContextPtr context_);
 
-    void consume(Chunk) override;
-    void finalize() override;
     void flush() override;
-    void doWritePrefix() override { initialize(); }
-
-    void initialize();
 
 private:
+    void consume(Chunk) override;
+    void finalizeImpl() override;
+    void writePrefix() override;
 
-    bool initialized = false;
-
-    const Context * context = nullptr;
-    std::unique_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
-    FormatSettings format_settings;
+    uint32_t client_capabilities = 0;
+    uint8_t * sequence_id = nullptr;
+    uint8_t dummy_sequence_id = 0;
+    MySQLProtocol::PacketEndpointPtr packet_endpoint;
     DataTypes data_types;
+    Serializations serializations;
 };
 
 }

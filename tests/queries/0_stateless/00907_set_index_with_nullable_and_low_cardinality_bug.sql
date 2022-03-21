@@ -8,8 +8,7 @@ CREATE TABLE null_lc_set_index (
   INDEX test_user_idx (user) TYPE set(0) GRANULARITY 8192
 ) ENGINE=MergeTree
   PARTITION BY toYYYYMMDD(timestamp)
-  ORDER BY (timestamp, action, cityHash64(user))
-  SAMPLE BY cityHash64(user);
+  ORDER BY (timestamp, action, cityHash64(user)) SETTINGS allow_nullable_key = 1;
 INSERT INTO null_lc_set_index VALUES (1550883010, 'subscribe', 'alice');
 INSERT INTO null_lc_set_index VALUES (1550883020, 'follow', 'bob');
 

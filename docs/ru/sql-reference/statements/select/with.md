@@ -15,7 +15,7 @@ WITH <expression> AS <identifier>
 ``` sql
 WITH <identifier> AS <subquery expression>
 ```
- 
+
 ## Примеры
 
 **Пример 1:** Использование константного выражения как «переменной»
@@ -63,8 +63,7 @@ LIMIT 10;
 **Пример 4:** Переиспользование выражения
 
 ``` sql
-WITH test1 AS (SELECT i + 1, j + 1 FROM test1) 
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/select/with/) <!--hide-->

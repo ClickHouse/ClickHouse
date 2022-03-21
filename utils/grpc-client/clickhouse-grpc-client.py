@@ -14,13 +14,14 @@ import grpc  # pip3 install grpcio
 import grpc_tools  # pip3 install grpcio-tools
 import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid
 
-default_host = 'localhost'
-default_port = 9100
-default_user_name = 'default'
-default_output_format_for_interactive_mode = 'PrettyCompact'
-history_filename = '~/.clickhouse_grpc_history'
-history_size = 1000
-stdin_bufsize = 1048576
+DEFAULT_HOST = 'localhost'
+DEFAULT_PORT = 9100
+DEFAULT_USER_NAME = 'default'
+DEFAULT_OUTPUT_FORMAT_FOR_INTERACTIVE_MODE = 'PrettyCompact'
+HISTORY_FILENAME = '~/.clickhouse_grpc_history'
+HISTORY_SIZE = 1000
+STDIN_BUFFER_SIZE = 1048576
+DEFAULT_ENCODING = 'utf-8'
 
 
 class ClickHouseGRPCError(Exception):
@@ -52,7 +53,7 @@ def error_print(*args, **kwargs):
 class ClickHouseGRPCClient(cmd.Cmd):
     prompt="grpc :) "
 
-    def __init__(self, host=default_host, port=default_port, user_name=default_user_name, password='', 
+    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, user_name=DEFAULT_USER_NAME, password='', 
                  database='', output_format='', settings='', verbatim=False, show_debug_info=False):
         super(ClickHouseGRPCClient, self).__init__(completekey=None)
         self.host = host
@@ -85,7 +86,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         if self.show_debug_info:
             print('\nresult={}'.format(result))
         ClickHouseGRPCClient.__check_no_errors(result)
-        return result.output
+        return result.output.decode(DEFAULT_ENCODING)
 
     # Executes a query using the stream IO and with ability to cancel it by pressing Ctrl+C.
     def run_query(self, query_text, raise_exceptions=True, allow_cancel=False):
@@ -117,7 +118,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
                     # send input data
                     if not sys.stdin.isatty():
                         while True:
-                            info.input_data = sys.stdin.buffer.read(stdin_bufsize)
+                            info.input_data = sys.stdin.buffer.read(STDIN_BUFFER_SIZE)
                             if not info.input_data:
                                 break
                             info.next_query_info = True
@@ -134,7 +135,8 @@ class ClickHouseGRPCClient(cmd.Cmd):
                     if self.show_debug_info:
                         print('\nresult={}'.format(result))
                     ClickHouseGRPCClient.__check_no_errors(result)
-                    print(result.output, end='')
+                    sys.stdout.buffer.write(result.output)
+                    sys.stdout.flush()
                     if result.cancelled:
                         cancelled = True
                         self.verbatim_print("Query was cancelled.")
@@ -244,7 +246,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
             import readline
         except ImportError:
             readline = None
-        histfile = os.path.expanduser(history_filename)
+        histfile = os.path.expanduser(HISTORY_FILENAME)
         if readline and os.path.exists(histfile):
             readline.read_history_file(histfile)
 
@@ -252,8 +254,8 @@ class ClickHouseGRPCClient(cmd.Cmd):
     def __write_history():
         global readline
         if readline:
-            readline.set_history_length(history_size)
-            histfile = os.path.expanduser(history_filename)
+            readline.set_history_length(HISTORY_SIZE)
+            histfile = os.path.expanduser(HISTORY_FILENAME)
             readline.write_history_file(histfile)
 
 
@@ -281,7 +283,7 @@ def main(args):
 
     output_format = args.output_format
     if not output_format and interactive_mode:
-        output_format = default_output_format_for_interactive_mode
+        output_format = DEFAULT_OUTPUT_FORMAT_FOR_INTERACTIVE_MODE
    
     try:
         with ClickHouseGRPCClient(host=args.host, port=args.port, user_name=args.user_name, password=args.password,

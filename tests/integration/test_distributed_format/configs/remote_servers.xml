@@ -1,19 +1,20 @@
-<yandex>
+<clickhouse>
     <remote_servers>
-        <test_cluster>
+        <test_cluster_internal_replication>
             <shard>
+                <internal_replication>true</internal_replication>
                 <replica>
                     <host>not_existing</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_cluster>
+        </test_cluster_internal_replication>
 
-        <test_cluster_2>
+        <test_cluster_no_internal_replication>
             <node>
                 <host>not_existing</host>
                 <port>9000</port>
             </node>
-        </test_cluster_2>
+        </test_cluster_no_internal_replication>
     </remote_servers>
-</yandex>
+</clickhouse>

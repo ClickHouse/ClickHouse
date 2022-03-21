@@ -1,3 +1,6 @@
+-- Tags: zookeeper, no-replicated-database, no-parallel
+-- Tag no-replicated-database: Unsupported type of ALTER query
+
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 
@@ -6,12 +9,12 @@ SET replication_alter_partitions_sync = 2;
 CREATE TABLE replicated_table_for_alter1 (
   id UInt64,
   Data String
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980/replicated_table_for_alter', '1') ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980_{database}/replicated_table_for_alter', '1') ORDER BY id;
 
 CREATE TABLE replicated_table_for_alter2 (
   id UInt64,
   Data String
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980/replicated_table_for_alter', '2') ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980_{database}/replicated_table_for_alter', '2') ORDER BY id;
 
 SHOW CREATE TABLE replicated_table_for_alter1;
 
@@ -67,3 +70,51 @@ SHOW CREATE TABLE replicated_table_for_alter2;
 
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 DROP TABLE IF EXISTS replicated_table_for_alter1;
+
+DROP TABLE IF EXISTS replicated_table_for_reset_setting1;
+DROP TABLE IF EXISTS replicated_table_for_reset_setting2;
+
+SET replication_alter_partitions_sync = 2;
+
+CREATE TABLE replicated_table_for_reset_setting1 (
+ id UInt64,
+ Data String
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980_{database}/replicated_table_for_reset_setting', '1') ORDER BY id;
+
+CREATE TABLE replicated_table_for_reset_setting2 (
+ id UInt64,
+ Data String
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00980_{database}/replicated_table_for_reset_setting', '2') ORDER BY id;
+
+SHOW CREATE TABLE replicated_table_for_reset_setting1;
+SHOW CREATE TABLE replicated_table_for_reset_setting2;
+
+ALTER TABLE replicated_table_for_reset_setting1 MODIFY SETTING index_granularity = 4096; -- { serverError 472 }
+
+SHOW CREATE TABLE replicated_table_for_reset_setting1;
+
+ALTER TABLE replicated_table_for_reset_setting1 MODIFY SETTING merge_with_ttl_timeout = 100;
+ALTER TABLE replicated_table_for_reset_setting2 MODIFY SETTING merge_with_ttl_timeout = 200;
+
+SHOW CREATE TABLE replicated_table_for_reset_setting1;
+SHOW CREATE TABLE replicated_table_for_reset_setting2;
+
+DETACH TABLE replicated_table_for_reset_setting2;
+ATTACH TABLE replicated_table_for_reset_setting2;
+
+DETACH TABLE replicated_table_for_reset_setting1;
+ATTACH TABLE replicated_table_for_reset_setting1;
+
+SHOW CREATE TABLE replicated_table_for_reset_setting1;
+SHOW CREATE TABLE replicated_table_for_reset_setting2;
+
+-- ignore undefined setting
+ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING check_delay_period, unknown_setting;
+ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING merge_with_ttl_timeout;
+ALTER TABLE replicated_table_for_reset_setting2 RESET SETTING merge_with_ttl_timeout;
+
+SHOW CREATE TABLE replicated_table_for_reset_setting1;
+SHOW CREATE TABLE replicated_table_for_reset_setting2;
+
+DROP TABLE IF EXISTS replicated_table_for_reset_setting2;
+DROP TABLE IF EXISTS replicated_table_for_reset_setting1;

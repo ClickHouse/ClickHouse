@@ -4,11 +4,12 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -75,7 +76,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 // function template that allows to choose the aggregate function variant that
 // accepts either normal arguments or tuple argument.
 template<template <bool tuple_argument> typename MappedFunction>
-AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params)
+AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
 
@@ -144,9 +145,20 @@ struct MaxMapDispatchOnTupleArgument
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumMap", createAggregateFunctionMap<
+    // these functions used to be called *Map, with now these names occupied by
+    // Map combinator, which redirects calls here if was called with
+    // array or tuple arguments.
+    factory.registerFunction("sumMappedArrays", createAggregateFunctionMap<
         SumMapVariants<false, false>::DispatchOnTupleArgument>);
 
+    factory.registerFunction("minMappedArrays",
+        createAggregateFunctionMap<MinMapDispatchOnTupleArgument>);
+
+    factory.registerFunction("maxMappedArrays",
+        createAggregateFunctionMap<MaxMapDispatchOnTupleArgument>);
+
+    // these functions could be renamed to *MappedArrays too, but it would
+    // break backward compatibility
     factory.registerFunction("sumMapWithOverflow", createAggregateFunctionMap<
         SumMapVariants<false, true>::DispatchOnTupleArgument>);
 
@@ -156,12 +168,6 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     factory.registerFunction("sumMapFilteredWithOverflow",
         createAggregateFunctionMap<
             SumMapVariants<true, true>::DispatchOnTupleArgument>);
-
-    factory.registerFunction("minMap",
-        createAggregateFunctionMap<MinMapDispatchOnTupleArgument>);
-
-    factory.registerFunction("maxMap",
-        createAggregateFunctionMap<MaxMapDispatchOnTupleArgument>);
 }
 
 }

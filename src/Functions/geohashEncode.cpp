@@ -28,7 +28,7 @@ class FunctionGeohashEncode : public IFunction
 {
 public:
     static constexpr auto name = "geohashEncode";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashEncode>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashEncode>(); }
 
     String getName() const override
     {
@@ -39,6 +39,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

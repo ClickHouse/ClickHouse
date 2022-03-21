@@ -3,16 +3,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/TransformDateTime64.h>
 
 #include <IO/WriteHelpers.h>
 
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 #include <type_traits>
 
@@ -42,9 +44,10 @@ namespace
   */
 class FunctionDateDiff : public IFunction
 {
+    using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {
@@ -52,6 +55,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -65,11 +69,11 @@ public:
             throw Exception("First argument for function " + getName() + " (unit) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDateOrDateTime(arguments[1]))
+        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDateOrDateTime(arguments[2]))
+        if (!isDate(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
             throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -97,8 +101,8 @@ public:
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
-        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
-        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
+        const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
+        const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
             dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());
@@ -133,17 +137,21 @@ private:
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
         else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for first argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column for first argument of function " + getName() + ", must be Date, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename Transform, typename T1>
+    template <typename Transform, typename LeftColumnType>
     void dispatchForSecondColumn(
-        const ColumnVector<T1> & x, const IColumn & y,
+        const LeftColumnType & x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
@@ -151,10 +159,14 @@ private:
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
+            vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
             vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
             vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
+            vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -169,49 +181,81 @@ private:
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
+            constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename Transform, typename T1, typename T2>
+    template <typename Transform, typename LeftColumnType, typename RightColumnType>
     void vectorVector(
-        const ColumnVector<T1> & x, const ColumnVector<T2> & y,
+        const LeftColumnType & x, const RightColumnType & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
         const auto & y_data = y.getData();
+
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
         for (size_t i = 0, size = x.size(); i < size; ++i)
-            result[i] = calculate<Transform>(x_data[i], y_data[i], timezone_x, timezone_y);
+                result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
     }
 
-    template <typename Transform, typename T1, typename T2>
+    template <typename Transform, typename LeftColumnType, typename T2>
     void vectorConstant(
-        const ColumnVector<T1> & x, T2 y,
+        const LeftColumnType & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto y_value = stripDecimalFieldValue(y);
+
         for (size_t i = 0, size = x.size(); i < size; ++i)
-            result[i] = calculate<Transform>(x_data[i], y, timezone_x, timezone_y);
+            result[i] = calculate(transform_x, transform_y, x_data[i], y_value, timezone_x, timezone_y);
     }
 
-    template <typename Transform, typename T1, typename T2>
+    template <typename Transform, typename T1, typename RightColumnType>
     void constantVector(
-        T1 x, const ColumnVector<T2> & y,
+        T1 x, const RightColumnType & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
         const auto & y_data = y.getData();
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto x_value = stripDecimalFieldValue(x);
+
         for (size_t i = 0, size = y.size(); i < size; ++i)
-            result[i] = calculate<Transform>(x, y_data[i], timezone_x, timezone_y);
+            result[i] = calculate(transform_x, transform_y, x_value, y_data[i], timezone_x, timezone_y);
     }
 
-    template <typename Transform, typename T1, typename T2>
-    Int64 calculate(T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
+    template <typename TransformX, typename TransformY, typename T1, typename T2>
+    Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        return Int64(Transform::execute(y, timezone_y))
-             - Int64(Transform::execute(x, timezone_x));
+        return Int64(transform_y.execute(y, timezone_y))
+             - Int64(transform_x.execute(x, timezone_x));
+    }
+
+    template <typename T>
+    static UInt32 getScale(const T & v)
+    {
+        if constexpr (std::is_same_v<T, ColumnDateTime64>)
+            return v.getScale();
+        else if constexpr (std::is_same_v<T, DecimalField<DateTime64>>)
+            return v.getScale();
+
+        return 0;
+    }
+    template <typename T>
+    static auto stripDecimalFieldValue(T && v)
+    {
+        if constexpr (std::is_same_v<std::decay_t<T>, DecimalField<DateTime64>>)
+            return v.getValue();
+        else
+            return v;
     }
 };
 

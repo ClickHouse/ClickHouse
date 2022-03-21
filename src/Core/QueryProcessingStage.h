@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -26,8 +26,15 @@ namespace QueryProcessingStage
         /// It is used for auto distributed_group_by_no_merge optimization for distributed engine.
         /// (See comments in StorageDistributed).
         WithMergeableStateAfterAggregation = 3,
+        /// Same as WithMergeableStateAfterAggregation but also will apply limit on each shard.
+        ///
+        /// This query stage will be used for auto
+        /// distributed_group_by_no_merge/distributed_push_down_limit
+        /// optimization.
+        /// (See comments in StorageDistributed).
+        WithMergeableStateAfterAggregationAndLimit = 4,
 
-        MAX = 4,
+        MAX = 5,
     };
 
     inline const char * toString(UInt64 stage)
@@ -38,6 +45,7 @@ namespace QueryProcessingStage
             "WithMergeableState",
             "Complete",
             "WithMergeableStateAfterAggregation",
+            "WithMergeableStateAfterAggregationAndLimit",
         };
         return stage < MAX
             ? data[stage]

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS some_tests;
 CREATE DATABASE some_tests ENGINE=Ordinary; -- Different inner table name with Atomic
 

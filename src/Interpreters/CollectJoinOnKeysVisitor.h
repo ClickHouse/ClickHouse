@@ -5,7 +5,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -19,6 +18,21 @@ namespace ASOF
     enum class Inequality;
 }
 
+enum class JoinIdentifierPos
+{
+    /// Position can't be established, identifier not resolved
+    Unknown,
+    /// Left side of JOIN
+    Left,
+    /// Right side of JOIN
+    Right,
+    /// Expression not valid, e.g. doesn't contain identifiers
+    NotApplicable,
+};
+
+using JoinIdentifierPosPair = std::pair<JoinIdentifierPos, JoinIdentifierPos>;
+
+
 class CollectJoinOnKeysMatcher
 {
 public:
@@ -31,15 +45,11 @@ public:
         const TableWithColumnNamesAndTypes & right_table;
         const Aliases & aliases;
         const bool is_asof{false};
-        ASTTableJoin::Kind kind;
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
-        ASTPtr new_on_expression{};
-        ASTPtr new_where_conditions{};
-        bool has_some{false};
 
-        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
-        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no,
+        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
+        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
                              const ASOF::Inequality & asof_inequality);
         void asofToJoinKeys();
     };
@@ -47,7 +57,17 @@ public:
     static void visit(const ASTPtr & ast, Data & data)
     {
         if (auto * func = ast->as<ASTFunction>())
+        {
             visit(*func, ast, data);
+        }
+        else if (auto * ident = ast->as<ASTIdentifier>())
+        {
+            visit(*ident, ast, data);
+        }
+        else
+        {
+            /// visit children
+        }
     }
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
@@ -59,11 +79,12 @@ public:
 
 private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
+    static void visit(const ASTIdentifier & ident, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
-    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
+    static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
-    static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
+    static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.

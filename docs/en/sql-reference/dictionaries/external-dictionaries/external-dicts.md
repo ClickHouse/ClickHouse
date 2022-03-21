@@ -26,7 +26,7 @@ The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tabl
 The dictionary configuration file has the following format:
 
 ``` xml
-<yandex>
+<clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
@@ -38,12 +38,12 @@ The dictionary configuration file has the following format:
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
     </dictionary>
 
-</yandex>
+</clickhouse>
 ```
 
 You can [configure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md) any number of dictionaries in the same file.
 
-[DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) doesn’t require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
+[DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) does not require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
 !!! attention "Attention"
     You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to external dictionaries.
@@ -57,4 +57,3 @@ You can [configure](../../../sql-reference/dictionaries/external-dictionaries/ex
 -   [Dictionary Key and Fields](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md)
 -   [Functions for Working with External Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->

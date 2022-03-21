@@ -39,7 +39,7 @@ template <typename ArraySink> struct NullableArraySink;
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
@@ -140,7 +140,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#if !__clang__
+#if !defined(__clang__)
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wsuggest-override"
 #elif __clang_major__ >= 11
@@ -184,7 +184,7 @@ struct ConstSource : public Base
 
     virtual void accept(ArraySourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IArraySource, Base>::value)
+        if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
             throw Exception(
@@ -194,7 +194,7 @@ struct ConstSource : public Base
 
     virtual void accept(ValueSourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IValueSource, Base>::value)
+        if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
             throw Exception(
@@ -233,7 +233,7 @@ struct ConstSource : public Base
     }
 };
 
-#if !__clang__ || __clang_major__ >= 11
+#if !defined(__clang__) || __clang_major__ >= 11
 #   pragma GCC diagnostic pop
 #endif
 
@@ -281,6 +281,11 @@ struct StringSource
         return offsets[row_num] - prev_offset - 1;
     }
 
+    size_t getColumnSize() const
+    {
+        return offsets.size();
+    }
+
     Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset - 1};
@@ -320,7 +325,7 @@ struct StringSource
 };
 
 
-/// Differs to StringSource by having 'offest' and 'length' in code points instead of bytes in getSlice* methods.
+/// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
   *      hello
@@ -351,6 +356,11 @@ struct UTF8StringSource : public StringSource
             UTF8::syncBackward(pos, begin);
         }
         return pos;
+    }
+
+    size_t getElementSize() const
+    {
+        return UTF8::countCodePoints(&elements[prev_offset], StringSource::getElementSize());
     }
 
     Slice getSliceFromLeft(size_t offset) const
@@ -417,6 +427,7 @@ struct FixedStringSource
     const UInt8 * end;
     size_t string_size;
     size_t row_num = 0;
+    size_t column_size = 0;
 
     explicit FixedStringSource(const ColumnFixedString & col)
             : string_size(col.getN())
@@ -424,6 +435,7 @@ struct FixedStringSource
         const auto & chars = col.getChars();
         pos = chars.data();
         end = pos + chars.size();
+        column_size = col.size();
     }
 
     void next()
@@ -450,6 +462,11 @@ struct FixedStringSource
     size_t getElementSize() const
     {
         return string_size;
+    }
+
+    size_t getColumnSize() const
+    {
+        return column_size;
     }
 
     Slice getWhole() const
@@ -708,7 +725,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Column = ColumnVectorOrDecimal<T>;
 
     using SinkType = NumericArraySink<T>;
 
@@ -755,6 +772,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
     using SinkType = GenericArraySink;
+    using Column = IColumn;
 
     const IColumn * column;
     size_t total_rows;

@@ -14,7 +14,7 @@ groupBitmapOr(expr)
 
 `expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
 
-**Return value**
+**Returned value**
 
 Value of the `UInt64` type.
 

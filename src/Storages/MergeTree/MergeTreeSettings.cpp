@@ -75,29 +75,56 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 
 void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
 {
-    if (number_of_free_entries_in_pool_to_execute_mutation > query_settings.background_pool_size)
+    if (number_of_free_entries_in_pool_to_execute_mutation >
+        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'"
+            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
             number_of_free_entries_in_pool_to_execute_mutation,
-            query_settings.background_pool_size);
+            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > query_settings.background_pool_size)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge >
+        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'"
+            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             number_of_free_entries_in_pool_to_lower_max_size_of_merge,
-            query_settings.background_pool_size);
+            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
+    }
+
+    // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
+    // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
+    // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
+    // index_granularity_bytes SETTING of 1b can create really large parts with large marks.
+    if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
+            index_granularity_bytes,
+            min_index_granularity_bytes);
+    }
+
+    // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
+    // it's not less than min_bytes_to_rebalance_partition_over_jbod. This is a safeguard to avoid tiny
+    // parts to participate JBOD balancer which will slow down the merge process.
+    if (min_bytes_to_rebalance_partition_over_jbod > 0
+        && min_bytes_to_rebalance_partition_over_jbod < max_bytes_to_merge_at_max_space_in_pool / 1024)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
+            min_bytes_to_rebalance_partition_over_jbod,
+            max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
 }
-
 }

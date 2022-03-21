@@ -22,10 +22,10 @@ NamesAndTypesList StorageSystemCurrentRoles::getNamesAndTypes()
 }
 
 
-void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    auto roles_info = context.getRolesInfo();
-    auto user = context.getUser();
+    auto roles_info = context->getRolesInfo();
+    auto user = context->getUser();
     if (!roles_info || !user)
         return;
 

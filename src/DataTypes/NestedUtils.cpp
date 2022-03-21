@@ -30,45 +30,34 @@ namespace Nested
 
 std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
 {
+    if (nested_table_name.empty())
+        return nested_field_name;
+
+    if (nested_field_name.empty())
+        return nested_table_name;
+
     return nested_table_name + "." + nested_field_name;
 }
 
 
-/** Name can be treated as compound if and only if both parts are simple identifiers.
+/** Name can be treated as compound if it contains dot (.) in the middle.
   */
-std::pair<std::string, std::string> splitName(const std::string & name)
+std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
-    const char * begin = name.data();
-    const char * pos = begin;
-    const char * end = begin + name.size();
-
-    if (pos >= end || !isValidIdentifierBegin(*pos))
+    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
+    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
         return {name, {}};
 
-    ++pos;
+    return {name.substr(0, idx), name.substr(idx + 1)};
+}
 
-    while (pos < end && isWordCharASCII(*pos))
-        ++pos;
-
-    if (pos >= end || *pos != '.')
+std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse)
+{
+    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
+    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
         return {name, {}};
 
-    const char * first_end = pos;
-    ++pos;
-    const char * second_begin = pos;
-
-    if (pos >= end || !isValidIdentifierBegin(*pos))
-        return {name, {}};
-
-    ++pos;
-
-    while (pos < end && isWordCharASCII(*pos))
-        ++pos;
-
-    if (pos != end)
-        return {name, {}};
-
-    return {{ begin, first_end }, { second_begin, end }};
+    return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
 
@@ -167,7 +156,7 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!nested_types.count(splitName(name_type.name).first))
+        if (!isArray(name_type.type) || !nested_types.count(splitName(name_type.name).first))
             res.push_back(name_type);
 
     for (const auto & name_type : nested_types)
@@ -183,6 +172,9 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 
     for (auto & name_type : res)
     {
+        if (!isArray(name_type.type))
+            continue;
+
         auto split = splitName(name_type.name);
         if (name_type.isSubcolumn() || split.second.empty())
             continue;
@@ -232,6 +224,19 @@ void validateArraySizes(const Block & block)
             }
         }
     }
+}
+
+
+std::unordered_set<String> getAllTableNames(const Block & block)
+{
+    std::unordered_set<String> nested_table_names;
+    for (auto & name : block.getNames())
+    {
+        auto nested_table_name = Nested::extractTableName(name);
+        if (!nested_table_name.empty())
+            nested_table_names.insert(nested_table_name);
+    }
+    return nested_table_names;
 }
 
 }

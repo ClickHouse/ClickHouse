@@ -1,6 +1,5 @@
 import random
 
-from multiprocessing.dummy import Pool
 from testflows.core import *
 from testflows.asserts import error
 
@@ -134,7 +133,7 @@ def dynamically_added_users(self, node="clickhouse1", count=10):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Restart_Server_ParallelLogins("1.0")
 )
-def parallel_login(self, server=None, user_count=10, timeout=200):
+def parallel_login(self, server=None, user_count=10, timeout=300):
     """Check that login of valid and invalid users works in parallel
     using local users defined using RBAC and LDAP users authenticated using
     multiple LDAP external user directories when server is restarted
@@ -262,28 +261,30 @@ def parallel_login(self, server=None, user_count=10, timeout=200):
                 with ldap_users(*user_groups["openldap2_users"], node=self.context.cluster.node("openldap2")):
                     with rbac_users(*user_groups["local_users"]):
                         tasks = []
-                        try:
-                            with When("I restart the server during parallel login of users in each group"):
-                                p = Pool(10)
-                                for users in user_groups.values():
-                                    for check in checks:
-                                        tasks.append(p.apply_async(check, (users, 0, 25, True)))
-
-                                tasks.append(p.apply_async(restart))
-                        finally:
-                            with Then("logins during restart should work"):
-                                join(tasks, timeout)
+                        with Pool(4) as pool:
+                            try:
+                                with When("I restart the server during parallel login of users in each group"):
+                                    for users in user_groups.values():
+                                        for check in checks:
+                                            tasks.append(pool.submit(check, (users, 0, 25, True)))
+    
+                                    tasks.append(pool.submit(restart))
+                            finally:
+                                with Then("logins during restart should work"):
+                                    for task in tasks:
+                                        task.result(timeout=timeout)
 
                         tasks = []
-                        try:
-                            with When("I perform parallel login of users in each group after restart"):
-                                p = Pool(10)
-                                for users in user_groups.values():
-                                    for check in checks:
-                                        tasks.append(p.apply_async(check, (users, 0, 10, False)))
-                        finally:
-                            with Then("logins after restart should work"):
-                                join(tasks, timeout)
+                        with Pool(4) as pool:
+                            try:
+                                with When("I perform parallel login of users in each group after restart"):
+                                    for users in user_groups.values():
+                                        for check in checks:
+                                            tasks.append(pool.submit(check, (users, 0, 10, False)))
+                            finally:
+                                with Then("logins after restart should work"):
+                                    for task in tasks:
+                                        task.result(timeout=timeout)
 
 @TestOutline(Feature)
 @Name("restart")
@@ -297,4 +298,4 @@ def feature(self, servers=None, server=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario):
-        Scenario(test=scenario, flags=TE)()
+        Scenario(test=scenario)()

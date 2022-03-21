@@ -1,76 +1,86 @@
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTCreateRoleQuery.h>
-#include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/ASTDropAccessEntityQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSetRoleQuery.h>
-#include <Parsers/ASTShowAccessEntitiesQuery.h>
-#include <Parsers/ASTShowAccessQuery.h>
-#include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTShowGrantsQuery.h>
-#include <Parsers/ASTShowPrivilegesQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTExplainQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/ASTGrantQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/Access/ASTShowAccessQuery.h>
+#include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
+#include <Parsers/Access/ASTShowPrivilegesQuery.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterBackupQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateQuotaQuery.h>
-#include <Interpreters/InterpreterCreateRoleQuery.h>
-#include <Interpreters/InterpreterCreateRowPolicyQuery.h>
-#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
-#include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterSetRoleQuery.h>
-#include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
-#include <Interpreters/InterpreterShowAccessQuery.h>
-#include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
-#include <Interpreters/InterpreterShowGrantsQuery.h>
-#include <Interpreters/InterpreterShowPrivilegesQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+
+#include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/Access/InterpreterCreateRoleQuery.h>
+#include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/Access/InterpreterCreateUserQuery.h>
+#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/InterpreterSetRoleQuery.h>
+#include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
+#include <Interpreters/Access/InterpreterShowAccessQuery.h>
+#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/Access/InterpreterShowPrivilegesQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
-#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
@@ -92,7 +102,7 @@ namespace ErrorCodes
 }
 
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, const SelectQueryOptions & options)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     OpenTelemetrySpanHolder span("InterpreterFactory::get()");
 
@@ -109,10 +119,14 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         ProfileEvents::increment(ProfileEvents::SelectQuery);
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
+    else if (query->as<ASTSelectIntersectExceptQuery>())
+    {
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(query, context, options);
+    }
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
+        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
@@ -263,6 +277,18 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTExternalDDLQuery>())
     {
         return std::make_unique<InterpreterExternalDDLQuery>(query, context);
+    }
+    else if (query->as<ASTCreateFunctionQuery>())
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
+    }
+    else if (query->as<ASTDropFunctionQuery>())
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
+    }
+    else if (query->as<ASTBackupQuery>())
+    {
+        return std::make_unique<InterpreterBackupQuery>(query, context);
     }
     else
     {

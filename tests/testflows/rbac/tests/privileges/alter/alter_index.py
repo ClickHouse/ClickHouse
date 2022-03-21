@@ -26,7 +26,7 @@ aliases = {
     "MATERIALIZE INDEX" : ["ALTER MATERIALIZE INDEX", "MATERIALIZE INDEX"],
     "CLEAR INDEX": ["ALTER CLEAR INDEX", "CLEAR INDEX"],
     "DROP INDEX": ["ALTER DROP INDEX", "DROP INDEX"],
-    "ALTER INDEX": ["ALTER INDEX", "INDEX"] # super-privilege
+    "ALTER INDEX": ["ALTER INDEX", "INDEX", "ALL"] # super-privilege
 }
 
 # Extra permutation is for 'ALTER INDEX' super-privilege
@@ -128,10 +128,10 @@ def check_order_by_when_privilege_is_granted(table, user, node):
     column = "order"
 
     with Given("I run sanity check"):
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d", settings = [("user", user)])
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b", settings = [("user", user)])
 
     with And("I add new column and modify order using that column"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (d, {column})")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (b, {column})")
 
     with When(f"I insert random data into the ordered-by column {column}"):
         data = random.sample(range(1,1000),100)
@@ -151,7 +151,7 @@ def check_order_by_when_privilege_is_granted(table, user, node):
 
     with And("I verify that the sorting key is present in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"ORDER BY (d, {column})" in output['statement'], error()
+        assert f"ORDER BY (b, {column})" in output['statement'], error()
 
     with But(f"I cannot drop the required column {column}"):
         exitcode, message = errors.missing_columns(column)
@@ -163,21 +163,13 @@ def check_sample_by_when_privilege_is_granted(table, user, node):
     """
     column = 'sample'
 
-    with Given(f"I add new column {column}"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32")
-
     with When(f"I add sample by clause"):
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY (d, {column})",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
             settings = [("user", user)])
 
     with Then("I verify that the sample is in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"SAMPLE BY (d, {column})" in output['statement'], error()
-
-    with But(f"I cannot drop the required column {column}"):
-        exitcode, message = errors.missing_columns(column)
-        node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
-            exitcode=exitcode, message=message)
+        assert f"SAMPLE BY b" in output['statement'], error()
 
 def check_add_index_when_privilege_is_granted(table, user, node):
     """Ensures ADD INDEX runs as expected when the privilege is granted to the specified user
@@ -258,7 +250,7 @@ def check_order_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d",
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_sample_by_when_privilege_is_not_granted(table, user, node):
@@ -266,7 +258,7 @@ def check_sample_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY d",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_add_index_when_privilege_is_not_granted(table, user, node):
@@ -302,7 +294,6 @@ def check_drop_index_when_privilege_is_not_granted(table, user, node):
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 @TestScenario
-@Flags(TE)
 def user_with_some_privileges(self, table_type, node=None):
     """Check that user with any permutation of ALTER INDEX subprivileges is able
     to alter the table for privileges granted, and not for privileges not granted.
@@ -325,7 +316,6 @@ def user_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Revoke("1.0"),
 )
@@ -355,7 +345,6 @@ def user_with_revoked_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Grant("1.0"),
 )
@@ -385,7 +374,6 @@ def role_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 def user_with_revoked_role(self, table_type, node=None):
     """Check that user with a role that has ALTER INDEX privilege on a table is unable to
     ALTER INDEX from that table after the role with privilege has been revoked from the user.
@@ -416,7 +404,6 @@ def user_with_revoked_role(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Cluster("1.0"),
 )
@@ -451,14 +438,15 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
-@Flags(TE)
 @Name("alter index")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, parallel=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     if parallel is not None:
@@ -472,14 +460,12 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
         if table_type != "MergeTree" and not self.context.stress:
             continue
 
+        args = {"table_type" : table_type}
+
         with Example(str(example)):
-            pool = Pool(5)
-            try:
-                tasks = []
+            with Pool(5) as pool:
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                        Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
                 finally:
-                    join(tasks)
-            finally:
-                pool.close()
+                    join()

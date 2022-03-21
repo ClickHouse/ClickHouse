@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: replica, no-replicated-database
+# Tag no-replicated-database: Fails due to additional replicas or shards
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,11 +9,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
-${CLICKHOUSE_CLIENT} --multiquery << EOF
+${CLICKHOUSE_CLIENT} --allow_nondeterministic_mutations=1 --multiquery << EOF
 DROP TABLE IF EXISTS mutations_r1;
 DROP TABLE IF EXISTS for_subquery;
 
-CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}/mutations', 'r1') ORDER BY x;
+CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutations', 'r1') ORDER BY x;
 INSERT INTO mutations_r1 VALUES (123, 1), (234, 2), (345, 3);
 
 CREATE TABLE for_subquery(x UInt32) ENGINE TinyLog;

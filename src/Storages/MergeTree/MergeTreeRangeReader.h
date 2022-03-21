@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Block.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -15,6 +15,25 @@ class MergeTreeIndexGranularity;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+/// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
+struct PrewhereExprInfo
+{
+    /// Actions which are executed in order to alias columns are used for prewhere actions.
+    ExpressionActionsPtr alias_actions;
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    ExpressionActionsPtr row_level_filter;
+    /// Actions which are executed on block in order to get filter column for prewhere step.
+    ExpressionActionsPtr prewhere_actions;
+    String row_level_column_name;
+    String prewhere_column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+};
+
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
 /// Used generally for reading number of rows less than index granularity to decrease cache misses for fat blocks.
@@ -24,7 +43,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereInfoPtr & prewhere_info_,
+        const PrewhereExprInfo * prewhere_info_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -43,7 +62,7 @@ public:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, size_t current_task_last_mark_, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -62,6 +81,8 @@ public:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
+        /// Last mark from all ranges of current task.
+        size_t current_task_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -80,7 +101,8 @@ public:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark,
+               size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
         size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
@@ -103,6 +125,7 @@ public:
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
         size_t offset_after_current_mark = 0;
 
+        /// Last mark in current range.
         size_t last_mark = 0;
 
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -217,7 +240,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    PrewhereInfoPtr prewhere_info;
+    const PrewhereExprInfo * prewhere_info;
 
     Stream stream;
 

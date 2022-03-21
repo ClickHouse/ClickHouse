@@ -14,8 +14,7 @@ struct NameMultiFuzzyMatchAllIndices
 };
 
 using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<
-    MultiMatchAllIndicesImpl<UInt64, true>,
-    NameMultiFuzzyMatchAllIndices,
+    MultiMatchAllIndicesImpl<NameMultiFuzzyMatchAllIndices, UInt64, true>,
     std::numeric_limits<UInt32>::max()>;
 
 }

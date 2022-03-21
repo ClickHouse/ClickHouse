@@ -153,4 +153,4 @@ toc_title: "\u8996\u754C\u9762"
 
 [LookerでClickHouseを設定する方法。](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

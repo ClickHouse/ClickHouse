@@ -28,9 +28,17 @@ Debian や Ubuntu 用にコンパイル済みの公式パッケージ `deb` を�
 {% include 'install/deb.sh' %}
 ```
 
+<details markdown="1">
+
+<summary>Deprecated Method for installing deb-packages</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
 最新版を使いたい場合は、`stable`を`testing`に置き換えてください。（テスト環境ではこれを推奨します）
 
-同様に、[こちら](https://repo.clickhouse.tech/deb/stable/main/)からパッケージをダウンロードして、手動でインストールすることもできます。
+同様に、[こちら](https://packages.clickhouse.com/deb/pool/stable)からパッケージをダウンロードして、手動でインストールすることもできます。
 
 #### パッケージ {#packages}
 
@@ -46,10 +54,16 @@ CentOS、RedHat、その他すべてのrpmベースのLinuxディストリビュ
 まず、公式リポジトリを追加する必要があります:
 
 ``` bash
-sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
+{% include 'install/rpm.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing rpm-packages</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
 
 最新版を使いたい場合は `stable` を `testing` に置き換えてください。(テスト環境ではこれが推奨されています)。`prestable` もしばしば同様に利用できます。
 
@@ -59,49 +73,40 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-同様に、[こちら](https://repo.clickhouse.tech/rpm/stable/x86_64) からパッケージをダウンロードして、手動でインストールすることもできます。
+同様に、[こちら](https://packages.clickhouse.com/rpm/stable) からパッケージをダウンロードして、手動でインストールすることもできます。
 
 ### Tgzアーカイブから {#from-tgz-archives}
 
 すべての Linux ディストリビューションで、`deb` や `rpm` パッケージがインストールできない場合は、公式のコンパイル済み `tgz` アーカイブを使用することをお勧めします。
 
-必要なバージョンは、リポジトリ https://repo.clickhouse.tech/tgz/ から `curl` または `wget` でダウンロードできます。その後、ダウンロードしたアーカイブを解凍し、インストールスクリプトでインストールしてください。最新版の例は以下です:
+必要なバージョンは、リポジトリ https://packages.clickhouse.com/tgz/ から `curl` または `wget` でダウンロードできます。その後、ダウンロードしたアーカイブを解凍し、インストールスクリプトでインストールしてください。最新版の例は以下です:
 
 ``` bash
-export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
-
-tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
-sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
-sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+{% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Deprecated Method for installing tgz archives</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 本番環境では、最新の `stable` バージョンを使うことをお勧めします。GitHub のページ https://github.com/ClickHouse/ClickHouse/tags で 接尾辞 `-stable` となっているバージョン番号として確認できます。
 
 ### Dockerイメージから {#from-docker-image}
 
-Docker内でClickHouseを実行するには、次の [DockerHub](https://hub.docker.com/r/yandex/clickhouse-server/) のガイドに従います。それらのイメージでは内部で公式の `deb` パッケージを使っています。
+Docker内でClickHouseを実行するには、次の [DockerHub](https://hub.docker.com/r/clickhouse/clickhouse-server/) のガイドに従います。それらのイメージでは内部で公式の `deb` パッケージを使っています。
 
 ### 非標準環境向けの事前コンパイルされたバイナリから {#from-binaries-non-linux}
 
 非LinuxオペレーティングシステムとAArch64 CPUアーキテクチャのために、ClickHouseのビルドは `master` ブランチの最新のコミットからクロスコンパイルされたバイナリを提供しています。(数時間の遅延があります)
 
 
--   [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [macOS](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
 ダウンロード後、`clickhouse client` を使ってサーバーに接続したり、`clickhouse local` を使ってローカルデータを処理したりすることができます。`clickhouse server` を実行するには、GitHubから[server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)と[users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml)の設定ファイルを追加でダウンロードする必要があります。
 
@@ -186,6 +191,6 @@ SELECT 1
 
 **おめでとうございます！システムが動きました！**
 
-動作確認を続けるには、テストデータセットをダウンロードするか、[チュートリアル](https://clickhouse.tech/tutorial.html)を参照してください。
+動作確認を続けるには、テストデータセットをダウンロードするか、[チュートリアル](./tutorial.md)を参照してください。
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

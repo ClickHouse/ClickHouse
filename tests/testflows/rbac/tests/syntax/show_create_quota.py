@@ -25,19 +25,19 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the quota"):
                 node.query(f"DROP QUOTA IF EXISTS {quota}")
 
-    with Scenario("I show create quota", flags=TE, requirements=[
+    with Scenario("I show create quota", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowCreateQuota_Name("1.0")]):
         with cleanup("quota0"):
             with When("I run show create quota command"):
                 node.query("SHOW CREATE QUOTA quota0")
 
-    with Scenario("I show create quota current", flags=TE, requirements=[
+    with Scenario("I show create quota current", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowCreateQuota_Current("1.0")]):
         with cleanup("quota1"):
             with When("I run show create quota command"):
                 node.query("SHOW CREATE QUOTA CURRENT")
 
-    with Scenario("I show create quota current short form", flags=TE, requirements=[
+    with Scenario("I show create quota current short form", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowCreateQuota_Current("1.0")]):
         with cleanup("quota2"):
             with When("I run show create quota command"):

@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, const Context & context)
+void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -55,15 +55,21 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, const Conte
         connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
         remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     }
-
-    /// Have to const_cast, because bridges store their commands inside context
-    helper = createBridgeHelper(const_cast<Context &>(context), context.getSettingsRef().http_receive_timeout.value, connection_string);
-    helper->startBridgeSync();
 }
 
-ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const Context & context) const
+void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
-    assert(helper);
+    if (!helper)
+    {
+        /// Have to const_cast, because bridges store their commands inside context
+        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string);
+        helper->startBridgeSync();
+    }
+}
+
+ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context) const
+{
+    startBridgeIfNot(context);
 
     /* Infer external table structure */
     Poco::URI columns_info_uri = helper->getColumnsInfoURI();
@@ -72,11 +78,12 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const Context & c
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);
 
-    const auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    const auto use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls",
                                        Poco::NumberFormatter::format(use_nulls));
 
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+    Poco::Net::HTTPBasicCredentials credentials{};
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context), credentials);
 
     std::string columns_info;
     readStringBinary(columns_info, buf);
@@ -85,11 +92,12 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const Context & c
     return ColumnsDescription{columns};
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    assert(helper);
+    startBridgeIfNot(context);
     auto columns = getActualTableStructure(context);
-    auto result = std::make_shared<StorageXDBC>(StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, context, helper);
+    auto result = std::make_shared<StorageXDBC>(
+        StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, String{}, context, helper);
     result->startup();
     return result;
 }

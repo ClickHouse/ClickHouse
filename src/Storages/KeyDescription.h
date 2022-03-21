@@ -40,28 +40,32 @@ struct KeyDescription
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        const Context & context);
+        ContextPtr context);
 
     /// Sorting key can contain additional column defined by storage type (like
     /// Version column in VersionedCollapsingMergeTree).
     static KeyDescription getSortingKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        const Context & context,
+        ContextPtr context,
         const std::optional<String> & additional_column);
+
+    /// Build an empty key description. It's different from the default constructor with some
+    /// additional initializations.
+    static KeyDescription buildEmptyKey();
 
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
         const ColumnsDescription & new_columns,
-        const Context & context);
+        ContextPtr context);
 
     /// Recalculate all expressions and fields for key with new ast without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewAST(
         const ASTPtr & new_ast,
         const ColumnsDescription & columns,
-        const Context & context);
+        ContextPtr context);
 
     KeyDescription() = default;
 
@@ -69,6 +73,12 @@ struct KeyDescription
     /// unintentionaly share AST variables and modify them.
     KeyDescription(const KeyDescription & other);
     KeyDescription & operator=(const KeyDescription & other);
+
+    /// Substitute modulo with moduloLegacy. Used in KeyCondition to allow proper comparison with keys.
+    static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
+
+    /// Parse description from string
+    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 };
 
 }

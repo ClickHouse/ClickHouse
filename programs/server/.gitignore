@@ -1,8 +1,11 @@
-/access
-/dictionaries_lib
-/flags
-/format_schemas
+/metadata
 /metadata_dropped
+/data
+/store
+/access
+/flags
+/dictionaries_lib
+/format_schemas
 /preprocessed_configs
 /shadow
 /tmp

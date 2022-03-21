@@ -14,7 +14,7 @@ Returns the largest round number that is less than or equal to `x`. A round numb
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
 `x` is any numeric type. The result is a number of the same type.
-For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function doesn’t do anything).
+For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function does not do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
 ## ceil(x\[, N\]), ceiling(x\[, N\]) {#ceilx-n-ceilingx-n}
@@ -29,13 +29,13 @@ Returns the round number with largest absolute value that has an absolute value 
 
 Rounds a value to a specified number of decimal places.
 
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types.
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types (Decimal).
 
 ``` sql
 round(expression [, decimal_places])
 ```
 
-**Arguments:**
+**Arguments**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — An integer value.
@@ -49,7 +49,7 @@ The rounded number of the same type as the input number.
 
 ### Examples {#examples}
 
-**Example of use**
+**Example of use with Float**
 
 ``` sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
@@ -61,6 +61,20 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 │ 0.5 │                        0 │
 │   1 │                        1 │
 └─────┴──────────────────────────┘
+```
+
+**Example of use with Decimal**
+
+``` sql
+SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3
+```
+
+``` text
+┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
+│ 0.0000 │                                           0.0000 │
+│ 0.5000 │                                           1.0000 │
+│ 1.0000 │                                           1.0000 │
+└────────┴──────────────────────────────────────────────────┘
 ```
 
 **Examples of rounding**
@@ -162,7 +176,7 @@ roundBankers(4.5) = 4
 roundBankers(3.55, 1) = 3.6
 roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
-roundBankers(10.755, 2) = 11,76
+roundBankers(10.755, 2) = 10.76
 ```
 
 **See Also**
@@ -175,14 +189,13 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundDuration(num) {#rounddurationnum}
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length.
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function was specifically implemented for a web analytics use case for reporting on session lengths. 
 
 ## roundAge(num) {#roundagenum}
 
-Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. 
 
 ## roundDown(num, arr) {#rounddownnum-arr}
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

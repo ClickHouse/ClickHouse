@@ -36,7 +36,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
     if (!ParserKeyword("ALTER TABLE").ignore(pos, expected))
         return false;
 
-    if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
+    if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
         return false;
 
     if (!ParserList(std::make_unique<ParserAlterCommand>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, command_list, expected))
@@ -46,7 +46,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
 
     node = alter_query;
     alter_query->command_list = command_list;
-    StorageID table_id = getTableIdentifier(table);
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
     alter_query->table = table_id.table_name;
     alter_query->database = table_id.database_name;
 

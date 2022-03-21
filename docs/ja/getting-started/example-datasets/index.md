@@ -17,4 +17,4 @@ toc_title: "イントロダクション"
 -   [ニューヨークタクシ](nyc-taxi.md)
 -   [オンタイム](ontime.md)
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->

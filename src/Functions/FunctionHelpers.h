@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -67,13 +68,13 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
+Field toField(const T & x)
 {
     return Field(NearestFieldType<T>(x));
 }
 
-template <typename T>
-inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
+template <is_decimal T>
+Field toField(const T & x, UInt32 scale)
 {
     return Field(NearestFieldType<T>(x, scale));
 }
@@ -81,6 +82,8 @@ inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 s
 
 Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
+/// Returns nested column with corrected type if nullable
+ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col);
 
 /// Returns the copy of a given columns in which each column is replaced with its respective nested
 /// column if it is nullable.
@@ -105,8 +108,8 @@ struct FunctionArgumentDescriptor
 {
     const char * argument_name;
 
-    bool (* type_validator_func)(const IDataType &);
-    bool (* column_validator_func)(const IColumn &);
+    std::function<bool (const IDataType &)> type_validator_func;
+    std::function<bool (const IColumn &)> column_validator_func;
 
     const char * expected_type_description;
 
@@ -152,8 +155,23 @@ void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithType
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
-
 /// Check if two types are equal
+bool areTypesEqual(const IDataType & lhs, const IDataType & rhs);
+
 bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs);
 
+/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
+  * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
+  */
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count);
+
+struct NullPresence
+{
+    bool has_nullable = false;
+    bool has_null_constant = false;
+};
+
+NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
+
+bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 }

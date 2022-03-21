@@ -10,8 +10,9 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/MemorySanitizer.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -69,10 +70,10 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == 0; }
+bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = 0; }
+void set(T & x) { x = {}; }
 
 }
 
@@ -156,7 +157,7 @@ struct HashTableCell
 
     Key key;
 
-    HashTableCell() {}
+    HashTableCell() {} /// NOLINT
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State &) : key(key_) {}
@@ -304,7 +305,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> //-V730
 {
 private:
     bool has_zero = false;
@@ -584,13 +585,24 @@ protected:
     void destroyElements()
     {
         if (!std::is_trivially_destructible_v<Cell>)
+        {
             for (iterator it = begin(), it_end = end(); it != it_end; ++it)
+            {
                 it.ptr->~Cell();
+                /// In case of poison_in_dtor=1 it will be poisoned,
+                /// but it maybe used later, during iteration.
+                ///
+                /// NOTE, that technically this is UB [1], but OK for now.
+                ///
+                ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
+                __msan_unpoison(it.ptr, sizeof(*it.ptr));
+            }
+        }
     }
 
 
     template <typename Derived, bool is_const>
-    class iterator_base
+    class iterator_base /// NOLINT
     {
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
@@ -601,7 +613,7 @@ protected:
         friend class HashTable;
 
     public:
-        iterator_base() {}
+        iterator_base() {} /// NOLINT
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
 
         bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
@@ -616,7 +628,7 @@ protected:
                 ++ptr;
 
             /// Skip empty cells in the main buffer.
-            auto buf_end = container->buf + container->grower.bufSize();
+            auto * buf_end = container->buf + container->grower.bufSize();
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -649,7 +661,7 @@ protected:
           * compatibility with std find(). Unfortunately, now is not the time to
           * do this.
           */
-        operator Cell * () const { return nullptr; }
+        operator Cell * () const { return nullptr; } /// NOLINT
     };
 
 
@@ -672,7 +684,7 @@ public:
         alloc(grower);
     }
 
-    HashTable(size_t reserve_for_num_elements)
+    HashTable(size_t reserve_for_num_elements) /// NOLINT
     {
         if (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
@@ -680,7 +692,7 @@ public:
         alloc(grower);
     }
 
-    HashTable(HashTable && rhs)
+    HashTable(HashTable && rhs) noexcept
         : buf(nullptr)
     {
         *this = std::move(rhs);
@@ -692,7 +704,7 @@ public:
         free();
     }
 
-    HashTable & operator= (HashTable && rhs)
+    HashTable & operator=(HashTable && rhs) noexcept
     {
         destroyElements();
         free();
@@ -701,10 +713,10 @@ public:
         std::swap(m_size, rhs.m_size);
         std::swap(grower, rhs.grower);
 
-        Hash::operator=(std::move(rhs));
-        Allocator::operator=(std::move(rhs));
-        Cell::State::operator=(std::move(rhs));
-        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
+        Hash::operator=(std::move(rhs)); ///NOLINT
+        Allocator::operator=(std::move(rhs)); ///NOLINT
+        Cell::State::operator=(std::move(rhs)); ///NOLINT
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs)); ///NOLINT
 
         return *this;
     }
@@ -712,7 +724,7 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        Reader(DB::ReadBuffer & in_)
+        explicit Reader(DB::ReadBuffer & in_)
             : in(in_)
         {
         }
@@ -759,13 +771,13 @@ public:
     };
 
 
-    class iterator : public iterator_base<iterator, false>
+    class iterator : public iterator_base<iterator, false> /// NOLINT
     {
     public:
         using iterator_base<iterator, false>::iterator_base;
     };
 
-    class const_iterator : public iterator_base<const_iterator, true>
+    class const_iterator : public iterator_base<const_iterator, true> /// NOLINT
     {
     public:
         using iterator_base<const_iterator, true>::iterator_base;
@@ -799,7 +811,7 @@ public:
             return iteratorToZero();
 
         Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
+        auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 

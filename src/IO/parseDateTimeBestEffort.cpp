@@ -1,4 +1,4 @@
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <IO/ReadBuffer.h>
@@ -46,7 +46,7 @@ inline size_t readAlpha(char * res, size_t max_chars, ReadBuffer & in)
 }
 
 #if defined(__PPC__)
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #endif
@@ -151,7 +151,18 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             num_digits = readDigits(digits, sizeof(digits), in);
 
-            if (num_digits == 10 && !year && !has_time)
+            if (num_digits == 13 && !year && !has_time)
+            {
+                /// This is unix timestamp with millisecond.
+                readDecimalNumber<10>(res, digits);
+                if (fractional)
+                {
+                    fractional->digits = 3;
+                    readDecimalNumber<3>(fractional->value, digits + 10);
+                }
+                return ReturnType(true);
+            }
+            else if (num_digits == 10 && !year && !has_time)
             {
                 /// This is unix timestamp.
                 readDecimalNumber<10>(res, digits);
@@ -183,7 +194,7 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 6)
             {
-                /// This is YYYYMM
+                /// This is YYYYMM or hhmmss
                 if (!year && !month)
                 {
                     readDecimalNumber<4>(year, digits);
@@ -424,47 +435,59 @@ ReturnType parseDateTimeBestEffortImpl(
             else if (c == '+' || c == '-')
             {
                 ++in.position();
-                has_time_zone_offset = true;
-                if (c == '-')
-                    time_zone_offset_negative = true;
-
                 num_digits = readDigits(digits, sizeof(digits), in);
 
-                if (num_digits == 4)
+                if (num_digits == 6 && !has_time && year && month && day_of_month)
                 {
-                    readDecimalNumber<2>(time_zone_offset_hour, digits);
-                    readDecimalNumber<2>(time_zone_offset_minute, digits + 2);
-                }
-                else if (num_digits == 3)
-                {
-                    readDecimalNumber<1>(time_zone_offset_hour, digits);
-                    readDecimalNumber<2>(time_zone_offset_minute, digits + 1);
-                }
-                else if (num_digits == 2)
-                {
-                    readDecimalNumber<2>(time_zone_offset_hour, digits);
-                }
-                else if (num_digits == 1)
-                {
-                    readDecimalNumber<1>(time_zone_offset_hour, digits);
+                    /// It looks like hhmmss
+                    readDecimalNumber<2>(hour, digits);
+                    readDecimalNumber<2>(minute, digits + 2);
+                    readDecimalNumber<2>(second, digits + 4);
+                    has_time = true;
                 }
                 else
-                    return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
-
-                if (num_digits < 3 && checkChar(':', in))
                 {
-                    num_digits = readDigits(digits, sizeof(digits), in);
+                    /// It looks like time zone offset
+                    has_time_zone_offset = true;
+                    if (c == '-')
+                        time_zone_offset_negative = true;
 
-                    if (num_digits == 2)
+                    if (num_digits == 4)
                     {
-                        readDecimalNumber<2>(time_zone_offset_minute, digits);
+                        readDecimalNumber<2>(time_zone_offset_hour, digits);
+                        readDecimalNumber<2>(time_zone_offset_minute, digits + 2);
+                    }
+                    else if (num_digits == 3)
+                    {
+                        readDecimalNumber<1>(time_zone_offset_hour, digits);
+                        readDecimalNumber<2>(time_zone_offset_minute, digits + 1);
+                    }
+                    else if (num_digits == 2)
+                    {
+                        readDecimalNumber<2>(time_zone_offset_hour, digits);
                     }
                     else if (num_digits == 1)
                     {
-                        readDecimalNumber<1>(time_zone_offset_minute, digits);
+                        readDecimalNumber<1>(time_zone_offset_hour, digits);
                     }
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+
+                    if (num_digits < 3 && checkChar(':', in))
+                    {
+                        num_digits = readDigits(digits, sizeof(digits), in);
+
+                        if (num_digits == 2)
+                        {
+                            readDecimalNumber<2>(time_zone_offset_minute, digits);
+                        }
+                        else if (num_digits == 1)
+                        {
+                            readDecimalNumber<1>(time_zone_offset_minute, digits);
+                        }
+                        else
+                            return on_error("Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                    }
                 }
             }
             else
@@ -600,7 +623,7 @@ ReturnType parseDateTimeBestEffortImpl(
     return ReturnType(true);
 }
 
-template <typename ReturnType>
+template <typename ReturnType, bool is_us_style>
 ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     time_t whole;
@@ -608,12 +631,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
     if constexpr (std::is_same_v<ReturnType, bool>)
     {
-        if (!parseDateTimeBestEffortImpl<bool, false>(whole, in, local_time_zone, utc_time_zone, &subsecond))
+        if (!parseDateTimeBestEffortImpl<bool, is_us_style>(whole, in, local_time_zone, utc_time_zone, &subsecond))
             return false;
     }
     else
     {
-        parseDateTimeBestEffortImpl<ReturnType, false>(whole, in, local_time_zone, utc_time_zone, &subsecond);
+        parseDateTimeBestEffortImpl<ReturnType, is_us_style>(whole, in, local_time_zone, utc_time_zone, &subsecond);
     }
 
 
@@ -634,7 +657,7 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 }
 
 #if defined(__PPC__)
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 #endif
@@ -661,12 +684,17 @@ bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTIm
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<void>(res, scale, in, local_time_zone, utc_time_zone);
+    return parseDateTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseDateTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTime64BestEffortImpl<bool>(res, scale, in, local_time_zone, utc_time_zone);
+    return parseDateTime64BestEffortImpl<bool, false>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 }

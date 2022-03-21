@@ -21,12 +21,12 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
         if (std::is_integral_v<T>)
         {
             if (arguments->children.size() > 1)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than one argument - display width", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than one argument - display width", TypeName<T>);
         }
         else
         {
             if (arguments->children.size() > 2)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", TypeName<T>);
         }
     }
     return std::make_shared<DataTypeNumber<T>>();
@@ -44,18 +44,19 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Int16", createNumericDataType<Int16>);
     factory.registerDataType("Int32", createNumericDataType<Int32>);
     factory.registerDataType("Int64", createNumericDataType<Int64>);
+
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
+    factory.registerSimpleDataType("UInt128", [] { return DataTypePtr(std::make_shared<DataTypeUInt128>()); });
     factory.registerSimpleDataType("UInt256", [] { return DataTypePtr(std::make_shared<DataTypeUInt256>()); });
+
     factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); });
     factory.registerSimpleDataType("Int256", [] { return DataTypePtr(std::make_shared<DataTypeInt256>()); });
 
     /// These synonyms are added for compatibility.
 
     factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BOOL", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BOOLEAN", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INT1", "Int8", DataTypeFactory::CaseInsensitive);    /// MySQL
     factory.registerAlias("BYTE", "Int8", DataTypeFactory::CaseInsensitive);    /// MS Access
     factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);
@@ -85,6 +86,10 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
+    factory.registerAlias("SET", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
+    factory.registerAlias("YEAR", "UInt16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TIME", "Int64", DataTypeFactory::CaseInsensitive);
 }
 
 }

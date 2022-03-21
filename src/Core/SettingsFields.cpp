@@ -2,8 +2,8 @@
 
 #include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitors.h>
-#include <common/logger_useful.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <base/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>

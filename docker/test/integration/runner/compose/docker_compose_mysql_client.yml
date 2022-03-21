@@ -1,6 +1,6 @@
 version: '2.3'
 services:
-  mysql1:
+  mysql_client:
     image: mysql:5.7
     restart: always
     environment:

@@ -4,9 +4,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -28,9 +28,9 @@ class FunctionAddressToSymbol : public IFunction
 {
 public:
     static constexpr auto name = "addressToSymbol";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        context.checkAccess(AccessType::addressToSymbol);
+        context->checkAccess(AccessType::addressToSymbol);
         return std::make_shared<FunctionAddressToSymbol>();
     }
 
@@ -43,6 +43,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

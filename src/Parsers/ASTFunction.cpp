@@ -1,22 +1,46 @@
+#include <string_view>
+
 #include <Parsers/ASTFunction.h>
 
 #include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/queryToString.h>
+
+using namespace std::literals;
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    if (name == "view")
+        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+
+    /// If function can be converted to literal it will be parsed as literal after formatting.
+    /// In distributed query it may lead to mismathed column names.
+    /// To avoid it we check whether we can convert function to literal.
+    if (auto literal = toLiteral())
+    {
+        literal->appendColumnName(ostr);
+        return;
+    }
+
     writeString(name, ostr);
 
     if (parameters)
@@ -26,6 +50,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         {
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
+
             (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
@@ -33,12 +58,16 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar('(', ostr);
     if (arguments)
+    {
         for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
         {
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
+
             (*it)->appendColumnName(ostr);
         }
+    }
+
     writeChar(')', ostr);
 
     if (is_window_function)
@@ -50,11 +79,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            FormatSettings settings{ostr, true /* one_line */};
+            FormatSettings format_settings{ostr, true /* one_line */};
             FormatState state;
             FormatStateStacked frame;
             writeCString("(", ostr);
-            window_definition->formatImpl(settings, state, frame);
+            window_definition->formatImpl(format_settings, state, frame);
             writeCString(")", ostr);
         }
     }
@@ -91,31 +120,42 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
+template <typename Container>
+static ASTPtr createLiteral(const ASTs & arguments)
+{
+    Container container;
+
+    for (const auto & arg : arguments)
+    {
+        if (const auto * literal = arg->as<ASTLiteral>())
+        {
+            container.push_back(literal->value);
+        }
+        else if (auto * func = arg->as<ASTFunction>())
+        {
+            if (auto func_literal = func->toLiteral())
+                container.push_back(func_literal->as<ASTLiteral>()->value);
+            else
+                return {};
+        }
+        else
+            /// Some of the Array or Tuple arguments is not literal
+            return {};
+    }
+
+    return std::make_shared<ASTLiteral>(container);
+}
 
 ASTPtr ASTFunction::toLiteral() const
 {
-    if (!arguments) return {};
+    if (!arguments)
+        return {};
 
     if (name == "array")
-    {
-        Array array;
+        return createLiteral<Array>(arguments->children);
 
-        for (const auto & arg : arguments->children)
-        {
-            if (auto * literal = arg->as<ASTLiteral>())
-                array.push_back(literal->value);
-            else if (auto * func = arg->as<ASTFunction>())
-            {
-                if (auto func_literal = func->toLiteral())
-                    array.push_back(func_literal->as<ASTLiteral>()->value);
-            }
-            else
-                /// Some of the Array arguments is not literal
-                return {};
-        }
-
-        return std::make_shared<ASTLiteral>(array);
-    }
+    if (name == "tuple")
+        return createLiteral<Tuple>(arguments->children);
 
     return {};
 }
@@ -199,42 +239,92 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         settings.ostr << nl_or_nothing << indent_str << ")";
         return;
     }
+
     /// Should this function to be written as operator?
     bool written = false;
+
     if (arguments && !parameters)
     {
+        /// Unary prefix operators.
         if (arguments->children.size() == 1)
         {
             const char * operators[] =
             {
-                "negate", "-",
-                "not", "NOT ",
+                "negate",      "-",
+                "not",         "NOT ",
                 nullptr
             };
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
-                    if (frame.need_parens)
-                        settings.ostr << '(';
-
-                    settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-
-                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
-                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
-                        * Instead, add a space.
-                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
-                        */
-                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
-                        settings.ostr << ' ';
-
-                    arguments->formatImpl(settings, state, nested_need_parens);
-                    written = true;
-
-                    if (frame.need_parens)
-                        settings.ostr << ')';
+                    continue;
                 }
+
+                const auto * literal = arguments->children[0]->as<ASTLiteral>();
+                const auto * function = arguments->children[0]->as<ASTFunction>();
+                bool negate = name == "negate";
+                bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
+                // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
+                bool literal_need_parens = literal && !is_tuple;
+                // negate always requires parentheses, otherwise -(-1) will be printed as --1
+                bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
+                // We don't need parentheses around a single literal.
+                bool need_parens = !literal && frame.need_parens && !negate_need_parens;
+
+                // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
+                if (negate_need_parens)
+                    nested_need_parens.need_parens = false;
+
+                if (need_parens)
+                    settings.ostr << '(';
+
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                if (negate_need_parens)
+                    settings.ostr << '(';
+
+                arguments->formatImpl(settings, state, nested_need_parens);
+                written = true;
+
+                if (negate_need_parens)
+                    settings.ostr << ')';
+
+                if (need_parens)
+                    settings.ostr << ')';
+
+                break;
+            }
+        }
+
+        /// Unary postfix operators.
+        if (!written && arguments->children.size() == 1)
+        {
+            const char * operators[] =
+            {
+                "isNull",          " IS NULL",
+                "isNotNull",       " IS NOT NULL",
+                nullptr
+            };
+
+            for (const char ** func = operators; *func; func += 2)
+            {
+                if (strcasecmp(name.c_str(), func[0]) != 0)
+                {
+                    continue;
+                }
+
+                if (frame.need_parens)
+                    settings.ostr << '(';
+                arguments->formatImpl(settings, state, nested_need_parens);
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+                if (frame.need_parens)
+                    settings.ostr << ')';
+
+                written = true;
+
+                break;
             }
         }
 
@@ -270,7 +360,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
                         settings.ostr << '(';
@@ -307,7 +397,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "arrayElement"))
+            if (!written && name == "arrayElement"sv)
             {
                 if (frame.need_parens)
                     settings.ostr << '(';
@@ -322,12 +412,42 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ')';
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
+            if (!written && name == "tupleElement"sv)
             {
-                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
-                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
+                // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
+                //
+                //     Function_tupleElement, 0xx
+                //     -ExpressionList_, 0xx
+                //     --Literal_Int64_255, 0xx
+                //     --Literal_Int64_100, 0xx
+                //
+                // And in this case it will be printed as "255.100", which
+                // later will be parsed as float, and formatting will be
+                // inconsistent.
+                //
+                // So instead of printing it as regular tuple,
+                // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                bool tuple_arguments_valid = true;
+                const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
+                const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
+
+                if (lit_left)
                 {
-                    if (lit->value.getType() == Field::Types::UInt64)
+                    Field::Types::Which type = lit_left->value.getType();
+                    if (type != Field::Types::Tuple && type != Field::Types::Array)
+                    {
+                        tuple_arguments_valid = false;
+                    }
+                }
+
+                // It can be printed in a form of 'x.1' only if right hand side
+                // is an unsigned integer lineral. We also allow nonnegative
+                // signed integer literals, because the fuzzer sometimes inserts
+                // them, and we want to have consistent formatting.
+                if (tuple_arguments_valid && lit_right)
+                {
+                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
+                        && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -343,8 +463,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "lambda"))
+            if (!written && name == "lambda"sv)
             {
+                /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
 
                 if (frame.need_parens)
@@ -354,9 +475,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (first_arg_func
                     && first_arg_func->name == "tuple"
                     && first_arg_func->arguments
-                    && first_arg_func->arguments->children.size() == 1)
+                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
                 {
-                    first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    if (first_arg_func->arguments->children.size() == 1)
+                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    else
+                        settings.ostr << "()";
                 }
                 else
                     arguments->children[0]->formatImpl(settings, state, nested_need_parens);
@@ -380,7 +504,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
                         settings.ostr << '(';
@@ -397,7 +521,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        if (!written && 0 == strcmp(name.c_str(), "array"))
+        if (!written && name == "array"sv)
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -410,7 +534,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && 0 == strcmp(name.c_str(), "tuple"))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << '(' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -423,16 +547,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             written = true;
         }
 
-        if (!written && 0 == strcmp(name.c_str(), "map"))
+        if (!written && name == "map"sv)
         {
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
@@ -495,6 +619,35 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         window_definition->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }
+}
+
+String getFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    throw Exception(ast ? queryToString(*ast) + " is not an function" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
+
+std::optional<String> tryGetFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    return {};
+}
+
+bool tryGetFunctionNameInto(const IAST * ast, String & name)
+{
+    if (ast)
+    {
+        if (const auto * node = ast->as<ASTFunction>())
+        {
+            name = node->name;
+            return true;
+        }
+    }
+    return false;
 }
 
 }

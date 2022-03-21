@@ -27,23 +27,36 @@ struct ModuloByConstantImpl
     using Op = ModuloImpl<A, B>;
     using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
     {
-        if constexpr (op_case == OpCase::Vector)
-            for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i], b[i]);
-        else if constexpr (op_case == OpCase::LeftConstant)
-            for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(*a, b[i]);
-        else
+        if constexpr (op_case == OpCase::RightConstant)
+        {
+            if (right_nullmap && (*right_nullmap)[0])
+                return;
             vectorConstant(a, *b, c, size);
+        }
+        else
+        {
+            if (right_nullmap)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                        apply<op_case>(a, b, c, i);
+            }
+            else
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
+        }
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static void NO_INLINE vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -70,12 +83,19 @@ struct ModuloByConstantImpl
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
-        libdivide::divider<A> divider(b);
+        /// Division by min negative value.
+        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
+            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+
+        /// Modulo of division by negative number is the same as the positive number.
+        if (b < 0)
+            b = -b;
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
         if (b & (b - 1))
         {
+            libdivide::divider<A> divider(b);
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
         }
@@ -87,8 +107,23 @@ struct ModuloByConstantImpl
                 dst[i] = src[i] & mask;
         }
     }
+
+private:
+    template <OpCase op_case>
+    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else
+            c[i] = Op::template apply<ResultType>(*a, b[i]);
+    }
 };
 
+template <typename A, typename B>
+struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
+{
+    using Op = ModuloLegacyImpl<A, B>;
+};
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -125,6 +160,14 @@ void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
+}
+
+struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
+using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
+
+void registerFunctionModuloLegacy(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionModuloLegacy>();
 }
 
 }

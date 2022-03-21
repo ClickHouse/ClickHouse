@@ -12,10 +12,10 @@ namespace MySQLProtocol
 namespace ProtocolText
 {
 
-ResultSetRow::ResultSetRow(const DataTypes & data_types, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_)
     : columns(columns_), row_num(row_num_)
 {
-    for (size_t i = 0; i < columns.size(); i++)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         if (columns[i]->isNullAt(row_num))
         {
@@ -25,7 +25,7 @@ ResultSetRow::ResultSetRow(const DataTypes & data_types, const Columns & columns
         else
         {
             WriteBufferFromOwnString ostr;
-            data_types[i]->serializeAsText(*columns[i], row_num, ostr, FormatSettings());
+            serializations[i]->serializeText(*columns[i], row_num, ostr, FormatSettings());
             payload_size += getLengthEncodedStringSize(ostr.str());
             serialized.push_back(std::move(ostr.str()));
         }
@@ -39,7 +39,7 @@ size_t ResultSetRow::getPayloadSize() const
 
 void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
 {
-    for (size_t i = 0; i < columns.size(); i++)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         if (columns[i]->isNullAt(row_num))
             buffer.write(serialized[i].data(), 1);

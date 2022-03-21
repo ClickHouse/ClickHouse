@@ -1,128 +1,94 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <DataTypes/IDataType.h>
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/IExternalLoadable.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
+#include <base/EnumReflection.h>
+
+#include <Core/Field.h>
+#include <Core/TypeId.h>
+#include <IO/ReadBufferFromString.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/IExternalLoadable.h>
+
+
+#if defined(__GNUC__)
+    /// GCC mistakenly warns about the names in enum class.
+    #pragma GCC diagnostic ignored "-Wshadow"
+#endif
 
 namespace DB
 {
+using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
 
-enum class AttributeUnderlyingType
+// We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
+// The first can be done by defining AttributeUnderlyingType enum values to TypeIndex values and then performing
+// a enum_cast.
+// The second can be achieved by using TypeIndexToType
+#define map_item(__T) __T = static_cast<TypeIndexUnderlying>(TypeIndex::__T)
+
+enum class AttributeUnderlyingType : TypeIndexUnderlying
 {
-    utUInt8,
-    utUInt16,
-    utUInt32,
-    utUInt64,
-    utUInt128,
-    utInt8,
-    utInt16,
-    utInt32,
-    utInt64,
-    utFloat32,
-    utFloat64,
-    utDecimal32,
-    utDecimal64,
-    utDecimal128,
-    utString
+    map_item(Int8), map_item(Int16), map_item(Int32), map_item(Int64), map_item(Int128), map_item(Int256),
+    map_item(UInt8), map_item(UInt16), map_item(UInt32), map_item(UInt64), map_item(UInt128), map_item(UInt256),
+    map_item(Float32), map_item(Float64),
+    map_item(Decimal32), map_item(Decimal64), map_item(Decimal128), map_item(Decimal256),
+    map_item(DateTime64),
+
+    map_item(UUID), map_item(String), map_item(Array)
 };
 
+#undef map_item
 
-AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
-
-std::string toString(const AttributeUnderlyingType type);
-
-/// Min and max lifetimes for a dictionary or it's entry
+/// Min and max lifetimes for a dictionary or its entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
 /** Holds the description of a single dictionary attribute:
 *    - name, used for lookup into dictionary and source;
 *    - type, used in conjunction with DataTypeFactory and getAttributeUnderlyingTypeByname;
+*    - nested_type, contains nested type of complex type like Nullable, Array
 *    - null_value, used as a default value for non-existent entries in the dictionary,
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
-*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
-*    - is_object_id, used in mongo dictionary, converts string key to objectid
+*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?);
+*    - is_object_id, used in mongo dictionary, converts string key to objectid;
+*    - is_nullable, is attribute nullable;
 */
 struct DictionaryAttribute final
 {
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
-    const DataTypePtr nested_type;
+    const SerializationPtr type_serialization;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
-    const bool is_array;
 };
 
-template <typename Type>
+template <AttributeUnderlyingType type>
 struct DictionaryAttributeType
 {
-    using AttributeType = Type;
+    /// Converts @c type to it underlying type e.g. AttributeUnderlyingType::UInt8 -> UInt8
+    using AttributeType = TypeIndexToType<
+        static_cast<TypeIndex>(
+            static_cast<TypeIndexUnderlying>(type))>;
 };
 
 template <typename F>
-void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
+constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    switch (type)
+    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
     {
-        case AttributeUnderlyingType::utUInt8:
-            func(DictionaryAttributeType<UInt8>());
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            func(DictionaryAttributeType<UInt16>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            func(DictionaryAttributeType<UInt32>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            func(DictionaryAttributeType<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            func(DictionaryAttributeType<UInt128>());
-            break;
-        case AttributeUnderlyingType::utInt8:
-            func(DictionaryAttributeType<Int8>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            func(DictionaryAttributeType<Int16>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            func(DictionaryAttributeType<Int32>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            func(DictionaryAttributeType<Int64>());
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            func(DictionaryAttributeType<Float32>());
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            func(DictionaryAttributeType<Float64>());
-            break;
-        case AttributeUnderlyingType::utString:
-            func(DictionaryAttributeType<String>());
-            break;
-        case AttributeUnderlyingType::utDecimal32:
-            func(DictionaryAttributeType<Decimal32>());
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            func(DictionaryAttributeType<Decimal64>());
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            func(DictionaryAttributeType<Decimal128>());
-            break;
-    }
+        if (type == other)
+            func(DictionaryAttributeType<other>{});
+    });
 };
 
 struct DictionarySpecialAttribute final
@@ -147,28 +113,37 @@ struct DictionaryStructure final
     std::optional<DictionarySpecialAttribute> id;
     std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
+    std::unordered_map<std::string, size_t> attribute_name_to_index;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
+    std::optional<size_t> hierarchical_attribute_index;
+
     bool has_expressions = false;
     bool access_to_key_from_attributes = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
+    DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
-    const DictionaryAttribute & getAttribute(const String & attribute_name) const;
-    const DictionaryAttribute & getAttribute(const String & attribute_name, const DataTypePtr & type) const;
-    std::string getKeyDescription() const;
-    bool isKeySizeFixed() const;
-    size_t getKeySize() const;
+
+    const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
+    const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
+
     Strings getKeysNames() const;
+    size_t getKeysSize() const;
+
+    std::string getKeyDescription() const;
 
 private:
     /// range_min and range_max have to be parsed before this function call
     std::vector<DictionaryAttribute> getAttributes(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const bool hierarchy_allowed = true,
-        const bool allow_null_values = true);
+        bool complex_key_attributes);
+
+    /// parse range_min and range_max
+    void parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix);
+
 };
 
 }

@@ -6,7 +6,9 @@
 #include <IO/readDecimalText.h>
 #include <Core/Field.h>
 #include <Core/DecimalComparison.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorDump.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorWriteBinary.h>
 
 
 namespace DB
@@ -21,65 +23,111 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (type)
     {
-        case Field::Types::Null: {
-            return DB::Field();
+        case Field::Types::Null:
+        {
+            return Field();
         }
-        case Field::Types::UInt64: {
+        case Field::Types::UInt64:
+        {
             UInt64 value;
-            DB::readVarUInt(value, buf);
+            readVarUInt(value, buf);
             return value;
         }
-        case Field::Types::UInt128: {
+        case Field::Types::UInt128:
+        {
             UInt128 value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Int64: {
+        case Field::Types::UInt256:
+        {
+            UInt256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::UUID:
+        {
+            UUID value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Int64:
+        {
             Int64 value;
-            DB::readVarInt(value, buf);
+            readVarInt(value, buf);
             return value;
         }
-        case Field::Types::Float64: {
+        case Field::Types::Int128:
+        {
+            Int128 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Int256:
+        {
+            Int256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Float64:
+        {
             Float64 value;
-            DB::readFloatBinary(value, buf);
+            readFloatBinary(value, buf);
             return value;
         }
-        case Field::Types::String: {
+        case Field::Types::String:
+        {
             std::string value;
-            DB::readStringBinary(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
-        case Field::Types::Array: {
+        case Field::Types::Array:
+        {
             Array value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Tuple: {
+        case Field::Types::Tuple:
+        {
             Tuple value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Map: {
+        case Field::Types::Map:
+        {
             Map value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::AggregateFunctionState: {
-            AggregateFunctionStateData value;
-            DB::readStringBinary(value.name, buf);
-            DB::readStringBinary(value.data, buf);
+        case Field::Types::Object:
+        {
+            Object value;
+            readBinary(value, buf);
             return value;
+        }
+        case Field::Types::AggregateFunctionState:
+        {
+            AggregateFunctionStateData value;
+            readStringBinary(value.name, buf);
+            readStringBinary(value.data, buf);
+            return value;
+        }
+        case Field::Types::Bool:
+        {
+            UInt8 value;
+            readBinary(value, buf);
+            return bool(value);
         }
     }
-    return DB::Field();
+    return Field();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
 {
     size_t size;
     UInt8 type;
-    DB::readBinary(type, buf);
-    DB::readBinary(size, buf);
+    readBinary(type, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
         x.push_back(getBinaryValue(type, buf));
@@ -91,28 +139,28 @@ void writeBinary(const Array & x, WriteBuffer & buf)
     size_t size = x.size();
     if (size)
         type = x.front().getType();
-    DB::writeBinary(type, buf);
-    DB::writeBinary(size, buf);
+    writeBinary(type, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
 {
-    DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
+    String res = applyVisitor(FieldVisitorToString(), Field(x));
     buf.write(res.data(), res.size());
 }
 
 void readBinary(Tuple & x, ReadBuffer & buf)
 {
     size_t size;
-    DB::readBinary(size, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
         UInt8 type;
-        DB::readBinary(type, buf);
+        readBinary(type, buf);
         x.push_back(getBinaryValue(type, buf));
     }
 }
@@ -120,30 +168,30 @@ void readBinary(Tuple & x, ReadBuffer & buf)
 void writeBinary(const Tuple & x, WriteBuffer & buf)
 {
     const size_t size = x.size();
-    DB::writeBinary(size, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
     {
         const UInt8 type = elem.getType();
-        DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
 void writeText(const Tuple & x, WriteBuffer & buf)
 {
-    writeFieldText(DB::Field(x), buf);
+    writeFieldText(Field(x), buf);
 }
 
 void readBinary(Map & x, ReadBuffer & buf)
 {
     size_t size;
-    DB::readBinary(size, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
         UInt8 type;
-        DB::readBinary(type, buf);
+        readBinary(type, buf);
         x.push_back(getBinaryValue(type, buf));
     }
 }
@@ -151,19 +199,53 @@ void readBinary(Map & x, ReadBuffer & buf)
 void writeBinary(const Map & x, WriteBuffer & buf)
 {
     const size_t size = x.size();
-    DB::writeBinary(size, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
     {
         const UInt8 type = elem.getType();
-        DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
 void writeText(const Map & x, WriteBuffer & buf)
 {
-    writeFieldText(DB::Field(x), buf);
+    writeFieldText(Field(x), buf);
+}
+
+void readBinary(Object & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+    {
+        UInt8 type;
+        String key;
+        readBinary(type, buf);
+        readBinary(key, buf);
+        x[key] = getBinaryValue(type, buf);
+    }
+}
+
+void writeBinary(const Object & x, WriteBuffer & buf)
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & [key, value] : x)
+    {
+        const UInt8 type = value.getType();
+        writeBinary(type, buf);
+        writeBinary(key, buf);
+        Field::dispatch([&buf] (const auto & val) { FieldVisitorWriteBinary()(val, buf); }, value);
+    }
+}
+
+void writeText(const Object & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
 }
 
 template <typename T>
@@ -194,14 +276,14 @@ template void readQuoted<Decimal256>(DecimalField<Decimal256> & x, ReadBuffer & 
 
 void writeFieldText(const Field & x, WriteBuffer & buf)
 {
-    DB::String res = Field::dispatch(DB::FieldVisitorToString(), x);
+    String res = Field::dispatch(FieldVisitorToString(), x);
     buf.write(res.data(), res.size());
 }
 
 
 String Field::dump() const
 {
-    return applyVisitor(DB::FieldVisitorDump(), *this);
+    return applyVisitor(FieldVisitorDump(), *this);
 }
 
 Field Field::restoreFromDump(const std::string_view & dump_)
@@ -235,6 +317,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
     if (dump.starts_with(prefix))
     {
         Int128 value = parseFromString<Int128>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"UInt128_"};
+    if (dump.starts_with(prefix))
+    {
+        UInt128 value = parseFromString<UInt128>(dump.substr(prefix.length()));
         return value;
     }
 
@@ -295,21 +384,19 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return decimal;
     }
 
-    prefix = std::string_view{"UUID_"};
-    if (dump.starts_with(prefix))
-    {
-        UUID uuid;
-        ReadBufferFromString buf{dump.substr(prefix.length())};
-        readQuoted(uuid, buf);
-        return uuid;
-    }
-
     if (dump.starts_with("\'"))
     {
         String str;
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
         return str;
+    }
+
+    prefix = std::string_view{"Bool_"};
+    if (dump.starts_with(prefix))
+    {
+        bool value = parseFromString<bool>(dump.substr(prefix.length()));
+        return value;
     }
 
     prefix = std::string_view{"Array_["};
@@ -410,49 +497,54 @@ Field Field::restoreFromDump(const std::string_view & dump_)
 
 
 template <typename T>
-static bool decEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
     using Comparator = DecimalComparison<T, T, EqualsOp>;
     return Comparator::compare(x, y, x_scale, y_scale);
 }
 
 template <typename T>
-static bool decLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
+bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
     using Comparator = DecimalComparison<T, T, LessOp>;
     return Comparator::compare(x, y, x_scale, y_scale);
 }
 
 template <typename T>
-static bool decLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
     using Comparator = DecimalComparison<T, T, LessOrEqualsOp>;
     return Comparator::compare(x, y, x_scale, y_scale);
 }
 
-template <> bool decimalEqual(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
-template <> bool decimalLess(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
-template <> bool decimalLessOrEqual(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 
-template <> bool decimalEqual(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
-template <> bool decimalLess(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
-template <> bool decimalLessOrEqual(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+template bool decimalEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
-template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
-template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
-template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
-template <> bool decimalEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
-template <> bool decimalLess(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
-template <> bool decimalLessOrEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
-template <> bool decimalEqual(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
-template <> bool decimalLess(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
-template <> bool decimalLessOrEqual(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 
-inline void writeText(const Null &, WriteBuffer & buf)
+inline void writeText(const Null & x, WriteBuffer & buf)
 {
-    writeText(std::string("Null"), buf);
+    if (x.isNegativeInfinity())
+        writeText("-Inf", buf);
+    if (x.isPositiveInfinity())
+        writeText("+Inf", buf);
+    else
+        writeText("NULL", buf);
 }
 
 String toString(const Field & x)

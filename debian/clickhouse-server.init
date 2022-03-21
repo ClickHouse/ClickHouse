@@ -3,10 +3,17 @@
 # Provides:          clickhouse-server
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Required-Start:    $network
-# Required-Stop:     $network
-# Short-Description: Yandex clickhouse-server daemon
+# Should-Start:      $time $network
+# Should-Stop:       $network
+# Short-Description: clickhouse-server daemon
 ### END INIT INFO
+#
+# NOTES:
+# - Should-* -- script can start if the listed facilities are missing, unlike Required-*
+#
+# For the documentation [1]:
+#
+#   [1]: https://wiki.debian.org/LSBInitScripts
 
 CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
@@ -42,29 +49,6 @@ command -v flock >/dev/null && FLOCK=flock
 
 # Override defaults from optional config file
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
-
-# On x86_64, check for required instruction set.
-if uname -mpi | grep -q 'x86_64'; then
-    if ! grep -q 'sse4_2' /proc/cpuinfo; then
-        # On KVM, cpuinfo could falsely not report SSE 4.2 support, so skip the check.
-        if ! grep -q 'Common KVM processor' /proc/cpuinfo; then
-
-            # Some other VMs also report wrong flags in cpuinfo.
-            # Tricky way to test for instruction set:
-            #  create temporary binary and run it;
-            #  if it get caught illegal instruction signal,
-            #  then required instruction set is not supported really.
-            #
-            # Generated this way:
-            # gcc -xc -Os -static -nostdlib - <<< 'void _start() { __asm__("pcmpgtq %%xmm0, %%xmm1; mov $0x3c, %%rax; xor %%rdi, %%rdi; syscall":::"memory"); }' && strip -R .note.gnu.build-id -R .comment -R .eh_frame -s ./a.out && gzip -c -9 ./a.out | base64 -w0; echo
-
-            if ! (echo -n 'H4sICAwAW1cCA2Eub3V0AKt39XFjYmRkgAEmBjsGEI+H0QHMd4CKGyCUAMUsGJiBJDNQNUiYlQEZOKDQclB9cnD9CmCSBYqJBRxQOvBpSQobGfqIAWn8FuYnPI4fsAGyPQz/87MeZtArziguKSpJTGLQK0mtKGGgGHADMSgoYH6AhTMPNHyE0NQzYuEzYzEXFr6CBPQDANAsXKTwAQAA' | base64 -d | gzip -d > /tmp/clickhouse_test_sse42 && chmod a+x /tmp/clickhouse_test_sse42 && /tmp/clickhouse_test_sse42); then
-                echo 'Warning! SSE 4.2 instruction set is not supported'
-                #exit 3
-            fi
-        fi
-    fi
-fi
 
 
 die()
@@ -116,7 +100,7 @@ forcestop()
 service_or_func()
 {
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        service $PROGRAM $1
+        systemctl $1 $PROGRAM
     else
         $1
     fi
@@ -229,6 +213,7 @@ status()
 case "$1" in
 status)
     status
+    exit 0
     ;;
 esac
 

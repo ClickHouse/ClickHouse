@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -13,7 +14,7 @@ class ASTQueryParameter;
 class ReplaceQueryParameterVisitor
 {
 public:
-    ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
+    explicit ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
         : query_parameters(parameters)
     {}
 

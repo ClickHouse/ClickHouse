@@ -3,11 +3,11 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <common/types.h>
+#include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
-#include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <base/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
 
 
@@ -87,7 +87,7 @@ public:
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
+    scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 
@@ -195,6 +195,9 @@ public:
     /// The function throws an exception if it's failed to load or reload something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
+
+    /// Check if object with name exists in configuration
+    bool has(const String & name) const;
 
     /// Reloads all config repositories.
     void reloadConfig() const;

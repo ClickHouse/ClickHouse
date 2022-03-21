@@ -23,7 +23,7 @@ static void writeODBCString(WriteBuffer & out, const std::string & str)
     out.write(str.data(), str.size());
 }
 
-void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns & columns, size_t row_idx, std::string & buffer)
+void ODBCDriver2BlockOutputFormat::writeRow(const Serializations & serializations, const Columns & columns, size_t row_idx, std::string & buffer)
 {
     size_t num_columns = columns.size();
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
@@ -39,7 +39,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
         {
             {
                 WriteBufferFromString text_out(buffer);
-                header.getByPosition(column_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
+                serializations[column_idx]->serializeText(*column, row_idx, text_out, format_settings);
             }
             writeODBCString(out, buffer);
         }
@@ -51,26 +51,25 @@ void ODBCDriver2BlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     String text_value;
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
+
+    size_t num_columns = columns.size();
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+
     const size_t rows = chunk.getNumRows();
     for (size_t i = 0; i < rows; ++i)
-        writeRow(header, columns, i, text_value);
+        writeRow(serializations, columns, i, text_value);
 }
 
 void ODBCDriver2BlockOutputFormat::consume(Chunk chunk)
 {
-    writePrefixIfNot();
     write(std::move(chunk), PortKind::Main);
 }
 
 void ODBCDriver2BlockOutputFormat::consumeTotals(Chunk chunk)
 {
-    writePrefixIfNot();
     write(std::move(chunk), PortKind::Totals);
-}
-
-void ODBCDriver2BlockOutputFormat::finalize()
-{
-    writePrefixIfNot();
 }
 
 void ODBCDriver2BlockOutputFormat::writePrefix()
@@ -104,9 +103,9 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 }
 
 
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory)
+void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams &, const FormatSettings & format_settings)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);

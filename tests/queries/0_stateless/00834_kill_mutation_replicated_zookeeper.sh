@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: replica, no-debug, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,8 +11,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS kill_mutation_r1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS kill_mutation_r2"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE kill_mutation_r1(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00834/kill_mutation', '1') ORDER BY x PARTITION BY d"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE kill_mutation_r2(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00834/kill_mutation', '2') ORDER BY x PARTITION BY d"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE kill_mutation_r1(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/kill_mutation', '1') ORDER BY x PARTITION BY d"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE kill_mutation_r2(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/kill_mutation', '2') ORDER BY x PARTITION BY d"
 
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO kill_mutation_r1 VALUES ('2000-01-01', 1, 'a')"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO kill_mutation_r1 VALUES ('2001-01-01', 2, 'b')"

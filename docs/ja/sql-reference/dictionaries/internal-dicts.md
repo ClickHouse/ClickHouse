@@ -52,4 +52,4 @@ Geobaseで辞書を定期的に更新することをお勧めします。 更新
 
 OS識別子とYandexを操作するための機能もあります。Metricaの調査エンジン、しかしそれらは使用されるべきではない。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

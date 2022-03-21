@@ -16,6 +16,7 @@
     -   `MOVE_PART` — перемещение куска между дисками.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата события.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время события.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время события с точностью до микросекунд.
 -   `duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — длительность.
 -   `database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится кусок.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — имя таблицы, в которой находится кусок.
@@ -47,6 +48,7 @@ query_id:                      983ad9c7-28d5-4ae1-844e-603116b7de31
 event_type:                    NewPart
 event_date:                    2021-02-02
 event_time:                    2021-02-02 11:14:28
+event_time_microseconds:                    2021-02-02 11:14:28.861919
 duration_ms:                   35
 database:                      default
 table:                         log_mt_2
@@ -61,7 +63,6 @@ read_rows:                     0
 read_bytes:                    0
 peak_memory_usage:             0
 error:                         0
-exception:                   
+exception:
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/part_log) <!--hide-->

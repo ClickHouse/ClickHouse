@@ -9,9 +9,7 @@
 
 #include <Poco/Version.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -120,7 +118,7 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
+#if defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
@@ -315,6 +313,7 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
+        || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM

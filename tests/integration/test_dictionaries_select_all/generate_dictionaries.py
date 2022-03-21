@@ -44,7 +44,7 @@ def generate_structure():
 
 def generate_dictionaries(path, structure):
     dictionary_skeleton = '''
-    <yandex>
+    <clickhouse>
        <dictionary>
            <name>{name}</name>
 
@@ -69,7 +69,7 @@ def generate_dictionaries(path, structure):
                {parent}
            </structure>
        </dictionary>
-    </yandex>'''
+    </clickhouse>'''
     attribute_skeleton = '''
     <attribute>
         <name>%s_</name>

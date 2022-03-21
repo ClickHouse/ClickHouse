@@ -1,7 +1,11 @@
 FROM ubuntu:18.04
 
-ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.3.1.*
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
+ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
+ARG version=22.1.1.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -18,6 +22,7 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-common-static=$version \
             locales \
+            tzdata \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf \
     && apt-get clean
 

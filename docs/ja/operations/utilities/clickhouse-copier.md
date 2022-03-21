@@ -46,7 +46,7 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 ## 飼育係の形式。xml {#format-of-zookeeper-xml}
 
 ``` xml
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <size>100M</size>
@@ -59,13 +59,13 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
             <port>2181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>
 ```
 
 ## コピータスクの構成 {#configuration-of-copying-tasks}
 
 ``` xml
-<yandex>
+<clickhouse>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
@@ -163,14 +163,14 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
         </table_hits>
 
         <!-- Next table to copy. It is not copied until previous table is copying. -->
-        </table_visits>
+        <table_visits>
         ...
         </table_visits>
         ...
     </tables>
-</yandex>
+</clickhouse>
 ```
 
 `clickhouse-copier` の変更を追跡します `/task/path/description` そしてその場でそれらを適用します。 たとえば、次の値を変更すると `max_workers`、タスクを実行しているプロセスの数も変更されます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

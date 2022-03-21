@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
 	<remote_url_allow_hosts>
         <host>node1</host>
     </remote_url_allow_hosts>
-</yandex>
+</clickhouse>

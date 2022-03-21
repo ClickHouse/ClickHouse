@@ -1,6 +1,6 @@
 ---
 toc_priority: 43
-toc_title: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c\u0020\u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a"
+toc_title: "Профиль настроек"
 ---
 
 # CREATE SETTINGS PROFILE {#create-settings-profile-statement}
@@ -10,7 +10,7 @@ toc_title: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c\u0020\u043d\u0430\u0441\u
 Синтаксис:
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1] 
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
@@ -25,5 +25,4 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluste
 CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/settings-profile) 
 <!--hide-->

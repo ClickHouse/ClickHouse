@@ -21,7 +21,7 @@ toc_title: "ニューヨークタクシー"
 ファイルの中には、無効な行が含まれている場合があり、以下のように修正することができます。
 
 ``` bash
-sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_Yand
 sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
 mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
@@ -286,7 +286,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## パーティションされたデータのダウンロード {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -378,7 +378,6 @@ Q3:0.051秒
 Q4:0.072秒
 
 この場合、クエリの処理時間は、ネットワークのレイテンシによって決定されます。
-フィンランドのYandexデータセンターにあるクライアントをロシアのクラスター上に置いてクエリを実行したところ、約20ミリ秒のレイテンシが追加されました。
 
 ## サマリ {#summary}
 
@@ -388,4 +387,4 @@ Q4:0.072秒
 | 3      | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140    | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

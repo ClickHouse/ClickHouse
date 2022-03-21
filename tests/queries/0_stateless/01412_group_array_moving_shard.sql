@@ -1,3 +1,5 @@
+-- Tags: shard
+
 SELECT groupArrayMovingSum(10)(1) FROM remote('127.0.0.{1,2}', numbers(100));
 SELECT groupArrayMovingAvg(10)(1) FROM remote('127.0.0.{1,2}', numbers(100));
 

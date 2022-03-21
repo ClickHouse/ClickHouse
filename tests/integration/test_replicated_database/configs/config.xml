@@ -1,34 +1,3 @@
-<yandex>
+<clickhouse>
     <database_atomic_delay_before_drop_table_sec>10</database_atomic_delay_before_drop_table_sec>
-
-    <remote_servers>
-        <cluster>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>main_node</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>dummy_node</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>competing_node</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>snapshotting_node</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>snapshot_recovering_node</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </cluster>
-    </remote_servers>
-</yandex>
+</clickhouse>

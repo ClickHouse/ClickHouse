@@ -10,9 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
-#include <ext/range.h>
+#include <base/StringRef.h>
+#include <base/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -20,14 +19,14 @@
 
 namespace DB
 {
-class IPAddressDictionary final : public IDictionaryBase
+class IPAddressDictionary final : public IDictionary
 {
 public:
     IPAddressDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
+        const DictionaryLifetime dict_lifetime_, /// NOLINT
         bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
@@ -37,6 +36,14 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -49,7 +56,7 @@ public:
         return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -57,21 +64,23 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+
+    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -94,16 +103,23 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
+            DateTime64,
             Float32,
             Float64,
-            String>
+            UUID,
+            String,
+            Array>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -111,16 +127,23 @@ private:
             ContainerType<UInt32>,
             ContainerType<UInt64>,
             ContainerType<UInt128>,
+            ContainerType<UInt256>,
             ContainerType<Int8>,
             ContainerType<Int16>,
             ContainerType<Int32>,
             ContainerType<Int64>,
+            ContainerType<Int128>,
+            ContainerType<Int256>,
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
-            ContainerType<StringRef>>
+            ContainerType<UUID>,
+            ContainerType<StringRef>,
+            ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -137,16 +160,16 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
@@ -154,7 +177,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 
@@ -200,6 +223,7 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
     Poco::Logger * logger;
 };

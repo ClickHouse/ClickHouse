@@ -223,7 +223,7 @@ TEST(Common, SensitiveDataMasker)
     {
         EXPECT_EQ(
             std::string(e.message()),
-            "SensitiveDataMasker: cannot compile re2: ())(, error: missing ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference.: while adding query masking rule 'test'."
+            "SensitiveDataMasker: cannot compile re2: ())(, error: unexpected ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference.: while adding query masking rule 'test'."
         );
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }

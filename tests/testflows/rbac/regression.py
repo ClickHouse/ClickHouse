@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -8,6 +9,7 @@ append_path(sys.path, "..")
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
 from rbac.requirements import SRS_006_ClickHouse_Role_Based_Access_Control
+from helpers.common import check_clickhouse_version
 
 issue_14091 = "https://github.com/ClickHouse/ClickHouse/issues/14091"
 issue_14149 = "https://github.com/ClickHouse/ClickHouse/issues/14149"
@@ -26,7 +28,10 @@ issue_17653 = "https://github.com/ClickHouse/ClickHouse/issues/17653"
 issue_17655 = "https://github.com/ClickHouse/ClickHouse/issues/17655"
 issue_17766 = "https://github.com/ClickHouse/ClickHouse/issues/17766"
 issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
-issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
+issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
+issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
+issue_25413 = "https://github.com/ClickHouse/ClickHouse/issues/25413"
+issue_26746 = "https://github.com/ClickHouse/ClickHouse/issues/26746"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -117,20 +122,30 @@ xfails = {
         [(Fail, issue_17655)],
     "privileges/public tables/sensitive tables":
         [(Fail, issue_18110)],
-    "privileges/system merges/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system ttl merges/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system moves/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system sends/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system fetches/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system restart replica/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system replication queues/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
+    "privileges/: row policy/nested live:":
+        [(Fail, issue_21083)],
+    "privileges/: row policy/nested mat:":
+        [(Fail, issue_21084)],
+    "privileges/show dictionaries/:/check privilege/check privilege=SHOW DICTIONARIES/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=CREATE DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/kill mutation/:/:/KILL ALTER : without privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked ALL privilege":
+        [(Fail, issue_25413)],
+    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted directly":
+        [(Fail, issue_26746)],
+    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted through a role":
+        [(Fail, issue_26746)],
+    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted directly":
+        [(Fail, issue_26746)],
+    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted through a role":
+        [(Fail, issue_26746)],
 }
 
 xflags = {
@@ -138,31 +153,50 @@ xflags = {
     (SKIP, 0)
 }
 
+ffails ={
+    "/clickhouse/rbac/privileges/:/table_type='ReplicatedReplacingMergeTree-sharded_cluster":
+        (Skip, "Causes clickhouse timeout on 21.10", (lambda test: check_clickhouse_version(">=21.10")(test) and check_clickhouse_version("<21.11")(test))),
+    "/clickhouse/rbac/views":
+        (Skip, "Does not work on clickhouse 21.09", (lambda test: check_clickhouse_version(">=21.9")(test) and check_clickhouse_version("<21.10")(test)))
+}
+
 @TestModule
 @ArgumentParser(argparser)
 @XFails(xfails)
 @XFlags(xflags)
+@FFails(ffails)
 @Name("rbac")
 @Specifications(
     SRS_006_ClickHouse_Role_Based_Access_Control
 )
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """RBAC regression.
     """
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
+
+    self.context.clickhouse_version = clickhouse_version
+
+    if stress is not None:
         self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    from platform import processor as current_cpu
 
-        Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.views.feature", "feature"), flags=TE)
+    folder_name = os.path.basename(current_dir())
+    if current_cpu() == 'aarch64':
+        env = f"{folder_name}_env_arm64"
+    else:
+        env = f"{folder_name}_env"
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), env)) as cluster:
+        self.context.cluster = cluster
+
+        Feature(run=load("rbac.tests.syntax.feature", "feature"))
+        Feature(run=load("rbac.tests.privileges.feature", "feature"))
+        Feature(run=load("rbac.tests.views.feature", "feature"))
 
 if main():
     regression()

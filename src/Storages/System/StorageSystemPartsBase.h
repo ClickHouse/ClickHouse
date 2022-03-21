@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -23,15 +23,16 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    operator bool() const { return storage != nullptr; }
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    operator bool() const { return storage != nullptr; } /// NOLINT
+    MergeTreeData::DataPartsVector
+    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
 class StoragesInfoStream
 {
 public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context);
+    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
     StoragesInfo next();
 
 private:
@@ -57,17 +58,19 @@ class StorageSystemPartsBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool isSystemStorage() const override { return true; }
+
 private:
-    bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;
+    static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
     const FormatSettings format_settings;

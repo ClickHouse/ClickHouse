@@ -46,7 +46,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
-        sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
+    {
+        /// We don't use preparsed AST `sorting_key.expression_list_ast` because
+        /// it contain version column for VersionedCollapsingMergeTree, which
+        /// is not stored in ZooKeeper for compatibility reasons. So the best
+        /// compatible way is just to convert definition_ast to list and
+        /// serialize it. In all other places key.expression_list_ast should be
+        /// used.
+        sorting_key = formattedAST(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+    }
 
     data_format_version = data.format_version;
 
@@ -56,6 +64,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
 
     skip_indices = metadata_snapshot->getSecondaryIndices().toString();
+
+    projections = metadata_snapshot->getProjections().toString();
+
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else
@@ -88,6 +99,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
+
+    if (!projections.empty())
+        out << "projections: " << projections << "\n";
 
     if (index_granularity_bytes != 0)
         out << "granularity bytes: " << index_granularity_bytes << "\n";
@@ -130,6 +144,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
+    if (checkString("projections: ", in))
+        in >> projections >> "\n";
+
     if (checkString("granularity bytes: ", in))
     {
         in >> index_granularity_bytes >> "\n";
@@ -151,7 +168,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const S
 }
 
 
-void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const
+void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -186,9 +203,12 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    if (primary_key != from_zk.primary_key)
+    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).expression_list_ast);
+    if (primary_key != parsed_zk_primary_key)
         throw Exception("Existing table metadata in ZooKeeper differs in primary key."
-            " Stored in ZooKeeper: " + from_zk.primary_key + ", local: " + primary_key,
+            " Stored in ZooKeeper: " + from_zk.primary_key +
+            ", parsed from ZooKeeper: " +  parsed_zk_primary_key +
+            ", local: " + primary_key,
             ErrorCodes::METADATA_MISMATCH);
 
     if (data_format_version != from_zk.data_format_version)
@@ -197,39 +217,53 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ", local: " + DB::toString(data_format_version.toUnderType()),
             ErrorCodes::METADATA_MISMATCH);
 
-    if (partition_key != from_zk.partition_key)
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context).expression_list_ast);
+    if (partition_key != parsed_zk_partition_key)
         throw Exception(
             "Existing table metadata in ZooKeeper differs in partition key expression."
-            " Stored in ZooKeeper: " + from_zk.partition_key + ", local: " + partition_key,
+            " Stored in ZooKeeper: " + from_zk.partition_key +
+            ", parsed from ZooKeeper: " +  parsed_zk_partition_key +
+            ", local: " + partition_key,
             ErrorCodes::METADATA_MISMATCH);
-
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
 
-    checkImmutableFieldsEquals(from_zk);
+    checkImmutableFieldsEquals(from_zk, columns, context);
 
-    if (sampling_expression != from_zk.sampling_expression)
-        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
-            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
-            ErrorCodes::METADATA_MISMATCH);
-
-    if (sorting_key != from_zk.sorting_key)
+    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context).definition_ast);
+    if (sampling_expression != parsed_zk_sampling_expression)
     {
         throw Exception(
-            "Existing table metadata in ZooKeeper differs in sorting key expression."
-            " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
+            "Existing table metadata in ZooKeeper differs in sample expression."
+            " Stored in ZooKeeper: " + from_zk.sampling_expression +
+            ", parsed from ZooKeeper: " + parsed_zk_sampling_expression +
+            ", local: " + sampling_expression,
             ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (ttl_table != from_zk.ttl_table)
+    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context).definition_ast));
+    if (sorting_key != parsed_zk_sorting_key)
     {
         throw Exception(
-                "Existing table metadata in ZooKeeper differs in TTL."
-                " Stored in ZooKeeper: " + from_zk.ttl_table +
-                ", local: " + ttl_table,
-                ErrorCodes::METADATA_MISMATCH);
+            "Existing table metadata in ZooKeeper differs in sorting key expression."
+            " Stored in ZooKeeper: " + from_zk.sorting_key +
+            ", parsed from ZooKeeper: " + parsed_zk_sorting_key +
+            ", local: " + sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
+    }
+
+    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context);
+    String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key).definition_ast);
+    if (ttl_table != parsed_zk_ttl_table)
+    {
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in TTL."
+            " Stored in ZooKeeper: " + from_zk.ttl_table +
+            ", parsed from ZooKeeper: " + parsed_zk_ttl_table +
+            ", local: " + ttl_table,
+            ErrorCodes::METADATA_MISMATCH);
     }
 
     String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
@@ -240,6 +274,17 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
                 " Stored in ZooKeeper: " + from_zk.skip_indices +
                 ", parsed from ZooKeeper: " + parsed_zk_skip_indices +
                 ", local: " + skip_indices,
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
+    if (projections != parsed_zk_projections)
+    {
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in projections."
+                " Stored in ZooKeeper: " + from_zk.projections +
+                ", parsed from ZooKeeper: " + parsed_zk_projections +
+                ", local: " + projections,
                 ErrorCodes::METADATA_MISMATCH);
     }
 
@@ -262,10 +307,10 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
 }
 
 ReplicatedMergeTreeTableMetadata::Diff
-ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const
+ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
 
-    checkImmutableFieldsEquals(from_zk);
+    checkImmutableFieldsEquals(from_zk, columns, context);
 
     Diff diff;
 
@@ -291,6 +336,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     {
         diff.skip_indices_changed = true;
         diff.new_skip_indices = from_zk.skip_indices;
+    }
+
+    if (projections != from_zk.projections)
+    {
+        diff.projections_changed = true;
+        diff.new_projections = from_zk.projections;
     }
 
     if (constraints != from_zk.constraints)

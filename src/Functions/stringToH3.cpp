@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -34,12 +32,13 @@ class FunctionStringToH3 : public IFunction
 public:
     static constexpr auto name = "stringToH3";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringToH3>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringToH3>(); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -84,7 +83,7 @@ private:
         {
             auto h3index = h3index_source.getWhole();
 
-            // covert to std::string and get the c_str to have the delimiting \0 at the end.
+            // convert to std::string and get the c_str to have the delimiting \0 at the end.
             auto h3index_str = StringRef(h3index.data, h3index.size).toString();
             res_data[row_num] = stringToH3(h3index_str.c_str());
 

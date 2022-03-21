@@ -19,31 +19,17 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnNullable.h>
 
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/castColumn.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
-#include <Dictionaries/FlatDictionary.h>
-#include <Dictionaries/HashedDictionary.h>
-#include <Dictionaries/CacheDictionary.h>
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-#include <Dictionaries/SSDCacheDictionary.h>
-#include <Dictionaries/SSDComplexKeyCacheDictionary.h>
-#endif
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/ComplexKeyDirectDictionary.h>
-#include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/IPAddressDictionary.h>
-#include <Dictionaries/PolygonDictionaryImplementations.h>
-#include <Dictionaries/DirectDictionary.h>
-
-#include <ext/range.h>
+#include <base/range.h>
 
 #include <type_traits>
 
@@ -54,12 +40,9 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -78,27 +61,49 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper
+class FunctionDictHelper : WithContext
 {
 public:
-    explicit FunctionDictHelper(const Context & context_) : context(context_), external_loader(context.getExternalDictionariesLoader()) {}
+    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
 
-    std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
+    std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto dict = external_loader.getDictionary(resolved_name);
+        auto current_context = getContext();
+        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+
         if (!access_checked)
         {
-            context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
+
         return dict;
     }
 
-    std::shared_ptr<const IDictionaryBase> getDictionary(const ColumnWithTypeAndName & column)
+    std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
     {
-        const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(column.column.get());
+        const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(column.get());
+
+        if (!dict_name_col)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected const String column");
+
         return getDictionary(dict_name_col->getValue<String>());
+    }
+
+    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    {
+        const auto & dictionary_structure = dictionary->getStructure();
+        auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
+
+        if (!dictionary->hasHierarchy() || !hierarchical_attribute_index_optional.has_value())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary {} does not support hierarchy",
+                dictionary->getFullName());
+
+        size_t hierarchical_attribute_index = *hierarchical_attribute_index_optional;
+        const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
+
+        return hierarchical_attribute;
     }
 
     bool isDictGetFunctionInjective(const Block & sample_columns)
@@ -108,31 +113,28 @@ public:
             return false;
 
         if (sample_columns.columns() < 3)
-            throw Exception{"Wrong arguments count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong arguments count");
 
         const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(sample_columns.getByPosition(0).column.get());
         if (!dict_name_col)
-            throw Exception{"First argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function dictGet must be a constant string");
 
         const auto * attr_name_col = checkAndGetColumnConst<ColumnString>(sample_columns.getByPosition(1).column.get());
         if (!attr_name_col)
-            throw Exception{"Second argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet must be a constant string");
 
-        return getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
+        const auto & dictionary_name = dict_name_col->getValue<String>();
+        const auto & attribute_name = attr_name_col->getValue<String>();
+
+        return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto load_result = external_loader.getLoadResult(resolved_name);
-        if (!load_result.config)
-            throw Exception("Dictionary " + backQuote(dictionary_name) + " not found", ErrorCodes::BAD_ARGUMENTS);
-        return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
 
 private:
-    const Context & context;
-    const ExternalDictionariesLoader & external_loader;
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
 
@@ -149,36 +151,42 @@ class FunctionDictHas final : public IFunction
 public:
     static constexpr auto name = "dictHas";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionDictHas>(context);
     }
 
-    explicit FunctionDictHas(const Context & context_) : helper(context_) {}
+    explicit FunctionDictHas(ContextPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
-private:
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isVariadic() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong argument count for function {}",
+                getName());
 
-        if (!WhichDataType(arguments[1]).isUInt64() &&
-            !isTuple(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function, expected a string",
+                arguments[0]->getName(),
+                getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -192,39 +200,95 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = helper.getDictionary(arguments[0]);
-        auto dictionary_key_type = dictionary->getKeyType();
+        String dictionary_name;
 
-        const ColumnWithTypeAndName & key_column_with_type = arguments[1];
-        const auto key_column = key_column_with_type.column;
-        const auto key_column_type = WhichDataType(key_column_with_type.type);
-
-        if (dictionary_key_type == DictionaryKeyType::simple)
-        {
-            if (!key_column_type.isUInt64())
-                throw Exception{"Second argument of function " + getName() + " must be " + dictionary->getStructure().getKeyDescription(),
-                    ErrorCodes::TYPE_MISMATCH};
-
-            return dictionary->hasKeys({key_column}, {std::make_shared<DataTypeUInt64>()});
-        }
-        else if (dictionary_key_type == DictionaryKeyType::complex)
-        {
-            if (!key_column_type.isTuple())
-                throw Exception{"Second argument of function " + getName() + " must be " + dictionary->getStructure().getKeyDescription(),
-                    ErrorCodes::TYPE_MISMATCH};
-
-            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
-            ColumnPtr key_column_full = key_column->convertToFullColumnIfConst();
-
-            const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
-            const auto & key_types = static_cast<const DataTypeTuple &>(*key_column_with_type.type).getElements();
-
-            return dictionary->hasKeys(key_columns, key_types);
-        }
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            dictionary_name = name_col->getValue<String>();
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Has not supported for range dictionary", dictionary->getDictionaryID().getNameForLogs());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
+
+        auto dictionary = helper.getDictionary(dictionary_name);
+        auto dictionary_key_type = dictionary->getKeyType();
+        auto dictionary_special_key_type = dictionary->getSpecialKeyType();
+
+        const auto & key_column_with_type = arguments[1];
+        auto key_column = key_column_with_type.column;
+        auto key_column_type = key_column_with_type.type;
+
+        ColumnPtr range_col;
+        DataTypePtr range_col_type;
+
+        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+        {
+            if (arguments.size() != 3)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Wrong argument count for function {} when dictionary has key type range",
+                    getName());
+
+            range_col = arguments[2].column;
+            range_col_type = arguments[2].type;
+
+            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
+                    range_col_type->getName(),
+                    getName());
+        }
+
+        Columns key_columns;
+        DataTypes key_types;
+
+        if (dictionary_key_type == DictionaryKeyType::Simple)
+        {
+            key_columns = {key_column};
+            key_types = {key_column_with_type.type};
+        }
+        else if (dictionary_key_type == DictionaryKeyType::Complex)
+        {
+            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
+            key_column = key_column->convertToFullColumnIfConst();
+
+            if (isTuple(key_column_type))
+            {
+                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+            }
+            else
+            {
+                size_t keys_size = dictionary->getStructure().getKeysSize();
+
+                if (keys_size > 1)
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                        "Actual type {}.",
+                        getName(),
+                        key_column_type->getName());
+                }
+                else
+                {
+                    key_columns = {key_column};
+                    key_types = {key_column_type};
+                }
+            }
+        }
+
+        dictionary->convertKeyColumns(key_columns, key_types);
+
+        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+        {
+            key_columns.emplace_back(range_col);
+            key_types.emplace_back(range_col_type);
+        }
+
+        return dictionary->hasKeys(key_columns, key_types);
     }
 
+private:
     mutable FunctionDictHelper helper;
 };
 
@@ -241,19 +305,21 @@ class FunctionDictGetNoType final : public IFunction
 public:
     static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::get ? "dictGet" : "dictGetOrDefault";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionDictGetNoType>(context);
     }
 
-    explicit FunctionDictGetNoType(const Context & context_) : helper(context_) {}
+    explicit FunctionDictGetNoType(ContextPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+    bool useDefaultImplementationForNulls() const final { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
     bool isDeterministic() const override { return false; }
@@ -266,24 +332,47 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong argument count for function {}",
+                getName());
 
         String dictionary_name;
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
             dictionary_name = name_col->getValue<String>();
         else
-            throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
 
-        String attribute_name;
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            attribute_name = name_col->getValue<String>();
+        Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
+
+        auto dictionary_structure = helper.getDictionaryStructure(dictionary_name);
+
+        DataTypes attribute_types;
+        attribute_types.reserve(attribute_names.size());
+        for (auto & attribute_name : attribute_names)
+        {
+            /// We're extracting the return type from the dictionary's config, without loading the dictionary.
+            const auto & attribute = dictionary_structure.getAttribute(attribute_name);
+            attribute_types.emplace_back(attribute.type);
+        }
+
+        bool key_is_nullable = arguments[2].type->isNullable();
+        if (attribute_types.size() > 1)
+        {
+            if (key_is_nullable)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} support nullable key only for single dictionary attribute", getName());
+
+            return std::make_shared<DataTypeTuple>(attribute_types, attribute_names);
+        }
         else
-            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-        return helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name).type;
+        {
+            if (key_is_nullable)
+                return makeNullable(attribute_types.front());
+            else
+                return attribute_types.front();
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -296,88 +385,248 @@ public:
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
             dictionary_name = name_col->getValue<String>();
         else
-            throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
 
-        String attribute_name;
-
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            attribute_name = name_col->getValue<String>();
-        else
-            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
-                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
 
         auto dictionary = helper.getDictionary(dictionary_name);
-
-        if (!WhichDataType(arguments[2].type).isUInt64() && !isTuple(arguments[2].type))
-            throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function "
-                    + getName() + ", must be UInt64 or tuple(...).",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
         auto dictionary_key_type = dictionary->getKeyType();
+        auto dictionary_special_key_type = dictionary->getSpecialKeyType();
 
         size_t current_arguments_index = 3;
 
         ColumnPtr range_col = nullptr;
         DataTypePtr range_col_type = nullptr;
 
-        if (dictionary_key_type == DictionaryKeyType::range)
+        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
             if (current_arguments_index >= arguments.size())
-                throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {} should be {}",
+                    getName(),
+                    arguments.size(),
+                    arguments.size() + 1);
 
             range_col = arguments[current_arguments_index].column;
             range_col_type = arguments[current_arguments_index].type;
 
             if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
-                throw Exception{"Illegal type " + range_col_type->getName() + " of fourth argument of function "
-                        + getName() + " must be convertible to Int64.",
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of fourth argument of function must be convertible to Int64.",
+                    range_col_type->getName(),
+                    getName());
 
             ++current_arguments_index;
         }
 
-        ColumnPtr default_col = nullptr;
+        Columns default_cols;
 
         if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
         {
             if (current_arguments_index >= arguments.size())
-                throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {} should be {}",
+                    getName(),
+                    arguments.size(),
+                    arguments.size() + 1);
 
-            default_col = arguments[current_arguments_index].column;
-        }
+            const auto & column_before_cast = arguments[current_arguments_index];
+            ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        ColumnPtr result;
+            auto result = castColumnAccurate(column_to_cast, result_type);
 
-        const ColumnWithTypeAndName & key_col_with_type = arguments[2];
-        const auto key_column = key_col_with_type.column;
+            if (attribute_names.size() > 1)
+            {
+                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
 
-        if (dictionary_key_type == DictionaryKeyType::simple)
-        {
-            result = dictionary->getColumn(attribute_name, result_type, {key_column}, {std::make_shared<DataTypeUInt64>()}, default_col);
-        }
-        else if (dictionary_key_type == DictionaryKeyType::complex)
-        {
-            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
-            ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
+                if (!tuple_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function {} default values column must be tuple",
+                        getName());
 
-            const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
-            const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+                if (tuple_column->tupleSize() != attribute_names.size())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function {} default values tuple column must contain same column size as requested attributes",
+                        getName());
 
-            result = dictionary->getColumn(attribute_name, result_type, key_columns, key_types, default_col);
-        }
-        else if (dictionary_key_type == DictionaryKeyType::range)
-        {
-            result = dictionary->getColumn(
-                attribute_name, result_type, {key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type}, default_col);
+                default_cols = tuple_column->getColumnsCopy();
+            }
+            else
+            {
+                default_cols.emplace_back(result);
+            }
         }
         else
-            throw Exception{"Unknown dictionary identifier type", ErrorCodes::BAD_ARGUMENTS};
+        {
+            for (size_t i = 0; i < attribute_names.size(); ++i)
+                default_cols.emplace_back(nullptr);
+        }
+
+        auto key_col_with_type = arguments[2];
+
+        bool key_is_only_null = key_col_with_type.type->onlyNull();
+        if (key_is_only_null)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        bool key_is_nullable = key_col_with_type.type->isNullable();
+        if (key_is_nullable)
+            key_col_with_type = columnGetNested(key_col_with_type);
+
+        auto key_column = key_col_with_type.column;
+
+        Columns key_columns;
+        DataTypes key_types;
+
+        if (dictionary_key_type == DictionaryKeyType::Simple)
+        {
+            key_columns = {key_column};
+            key_types = {key_col_with_type.type};
+        }
+        else if (dictionary_key_type == DictionaryKeyType::Complex)
+        {
+            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
+            key_column = key_column->convertToFullColumnIfConst();
+            DataTypePtr key_column_type = key_col_with_type.type;
+
+            if (isTuple(key_column_type))
+            {
+                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+            }
+            else
+            {
+                size_t keys_size = dictionary->getStructure().getKeysSize();
+
+                if (keys_size > 1)
+                {
+                    throw Exception(
+                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                         "Actual type {}.",
+                         getName(),
+                         key_col_with_type.type->getName());
+                }
+                else
+                {
+                    key_columns = {std::move(key_column)};
+                    key_types = {std::move(key_column_type)};
+                }
+            }
+        }
+
+        dictionary->convertKeyColumns(key_columns, key_types);
+
+        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+        {
+            key_columns.emplace_back(range_col);
+            key_types.emplace_back(range_col_type);
+        }
+
+        DataTypePtr attribute_type = result_type;
+        if (key_is_nullable)
+        {
+            DataTypes attribute_types;
+            attribute_types.reserve(attribute_names.size());
+            for (auto & attribute_name : attribute_names)
+            {
+                const auto & attribute = dictionary->getStructure().getAttribute(attribute_name);
+                attribute_types.emplace_back(attribute.type);
+            }
+
+            attribute_type = attribute_types.front();
+        }
+
+        auto result_column = executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols);
+
+        if (key_is_nullable)
+            result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
+
+        return result_column;
+    }
+
+private:
+
+    ColumnPtr executeDictionaryRequest(
+        std::shared_ptr<const IDictionary> & dictionary,
+        const Strings & attribute_names,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const DataTypePtr & result_type,
+        const Columns & default_cols) const
+    {
+        ColumnPtr result;
+
+        if (attribute_names.size() > 1)
+        {
+            const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
+
+            Columns result_columns = dictionary->getColumns(
+                attribute_names,
+                result_tuple_type.getElements(),
+                key_columns,
+                key_types,
+                default_cols);
+
+            result = ColumnTuple::create(std::move(result_columns));
+        }
+        else
+        {
+            result = dictionary->getColumn(
+                attribute_names[0],
+                result_type,
+                key_columns,
+                key_types,
+                default_cols.front());
+        }
 
         return result;
     }
 
-private:
+    Strings getAttributeNamesFromColumn(const ColumnPtr & column, const DataTypePtr & type) const
+    {
+        Strings attribute_names;
+
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(column.get()))
+        {
+            attribute_names.emplace_back(name_col->getValue<String>());
+        }
+        else if (const auto * tuple_col_const = checkAndGetColumnConst<ColumnTuple>(column.get()))
+        {
+            const ColumnTuple & tuple_col = assert_cast<const ColumnTuple &>(tuple_col_const->getDataColumn());
+            size_t tuple_size = tuple_col.tupleSize();
+
+            if (tuple_size < 1)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple second argument of function {} must contain multiple constant string columns");
+
+            for (size_t i = 0; i < tuple_col.tupleSize(); ++i)
+            {
+                const auto * tuple_column = tuple_col.getColumnPtr(i).get();
+
+                const auto * attribute_name_column = checkAndGetColumn<ColumnString>(tuple_column);
+
+                if (!attribute_name_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Tuple second argument of function {} must contain multiple constant string columns",
+                        getName());
+
+                attribute_names.emplace_back(attribute_name_column->getDataAt(0));
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected a const string or const tuple of const strings.",
+                type->getName(),
+                getName());
+        }
+
+        return attribute_names;
+    }
+
     mutable FunctionDictHelper helper;
 };
 
@@ -389,12 +638,12 @@ class FunctionDictGetImpl final : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionDictGetImpl>(context);
     }
 
-    explicit FunctionDictGetImpl(const Context & context_) : impl(context_) {}
+    explicit FunctionDictGetImpl(ContextPtr context_) : impl(context_) {}
 
     String getName() const override { return name; }
 
@@ -406,6 +655,8 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
 
     bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -430,16 +681,11 @@ private:
     {
         auto return_type = impl.getReturnTypeImpl(arguments);
 
-        if (!areTypesEqual(return_type, result_type))
+        if (!return_type->equals(*result_type))
             throw Exception{"Dictionary attribute has different type " + return_type->getName() + " expected " + result_type->getName(),
                     ErrorCodes::TYPE_MISMATCH};
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
-    }
-
-    static bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
-    {
-        return removeNullable(recursiveRemoveLowCardinality(lhs))->equals(*removeNullable(recursiveRemoveLowCardinality(rhs)));
     }
 
     const FunctionDictGetNoType<dictionary_get_function_type> impl;
@@ -523,6 +769,171 @@ using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecim
 using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;
 
+class FunctionDictGetOrNull final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetOrNull";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionDictGetOrNull>(context);
+    }
+
+    explicit FunctionDictGetOrNull(ContextPtr context_)
+        : dictionary_get_func_impl(context_)
+        , dictionary_has_func_impl(context_)
+    {}
+
+    String getName() const override { return name; }
+
+private:
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    bool isDeterministic() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        return dictionary_get_func_impl.isInjective(sample_columns);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
+
+        WhichDataType result_data_type(result_type);
+        if (result_data_type.isTuple())
+        {
+            const auto & data_type_tuple = static_cast<const DataTypeTuple &>(*result_type);
+            auto elements_types_copy = data_type_tuple.getElements();
+            for (auto & element_type : elements_types_copy)
+                element_type = makeNullable(element_type);
+
+            result_type = std::make_shared<DataTypeTuple>(elements_types_copy, data_type_tuple.getElementNames());
+        }
+        else
+            result_type = makeNullable(result_type);
+
+        return result_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        /** We call dictHas function to get which map is key presented in dictionary.
+            For key that presented in dictionary dict has result for that key index value will be 1. Otherwise 0.
+            We invert result, and then for key that is not presented in dictionary value will be 1. Otherwise 0.
+            This inverted result will be used as null column map.
+            After that we call dict get function, by contract for key that are not presented in dictionary we
+            return default value.
+            We create nullable column from dict get result column and null column map.
+
+            2 additional implementation details:
+            1. Result from dict get can be tuple if client requested multiple attributes we apply such operation on each result column.
+            2. If column is already nullable we merge column null map with null map that we get from dict has.
+          */
+
+        auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
+        auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
+        auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
+        ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
+        PaddedPODArray<UInt8> & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
+        for (auto & key : is_key_in_dictionary_data)
+            key = !key;
+
+        auto dictionary_get_result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
+        auto dictionary_get_result_column = dictionary_get_func_impl.executeImpl(arguments, dictionary_get_result_type, input_rows_count);
+
+        ColumnPtr result;
+
+        WhichDataType dictionary_get_result_data_type(dictionary_get_result_type);
+        auto dictionary_get_result_column_mutable = dictionary_get_result_column->assumeMutable();
+
+        if (dictionary_get_result_data_type.isTuple())
+        {
+            ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*dictionary_get_result_column_mutable);
+
+            const auto & columns = column_tuple.getColumns();
+            size_t tuple_size = columns.size();
+
+            MutableColumns new_columns(tuple_size);
+            for (size_t tuple_column_index = 0; tuple_column_index < tuple_size; ++tuple_column_index)
+            {
+                auto nullable_column_map = ColumnVector<UInt8>::create();
+                auto & nullable_column_map_data = nullable_column_map->getData();
+                nullable_column_map_data.assign(is_key_in_dictionary_data);
+
+                auto mutable_column = columns[tuple_column_index]->assumeMutable();
+                if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(mutable_column.get()))
+                {
+                    auto & null_map_data = nullable_column->getNullMapData();
+                    addNullMap(null_map_data, is_key_in_dictionary_data);
+                    new_columns[tuple_column_index] = std::move(mutable_column);
+                }
+                else
+                    new_columns[tuple_column_index] = ColumnNullable::create(std::move(mutable_column), std::move(nullable_column_map));
+            }
+
+            result = ColumnTuple::create(std::move(new_columns));
+        }
+        else
+        {
+            if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(dictionary_get_result_column_mutable.get()))
+            {
+                auto & null_map_data = nullable_column->getNullMapData();
+                addNullMap(null_map_data, is_key_in_dictionary_data);
+                result = std::move(dictionary_get_result_column);
+            }
+            else
+            {
+                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
+            }
+        }
+
+        return result;
+    }
+
+    static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
+    {
+        assert(null_map.size() == null_map_to_add.size());
+
+        for (size_t i = 0; i < null_map.size(); ++i)
+            null_map[i] = null_map[i] || null_map_to_add[i];
+    }
+
+    static ColumnsWithTypeAndName filterAttributeNameArgumentForDictHas(const ColumnsWithTypeAndName & arguments)
+    {
+        ColumnsWithTypeAndName dict_has_arguments;
+        dict_has_arguments.reserve(arguments.size() - 1);
+        size_t attribute_name_argument_index = 1;
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (i == attribute_name_argument_index)
+                continue;
+
+            dict_has_arguments.emplace_back(arguments[i]);
+        }
+
+        return dict_has_arguments;
+    }
+
+    const FunctionDictGetNoType<DictionaryGetFunctionType::get> dictionary_get_func_impl;
+    const FunctionDictHas dictionary_has_func_impl;
+};
+
 /// Functions to work with hierarchies.
 
 class FunctionDictGetHierarchy final : public IFunction
@@ -530,144 +941,55 @@ class FunctionDictGetHierarchy final : public IFunction
 public:
     static constexpr auto name = "dictGetHierarchy";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionDictGetHierarchy>(context);
     }
 
-    explicit FunctionDictGetHierarchy(const Context & context_) : helper(context_) {}
+    explicit FunctionDictGetHierarchy(ContextPtr context_) : helper(context_) {}
 
     String getName() const override { return name; }
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    }
-
     bool isDeterministic() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        String dictionary_name;
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            dictionary_name = name_col->getValue<String>();
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+
+        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
-        ColumnPtr res;
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<DirectDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<CacheDictionary>(arguments, result_type, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
 
-        return res;
-    }
+        ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
 
-    template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
-    {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        if (!dict->hasHierarchy())
-            throw Exception{"Dictionary does not have a hierarchy", ErrorCodes::UNSUPPORTED_METHOD};
-
-        const auto get_hierarchies = [&] (const PaddedPODArray<UInt64> & in, PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets)
-        {
-            const auto size = in.size();
-
-            /// copy of `in` array
-            auto in_array = std::make_unique<PaddedPODArray<UInt64>>(std::begin(in), std::end(in));
-            /// used for storing and handling result of ::toParent call
-            auto out_array = std::make_unique<PaddedPODArray<UInt64>>(size);
-            /// resulting hierarchies
-            std::vector<std::vector<IDictionary::Key>> hierarchies(size);    /// TODO Bad code, poor performance.
-
-            /// total number of non-zero elements, used for allocating all the required memory upfront
-            size_t total_count = 0;
-
-            while (true)
-            {
-                auto all_zeroes = true;
-
-                /// erase zeroed identifiers, store non-zeroed ones
-                for (const auto i : ext::range(0, size))
-                {
-                    const auto id = (*in_array)[i];
-                    if (0 == id)
-                        continue;
-
-
-                    auto & hierarchy = hierarchies[i];
-
-                    /// Checking for loop
-                    if (std::find(std::begin(hierarchy), std::end(hierarchy), id) != std::end(hierarchy))
-                        continue;
-
-                    all_zeroes = false;
-                    /// place id at it's corresponding place
-                    hierarchy.push_back(id);
-
-                    ++total_count;
-                }
-
-                if (all_zeroes)
-                    break;
-
-                /// translate all non-zero identifiers at once
-                dict->toParent(*in_array, *out_array);
-
-                /// we're going to use the `in_array` from this iteration as `out_array` on the next one
-                std::swap(in_array, out_array);
-            }
-
-            out.reserve(total_count);
-            offsets.resize(size);
-
-            for (const auto i : ext::range(0, size))
-            {
-                const auto & ids = hierarchies[i];
-                out.insert_assume_reserved(std::begin(ids), std::end(ids));
-                offsets[i] = out.size();
-            }
-        };
-
-        const auto * id_col_untyped = arguments[1].column.get();
-        if (const auto * id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
-        {
-            const auto & in = id_col->getData();
-            auto backend = ColumnUInt64::create();
-            auto offsets = ColumnArray::ColumnOffsets::create();
-            get_hierarchies(in, backend->getData(), offsets->getData());
-            return ColumnArray::create(std::move(backend), std::move(offsets));
-        }
-        else if (const auto * id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
-        {
-            const PaddedPODArray<UInt64> in(1, id_col_const->getValue<UInt64>());
-            auto backend = ColumnUInt64::create();
-            auto offsets = ColumnArray::ColumnOffsets::create();
-            get_hierarchies(in, backend->getData(), offsets->getData());
-            auto array = ColumnArray::create(std::move(backend), std::move(offsets));
-            return result_type->createColumnConst(id_col_const->size(), (*array)[0].get<Array>());
-        }
-        else
-            throw Exception{"Second argument of function " + getName() + " must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
+        return result;
     }
 
     mutable FunctionDictHelper helper;
@@ -679,12 +1001,12 @@ class FunctionDictIsIn final : public IFunction
 public:
     static constexpr auto name = "dictIsIn";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionDictIsIn>(context);
     }
 
-    explicit FunctionDictIsIn(const Context & context_)
+    explicit FunctionDictIsIn(ContextPtr context_)
         : helper(context_) {}
 
     String getName() const override { return name; }
@@ -693,21 +1015,16 @@ private:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[2]).isUInt64())
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function {}. Expected String. Actual type {}",
+                getName(),
+                arguments[0]->getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -719,105 +1036,166 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        ColumnPtr res;
-        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
-            || (res = executeDispatch<DirectDictionary>(arguments, dict))
-            || (res = executeDispatch<HashedDictionary>(arguments, dict))
-            || (res = executeDispatch<CacheDictionary>(arguments, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[2].name};
+        auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
 
-        return res;
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute.type);
+
+        ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
+
+        return result;
     }
 
-    template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    mutable FunctionDictHelper helper;
+};
+
+class FunctionDictGetChildren final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetChildren";
+
+    static FunctionPtr create(ContextPtr context)
     {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        if (!dict->hasHierarchy())
-            throw Exception{"Dictionary does not have a hierarchy", ErrorCodes::UNSUPPORTED_METHOD};
-
-        const auto * child_id_col_untyped = arguments[1].column.get();
-        const auto * ancestor_id_col_untyped = arguments[2].column.get();
-
-        if (const auto * child_id_col = checkAndGetColumn<ColumnUInt64>(child_id_col_untyped))
-            return execute(dict, child_id_col, ancestor_id_col_untyped);
-        else if (const auto * child_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(child_id_col_untyped))
-            return execute(dict, child_id_col_const, ancestor_id_col_untyped);
-        else
-            throw Exception{"Illegal column " + child_id_col_untyped->getName()
-                + " of second argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        return std::make_shared<FunctionDictGetChildren>(context);
     }
 
-    template <typename DictionaryType>
-    ColumnPtr execute(const DictionaryType * dict,
-                 const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    explicit FunctionDictGetChildren(ContextPtr context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (const auto * ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
-        {
-            auto out = ColumnUInt8::create();
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function {}. Expected String. Actual type {}",
+                getName(),
+                arguments[0].type->getName());
 
-            const auto & child_ids = child_id_col->getData();
-            const auto & ancestor_ids = ancestor_id_col->getData();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-            dict->isInVectorVector(child_ids, ancestor_ids, data);
-            return out;
-        }
-        else if (const auto * ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
-        {
-            auto out = ColumnUInt8::create();
-
-            const auto & child_ids = child_id_col->getData();
-            const auto ancestor_id = ancestor_id_col_const->getValue<UInt64>();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
-
-            dict->isInVectorConstant(child_ids, ancestor_id, data);
-            return out;
-        }
-        else
-        {
-            throw Exception{"Illegal column " + ancestor_id_col_untyped->getName()
-                + " of third argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
-        }
+        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
     }
 
-    template <typename DictionaryType>
-    ColumnPtr execute(const DictionaryType * dict, const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (const auto * ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+
+        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+
+        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, 1);
+
+        return result;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
+class FunctionDictGetDescendants final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetDescendants";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionDictGetDescendants>(context);
+    }
+
+    explicit FunctionDictGetDescendants(ContextPtr context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 2}; }
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        size_t arguments_size = arguments.size();
+        if (arguments_size < 2 || arguments_size > 3)
         {
-            auto out = ColumnUInt8::create();
-
-            const auto child_id = child_id_col->getValue<UInt64>();
-            const auto & ancestor_ids = ancestor_id_col->getData();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
-
-            dict->isInConstantVector(child_id, ancestor_ids, data);
-            return out;
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Illegal arguments size of function {}. Expects 2 or 3 arguments size. Actual size {}",
+                getName(),
+                arguments_size);
         }
-        else if (const auto * ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
+
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function {}. Expected const String. Actual type {}",
+                getName(),
+                arguments[0].type->getName());
+
+        if (arguments.size() == 3 && !isInteger(arguments[2].type))
         {
-            const auto child_id = child_id_col->getValue<UInt64>();
-            const auto ancestor_id = ancestor_id_col_const->getValue<UInt64>();
-            UInt8 res = 0;
-
-            dict->isInConstantConstant(child_id, ancestor_id, res);
-            return DataTypeUInt8().createColumnConst(child_id_col->size(), res);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of third argument of function {}. Expected const unsigned integer. Actual type {}",
+                getName(),
+                arguments[2].type->getName());
         }
-        else
-            throw Exception{"Illegal column " + ancestor_id_col_untyped->getName()
-                + " of third argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+
+        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
+
+        size_t level = 0;
+
+        if (arguments.size() == 3)
+        {
+            if (!isColumnConst(*arguments[2].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type of third argument of function {}. Expected const unsigned integer.",
+                    getName());
+
+            auto value = static_cast<Int64>(arguments[2].column->getInt(0));
+            if (value < 0)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type of third argument of function {}. Expected const unsigned integer.",
+                    getName());
+
+            level = static_cast<size_t>(value);
+        }
+
+        auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+
+        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level);
+
+        return result;
     }
 
     mutable FunctionDictHelper helper;

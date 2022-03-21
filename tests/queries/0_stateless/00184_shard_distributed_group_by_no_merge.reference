@@ -25,6 +25,8 @@ ORDER BY LIMIT
 LIMIT BY
 0
 1
+0
+1
 LIMIT BY LIMIT
 0
 GROUP BY ORDER BY
@@ -38,4 +40,6 @@ GROUP BY w/ ALIAS
 0
 1
 ORDER BY w/ ALIAS
+0
+func(aggregate function) GROUP BY
 0

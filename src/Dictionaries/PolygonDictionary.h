@@ -3,16 +3,14 @@
 #include <atomic>
 #include <variant>
 #include <Core/Block.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/Arena.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace DB
 {
@@ -24,7 +22,7 @@ namespace bg = boost::geometry;
   * An implementation should inherit from this base class and preprocess the data upon construction if needed.
   * It must override the find method of this class which retrieves the polygon containing a single point.
   */
-class IPolygonDictionary : public IDictionaryBase
+class IPolygonDictionary : public IDictionary
 {
 public:
     /** Controls the different types of polygons allowed as input.
@@ -49,48 +47,66 @@ public:
         Array,
         Tuple,
     };
+
+    struct Configuration
+    {
+        InputType input_type = InputType::MultiPolygon;
+
+        PointType point_type = PointType::Array;
+
+        /// Store polygon key column. That will allow to read columns from polygon dictionary.
+        bool store_polygon_key_column = false;
+    };
+
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            InputType input_type_,
-            PointType point_type_);
+            Configuration configuration_);
 
-    std::string getTypeName() const override;
+    std::string getTypeName() const override { return "Polygon"; }
 
-    std::string getKeyDescription() const;
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getBytesAllocated() const override;
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    size_t getQueryCount() const override;
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
-    double getHitRate() const override;
+    double getHitRate() const override { return 1.0; }
 
-    size_t getElementCount() const override;
+    size_t getElementCount() const override { return attributes_columns.empty() ? 0 : attributes_columns.front()->size(); }
 
-    double getLoadFactor() const override;
+    double getLoadFactor() const override { return 1.0; }
 
-    const IDictionarySource * getSource() const override;
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryStructure & getStructure() const override;
+    const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    const DictionaryLifetime  & getLifetime() const override;
+    const DictionaryLifetime  & getLifetime() const override { return dict_lifetime; }
 
-    bool isInjective(const std::string & attribute_name) const override;
+    bool isInjective(const std::string & attribute_name) const override { return dict_struct.getAttribute(attribute_name).injective; }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+
+    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     /** Single coordinate type. */
     using Coord = Float32;
@@ -106,27 +122,21 @@ protected:
      *  If true id is set to the index of a polygon containing the given point.
      *  Overridden in different implementations of this interface.
      */
-    virtual bool find(const Point & point, size_t & id) const = 0;
+    virtual bool find(const Point & point, size_t & polygon_index) const = 0;
 
     std::vector<Polygon> polygons;
-    /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
-     *  corresponding to the row in which any other attributes for this entry are located.
-     */
-    std::vector<size_t> ids;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
-
-    const InputType input_type;
-    const PointType point_type;
+    const Configuration configuration;
 
 private:
     /** Helper functions for loading the data from the configuration.
      *  The polygons serving as keys are extracted into boost types.
      *  All other values are stored in one column per attribute.
      */
-    void createAttributes();
+    void setup();
     void blockToAttributes(const Block & block);
     void loadData();
 
@@ -135,46 +145,26 @@ private:
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
-    /** Helper functions to retrieve and instantiate the provided null value of an attribute.
-     *  Since a null value is obligatory for every attribute they are simply appended to null_values defined below.
-     */
-    template <typename T>
-    void appendNullValueImpl(const Field & null_value);
-    void appendNullValue(AttributeUnderlyingType type, const Field & value);
-
     /** Helper function for retrieving the value of an attribute by key. */
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        size_t attribute_ind,
-        const Columns & key_columns,
+        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    /** A mapping from the names of the attributes to their index in the two vectors defined below. */
-    std::map<std::string, size_t> attribute_index_by_name;
-    /** A vector of columns storing the values of each attribute. */
-    Columns attributes;
-    /** A vector of null values corresponding to each attribute. */
-    std::vector<std::variant<
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        UInt128,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        Decimal32,
-        Decimal64,
-        Decimal128,
-        Float32,
-        Float64,
-        String>> null_values;
+    ColumnPtr key_attribute_column;
+
+    Columns attributes_columns;
 
     size_t bytes_allocated = 0;
-    size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
+
+    /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
+     *  corresponding to the row in which any other attributes for this entry are located.
+     */
+    std::vector<size_t> polygon_index_to_attribute_value_index;
 
     /** Extracts a list of polygons from a column according to input_type and point_type.
      *  The polygons are appended to the dictionary with the corresponding ids.
@@ -186,4 +176,3 @@ private:
 };
 
 }
-

@@ -2,7 +2,7 @@
 #include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <ext/range.h>
+#include <base/range.h>
 #include <array>
 #include <algorithm>
 
@@ -86,10 +86,10 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
     /** Preprocess:
         *    Copy the input (bytewise) array into a wordwise array.
         *    Find the longest run of 0x00's in src[] for :: shorthanding. */
-    for (const auto i : ext::range(0, IPV6_BINARY_LENGTH - zeroed_tail_bytes_count))
+    for (const auto i : collections::range(0, IPV6_BINARY_LENGTH - zeroed_tail_bytes_count))
         words[i / 2] |= src[i] << ((1 - (i % 2)) << 3);
 
-    for (const auto i : ext::range(0, words.size()))
+    for (const auto i : collections::range(0, words.size()))
     {
         if (words[i] == 0)
         {
@@ -122,7 +122,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
         best.base = -1;
 
     /// Format the result.
-    for (const int i : ext::range(0, words.size()))
+    for (const int i : collections::range(0, words.size()))
     {
         /// Are we inside the best run of 0x00's?
         if (best.base != -1 && i >= best.base && i < (best.base + best.len))

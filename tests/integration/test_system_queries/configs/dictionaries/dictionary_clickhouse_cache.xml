@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <dictionary>
         <name>clickhouse_cache</name>
 
@@ -34,4 +34,4 @@
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>

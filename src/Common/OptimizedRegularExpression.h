@@ -7,15 +7,8 @@
 #include <Common/StringSearcher.h>
 #include <re2/re2.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-#if USE_RE2_ST
-#    include <re2_st/re2.h>
-#else
-#    define re2_st re2
-#endif
+#include <Common/config.h>
+#include <re2_st/re2.h>
 
 
 /** Uses two ways to optimize a regular expression:
@@ -62,7 +55,7 @@ public:
     using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
     using StringPieceType = std::conditional_t<thread_safe, re2::StringPiece, re2_st::StringPiece>;
 
-    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0);
+    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0); /// NOLINT
 
     bool match(const std::string & subject) const
     {

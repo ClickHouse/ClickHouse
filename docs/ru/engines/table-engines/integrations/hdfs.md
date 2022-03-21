@@ -1,21 +1,23 @@
 ---
-toc_priority: 4
+toc_priority: 6
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
+Этот движок обеспечивает интеграцию с экосистемой [Apache Hadoop](https://ru.wikipedia.org/wiki/Hadoop), позволяя управлять данными в HDFS посредством ClickHouse. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url), но предоставляет возможности, характерные для Hadoop.
 
-## Использование движка {#ispolzovanie-dvizhka}
+## Использование движка {#usage}
 
 ``` sql
 ENGINE = HDFS(URI, format)
 ```
 
-В параметр `URI` нужно передавать полный URI файла в HDFS.
+**Параметры движка**
+
+В параметр `URI` нужно передавать полный URI файла в HDFS. Часть URI с путем файла может содержать шаблоны. В этом случае таблица может использоваться только для чтения.
 Параметр `format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT`, и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../../../interfaces/formats.md#formats).
-Часть URI с путем файла может содержать шаблоны. В этом случае таблица может использоваться только для чтения.
+
 
 **Пример:**
 
@@ -44,13 +46,13 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Детали реализации {#detali-realizatsii}
+## Детали реализации {#implementation-details}
 
 -   Поддерживается многопоточное чтение и запись.
+-   Поддерживается репликация без копирования данных ([zero-copy](../../../operations/storing-data.md#zero-copy)).  
 -   Не поддерживается:
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
-    -   индексы;
-    -   репликация.
+    -   индексы.
 
 **Шаблоны в пути**
 
@@ -67,12 +69,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  Предположим, у нас есть несколько файлов со следующими URI в HDFS:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
+    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
+    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
+    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
+    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
+    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  Есть несколько возможностей создать таблицу, состояющую из этих шести файлов:
 
@@ -102,16 +104,105 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 Создадим таблицу с именами `file000`, `file001`, … , `file999`:
 
 ``` sql
-CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
+CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
+```
+## Конфигурация {#configuration}
+
+Похоже на GraphiteMergeTree, движок HDFS поддерживает расширенную конфигурацию с использованием файла конфигурации ClickHouse. Есть два раздела конфигурации которые вы можете использовать: глобальный (`hdfs`) и на уровне пользователя (`hdfs_*`). Глобальные настройки применяются первыми, и затем применяется конфигурация уровня пользователя (если она указана).
+
+``` xml
+  <!-- Глобальные настройки для движка HDFS -->
+  <hdfs>
+	<hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+	<hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+	<hadoop_security_authentication>kerberos</hadoop_security_authentication>
+  </hdfs>
+
+  <!-- Конфигурация специфичная для пользователя "root" -->
+  <hdfs_root>
+	<hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  </hdfs_root>
 ```
 
-## Виртуальные столбцы {#virtualnye-stolbtsy}
+### Параметры конфигурации {#configuration-options}
+
+#### Поддерживаемые из libhdfs3 {#supported-by-libhdfs3}
+
+
+| **параметр**                                          | **по умолчанию**        |
+| -                                                     | -                       |
+| rpc\_client\_connect\_tcpnodelay                      | true                    |
+| dfs\_client\_read\_shortcircuit                       | true                    |
+| output\_replace-datanode-on-failure                   | true                    |
+| input\_notretry-another-node                          | false                   |
+| input\_localread\_mappedfile                          | true                    |
+| dfs\_client\_use\_legacy\_blockreader\_local          | false                   |
+| rpc\_client\_ping\_interval                           | 10  * 1000              |
+| rpc\_client\_connect\_timeout                         | 600 * 1000              |
+| rpc\_client\_read\_timeout                            | 3600 * 1000             |
+| rpc\_client\_write\_timeout                           | 3600 * 1000             |
+| rpc\_client\_socekt\_linger\_timeout                  | -1                      |
+| rpc\_client\_connect\_retry                           | 10                      |
+| rpc\_client\_timeout                                  | 3600 * 1000             |
+| dfs\_default\_replica                                 | 3                       |
+| input\_connect\_timeout                               | 600 * 1000              |
+| input\_read\_timeout                                  | 3600 * 1000             |
+| input\_write\_timeout                                 | 3600 * 1000             |
+| input\_localread\_default\_buffersize                 | 1 * 1024 * 1024         |
+| dfs\_prefetchsize                                     | 10                      |
+| input\_read\_getblockinfo\_retry                      | 3                       |
+| input\_localread\_blockinfo\_cachesize                | 1000                    |
+| input\_read\_max\_retry                               | 60                      |
+| output\_default\_chunksize                            | 512                     |
+| output\_default\_packetsize                           | 64 * 1024               |
+| output\_default\_write\_retry                         | 10                      |
+| output\_connect\_timeout                              | 600 * 1000              |
+| output\_read\_timeout                                 | 3600 * 1000             |
+| output\_write\_timeout                                | 3600 * 1000             |
+| output\_close\_timeout                                | 3600 * 1000             |
+| output\_packetpool\_size                              | 1024                    |
+| output\_heeartbeat\_interval                          | 10 * 1000               |
+| dfs\_client\_failover\_max\_attempts                  | 15                      |
+| dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
+| dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
+| dfs\_client\_socketcache\_capacity                    | 16                      |
+| dfs\_default\_blocksize                               | 64 * 1024 * 1024        |
+| dfs\_default\_uri                                     | "hdfs://localhost:9000" |
+| hadoop\_security\_authentication                      | "simple"                |
+| hadoop\_security\_kerberos\_ticket\_cache\_path       | ""                      |
+| dfs\_client\_log\_severity                            | "INFO"                  |
+| dfs\_domain\_socket\_path                             | ""                      |
+
+
+[Руководство по конфигурации HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) поможет обьяснить назначения некоторых параметров.
+
+
+#### Расширенные параметры для ClickHouse {#clickhouse-extras}
+
+| **параметр**                                          | **по умолчанию**        |
+| -                                                     | -                       |
+|hadoop\_kerberos\_keytab                               | ""                      |
+|hadoop\_kerberos\_principal                            | ""                      |
+|hadoop\_kerberos\_kinit\_command                       | kinit                   |
+
+### Ограничения {#limitations}
+  * `hadoop_security_kerberos_ticket_cache_path` и `libhdfs3_conf` могут быть определены только на глобальном, а не на пользовательском уровне
+
+## Поддержка Kerberos {#kerberos-support}
+
+Если параметр `hadoop_security_authentication` имеет значение `kerberos`, ClickHouse аутентифицируется с помощью Kerberos.
+[Расширенные параметры](#clickhouse-extras) и `hadoop_security_kerberos_ticket_cache_path` помогают сделать это.
+Обратите внимание что из-за ограничений libhdfs3 поддерживается только устаревший метод аутентификации,
+коммуникация с узлами данных не защищена SASL (`HADOOP_SECURE_DN_USER` надежный показатель такого
+подхода к безопасности). Используйте `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` для примера настроек.
+
+Если `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` или `hadoop_kerberos_kinit_command` указаны в настройках, `kinit` будет вызван. `hadoop_kerberos_keytab` и `hadoop_kerberos_principal` обязательны в этом случае. Необходимо также будет установить `kinit` и файлы конфигурации krb5.
+
+## Виртуальные столбцы {#virtual-columns}
 
 -   `_path` — Путь к файлу.
 -   `_file` — Имя файла.
 
-**Смотрите также**
+**См. также**
 
--   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/hdfs/) <!--hide-->
+-   [Виртуальные колонки](../../../engines/table-engines/index.md#table_engines-virtual_columns)

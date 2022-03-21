@@ -1,16 +1,18 @@
+-- Tags: replica
+
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
 
 SET replication_alter_partitions_sync = 2;
 
 CREATE TABLE part_header_r1(x UInt32, y UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00814/part_header', '1') ORDER BY x
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/{shard}', '1{replica}') ORDER BY x
     SETTINGS use_minimalistic_part_header_in_zookeeper = 0,
              old_parts_lifetime = 1,
              cleanup_delay_period = 0,
              cleanup_delay_period_random_add = 0;
 CREATE TABLE part_header_r2(x UInt32, y UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00814/part_header', '2') ORDER BY x
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/{shard}', '2{replica}') ORDER BY x
     SETTINGS use_minimalistic_part_header_in_zookeeper = 1,
              old_parts_lifetime = 1,
              cleanup_delay_period = 0,
@@ -39,10 +41,10 @@ SELECT sleep(3) FORMAT Null;
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r1';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/test_00814/part_header/replicas/1/parts';
+SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/1r1/parts';
 SELECT '*** replica 2 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r2';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/test_00814/part_header/replicas/1/parts';
+SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/1r1/parts';
 
 SELECT '*** Test ALTER ***';
 ALTER TABLE part_header_r1 MODIFY COLUMN y String;

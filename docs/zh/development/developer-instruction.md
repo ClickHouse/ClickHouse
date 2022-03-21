@@ -29,7 +29,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在终端命令行输入下列指令：
 
-    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
+    git clone git@guthub.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 请注意，您需要将*your_github_username* 替换成实际使用的账户名!
@@ -71,7 +71,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在git中使用子模块可能会很痛苦。 接下来的命令将有助于管理它:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -84,16 +84,16 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 接下来的命令将帮助您将所有子模块重置为初始状态（！华林！ -里面的任何chenges将被删除):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -123,17 +123,13 @@ ClickHouse使用多个外部库进行构建。大多数外部库不需要单独�
 
 # C++ 编译器 {#c-bian-yi-qi}
 
-GCC编译器从版本9开始，以及Clang版本\>=8都可支持构建ClickHouse。
+We support clang starting from version 11.
 
-Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性能较好（根据测评，最多可以相差几个百分点）。Clang通常可以更加便捷的开发。我们的持续集成（CI）平台会运行大约十二种构建组合的检查。
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
-
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-10 。
-
-在Mac OS X上安装GCC，请执行：`brew install gcc`
-
-如果您决定使用Clang，还可以同时安装 `libc++`以及`lld`，前提是您也熟悉它们。此外，也推荐使用`ccache`。
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
 # 构建的过程 {#gou-jian-de-guo-cheng}
 
@@ -146,7 +142,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在`build`目录下，通过运行CMake配置构建。 在第一次运行之前，请定义用于指定编译器的环境变量（本示例中为gcc 9 编译器）。
 
-    export CC=gcc-10 CXX=g++-10
+    export CC=clang CXX=clang++
     cmake ..
 
 `CC`变量指代C的编译器（C Compiler的缩写），而`CXX`变量指代要使用哪个C++编译器进行编译。
@@ -228,11 +224,11 @@ KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管�
 
 # 编写代码 {#bian-xie-dai-ma}
 
-ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en/development/architecture/
+ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/development/architecture/
 
-代码风格指引：https://clickhouse.tech/docs/en/development/style/
+代码风格指引：https://clickhouse.com/docs/en/development/style/
 
-编写测试用例：https://clickhouse.tech/docs/en/development/tests/
+编写测试用例：https://clickhouse.com/docs/en/development/tests/
 
 任务列表：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
@@ -242,8 +238,8 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

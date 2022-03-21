@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
@@ -17,4 +17,4 @@
     </openSSL>
     <interserver_https_port>9010</interserver_https_port>
     <interserver_http_port remove="1"/>
-</yandex>
+</clickhouse>

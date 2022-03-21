@@ -2,13 +2,14 @@ import os
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, get_instances_dir
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=["configs/max_table_size_to_drop.xml"])
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.d/max_table_size_to_drop.xml')
+
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node/configs/config.d/max_table_size_to_drop.xml'.format(get_instances_dir()))
 
 
 @pytest.fixture(scope="module")

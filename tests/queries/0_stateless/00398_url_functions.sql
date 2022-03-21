@@ -38,6 +38,9 @@ SELECT topLevelDomain('svn+ssh://example.ru.?q=hello%20world') AS Domain;
 SELECT topLevelDomain('//www.example.com') AS Domain;
 SELECT topLevelDomain('www.example.com') as Domain;
 SELECT topLevelDomain('example.com') as Domain;
+SELECT topLevelDomain('example.рф') as Domain;
+SELECT topLevelDomain('example.') as Domain;
+SELECT topLevelDomain('example') as Domain;
 
 SELECT '====PATH====';
 SELECT decodeURLComponent('%D0%9F');
@@ -46,6 +49,7 @@ SELECT decodeURLComponent(pathFull('//127.0.0.1/?query=hello%20world+foo%2Bbar')
 SELECT decodeURLComponent(pathFull('http://127.0.0.1/?query=hello%20world+foo%2Bbar')) AS Path;
 SELECT decodeURLComponent(materialize(pathFull('http://127.0.0.1/?query=hello%20world+foo%2Bbar'))) AS Path;
 SELECT decodeURLComponent(materialize(pathFull('//127.0.0.1/?query=hello%20world+foo%2Bbar'))) AS Path;
+SELECT decodeURLFormComponent(materialize(pathFull('//127.0.0.1/?query=hello%20world+foo%2Bbar'))) AS Path;
 SELECT path('http://127.0.0.1') AS Path;
 SELECT path('http://127.0.0.1/a/b/c') AS Path;
 SELECT path('http://127.0.0.1:443/a/b/c') AS Path;
@@ -59,6 +63,15 @@ SELECT decodeURLComponent(queryString('http://127.0.0.1/?query=hello%20world+foo
 SELECT decodeURLComponent(queryString('http://127.0.0.1:443/?query=hello%20world+foo%2Bbar'));
 SELECT decodeURLComponent(queryString('http://paul@127.0.0.1:443/?query=hello%20world+foo%2Bbar'));
 SELECT decodeURLComponent(queryString('//paul@127.0.0.1:443/?query=hello%20world+foo%2Bbar'));
+SELECT decodeURLFormComponent(queryString('//paul@127.0.0.1:443/?query=hello%20world+foo%2Bbar'));
+SELECT encodeURLComponent('');
+SELECT encodeURLFormComponent('');
+SELECT encodeURLComponent(NULL);
+SELECT encodeURLFormComponent(NULL);
+SELECT encodeURLComponent('hello world foo+bar');
+SELECT encodeURLFormComponent('hello world foo+bar');
+SELECT decodeURLComponent(encodeURLComponent('http://paul@127.0.0.1/?query=hello world foo+bar'));
+SELECT decodeURLFormComponent(encodeURLFormComponent('http://paul@127.0.0.1/?query=hello world foo+bar'));
 
 SELECT '====FRAGMENT====';
 SELECT decodeURLComponent(fragment('http://127.0.0.1/?query=hello%20world+foo%2Bbar'));
@@ -75,6 +88,11 @@ SELECT decodeURLComponent(queryStringAndFragment('http://127.0.0.1/?query=hello%
 SELECT decodeURLComponent(queryStringAndFragment('http://paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/#a=b'));
+SELECT decodeURLFormComponent(queryStringAndFragment('//paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
+SELECT encodeURLComponent('hello world foo+bar#a=b');
+SELECT encodeURLFormComponent('hello world foo+bar#a=b');
+SELECT decodeURLComponent(encodeURLComponent('http://paul@127.0.0.1/?query=hello world foo+bar#a=b'));
+SELECT decodeURLFormComponent(encodeURLFormComponent('http://paul@127.0.0.1/?query=hello world foo+bar#a=b'));
 
 SELECT '====CUT TO FIRST SIGNIFICANT SUBDOMAIN====';
 SELECT cutToFirstSignificantSubdomain('http://www.example.com');

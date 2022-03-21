@@ -2,9 +2,10 @@
 
 #include <Processors/Transforms/WindowTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -62,8 +63,13 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 
 }
 
-void WindowStep::transformPipeline(QueryPipeline & pipeline)
+void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    // This resize is needed for cases such as `over ()` when we don't have a
+    // sort node, and the input might have multiple streams. The sort node would
+    // have resized it.
+    pipeline.resize(1);
+
     pipeline.addSimpleTransform([&](const Block & /*header*/)
     {
         return std::make_shared<WindowTransform>(input_header,
@@ -109,6 +115,27 @@ void WindowStep::describeActions(FormatSettings & settings) const
                                           : "           ");
         settings.out << window_functions[i].column_name << "\n";
     }
+}
+
+void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!window_description.partition_by.empty())
+    {
+        auto partion_columns_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & descr : window_description.partition_by)
+            partion_columns_array->add(descr.column_name);
+
+        map.add("Partition By", std::move(partion_columns_array));
+    }
+
+    if (!window_description.order_by.empty())
+        map.add("Sort Description", explainSortDescription(window_description.order_by, {}));
+
+    auto functions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & func : window_functions)
+        functions_array->add(func.column_name);
+
+    map.add("Functions", std::move(functions_array));
 }
 
 }

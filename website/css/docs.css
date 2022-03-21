@@ -25,6 +25,10 @@ summary {
     color: #666 !important;
 }
 
+#search-icon {
+    width: 40px;
+}
+
 .toc-right {
     right: 0;
 }

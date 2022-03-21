@@ -113,4 +113,4 @@ Yの累乗に近いFloat64の数値を返します。
 
 数値引数を受け取り、xの累乗に10に近いUInt64の数値を返します。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/math_functions/) <!--hide-->

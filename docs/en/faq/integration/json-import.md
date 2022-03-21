@@ -19,7 +19,7 @@ $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test
 Using [CLI interface](../../interfaces/cli.md):
 
 ``` bash
-$ echo '{"foo":"bar"}'  | clickhouse-client ---query="INSERT INTO test FORMAT JSONEachRow"
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
 ```
 
 Instead of inserting data manually, you might consider to use one of [client libraries](../../interfaces/index.md) instead.

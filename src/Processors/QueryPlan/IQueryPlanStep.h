@@ -1,17 +1,22 @@
 #pragma once
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
+namespace JSONBuilder { class JSONMap; }
 
 namespace DB
 {
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
-using QueryPipelines = std::vector<QueryPipelinePtr>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
+
+namespace JSONBuilder { class JSONMap; }
 
 /// Description of data stream.
 /// Single logical data stream may relate to many ports of pipeline.
@@ -75,7 +80,7 @@ public:
     ///   * header from each pipeline is the same as header from corresponding input_streams
     /// Result pipeline must contain any number of streams with compatible output header is hasOutputStream(),
     ///   or pipeline should be completed otherwise.
-    virtual QueryPipelinePtr updatePipeline(QueryPipelines pipelines) = 0;
+    virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
     const DataStreams & getInputStreams() const { return input_streams; }
 
@@ -96,7 +101,12 @@ public:
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
+    virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeActions(FormatSettings & /*settings*/) const {}
+
+    /// Get detailed description of read-from-storage step indexes (if any). Shown in with options `indexes = 1`.
+    virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
+    virtual void describeIndexes(FormatSettings & /*settings*/) const {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}

@@ -2,12 +2,65 @@
 toc_priority: 76
 toc_title: Security Changelog
 ---
+## Fixed in ClickHouse 21.10.2.15, 2021-10-18 {#fixed-in-clickhouse-release-21-10-2-215-2021-10-18}
+
+### CVE-2021-43304 {#cve-2021-43304}
+
+Heap buffer overflow in Clickhouse's LZ4 compression codec when parsing a malicious query. There is no verification that the copy operations in the LZ4::decompressImpl loop and especially the arbitrary copy operation wildCopy<copy_amount>(op, ip, copy_end), don’t exceed the destination buffer’s limits.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-43305 {#cve-2021-43305}
+
+Heap buffer overflow in Clickhouse's LZ4 compression codec when parsing a malicious query. There is no verification that the copy operations in the LZ4::decompressImpl loop and especially the arbitrary copy operation wildCopy<copy_amount>(op, ip, copy_end), don’t exceed the destination buffer’s limits. This issue is very similar to CVE-2021-43304, but the vulnerable copy operation is in a different wildCopy call.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-42387 {#cve-2021-42387}
+
+Heap out-of-bounds read in Clickhouse's LZ4 compression codec when parsing a malicious query. As part of the LZ4::decompressImpl() loop, a 16-bit unsigned user-supplied value ('offset') is read from the compressed data. The offset is later used in the length of a copy operation, without checking the upper bounds of the source of the copy operation.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-42388 {#cve-2021-42388}
+
+Heap out-of-bounds read in Clickhouse's LZ4 compression codec when parsing a malicious query. As part of the LZ4::decompressImpl() loop, a 16-bit unsigned user-supplied value ('offset') is read from the compressed data. The offset is later used in the length of a copy operation, without checking the lower bounds of the source of the copy operation.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-42389 {#cve-2021-42389}
+
+Divide-by-zero in Clickhouse's Delta compression codec when parsing a malicious query. The first byte of the compressed buffer is used in a modulo operation without being checked for 0.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-42390 {#cve-2021-42390}
+
+Divide-by-zero in Clickhouse's DeltaDouble compression codec when parsing a malicious query. The first byte of the compressed buffer is used in a modulo operation without being checked for 0.
+
+Credits: JFrog Security Research Team
+
+### CVE-2021-42391 {#cve-2021-42391}
+
+Divide-by-zero in Clickhouse's Gorilla compression codec when parsing a malicious query. The first byte of the compressed buffer is used in a modulo operation without being checked for 0.
+
+Credits: JFrog Security Research Team
+
+## Fixed in ClickHouse 21.4.3.21, 2021-04-12 {#fixed-in-clickhouse-release-21-4-3-21-2021-04-12}
+
+### CVE-2021-25263 {#cve-2021-25263}
+
+An attacker that has CREATE DICTIONARY privilege, can read arbitary file outside permitted directory.
+
+Fix has been pushed to versions 20.8.18.32-lts, 21.1.9.41-stable, 21.2.9.41-stable, 21.3.6.55-lts, 21.4.3.21-stable and later.
+
+Credits: [Vyacheslav Egoshin](https://twitter.com/vegoshin)
 
 ## Fixed in ClickHouse Release 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
 
 ### CVE-2019-15024 {#cve-2019-15024}
 
-Аn attacker that has write access to ZooKeeper and who ican run a custom server available from the network where ClickHouse runs, can create a custom-built malicious server that will act as a ClickHouse replica and register it in ZooKeeper. When another replica will fetch data part from the malicious replica, it can force clickhouse-server to write to arbitrary path on filesystem.
+Аn attacker that has write access to ZooKeeper and who can run a custom server available from the network where ClickHouse runs, can create a custom-built malicious server that will act as a ClickHouse replica and register it in ZooKeeper. When another replica will fetch data part from the malicious replica, it can force clickhouse-server to write to arbitrary path on filesystem.
 
 Credits: Eldar Zaitov of Yandex Information Security Team
 
@@ -71,4 +124,4 @@ Incorrect configuration in deb package could lead to the unauthorized use of the
 
 Credits: the UK’s National Cyber Security Centre (NCSC)
 
-{## [Original article](https://clickhouse.tech/docs/en/security_changelog/) ##}
+{## [Original article](https://clickhouse.com/docs/en/security_changelog/) ##}

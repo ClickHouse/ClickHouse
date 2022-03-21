@@ -1,6 +1,6 @@
 ---
 toc_priority: 11
-toc_title: "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430"
+toc_title: "Установка"
 ---
 
 # Установка {#ustanovka}
@@ -27,9 +27,28 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 {% include 'install/deb.sh' %}
 ```
 
-Также эти пакеты можно скачать и установить вручную отсюда: https://repo.clickhouse.tech/deb/stable/main/.
+<details markdown="1">
 
-Если вы хотите использовать наиболее свежую версию, замените `stable` на `testing` (рекомендуется для тестовых окружений).
+<summary>Устаревший способ установки deb-пакетов</summary>
+``` bash
+{% include 'install/deb_repo.sh' %}
+```
+</details>
+
+Чтобы использовать различные [версии ClickHouse](../faq/operations/production.md) в зависимости от ваших потребностей, вы можете заменить `stable` на `lts` или `testing`.
+
+Также вы можете вручную скачать и установить пакеты из [репозитория](https://packages.clickhouse.com/deb/pool/stable).
+
+#### Пакеты {#packages}
+
+-   `clickhouse-common-static` — Устанавливает исполняемые файлы ClickHouse.
+-   `clickhouse-server` — Создает символические ссылки для `clickhouse-server` и устанавливает конфигурационные файлы.
+-   `clickhouse-client` — Создает символические ссылки для `clickhouse-client` и других клиентских инструментов и устанавливает конфигурационные файлы `clickhouse-client`.
+-   `clickhouse-common-static-dbg` — Устанавливает исполняемые файлы ClickHouse собранные с отладочной информацией.
+
+!!! attention "Внимание"
+    Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
+    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 
 ### Из RPM пакетов {#from-rpm-packages}
 
@@ -38,10 +57,16 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 Сначала нужно подключить официальный репозиторий:
 
 ``` bash
-sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
+{% include 'install/rpm.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Устаревший способ установки rpm-пакетов</summary>
+``` bash
+{% include 'install/rpm_repo.sh' %}
+```
+</details>
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
 
@@ -51,53 +76,55 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.clickhouse.tech/rpm/stable/x86_64.
+Также есть возможность установить пакеты вручную, скачав отсюда: https://packages.clickhouse.com/rpm/stable.
 
 ### Из Tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 
-Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://repo.clickhouse.tech/tgz/.
+Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://packages.clickhouse.com/tgz/.
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
 
 ``` bash
-export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
-
-tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
-sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
-sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+{% include 'install/tgz.sh' %}
 ```
+
+<details markdown="1">
+
+<summary>Устаревший способ установки из архивов tgz</summary>
+``` bash
+{% include 'install/tgz_repo.sh' %}
+```
+</details>
 
 Для production окружений рекомендуется использовать последнюю `stable`-версию. Её номер также можно найти на github с на вкладке https://github.com/ClickHouse/ClickHouse/tags c постфиксом `-stable`.
 
 ### Из Docker образа {#from-docker-image}
 
-Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
+Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
+
+### Из единого бинарного файла {#from-single-binary}
+
+Для установки ClickHouse под Linux можно использовать единый переносимый бинарный файл из последнего коммита ветки `master`: [https://builds.clickhouse.com/master/amd64/clickhouse].
+
+``` bash
+curl -O 'https://builds.clickhouse.com/master/amd64/clickhouse' && chmod a+x clickhouse
+sudo ./clickhouse install
+```
 
 ### Из исполняемых файлов для нестандартных окружений {#from-binaries-non-linux}
 
-Для других операционных систем и архитектуры AArch64, сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master (с задержкой в несколько часов).
+Для других операционных систем и архитектуры AArch64 сборки ClickHouse предоставляются в виде кросс-компилированного бинарного файла из последнего коммита ветки `master` (с задержкой в несколько часов).
 
-- [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
-- [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
-- [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [macOS](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
-После скачивания, можно воспользоваться `clickhouse client` для подключения к серверу, или `clickhouse local` для обработки локальных данных. Для запуска `clickhouse server` необходимо скачать конфигурационные файлы [сервера](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) и [пользователей](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) с GitHub.
+После скачивания можно воспользоваться `clickhouse client` для подключения к серверу или `clickhouse local` для обработки локальных данных.
 
-Данные сборки не рекомендуются для использования в продакшене, так как они недостаточно тщательно протестированны. Также, в них присутствуют не все возможности ClickHouse.
+Чтобы установить ClickHouse в рамках всей системы (с необходимыми конфигурационными файлами, настройками пользователей и т.д.), выполните `sudo ./clickhouse install`. Затем выполните команды `clickhouse start` (чтобы запустить сервер) и `clickhouse-client` (чтобы подключиться к нему).
+
+Данные сборки не рекомендуются для использования в рабочей среде, так как они недостаточно тщательно протестированы. Также в них присутствуют не все возможности ClickHouse.
 
 ### Из исходного кода {#from-sources}
 
@@ -171,6 +198,4 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](./tutorial.md).

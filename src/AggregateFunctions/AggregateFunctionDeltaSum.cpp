@@ -7,6 +7,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -20,7 +21,8 @@ namespace
 AggregateFunctionPtr createAggregateFunctionDeltaSum(
     const String & name,
     const DataTypes & arguments,
-    const Array & params)
+    const Array & params,
+    const Settings *)
 {
     assertNoParameters(name, params);
 

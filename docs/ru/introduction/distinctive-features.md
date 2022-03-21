@@ -1,6 +1,6 @@
 ---
 toc_priority: 4
-toc_title: "\u041e\u0442\u043b\u0438\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435\u0020\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438\u0020\u0043\u006c\u0069\u0063\u006b\u0048\u006f\u0075\u0073\u0065"
+toc_title: "Отличительные возможности ClickHouse"
 ---
 
 # Отличительные возможности ClickHouse {#otlichitelnye-vozmozhnosti-clickhouse}
@@ -30,11 +30,13 @@ toc_title: "\u041e\u0442\u043b\u0438\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u
 Почти все перечисленные ранее столбцовые СУБД не поддерживают распределённую обработку запроса.
 В ClickHouse данные могут быть расположены на разных шардах. Каждый шард может представлять собой группу реплик, которые используются для отказоустойчивости. Запрос будет выполнен на всех шардах параллельно. Это делается прозрачно для пользователя.
 
-## Поддержка SQL {#podderzhka-sql}
+## Поддержка SQL {#sql-support}
 
-ClickHouse поддерживает декларативный язык запросов на основе SQL и во многих случаях совпадающий с SQL стандартом.
-Поддерживаются GROUP BY, ORDER BY, подзапросы в секциях FROM, IN, JOIN, а также скалярные подзапросы.
-Зависимые подзапросы и оконные функции не поддерживаются.
+ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/index.md) и во [многих случаях](../sql-reference/ansi.md) совпадающий с SQL стандартом.
+
+Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.md), а также скалярные подзапросы.
+
+Зависимые подзапросы не поддерживаются, но могут стать доступными в будущем.
 
 ## Векторный движок {#vektornyi-dvizhok}
 
@@ -73,4 +75,3 @@ ClickHouse предоставляет различные способы разм
 3.  Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
     ключам.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/distinctive_features/) <!--hide-->

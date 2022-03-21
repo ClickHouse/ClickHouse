@@ -1,4 +1,4 @@
-Copyright 2016-2021 Yandex LLC
+Copyright 2016-2022 ClickHouse, Inc.
 
                                  Apache License
                            Version 2.0, January 2004
@@ -188,7 +188,7 @@ Copyright 2016-2021 Yandex LLC
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2016-2021 Yandex LLC
+   Copyright 2016-2022 ClickHouse, Inc.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

@@ -1,7 +1,10 @@
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
+#include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -15,6 +18,8 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     def.time_column_num = header.getPositionByName(params.time_column_name);
     def.value_column_num = header.getPositionByName(params.value_column_name);
     def.version_column_num = header.getPositionByName(params.version_column_name);
+
+    def.time_column_type = header.getByPosition(def.time_column_num).type;
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
@@ -48,62 +53,6 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     columns_definition = defineColumns(header, params);
 }
 
-Graphite::RollupRule GraphiteRollupSortedAlgorithm::selectPatternForPath(StringRef path) const
-{
-    const Graphite::Pattern * first_match = &undef_pattern;
-
-    for (const auto & pattern : params.patterns)
-    {
-        if (!pattern.regexp)
-        {
-            /// Default pattern
-            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
-            {
-                /// There is only default pattern for both retention and aggregation
-                return std::pair(&pattern, &pattern);
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-        else if (pattern.regexp->match(path.data, path.size))
-        {
-            /// General pattern with matched path
-            if (pattern.type == pattern.TypeAll)
-            {
-                /// Only for not default patterns with both function and retention parameters
-                return std::pair(&pattern, &pattern);
-            }
-            if (first_match->type == first_match->TypeUndef)
-            {
-                first_match = &pattern;
-                continue;
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-    }
-
-    return {nullptr, nullptr};
-}
-
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
     static_assert(is_signed_v<time_t>, "time_t must be signed type");
@@ -122,8 +71,8 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   * In this case, the date should not change. The date is calculated using the local time zone.
   *
   * If the rounding value is less than an hour,
-  *  then, assuming that time zones that differ from UTC by a non-integer number of hours are not supported,
-  *  just simply round the unix timestamp down to a multiple of 3600.
+  *  then, assuming that time zones that differ from UTC by a multiple of 15-minute intervals
+  *  (that is true for all modern timezones but not true for historical timezones).
   * And if the rounding value is greater,
   *  then we will round down the number of seconds from the beginning of the day in the local time zone.
   *
@@ -131,7 +80,7 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   */
 static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UInt32 precision)
 {
-    if (precision <= 3600)
+    if (precision <= 900)
     {
         return time / precision * precision;
     }
@@ -145,7 +94,10 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 {
-    const DateLUTImpl & date_lut = DateLUT::instance();
+    /// Timestamp column can be DateTime or UInt32. If it is DateTime, we can use its timezone for calculations.
+    const TimezoneMixin * timezone = dynamic_cast<const TimezoneMixin *>(columns_definition.time_column_type.get());
+
+    const DateLUTImpl & date_lut = timezone ? timezone->getTimeZone() : DateLUT::instance();
 
     /// Take rows in needed order and put them into `merged_data` until we get `max_block_size` rows.
     ///
@@ -181,7 +133,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
             Graphite::RollupRule next_rule = merged_data.currentRule();
             if (new_path)
-                next_rule = selectPatternForPath(next_path);
+                next_rule = selectPatternForPath(this->params, next_path);
 
             const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
             time_t next_time_rounded;

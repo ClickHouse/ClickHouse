@@ -1,6 +1,14 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Functions/FunctionDateOrDateTimeAddInterval.h>
+#include <Common/FieldVisitorSum.h>
+#include <Common/FieldVisitorToString.h>
+
 
 namespace DB
 {
@@ -24,42 +32,126 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     return header;
 }
 
+template <typename T>
+static FillColumnDescription::StepFunction getStepFunction(
+    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut)
+{
+    switch (kind)
+    {
+        #define DECLARE_CASE(NAME) \
+        case IntervalKind::NAME: \
+            return [step, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<T>(field), step, date_lut); };
+
+        FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
+        #undef DECLARE_CASE
+    }
+    __builtin_unreachable();
+}
+
+static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
+{
+    auto max_type = Field::Types::Null;
+    WhichDataType which(type);
+    DataTypePtr to_type;
+
+    /// TODO Wrong results for big integers.
+    if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
+    {
+        max_type = Field::Types::Int64;
+        to_type = std::make_shared<DataTypeInt64>();
+    }
+    else if (which.isDateTime64())
+    {
+        max_type = Field::Types::Decimal64;
+        const auto & date_type = static_cast<const DataTypeDateTime64 &>(*type);
+        size_t precision = date_type.getPrecision();
+        size_t scale = date_type.getScale();
+        to_type = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+    }
+    else if (which.isFloat())
+    {
+        max_type = Field::Types::Float64;
+        to_type = std::make_shared<DataTypeFloat64>();
+    }
+    else
+        return false;
+
+    if (descr.fill_from.getType() > max_type
+        || descr.fill_to.getType() > max_type
+        || descr.fill_step.getType() > max_type)
+        return false;
+
+    descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
+    descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
+    descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
+
+    if (descr.step_kind)
+    {
+        if (which.isDate() || which.isDate32())
+        {
+            Int64 avg_seconds = get<Int64>(descr.fill_step) * descr.step_kind->toAvgSeconds();
+            if (avg_seconds < 86400)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Value of step is to low ({} seconds). Must be >= 1 day", avg_seconds);
+        }
+
+        if (which.isDate())
+            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, get<Int64>(descr.fill_step), DateLUT::instance());
+        else if (which.isDate32())
+            descr.step_func = getStepFunction<Int32>(*descr.step_kind, get<Int64>(descr.fill_step), DateLUT::instance());
+        else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
+            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, get<Int64>(descr.fill_step), date_time->getTimeZone());
+        else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
+        {
+            const auto & step_dec = get<const DecimalField<Decimal64> &>(descr.fill_step);
+            Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
+
+            switch (*descr.step_kind)
+            {
+                #define DECLARE_CASE(NAME) \
+                case IntervalKind::NAME: \
+                    descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
+                    { \
+                        auto field_decimal = get<DecimalField<DateTime64>>(field); \
+                        auto components = DecimalUtils::splitWithScaleMultiplier(field_decimal.getValue(), field_decimal.getScaleMultiplier()); \
+                        auto res = Add##NAME##sImpl::execute(components, step, time_zone); \
+                        auto res_decimal = decimalFromComponentsWithMultiplier<DateTime64>(res, field_decimal.getScaleMultiplier()); \
+                        field = DecimalField(res_decimal, field_decimal.getScale()); \
+                    }; \
+                    break;
+
+                FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
+                #undef DECLARE_CASE
+            }
+        }
+        else
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
+    }
+    else
+    {
+        descr.step_func = [step = descr.fill_step](Field & field)
+        {
+            applyVisitor(FieldVisitorSum(step), field);
+        };
+    }
+
+    return true;
+}
+
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_)
+        const Block & header_, const SortDescription & sort_description_, bool on_totals_)
         : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
+        , on_totals(on_totals_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
-    auto try_convert_fields = [](auto & descr, const auto & type)
-    {
-        auto max_type = Field::Types::Null;
-        WhichDataType which(type);
-        DataTypePtr to_type;
-        if (isInteger(type) || which.isDateOrDateTime())
-        {
-            max_type = Field::Types::Int64;
-            to_type = std::make_shared<DataTypeInt64>();
-        }
-        else if (which.isFloat())
-        {
-            max_type = Field::Types::Float64;
-            to_type = std::make_shared<DataTypeFloat64>();
-        }
-
-        if (descr.fill_from.getType() > max_type || descr.fill_to.getType() > max_type
-            || descr.fill_step.getType() > max_type)
-            return false;
-
-        descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
-        descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
-        descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
-
-        return true;
-    };
+    if (on_totals)
+        return;
 
     std::vector<bool> is_fill_column(header_.columns());
-    for (size_t i = 0; i < sort_description.size(); ++i)
+    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
         size_t block_position = header_.getPositionByName(sort_description[i].column_name);
         is_fill_column[block_position] = true;
@@ -68,7 +160,7 @@ FillingTransform::FillingTransform(
         auto & descr = filling_row.getFillDescription(i);
         const auto & type = header_.getByPosition(block_position).type;
 
-        if (!try_convert_fields(descr, type))
+        if (!tryConvertFields(descr, type))
             throw Exception("Incompatible types of WITH FILL expression values with column type "
                 + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
@@ -81,6 +173,11 @@ FillingTransform::FillingTransform(
         }
     }
 
+    std::set<size_t> unique_positions;
+    for (auto pos : fill_column_positions)
+        if (!unique_positions.insert(pos).second)
+            throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
     for (size_t i = 0; i < header_.columns(); ++i)
         if (!is_fill_column[i])
             other_column_positions.push_back(i);
@@ -88,14 +185,14 @@ FillingTransform::FillingTransform(
 
 IProcessor::Status FillingTransform::prepare()
 {
-    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
-        should_insert_first = next_row < filling_row;
+        should_insert_first = next_row < filling_row || first;
 
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
 
-        if (filling_row < next_row)
+        if (first || filling_row < next_row)
         {
             generate_suffix = true;
             return Status::Ready;
@@ -108,6 +205,9 @@ IProcessor::Status FillingTransform::prepare()
 
 void FillingTransform::transform(Chunk & chunk)
 {
+    if (on_totals)
+        return;
+
     Columns old_fill_columns;
     Columns old_other_columns;
     MutableColumns res_fill_columns;
@@ -129,6 +229,9 @@ void FillingTransform::transform(Chunk & chunk)
         const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
+
+        if (first)
+            filling_row.initFromDefaults();
 
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
@@ -202,9 +305,9 @@ void FillingTransform::setResultColumns(Chunk & chunk, MutableColumns & fill_col
     /// fill_columns always non-empty.
     size_t num_rows = fill_columns[0]->size();
 
-    for (size_t i = 0; i < fill_columns.size(); ++i)
+    for (size_t i = 0, size = fill_columns.size(); i < size; ++i)
         result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
-    for (size_t i = 0; i < other_columns.size(); ++i)
+    for (size_t i = 0, size = other_columns.size(); i < size; ++i)
         result_columns[other_column_positions[i]] = std::move(other_columns[i]);
 
     chunk.setColumns(std::move(result_columns), num_rows);

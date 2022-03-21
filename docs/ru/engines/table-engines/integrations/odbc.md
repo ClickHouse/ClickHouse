@@ -1,5 +1,5 @@
 ---
-toc_priority: 1
+toc_priority: 2
 toc_title: ODBC
 ---
 
@@ -29,6 +29,7 @@ ENGINE = ODBC(connection_settings, external_database, external_table)
 
 -   Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
 -   Типы столбцов могут отличаться от типов аналогичных столбцов в исходной таблице. ClickHouse пытается [приводить](../../../engines/table-engines/integrations/odbc.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Настройка [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
 
 **Параметры движка**
 
@@ -127,4 +128,3 @@ SELECT * FROM odbc_t
 -   [Внешние словари ODBC](../../../engines/table-engines/integrations/odbc.md#dicts-external_dicts_dict_sources-odbc)
 -   [Табличная функция odbc](../../../engines/table-engines/integrations/odbc.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/odbc/) <!--hide-->

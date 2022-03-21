@@ -1,5 +1,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
+#if defined(OS_SUNOS)
+#  include <sys/termios.h>
+#endif
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <boost/program_options.hpp>
@@ -12,16 +15,19 @@ namespace DB::ErrorCodes
 
 uint16_t getTerminalWidth()
 {
+    struct winsize terminal_size {};
     if (isatty(STDIN_FILENO))
     {
-        winsize terminal_size {};
-
         if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
             DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
-
-        return terminal_size.ws_col;
     }
-    return 0;
+    else if (isatty(STDERR_FILENO))
+    {
+        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &terminal_size))
+            DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
+    }
+    /// Default - 0.
+    return terminal_size.ws_col;
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

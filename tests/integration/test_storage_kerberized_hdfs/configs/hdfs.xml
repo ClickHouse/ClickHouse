@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <hdfs>
 		<hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
 		<hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
@@ -10,4 +10,4 @@
   <hdfs_dedicatedcachepath>
 		<hadoop_security_kerberos_ticket_cache_path>/tmp/kerb_cache</hadoop_security_kerberos_ticket_cache_path>
   </hdfs_dedicatedcachepath>
-</yandex>
+</clickhouse>

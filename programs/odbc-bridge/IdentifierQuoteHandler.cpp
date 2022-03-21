@@ -2,29 +2,26 @@
 
 #if USE_ODBC
 
-#    include <DataTypes/DataTypeFactory.h>
-#    include <Server/HTTP/HTMLForm.h>
-#    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#    include <IO/WriteHelpers.h>
-#    include <Parsers/ParserQueryWithOutput.h>
-#    include <Parsers/parseQuery.h>
-#    include <Poco/Data/ODBC/ODBCException.h>
-#    include <Poco/Data/ODBC/SessionImpl.h>
-#    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTTPServerRequest.h>
-#    include <Poco/Net/HTTPServerResponse.h>
-#    include <common/logger_useful.h>
-#    include <ext/scope_guard.h>
-#    include "getIdentifierQuote.h"
-#    include "validateODBCConnectionString.h"
+#include <DataTypes/DataTypeFactory.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <base/logger_useful.h>
+#include <base/scope_guard.h>
+#include "getIdentifierQuote.h"
+#include "validateODBCConnectionString.h"
+#include "ODBCConnectionFactory.h"
 
-#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 namespace DB
 {
 void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request, request.getStream());
+    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
@@ -32,7 +29,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             *response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG_WARNING(log, fmt::runtime(message));
     };
 
     if (!params.has("connection_string"))
@@ -44,10 +41,12 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     try
     {
         std::string connection_string = params.get("connection_string");
-        POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-        SQLHDBC hdbc = session.dbc().handle();
 
-        auto identifier = getIdentifierQuote(hdbc);
+        auto connection = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+
+        auto identifier = getIdentifierQuote(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

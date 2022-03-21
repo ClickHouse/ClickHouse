@@ -10,7 +10,7 @@
 namespace DB
 {
 
-struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleMinMax(
@@ -21,7 +21,7 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return hyperrectangle.empty(); }
 
@@ -31,7 +31,7 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
@@ -46,13 +46,13 @@ struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionMinMax : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
         const SelectQueryInfo & query,
-        const Context & context);
+        ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -68,7 +68,7 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(const IndexDescription & index_)
+    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}
 
@@ -78,9 +78,12 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, const Context & context) const override;
+        const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+
+    const char* getSerializedFileExtension() const override { return ".idx2"; }
+    MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override; /// NOLINT
 };
 
 }

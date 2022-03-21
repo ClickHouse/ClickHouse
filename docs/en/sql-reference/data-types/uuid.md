@@ -72,4 +72,4 @@ The UUID data type only supports functions which [String](../../sql-reference/da
 
 The UUID data type is not supported by arithmetic operations (for example, [abs](../../sql-reference/functions/arithmetic-functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) and [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg).
 
-[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

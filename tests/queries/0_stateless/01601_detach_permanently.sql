@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SELECT 'database atomic tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_atomic;
@@ -128,8 +130,8 @@ ATTACH TABLE test1601_detach_permanently_ordinary.test_name_reuse;
 SELECT 'And detach permanently again to check how database drop will behave';
 DETACH table test1601_detach_permanently_ordinary.test_name_reuse PERMANENTLY;
 
-SELECT 'DROP database - Directory not empty error, but database deteched';
-DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError 1000 }
+SELECT 'DROP database - Directory not empty error, but database detached';
+DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError 219 }
 
 ATTACH DATABASE test1601_detach_permanently_ordinary;
 
@@ -203,7 +205,7 @@ SELECT 'And detach permanently again to check how database drop will behave';
 DETACH table test1601_detach_permanently_lazy.test_name_reuse PERMANENTLY;
 
 SELECT 'DROP database - Directory not empty error, but database deteched';
-DROP DATABASE test1601_detach_permanently_lazy; -- { serverError 1000 }
+DROP DATABASE test1601_detach_permanently_lazy; -- { serverError 219 }
 
 ATTACH DATABASE test1601_detach_permanently_lazy;
 

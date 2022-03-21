@@ -1,21 +1,13 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include <Common/config.h>
-#endif
-
-#if USE_RE2_ST
-#    include <re2_st/re2.h>
-#else
-#    include <re2/re2.h>
-#    define re2_st re2
-#endif
+#include "config_functions.h"
+#include <Common/config.h>
+#include <re2_st/re2.h>
 
 
 namespace DB
@@ -34,10 +26,18 @@ template <bool replace_one = false>
 struct ReplaceRegexpImpl
 {
     /// Sequence of instructions, describing how to get resulting string.
-    /// Each element is either:
-    /// - substitution (in that case first element of pair is their number and second element is empty)
-    /// - string that need to be inserted (in that case, first element of pair is that string and second element is -1)
-    using Instructions = std::vector<std::pair<int, std::string>>;
+    struct Instruction
+    {
+        /// If not negative - perform substitution of n-th subpattern from the regexp match.
+        int substitution_num = -1;
+        /// Otherwise - paste this string verbatim.
+        std::string literal;
+
+        Instruction(int substitution_num_) : substitution_num(substitution_num_) {} /// NOLINT
+        Instruction(std::string literal_) : literal(std::move(literal_)) {} /// NOLINT
+    };
+
+    using Instructions = std::vector<Instruction>;
 
     static const size_t max_captures = 10;
 
@@ -55,10 +55,10 @@ struct ReplaceRegexpImpl
                 {
                     if (!now.empty())
                     {
-                        instructions.emplace_back(-1, now);
+                        instructions.emplace_back(now);
                         now = "";
                     }
-                    instructions.emplace_back(s[i + 1] - '0', String());
+                    instructions.emplace_back(s[i + 1] - '0');
                 }
                 else
                     now += s[i + 1]; /// Escaping
@@ -70,16 +70,15 @@ struct ReplaceRegexpImpl
 
         if (!now.empty())
         {
-            instructions.emplace_back(-1, now);
+            instructions.emplace_back(now);
             now = "";
         }
 
         for (const auto & it : instructions)
-            if (it.first >= num_captures)
-                throw Exception(
-                    "Invalid replace instruction in replacement string. Id: " + toString(it.first) + ", but regexp has only "
-                        + toString(num_captures - 1) + " subpatterns",
-                    ErrorCodes::BAD_ARGUMENTS);
+            if (it.substitution_num >= num_captures)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid replace instruction in replacement string. Id: {}, but regexp has only {} subpatterns",
+                    it.substitution_num, num_captures - 1);
 
         return instructions;
     }
@@ -95,42 +94,57 @@ struct ReplaceRegexpImpl
     {
         re2_st::StringPiece matches[max_captures];
 
-        size_t start_pos = 0;
-        while (start_pos < static_cast<size_t>(input.length()))
+        size_t copy_pos = 0;
+        size_t match_pos = 0;
+
+        while (match_pos < static_cast<size_t>(input.length()))
         {
             /// If no more replacements possible for current string
             bool can_finish_current_string = false;
 
-            if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
+            if (searcher.Match(input, match_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
                 const auto & match = matches[0];
-                size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
+                size_t bytes_to_copy = (match.data() - input.data()) - copy_pos;
 
                 /// Copy prefix before matched regexp without modification
                 res_data.resize(res_data.size() + bytes_to_copy);
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + copy_pos, bytes_to_copy);
                 res_offset += bytes_to_copy;
-                start_pos += bytes_to_copy + match.length();
+                copy_pos += bytes_to_copy + match.length();
+                match_pos = copy_pos;
 
                 /// Do substitution instructions
                 for (const auto & it : instructions)
                 {
-                    if (it.first >= 0)
+                    if (it.substitution_num >= 0)
                     {
-                        res_data.resize(res_data.size() + matches[it.first].length());
-                        memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
-                        res_offset += matches[it.first].length();
+                        const auto & substitution = matches[it.substitution_num];
+
+                        res_data.resize(res_data.size() + substitution.length());
+                        memcpy(&res_data[res_offset], substitution.data(), substitution.length());
+                        res_offset += substitution.length();
                     }
                     else
                     {
-                        res_data.resize(res_data.size() + it.second.size());
-                        memcpy(&res_data[res_offset], it.second.data(), it.second.size());
-                        res_offset += it.second.size();
+                        const auto & literal = it.literal;
+
+                        res_data.resize(res_data.size() + literal.size());
+                        memcpy(&res_data[res_offset], literal.data(), literal.size());
+                        res_offset += literal.size();
                     }
                 }
 
-                if (replace_one || match.length() == 0) /// Stop after match of zero length, to avoid infinite loop.
+                if (replace_one)
                     can_finish_current_string = true;
+
+                if (match.length() == 0)
+                {
+                    /// Step one character to avoid infinite loop
+                    ++match_pos;
+                    if (match_pos >= static_cast<size_t>(input.length()))
+                        can_finish_current_string = true;
+                }
             }
             else
                 can_finish_current_string = true;
@@ -138,10 +152,11 @@ struct ReplaceRegexpImpl
             /// If ready, append suffix after match to end of string.
             if (can_finish_current_string)
             {
-                res_data.resize(res_data.size() + input.length() - start_pos);
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
-                res_offset += input.length() - start_pos;
-                start_pos = input.length();
+                res_data.resize(res_data.size() + input.length() - copy_pos);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + copy_pos, input.length() - copy_pos);
+                res_offset += input.length() - copy_pos;
+                copy_pos = input.length();
+                match_pos = copy_pos;
             }
         }
 

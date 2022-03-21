@@ -3,9 +3,8 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -246,7 +245,6 @@ void BackgroundSchedulePool::threadFunction()
     setThreadName(thread_name.c_str());
 
     attachToThreadGroup();
-    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
     {
@@ -273,7 +271,6 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
     setThreadName((thread_name + "/D").c_str());
 
     attachToThreadGroup();
-    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
     {

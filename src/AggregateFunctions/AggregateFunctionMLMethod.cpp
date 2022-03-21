@@ -5,17 +5,18 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -23,13 +24,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
 namespace
 {
     using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
-    template <class Method>
-    AggregateFunctionPtr
-    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    template <typename Method>
+    AggregateFunctionPtr createAggregateFunctionMLMethod(
+        const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
             throw Exception(
@@ -81,17 +83,17 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (std::is_same<Method, FuncLinearRegression>::value)
+        if constexpr (std::is_same_v<Method, FuncLinearRegression>)
         {
             gradient_computer = std::make_unique<LinearRegression>();
         }
-        else if (std::is_same<Method, FuncLogisticRegression>::value)
+        else if constexpr (std::is_same_v<Method, FuncLogisticRegression>)
         {
             gradient_computer = std::make_unique<LogisticRegression>();
         }
         else
         {
-            throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            []<bool flag = false>() {static_assert(flag, "Such gradient computer is not implemented yet");}(); // delay static_asssert in constexpr if until template instantiation
         }
 
         return std::make_shared<Method>(
@@ -146,7 +148,7 @@ void LinearModelData::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const Context & context) const
+    ContextPtr context) const
 {
     gradient_computer->predict(container, arguments, offset, limit, weights, bias, context);
 }
@@ -453,7 +455,7 @@ void LogisticRegression::predict(
     size_t limit,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & /*context*/) const
+    ContextPtr /*context*/) const
 {
     size_t rows_num = arguments.front().column->size();
 
@@ -521,7 +523,7 @@ void LinearRegression::predict(
     size_t limit,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & /*context*/) const
+    ContextPtr /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {

@@ -58,4 +58,3 @@ WHERE a = 'b\0'
 
 Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../../sql-reference/data-types/fixedstring.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../../sql-reference/data-types/fixedstring.md#empty) в этом же случае возвращает `1`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/fixedstring/) <!--hide-->

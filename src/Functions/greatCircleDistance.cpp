@@ -3,12 +3,12 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <cmath>
 
 
@@ -179,7 +179,7 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// Why comparing only difference in longitude?
         /// If longitudes are different enough, there is a big difference between great circle line and a line with constant latitude.
-        ///  (Remember how a plane flies from Moscow to New York)
+        ///  (Remember how a plane flies from Amsterdam to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
         float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
@@ -187,8 +187,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat;
-        float k_lon;
+        float k_lat{};
+        float k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {
@@ -246,10 +246,11 @@ private:
     size_t getNumberOfArguments() const override { return 4; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))
@@ -287,7 +288,7 @@ template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
-    explicit FunctionGeoDistance(const Context & context) : selector(context)
+    explicit FunctionGeoDistance(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGeoDistance<method>>();
@@ -307,7 +308,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGeoDistance<method>>(context);
     }
@@ -325,4 +326,3 @@ void registerFunctionGeoDistance(FunctionFactory & factory)
 }
 
 }
-

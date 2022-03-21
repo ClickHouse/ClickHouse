@@ -7,12 +7,12 @@ class Layout(object):
         'flat': '<flat/>',
         'hashed': '<hashed/>',
         'cache': '<cache><size_in_cells>128</size_in_cells></cache>',
-        'ssd_cache': '<ssd_cache><path>/etc/clickhouse/dictionaries/all</path><max_stored_keys>128</max_stored_keys></ssd_cache>',
+        'ssd_cache': '<ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></ssd_cache>',
         'complex_key_hashed': '<complex_key_hashed/>',
         'complex_key_hashed_one_key': '<complex_key_hashed/>',
         'complex_key_hashed_two_keys': '<complex_key_hashed/>',
         'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
-        'complex_key_ssd_cache': '<complex_key_ssd_cache><path>/etc/clickhouse/dictionaries/all</path><max_stored_keys>128</max_stored_keys></complex_key_ssd_cache>',
+        'complex_key_ssd_cache': '<complex_key_ssd_cache><path>/etc/clickhouse-server/dictionaries/all</path></complex_key_ssd_cache>',
         'range_hashed': '<range_hashed/>',
         'direct': '<direct/>',
         'complex_key_direct': '<complex_key_direct/>'
@@ -316,7 +316,7 @@ class Dictionary(object):
         with open(self.config_path, 'w') as result:
             if 'direct' not in self.structure.layout.get_str():
                 result.write('''
-                <yandex>
+                <clickhouse>
                 <dictionary>
                     <lifetime>
                         <min>{min_lifetime}</min>
@@ -328,7 +328,7 @@ class Dictionary(object):
                     {source}
                     </source>
                 </dictionary>
-                </yandex>
+                </clickhouse>
                 '''.format(
                     min_lifetime=self.min_lifetime,
                     max_lifetime=self.max_lifetime,
@@ -338,7 +338,7 @@ class Dictionary(object):
                 ))
             else:
                 result.write('''
-                <yandex>
+                <clickhouse>
                 <dictionary>
                     <name>{name}</name>
                     {structure}
@@ -346,7 +346,7 @@ class Dictionary(object):
                     {source}
                     </source>
                 </dictionary>
-                </yandex>
+                </clickhouse>
                 '''.format(
                     min_lifetime=self.min_lifetime,
                     max_lifetime=self.max_lifetime,

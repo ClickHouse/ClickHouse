@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 
@@ -89,33 +90,53 @@ VALUES = {
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-DICT_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'configs/dictionaries')
+DICT_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'configs', 'dictionaries')
 
-def get_dict(source, layout, fields, suffix_name=''):
-    global DICT_CONFIG_PATH
-    structure = DictionaryStructure(layout, fields)
-    dict_name = source.name + "_" + layout.name + '_' + suffix_name
-    dict_path = os.path.join(DICT_CONFIG_PATH, dict_name + '.xml')
-    dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name, fields)
-    dictionary.generate_config()
-    return dictionary
+class BaseLayoutTester:
+    def __init__(self, test_name):
+        self.test_name = test_name
+        self.layouts = []
 
-class SimpleLayoutTester:
-    def __init__(self):
-        self.fields = KEY_FIELDS["simple"] + START_FIELDS["simple"] + MIDDLE_FIELDS + END_FIELDS["simple"]
-        self.values = VALUES["simple"]
-        self.data = [Row(self.fields, vals) for vals in self.values]
-        self.layout_to_dictionary = dict()
+    def get_dict_directory(self):
+        return os.path.join(DICT_CONFIG_PATH, self.test_name)
+
+    def cleanup(self):
+        shutil.rmtree(self.get_dict_directory(), ignore_errors=True)
+        os.makedirs(self.get_dict_directory())
+
+    def list_dictionaries(self):
+        dictionaries = []
+        directory = self.get_dict_directory()
+        for fname in os.listdir(directory):
+            dictionaries.append(os.path.join(directory, fname))
+        return dictionaries 
 
     def create_dictionaries(self, source_):
-        for layout in LAYOUTS_SIMPLE:
+        for layout in self.layouts:
             if source_.compatible_with_layout(Layout(layout)):
-                self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
+                self.layout_to_dictionary[layout] = self.get_dict(source_, Layout(layout), self.fields)
 
     def prepare(self, cluster_):
         for _, dictionary in list(self.layout_to_dictionary.items()):
             dictionary.prepare_source(cluster_)
             dictionary.load_data(self.data)
+
+    def get_dict(self, source, layout, fields, suffix_name=''):
+        structure = DictionaryStructure(layout, fields)
+        dict_name = source.name + "_" + layout.name + '_' + suffix_name
+        dict_path = os.path.join(self.get_dict_directory(), dict_name + '.xml')
+        dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name, fields)
+        dictionary.generate_config()
+        return dictionary
+
+class SimpleLayoutTester(BaseLayoutTester):
+    def __init__(self, test_name):
+        self.fields = KEY_FIELDS["simple"] + START_FIELDS["simple"] + MIDDLE_FIELDS + END_FIELDS["simple"]
+        self.values = VALUES["simple"]
+        self.data = [Row(self.fields, vals) for vals in self.values]
+        self.layout_to_dictionary = dict()
+        self.test_name = test_name
+        self.layouts = LAYOUTS_SIMPLE
 
     def execute(self, layout_name, node):
         if layout_name not in self.layout_to_dictionary:
@@ -154,25 +175,19 @@ class SimpleLayoutTester:
             # print query
             if isinstance(answer, list):
                 answer = str(answer).replace(' ', '')
-            assert node.query(query) == str(answer) + '\n'
+            answer = str(answer) + '\n'
+            node_answer = node.query(query)
+            assert str(node_answer).strip() == answer.strip(), f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
 
 
-class ComplexLayoutTester:
-    def __init__(self):
+class ComplexLayoutTester(BaseLayoutTester):
+    def __init__(self, test_name):
         self.fields = KEY_FIELDS["complex"] + START_FIELDS["complex"] + MIDDLE_FIELDS + END_FIELDS["complex"]
         self.values = VALUES["complex"]
         self.data = [Row(self.fields, vals) for vals in self.values]
         self.layout_to_dictionary = dict()
-
-    def create_dictionaries(self, source_):
-        for layout in LAYOUTS_COMPLEX:
-            if source_.compatible_with_layout(Layout(layout)):
-                self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
-
-    def prepare(self, cluster_):
-        for _, dictionary in list(self.layout_to_dictionary.items()):
-            dictionary.prepare_source(cluster_)
-            dictionary.load_data(self.data)
+        self.test_name = test_name
+        self.layouts = LAYOUTS_COMPLEX
 
     def execute(self, layout_name, node):
         if layout_name not in self.layout_to_dictionary:
@@ -197,25 +212,19 @@ class ComplexLayoutTester:
 
         for query, answer in queries_with_answers:
             # print query
-            assert node.query(query) == str(answer) + '\n'
+            node_answer = node.query(query)
+            answer = str(answer) + '\n'
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"
 
 
-class RangedLayoutTester:
-    def __init__(self):
+class RangedLayoutTester(BaseLayoutTester):
+    def __init__(self, test_name):
         self.fields = KEY_FIELDS["ranged"] + START_FIELDS["ranged"] + MIDDLE_FIELDS + END_FIELDS["ranged"]
         self.values = VALUES["ranged"]
         self.data = [Row(self.fields, vals) for vals in self.values]
         self.layout_to_dictionary = dict()
-
-    def create_dictionaries(self, source_):
-        for layout in LAYOUTS_RANGED:
-            if source_.compatible_with_layout(Layout(layout)):
-                self.layout_to_dictionary[layout] = get_dict(source_, Layout(layout), self.fields)
-
-    def prepare(self, cluster_):
-        for _, dictionary in list(self.layout_to_dictionary.items()):
-            dictionary.prepare_source(cluster_)
-            dictionary.load_data(self.data)
+        self.test_name = test_name
+        self.layouts = LAYOUTS_RANGED
 
     def execute(self, layout_name, node):
 
@@ -235,5 +244,6 @@ class RangedLayoutTester:
 
         for query, answer in queries_with_answers:
             # print query
-            assert node.query(query) == str(answer) + '\n'
-
+            node_answer = node.query(query)
+            answer = str(answer) + '\n'
+            assert node_answer == answer, f"Expected '{answer.strip()}', got '{node_answer.strip()}' in query '{query}'"

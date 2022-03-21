@@ -82,8 +82,8 @@
         LIMIT 500000 FORMAT Null
     </query>
 
+    <drop_query>DROP TABLE IF EXISTS table_ip_from_dict</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dict_ip_trie_table</drop_query>
     <drop_query>DROP DICTIONARY IF EXISTS default.dict_ip_trie</drop_query>
     <drop_query>DROP TABLE IF EXISTS table_ip_trie</drop_query>
-    <drop_query>DROP TABLE IF EXISTS dict_ip_trie_table</drop_query>
-    <drop_query>DROP TABLE IF EXISTS table_ip_from_dict</drop_query>
 </test>

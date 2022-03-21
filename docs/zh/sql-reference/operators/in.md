@@ -5,7 +5,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 # IN 操作符 {#select-in-operators}
 
-该 `IN`, `NOT IN`, `GLOBAL IN`，和 `GLOBAL NOT IN` 运算符是单独复盖的，因为它们的功能相当丰富。
+该 `IN`, `NOT IN`, `GLOBAL IN`，和 `GLOBAL NOT IN` 运算符是单独考虑的，因为它们的功能相当丰富。
 
 运算符的左侧是单列或元组。
 
@@ -18,7 +18,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 如果左侧是索引中的单列，而右侧是一组常量，则系统将使用索引处理查询。
 
-Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section “External data for query processing”），然后使用子查询。
+请不要列举太多具体的常量 (比方说 几百万条)。如果数据集非常大，请把它放在一张临时表里（例如，参考章节[用于查询处理的外部数据](../../engines/table-engines/special/external-data.md)），然后使用子查询。
 
 运算符的右侧可以是一组常量表达式、一组带有常量表达式的元组（如上面的示例所示），或括号中的数据库表或SELECT子查询的名称。
 

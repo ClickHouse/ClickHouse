@@ -5,7 +5,7 @@ SELECT
     uniqExact(x) AS u, 
     uniqExactIf(x, name = 'a') AS ue, 
     uniqExactIf(x, name IN ('a', 'b')) AS ui
-FROM 
+FROM
 (
     SELECT
         toNullable('a') AS name, 

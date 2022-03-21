@@ -22,14 +22,14 @@ namespace ErrorCodes
 }
 
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
 {
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
     return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
 }
 
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, const Context & context, const Names & required_source_columns, const SelectQueryOptions & options)
+    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
     {
@@ -47,7 +47,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const auto * subquery = table_expression->as<ASTSubquery>();
     const auto * function = table_expression->as<ASTFunction>();
-    const auto * table = table_expression->as<ASTIdentifier>();
+    const auto * table = table_expression->as<ASTTableIdentifier>();
 
     if (!subquery && !table && !function)
         throw Exception("Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery." , ErrorCodes::LOGICAL_ERROR);
@@ -59,13 +59,13 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
       *  which are checked separately (in the Set, Join objects).
       */
-    Context subquery_context = context;
-    Settings subquery_settings = context.getSettings();
+    auto subquery_context = Context::createCopy(context);
+    Settings subquery_settings = context->getSettings();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
     subquery_settings.extremes = false;
-    subquery_context.setSettings(subquery_settings);
+    subquery_context->setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();
 
@@ -88,14 +88,14 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         /// get columns list for target table
         if (function)
         {
-            auto * query_context = const_cast<Context *>(&context.getQueryContext());
+            auto query_context = context->getQueryContext();
             const auto & storage = query_context->executeTableFunction(table_expression);
             columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
         else
         {
-            auto table_id = context.resolveStorageID(table_expression);
+            auto table_id = context->resolveStorageID(table_expression);
             const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
             columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(table_id);

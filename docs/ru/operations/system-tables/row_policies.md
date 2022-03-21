@@ -31,4 +31,3 @@
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/row_policies) <!--hide-->

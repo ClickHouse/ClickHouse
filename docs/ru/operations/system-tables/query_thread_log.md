@@ -9,7 +9,9 @@
 
 Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
 
-ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](#system-tables-introduction).
+ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](../../operations/system-tables/index.md#system-tables-introduction).
+
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_thread_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
 
 Столбцы:
 
@@ -57,8 +59,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events).
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events).
 
 **Пример**
 
@@ -97,21 +98,19 @@ initial_port:                  33452
 interface:                     1
 os_user:                       bharatnc
 client_hostname:               tower
-client_name:                   ClickHouse 
+client_name:                   ClickHouse
 client_revision:               54437
 client_version_major:          20
 client_version_minor:          7
 client_version_patch:          2
 http_method:                   0
-http_user_agent:               
-quota_key:                     
+http_user_agent:
+quota_key:
 revision:                      54440
-ProfileEvents.Names:           ['Query','InsertQuery','FileOpen','WriteBufferFromFileDescriptorWrite','WriteBufferFromFileDescriptorWriteBytes','ReadCompressedBytes','CompressedReadBufferBlocks','CompressedReadBufferBytes','IOBufferAllocs','IOBufferAllocBytes','FunctionExecute','CreatedWriteBufferOrdinary','DiskWriteElapsedMicroseconds','NetworkReceiveElapsedMicroseconds','NetworkSendElapsedMicroseconds','InsertedRows','InsertedBytes','SelectedRows','SelectedBytes','MergeTreeDataWriterRows','MergeTreeDataWriterUncompressedBytes','MergeTreeDataWriterCompressedBytes','MergeTreeDataWriterBlocks','MergeTreeDataWriterBlocksAlreadySorted','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SoftPageFaults','OSCPUVirtualTimeMicroseconds','OSWriteBytes','OSReadChars','OSWriteChars']
-ProfileEvents.Values:          [1,1,11,11,591,148,3,71,29,6533808,1,11,72,18,47,1,12,1,12,1,12,189,1,1,10,2,70853,2748,49,2747,45056,422,1520]
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
 ```
 
 **Смотрите также**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_thread_log) <!--hide-->
+-   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — описание системной таблицы `query_views_log`, которая содержит информацию о всех представлениях, участвующих в выполненных запросах.

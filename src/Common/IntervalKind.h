@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/types.h>
-
+#include <base/types.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -21,10 +21,10 @@ struct IntervalKind
     };
     Kind kind = Second;
 
-    IntervalKind(Kind kind_ = Second) : kind(kind_) {}
-    operator Kind() const { return kind; }
+    IntervalKind(Kind kind_ = Second) : kind(kind_) {} /// NOLINT
+    operator Kind() const { return kind; } /// NOLINT
 
-    const char * toString() const;
+    constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
 
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
@@ -58,4 +58,16 @@ struct IntervalKind
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };
+
+/// NOLINTNEXTLINE
+#define FOR_EACH_INTERVAL_KIND(M) \
+    M(Second) \
+    M(Minute) \
+    M(Hour) \
+    M(Day) \
+    M(Week) \
+    M(Month) \
+    M(Quarter) \
+    M(Year)
+
 }

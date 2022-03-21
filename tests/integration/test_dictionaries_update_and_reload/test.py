@@ -7,12 +7,11 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
 DICTIONARY_FILES = ['configs/dictionaries/cache_xypairs.xml', 'configs/dictionaries/executable.xml',
                     'configs/dictionaries/file.xml', 'configs/dictionaries/file.txt', 'configs/dictionaries/slow.xml']
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
+instance = cluster.add_instance('instance', dictionaries=DICTIONARY_FILES)
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +59,7 @@ def get_loading_duration(dictionary_name):
 
 
 def replace_in_file_in_container(file_name, what, replace_with):
-    instance.exec_in_container('sed -i "s/' + what + '/' + replace_with + '/g" ' + file_name)
+    instance.exec_in_container(['sed', '-i', f's/{what}/{replace_with}/g', file_name])
 
 
 def test_reload_while_loading(started_cluster):
@@ -103,7 +102,7 @@ def test_reload_while_loading(started_cluster):
     assert duration >= prev_duration
 
     # Changing the configuration file should restart loading again.
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/slow.xml', 'sleep 100', 'sleep 0')
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/slow.xml', 'sleep 100', 'sleep 0')
     time.sleep(5)  # Configuration files are reloaded once in 5 seconds.
 
     # This time loading should finish quickly.
@@ -125,8 +124,8 @@ def test_reload_after_loading(started_cluster):
     # for mtime, and clickhouse will miss the update if we change the file too
     # soon. Should probably be fixed by switching to use std::filesystem.
     time.sleep(1)
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '8', '81')
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '10', '101')
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/executable.xml', '8', '81')
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/file.txt', '10', '101')
 
     # SYSTEM RELOAD 'name' reloads only the specified dictionary.
     query("SYSTEM RELOAD DICTIONARY 'executable'")
@@ -139,18 +138,19 @@ def test_reload_after_loading(started_cluster):
 
     # SYSTEM RELOAD DICTIONARIES reloads all loaded dictionaries.
     time.sleep(1)  # see the comment above
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '81', '82')
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '101', '102')
-    query("SYSTEM RELOAD DICTIONARIES")
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/executable.xml', '81', '82')
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/file.txt', '101', '102')
+    query("SYSTEM RELOAD DICTIONARY 'file'")
+    query("SYSTEM RELOAD DICTIONARY 'executable'")
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "82\n"
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "102\n"
 
     # Configuration files are reloaded and lifetimes are checked automatically once in 5 seconds.
     # Wait slightly more, to be sure it did reload.
     time.sleep(1)  # see the comment above
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '82', '83')
-    replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '102', '103')
-    time.sleep(7)
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/executable.xml', '82', '83')
+    replace_in_file_in_container('/etc/clickhouse-server/dictionaries/file.txt', '102', '103')
+    time.sleep(10)
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "103\n"
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "83\n"
 
@@ -173,13 +173,13 @@ def test_reload_after_fail_by_system_reload(started_cluster):
 
     # Creating the file source makes the dictionary able to load.
     instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"),
-                                    "/etc/clickhouse-server/config.d/no_file.txt")
+                                    "/etc/clickhouse-server/dictionaries/no_file.txt")
     query("SYSTEM RELOAD DICTIONARY 'no_file'")
     query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file") == "LOADED"
 
     # Removing the file source should not spoil the loaded dictionary.
-    instance.exec_in_container("rm /etc/clickhouse-server/config.d/no_file.txt")
+    instance.exec_in_container(["rm", "/etc/clickhouse-server/dictionaries/no_file.txt"])
     assert no_such_file_error in instance.query_and_get_error("SYSTEM RELOAD DICTIONARY 'no_file'")
     query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file") == "LOADED"
@@ -201,17 +201,17 @@ def test_reload_after_fail_by_timer(started_cluster):
 
     # Creating the file source makes the dictionary able to load.
     instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"),
-                                    "/etc/clickhouse-server/config.d/no_file_2.txt")
+                                    "/etc/clickhouse-server/dictionaries/no_file_2.txt")
     # Check that file appears in container and wait if needed.
-    while not instance.file_exists("/etc/clickhouse-server/config.d/no_file_2.txt"):
+    while not instance.path_exists("/etc/clickhouse-server/dictionaries/no_file_2.txt"):
         time.sleep(1)
-    assert("9\t10\n" == instance.exec_in_container("cat /etc/clickhouse-server/config.d/no_file_2.txt"))
+    assert("9\t10\n" == instance.exec_in_container(["cat", "/etc/clickhouse-server/dictionaries/no_file_2.txt"]))
     instance.query("SYSTEM RELOAD DICTIONARY no_file_2")
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"
 
     # Removing the file source should not spoil the loaded dictionary.
-    instance.exec_in_container("rm /etc/clickhouse-server/config.d/no_file_2.txt")
+    instance.exec_in_container(["rm", "/etc/clickhouse-server/dictionaries/no_file_2.txt"])
     time.sleep(6);
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"

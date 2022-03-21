@@ -1,14 +1,11 @@
 #pragma once
 
 #include "protocol.h"
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <cstring>
 #include <Common/StringUtils/StringUtils.h>
 
 namespace DB
-{
-
-namespace
 {
 
 inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
@@ -23,9 +20,9 @@ inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const 
     return StringRef(start_of_host, pos - start_of_host);
 }
 
-}
-
 /// Extracts host from given url.
+///
+/// @return empty StringRef if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
@@ -77,7 +74,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     }
 
     Pos dot_pos = nullptr;
-    auto start_of_host = pos;
+    const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
         switch (*pos)

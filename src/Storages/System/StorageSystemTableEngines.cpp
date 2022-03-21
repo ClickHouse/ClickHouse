@@ -12,6 +12,7 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
         {"name", std::make_shared<DataTypeString>()},
         {"supports_settings", std::make_shared<DataTypeUInt8>()},
         {"supports_skipping_indices", std::make_shared<DataTypeUInt8>()},
+        {"supports_projections", std::make_shared<DataTypeUInt8>()},
         {"supports_sort_order", std::make_shared<DataTypeUInt8>()},
         {"supports_ttl", std::make_shared<DataTypeUInt8>()},
         {"supports_replication", std::make_shared<DataTypeUInt8>()},
@@ -20,7 +21,7 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
     };
 }
 
-void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (const auto & pair : StorageFactory::instance().getAllStorages())
     {
@@ -28,6 +29,7 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Con
         res_columns[i++]->insert(pair.first);
         res_columns[i++]->insert(pair.second.features.supports_settings);
         res_columns[i++]->insert(pair.second.features.supports_skipping_indices);
+        res_columns[i++]->insert(pair.second.features.supports_projections);
         res_columns[i++]->insert(pair.second.features.supports_sort_order);
         res_columns[i++]->insert(pair.second.features.supports_ttl);
         res_columns[i++]->insert(pair.second.features.supports_replication);

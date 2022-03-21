@@ -1,1 +1,1 @@
-`b_struct` Nullable(Int32)
+`b_struct` Tuple(Nullable(Int32))

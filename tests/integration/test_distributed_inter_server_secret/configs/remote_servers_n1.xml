@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
         <secure_disagree>
             <secret>bar_n1</secret>
@@ -12,4 +12,4 @@
             </node>
         </secure_disagree>
     </remote_servers>
-</yandex>
+</clickhouse>

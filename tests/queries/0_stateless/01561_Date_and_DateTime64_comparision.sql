@@ -6,7 +6,7 @@ SELECT
     dt64 < d,
     toDate(dt64) < d,
     dt64 < toDateTime64(d, 1, 'UTC'),
-    
+
     '<=',
     dt64 <= d,
     toDate(dt64) <= d,
@@ -16,7 +16,7 @@ SELECT
     dt64 = d,
     toDate(dt64) = d,
     dt64 = toDateTime64(d, 1, 'UTC'),
-    
+
     '>=',
     dt64 >= d,
     toDate(dt64) >= d,
@@ -31,7 +31,7 @@ SELECT
     dt64 != d,
     toDate(dt64) != d,
     dt64 != toDateTime64(d, 1, 'UTC')
-FROM 
+FROM
 (
     WITH toDateTime('2019-09-16 19:20:11') as val
     SELECT

@@ -95,7 +95,7 @@ struct PerformanceStatistics
 
     /// How to select method to run.
     /// -1 - automatically, based on statistics (default);
-    /// 0..3 - always choose specified method (for performance testing);
+    /// >= 0 - always choose specified method (for performance testing);
     /// -2 - choose methods in round robin fashion (for performance testing).
     ssize_t choose_method = -1;
 
@@ -122,16 +122,16 @@ struct PerformanceStatistics
             return choose_method;
     }
 
-    PerformanceStatistics() {}
-    PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
+    PerformanceStatistics() = default;
+    explicit PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
 };
 
 
 /** This method dispatch to one of different implementations depending on performance statistics.
   */
-void decompress(
-    const char * const source,
-    char * const dest,
+bool decompress(
+    const char * const source, /// NOLINT
+    char * const dest, /// NOLINT
     size_t source_size,
     size_t dest_size,
     PerformanceStatistics & statistics);
@@ -156,8 +156,8 @@ struct StreamStatistics
 };
 
 void statistics(
-    const char * const source,
-    char * const dest,
+    const char * const source, /// NOLINT
+    char * const dest, /// NOLINT
     size_t dest_size,
     StreamStatistics & stat);
 

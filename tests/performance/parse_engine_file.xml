@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.4">
+<test>
 
 <preconditions>
     <table_exists>test.hits</table_exists>
@@ -22,6 +22,9 @@
             <value>Native</value>
             <value>Avro</value>
             <value>MsgPack</value>
+            <value>ORC</value>
+            <value>Parquet</value>
+            <value>Arrow</value>
         </values>
     </substitution>
 </substitutions>
@@ -30,7 +33,7 @@
 
 <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
 
-<query>SELECT * FROM table_{format} FORMAT Null</query>
+<query short="'{format}' == 'Native'">SELECT * FROM table_{format} FORMAT Null</query>
 
 <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 

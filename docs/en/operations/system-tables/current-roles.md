@@ -8,4 +8,4 @@ Columns:
  - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Flag that shows whether `current_role` is a role with `ADMIN OPTION` privilege.
  - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Flag that shows whether `current_role` is a default role.
 
- [Original article](https://clickhouse.tech/docs/en/operations/system_tables/current-roles) <!--hide-->
+ [Original article](https://clickhouse.com/docs/en/operations/system-tables/current-roles) <!--hide-->

@@ -27,7 +27,7 @@ class Context;
 class ConfigReloader
 {
 public:
-    using Updater = std::function<void(ConfigurationPtr)>;
+    using Updater = std::function<void(ConfigurationPtr, bool)>;
 
     /** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
       */
@@ -42,16 +42,20 @@ public:
 
     ~ConfigReloader();
 
-    /// Call this method to run the background thread.
+    /// Starts periodic reloading in the background thread.
     void start();
 
+    /// Stops periodic reloading reloading in the background thread.
+    /// This function is automatically called by the destructor.
+    void stop();
+
     /// Reload immediately. For SYSTEM RELOAD CONFIG query.
-    void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false); }
+    void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false, /* initial_loading = */ false); }
 
 private:
     void run();
 
-    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed);
+    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
 
     struct FileWithTimestamp;
 
@@ -64,8 +68,6 @@ private:
     };
 
     FilesChangesTracker getNewFileList() const;
-
-private:
 
     static constexpr auto reload_interval = std::chrono::seconds(2);
 

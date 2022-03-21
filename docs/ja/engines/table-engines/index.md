@@ -82,4 +82,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
 テーブル仮想列のいずれかと同じ名前の列を持つテーブルを作成すると、仮想列にアクセスできなくなります。 これはお勧めしません。 競合を避けるために、仮想列名には通常、アンダースコアが付けられます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/) <!--hide-->

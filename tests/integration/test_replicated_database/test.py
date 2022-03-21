@@ -1,3 +1,5 @@
+import os
+import shutil
 import time
 import re
 import pytest
@@ -6,17 +8,19 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 from helpers.network import PartitionManager
 
+test_recover_staled_replica_run = 1
+
 cluster = ClickHouseCluster(__file__)
 
 main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
 dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 2})
 competing_node = cluster.add_instance('competing_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
 snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
-snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
+snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True)
 
 all_nodes = [main_node, dummy_node, competing_node, snapshotting_node, snapshot_recovering_node]
 
-uuid_regex = re.compile("[0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12}")
+uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 def assert_create_query(nodes, table_name, expected):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
@@ -27,16 +31,25 @@ def assert_create_query(nodes, table_name, expected):
 def started_cluster():
     try:
         cluster.start()
-        main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
-        dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
         yield cluster
 
     finally:
         cluster.shutdown()
 
 def test_create_replicated_table(started_cluster):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica' || '1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+    assert "Explicit zookeeper_path and replica_name are specified" in \
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);")
+
+    assert "Explicit zookeeper_path and replica_name are specified" in \
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);")
+
     assert "Old syntax is not allowed" in \
-           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);")
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);")
 
     main_node.query("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);")
 
@@ -46,9 +59,13 @@ def test_create_replicated_table(started_cluster):
     assert_create_query([main_node, dummy_node], "testdb.replicated_table", expected)
     # assert without replacing uuid
     assert main_node.query("show create testdb.replicated_table") == dummy_node.query("show create testdb.replicated_table")
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
 
 @pytest.mark.parametrize("engine", ['MergeTree', 'ReplicatedMergeTree'])
 def test_simple_alter_table(started_cluster, engine):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
     # test_simple_alter_table
     name  = "testdb.alter_test_{}".format(engine)
     main_node.query("CREATE TABLE {} "
@@ -89,26 +106,151 @@ def test_simple_alter_table(started_cluster, engine):
                "SETTINGS index_granularity = 8192".format(name, full_engine)
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+    competing_node.query("DROP DATABASE testdb SYNC")
 
+def get_table_uuid(database, name):
+    return main_node.query(f"SELECT uuid FROM system.tables WHERE database = '{database}' and name = '{name}'").strip()
+
+@pytest.fixture(scope="module", name="attachable_part")
+def fixture_attachable_part(started_cluster):
+    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query(f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query(f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'")
+    table_uuid = get_table_uuid("testdb_attach_atomic", "test")
+    return os.path.join(main_node.path, f"database/shadow/test_attach/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0")
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_attach(started_cluster, attachable_part, engine):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
+    name  = "alter_attach_test_{}".format(engine)
+    main_node.query(f"CREATE TABLE testdb.{name} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    table_uuid = get_table_uuid("testdb", name)
+    # Provide and attach a part to the main node
+    shutil.copytree(
+        attachable_part, os.path.join(main_node.path, f"database/store/{table_uuid[:3]}/{table_uuid}/detached/all_1_1_0")
+    )
+    main_node.query(f"ALTER TABLE testdb.{name} ATTACH PART 'all_1_1_0'")
+    # On the main node, data is attached
+    assert main_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+    # On the other node, data is replicated only if using a Replicated table engine
+    if engine == "ReplicatedMergeTree":
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+    else:
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == ""
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_part(started_cluster, engine):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
+    table = f"alter_drop_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP PART '{part_name}'")
+    assert main_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    if engine == "ReplicatedMergeTree":
+        # The DROP operation is still replicated at the table engine level
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    else:
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == "456\n"
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_detach_part(started_cluster, engine):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
+    table = f"alter_detach_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == f"{part_name}\n"
+    if engine == "ReplicatedMergeTree":
+        # The detach operation is still replicated at the table engine level
+        assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+    else:
+        assert dummy_node.query(detached_parts_query) == ""
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_detached_part(started_cluster, engine):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
+    table = f"alter_drop_detached_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+        dummy_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP DETACHED PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == ""
+    assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+
+
+def test_alter_fetch(started_cluster):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
+    main_node.query("CREATE TABLE testdb.fetch_source (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")
+    main_node.query("CREATE TABLE testdb.fetch_target (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")
+    main_node.query("INSERT INTO testdb.fetch_source VALUES (123)")
+    table_uuid = get_table_uuid("testdb", "fetch_source")
+    main_node.query(f"ALTER TABLE testdb.fetch_target FETCH PART 'all_0_0_0' FROM '/clickhouse/tables/{table_uuid}/{{shard}}' ")
+    detached_parts_query = "SELECT name FROM system.detached_parts WHERE database='testdb' AND table='fetch_target'"
+    assert main_node.query(detached_parts_query) == "all_0_0_0\n"
+    assert dummy_node.query(detached_parts_query) == ""
+
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
 
 def test_alters_from_different_replicas(started_cluster):
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
+
     # test_alters_from_different_replicas
-    competing_node.query("CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
+    competing_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
 
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
                     "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);")
 
-    main_node.query("CREATE TABLE testdb.dist AS testdb.concurrent_test ENGINE = Distributed(cluster, testdb, concurrent_test, CounterID)")
+    main_node.query("CREATE TABLE testdb.dist AS testdb.concurrent_test ENGINE = Distributed(testdb, testdb, concurrent_test, CounterID)")
 
     dummy_node.stop_clickhouse(kill=True)
 
-    settings = {"distributed_ddl_task_timeout": 10}
+    settings = {"distributed_ddl_task_timeout": 5}
     assert "There are 1 unfinished hosts (0 of them are currently active)" in \
         competing_node.query_and_get_error("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;", settings=settings)
+    settings = {"distributed_ddl_task_timeout": 5, "distributed_ddl_output_mode": "null_status_on_timeout"}
+    assert "shard1|replica2\t\\N\t\\N" in \
+        main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;", settings=settings)
+    settings = {"distributed_ddl_task_timeout": 5, "distributed_ddl_output_mode": "never_throw"}
+    assert "shard1|replica2\t\\N\t\\N" in \
+        competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;", settings=settings)
     dummy_node.start_clickhouse()
-    main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;")
-    competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;")
     main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;")
     competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1.C Array(String) AFTER AddedNested1.B;")
     main_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;")
@@ -123,7 +265,7 @@ def test_alters_from_different_replicas(started_cluster):
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
     # test_create_replica_after_delay
-    main_node.query("DROP TABLE testdb.concurrent_test")
+    main_node.query("DROP TABLE testdb.concurrent_test SYNC")
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
                     "ENGINE = ReplicatedMergeTree ORDER BY CounterID;")
@@ -183,6 +325,11 @@ def test_alters_from_different_replicas(started_cluster):
                "9\t2021-02-11\t1241149650\n"
 
     assert_eq_with_retry(dummy_node, "SELECT CounterID, StartDate, UserID FROM testdb.dist ORDER BY CounterID", expected)
+    main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+    competing_node.query("DROP DATABASE testdb SYNC")
+    snapshotting_node.query("DROP DATABASE testdb SYNC")
+    snapshot_recovering_node.query("DROP DATABASE testdb SYNC")
 
 def test_recover_staled_replica(started_cluster):
     main_node.query("CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica1');")
@@ -198,8 +345,14 @@ def test_recover_staled_replica(started_cluster):
     dummy_node.query("CREATE TABLE recover.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
     main_node.query("CREATE TABLE recover.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
     dummy_node.query("CREATE TABLE recover.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n", settings=settings)
-    main_node.query("CREATE DICTIONARY recover.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
-    dummy_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
+    main_node.query("CREATE MATERIALIZED VIEW recover.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1", settings=settings)
+    dummy_node.query("CREATE MATERIALIZED VIEW recover.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2", settings=settings)
+    main_node.query("CREATE DICTIONARY recover.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+                    "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
+                    "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
+    dummy_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+                     "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
+                     "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())")
 
     for table in ['t1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'rmt3', 'rmt5']:
         main_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
@@ -211,49 +364,60 @@ def test_recover_staled_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
         dummy_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
-        main_node.query("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
-        main_node.query("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
-        main_node.query("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
-        main_node.query("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
-        main_node.query("DROP TABLE recover.rmt5", settings=settings)
-        main_node.query("DROP DICTIONARY recover.d2", settings=settings)
-        main_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
 
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.rmt5", settings=settings)
+        main_node.query_with_retry("DROP DICTIONARY recover.d2", settings=settings)
+        main_node.query_with_retry("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+                        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
+                        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
 
-    assert main_node.query("SELECT name FROM system.tables WHERE database='recover' ORDER BY name") == "d1\nd2\nm1\nmt1\nmt2\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
-    query = "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover' ORDER BY name"
+        inner_table = ".inner_id." + dummy_node.query_with_retry("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
+        main_node.query_with_retry("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
+
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+
+    assert main_node.query("SELECT name FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' ORDER BY name") == \
+           "d1\nd2\nm1\nmt1\nmt2\nmv1\nmv3\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
+    query = "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' " \
+            "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
     expected = main_node.query(query)
     assert_eq_with_retry(dummy_node, query, expected)
+    assert main_node.query("SELECT count() FROM system.tables WHERE database='recover' AND name LIKE '.inner_id.%'") == "2\n"
+    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover' AND name LIKE '.inner_id.%'") == "2\n"
 
-    for table in ['m1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2']:
+    for table in ['m1', 't2', 'mt1', 'mt2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2', 'mv1', 'mv3']:
         assert main_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
-    for table in ['t2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2', 'mt2']:
+    for table in ['t2', 'rmt1', 'rmt2', 'rmt4', 'd1', 'd2', 'mt2', 'mv1', 'mv3']:
         assert dummy_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
     for table in ['m1', 'mt1']:
         assert dummy_node.query("SELECT count() FROM recover.{}".format(table)) == "0\n"
-
-    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == "2\n"
-    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'mt1_26_%'").strip()
+    global test_recover_staled_replica_run
+    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == f"{2*test_recover_staled_replica_run}\n"
+    test_recover_staled_replica_run += 1
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'mt1_29_%' LIMIT 1").strip()
     assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
-    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_26_%'").strip()
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_29_%' LIMIT 1").strip()
     assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
 
-    expected = "Cleaned 4 outdated objects: dropped 1 dictionaries and 1 tables, moved 2 tables"
+    expected = "Cleaned 6 outdated objects: dropped 1 dictionaries and 3 tables, moved 2 tables"
     assert_logs_contain(dummy_node, expected)
 
     dummy_node.query("DROP TABLE recover.tmp")
     assert_eq_with_retry(main_node, "SELECT count() FROM system.tables WHERE database='recover' AND name='tmp'", "0\n")
+    main_node.query("DROP DATABASE recover SYNC")
+    dummy_node.query("DROP DATABASE recover SYNC")
 
 def test_startup_without_zk(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS testdb SYNC")
-    main_node.query("DROP DATABASE IF EXISTS recover SYNC")
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
         err = main_node.query_and_get_error("CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');")
@@ -276,3 +440,12 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
+    main_node.query("DROP DATABASE startup SYNC")
+
+def test_server_uuid(started_cluster):
+    uuid1 = main_node.query("select serverUUID()")
+    uuid2 = dummy_node.query("select serverUUID()")
+    assert uuid1 != uuid2
+    main_node.restart_clickhouse()
+    uuid1_after_restart = main_node.query("select serverUUID()")
+    assert uuid1 == uuid1_after_restart

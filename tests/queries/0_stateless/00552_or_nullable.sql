@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SELECT
     0 OR NULL,
     1 OR NULL,

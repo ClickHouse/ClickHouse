@@ -12,6 +12,7 @@ struct LeastBaseImpl
 {
     using ResultType = NumberTraits::ResultOfLeast<A, B>;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -26,9 +27,13 @@ struct LeastBaseImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
-            /// XXX minnum is basically fmin(), it may or may not match whatever apply() does
+        {
+            /// Follows the IEEE-754 semantics for minNum, except for handling of signaling NaNs. This match’s the behavior of libc fmin.
             return b.CreateMinNum(left, right);
-        return b.CreateSelect(is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right), left, right);
+        }
+
+        auto * compare_value = is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right);
+        return b.CreateSelect(compare_value, left, right);
     }
 #endif
 };
@@ -38,6 +43,7 @@ struct LeastSpecialImpl
 {
     using ResultType = std::make_signed_t<A>;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

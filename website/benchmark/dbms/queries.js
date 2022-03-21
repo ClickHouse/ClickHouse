@@ -1,4 +1,4 @@
-var current_data_size = 1000000000;
+var current_data_size = 100000000;
 
 var current_systems = ["ClickHouse", "Vertica", "Greenplum"];
 

@@ -13,7 +13,7 @@ namespace
 {
 
 template <typename ToType, typename Name>
-class ExecutableFunctionRandomConstant : public IExecutableFunctionImpl
+class ExecutableFunctionRandomConstant : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionRandomConstant(ToType value_) : value(value_) {}
@@ -22,7 +22,7 @@ public:
 
 bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
@@ -32,7 +32,7 @@ private:
 };
 
 template <typename ToType, typename Name>
-class FunctionBaseRandomConstant : public IFunctionBaseImpl
+class FunctionBaseRandomConstant : public IFunctionBase
 {
 public:
     explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -52,7 +52,9 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
@@ -67,7 +69,7 @@ private:
 };
 
 template <typename ToType, typename Name>
-class RandomConstantOverloadResolver : public IFunctionOverloadResolverImpl
+class RandomConstantOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -79,12 +81,12 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverImplPtr create(const Context &)
+    static FunctionOverloadResolverPtr create(ContextPtr)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
-    DataTypePtr getReturnType(const DataTypes & data_types) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
         size_t number_of_arguments = data_types.size();
         if (number_of_arguments > 1)
@@ -94,7 +96,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 

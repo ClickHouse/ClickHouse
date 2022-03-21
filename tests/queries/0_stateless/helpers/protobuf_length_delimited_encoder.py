@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 # The protobuf compiler protoc doesn't support encoding or decoding length-delimited protobuf message.
-# To do that this script has been written. 
+# To do that this script has been written.
 
 import argparse
 import os.path
+import io
 import struct
 import subprocess
 import sys
@@ -56,11 +57,15 @@ class FormatSchemaSplitted:
             self.schemaname = self.schemaname + ".proto"
         self.message_type = splitted[1]
 
-def decode(input, output, format_schema):
+def decode(input, output, format_schema, format):
     if not type(format_schema) is FormatSchemaSplitted:
         format_schema = FormatSchemaSplitted(format_schema)
     msgindex = 1
+    if format == 'protobuflist':
+        read_varint(input) # envelope msg size
     while True:
+        if format == 'protobuflist':
+            read_varint(input) # wiretype and field id of nested msg
         sz = read_varint(input)
         if sz is None:
             break
@@ -69,7 +74,8 @@ def decode(input, output, format_schema):
         msg = input.read(sz)
         if len(msg) < sz:
             raise EOFError('Unexpected end of file')
-        with subprocess.Popen(["protoc",
+        protoc = os.getenv('PROTOC_BINARY', 'protoc')
+        with subprocess.Popen([protoc,
                                 "--decode", format_schema.message_type, format_schema.schemaname],
                               cwd=format_schema.schemadir,
                               stdin=subprocess.PIPE,
@@ -81,11 +87,12 @@ def decode(input, output, format_schema):
         output.flush()
         msgindex = msgindex + 1
 
-def encode(input, output, format_schema):
+def encode(input, output, format_schema, format):
     if not type(format_schema) is FormatSchemaSplitted:
         format_schema = FormatSchemaSplitted(format_schema)
     line_offset = input.tell()
     line = input.readline()
+    buf = io.BytesIO()
     while True:
         if len(line) == 0:
             break
@@ -98,7 +105,8 @@ def encode(input, output, format_schema):
             if line.startswith(b"MESSAGE #") or len(line) == 0:
                 break
             msg += line
-        with subprocess.Popen(["protoc",
+        protoc = os.getenv('PROTOC_BINARY', 'protoc')
+        with subprocess.Popen([protoc,
                                 "--encode", format_schema.message_type, format_schema.schemaname],
                               cwd=format_schema.schemadir,
                               stdin=subprocess.PIPE,
@@ -107,11 +115,18 @@ def encode(input, output, format_schema):
             msgbin = proc.communicate(msg)[0]
             if proc.returncode != 0:
                 raise RuntimeError("protoc returned code " + str(proc.returncode))
-        write_varint(output, len(msgbin))
-        output.write(msgbin)
-        output.flush()
+        if format == 'protobuflist':
+            field_number = 1
+            wire_type = 2 # length-delimited
+            write_varint(buf, (field_number << 3) | wire_type)
+        write_varint(buf, len(msgbin))
+        buf.write(msgbin)
+    if format == 'protobuflist':
+        write_varint(output, len(buf.getvalue()))
+    output.write(buf.getvalue())
+    output.flush()
 
-def decode_and_check(input, output, format_schema):
+def decode_and_check(input, output, format_schema, format):
     input_data = input.read()
     output.write(b"Binary representation:\n")
     output.flush()
@@ -123,13 +138,13 @@ def decode_and_check(input, output, format_schema):
         tmp_input.write(input_data)
         tmp_input.flush()
         tmp_input.seek(0)
-        decode(tmp_input, tmp_decoded, format_schema)
+        decode(tmp_input, tmp_decoded, format_schema, format)
         tmp_decoded.seek(0)
         decoded_text = tmp_decoded.read()
         output.write(decoded_text)
         output.flush()
         tmp_decoded.seek(0)
-        encode(tmp_decoded, tmp_encoded, format_schema)
+        encode(tmp_decoded, tmp_encoded, format_schema, format)
         tmp_encoded.seek(0)
         encoded_data = tmp_encoded.read()
 
@@ -147,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument('--input', help='The input file, the standard input will be used if not specified.')
     parser.add_argument('--output', help='The output file, the standard output will be used if not specified')
     parser.add_argument('--format_schema', required=True, help='Format schema in the format "schemafile:MessageType"')
+    parser.add_argument('--format', choices=['protobuf', 'protobuflist'], default='protobuf', help='The input/output format, "protobuf" if not specified')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--encode', action='store_true', help='Specify to encode length-delimited messages.'
                        'The utility will read text-format messages of the given type from the input and write it in binary to the output.')
@@ -155,7 +171,7 @@ if __name__ == "__main__":
     group.add_argument('--decode_and_check', action='store_true', help='The same as --decode, and the utility will then encode '
                        ' the decoded data back to the binary form to check that the result of that encoding is the same as the input was.')
     args = parser.parse_args()
-    
+
     custom_input_file = None
     custom_output_file = None
     try:
@@ -167,11 +183,11 @@ if __name__ == "__main__":
         output = custom_output_file if custom_output_file else sys.stdout.buffer
 
         if args.encode:
-            encode(input, output, args.format_schema)
+            encode(input, output, args.format_schema, args.format)
         elif args.decode:
-            decode(input, output, args.format_schema)
+            decode(input, output, args.format_schema, args.format)
         elif args.decode_and_check:
-            decode_and_check(input, output, args.format_schema)
+            decode_and_check(input, output, args.format_schema, args.format)
 
     finally:
         if custom_input_file:

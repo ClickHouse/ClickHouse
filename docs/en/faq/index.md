@@ -25,6 +25,7 @@ Categories:
 -   **[Operations](../faq/operations/index.md)**
     -   [Which ClickHouse version to use in production?](../faq/operations/production.md)
     -   [Is it possible to delete old records from a ClickHouse table?](../faq/operations/delete-old-data.md)
+    -   [Does ClickHouse support multi-region replication?](../faq/operations/multi-region-replication.md)
 -   **[Integration](../faq/integration/index.md)**
     -   [How do I export data from ClickHouse to a file?](../faq/integration/file-export.md)
     -   [What if I have a problem with encodings when connecting to Oracle via ODBC?](../faq/integration/oracle-odbc.md)
@@ -39,8 +40,8 @@ Question candidates:
 - How to kill a process (query) in ClickHouse?
 - How to implement pivot (like in pandas)?
 - How to remove the default ClickHouse user through users.d?
-- Importing MySQL dump to Clickhouse
+- Importing MySQL dump to ClickHouse
 - Window function workarounds (row_number, lag/lead, running diff/sum/average)
 ##}
 
-{## [Original article](https://clickhouse.tech/docs/en/faq) ##}
+{## [Original article](https://clickhouse.com/docs/en/faq) ##}

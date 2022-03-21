@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -36,16 +36,16 @@ DataStream ITransformingStep::createOutputStream(
 }
 
 
-QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)
+QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (collect_processors)
     {
         QueryPipelineProcessorsCollector collector(*pipelines.front(), this);
-        transformPipeline(*pipelines.front());
+        transformPipeline(*pipelines.front(), settings);
         processors = collector.detachProcessors();
     }
     else
-        transformPipeline(*pipelines.front());
+        transformPipeline(*pipelines.front(), settings);
 
     return std::move(pipelines.front());
 }

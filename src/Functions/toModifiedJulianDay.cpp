@@ -6,7 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GregorianDate.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -22,7 +22,7 @@ namespace DB
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunctionImpl
+    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -30,7 +30,7 @@ namespace DB
             return Name::name;
         }
 
-        ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const IColumn * col_from = arguments[0].column.get();
             const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
@@ -116,7 +116,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay : public IFunctionBaseImpl
+    class FunctionBaseToModifiedJulianDay : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -138,7 +138,9 @@ namespace DB
             return return_type;
         }
 
-        ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+        ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionToModifiedJulianDay<Name, ToDataType, nullOnErrors>>();
         }
@@ -155,10 +157,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return Monotonicity(
-                true,  // is_monotonic
-                true,  // is_positive
-                true); // is_always_monotonic
+            return { .is_monotonic = true, .is_always_monotonic = true };
         }
 
     private:
@@ -167,12 +166,12 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolverImpl
+    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverImplPtr create(const Context &)
+        static FunctionOverloadResolverPtr create(ContextPtr)
         {
             return std::make_unique<ToModifiedJulianDayOverloadResolver<Name, ToDataType, nullOnErrors>>();
         }
@@ -182,14 +181,14 @@ namespace DB
             return Name::name;
         }
 
-        FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+        FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             DataTypes argument_types = { arguments[0].type };
 
             return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
-        DataTypePtr getReturnType(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isStringOrFixedString(arguments[0]))
             {

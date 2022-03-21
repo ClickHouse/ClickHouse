@@ -16,8 +16,11 @@ toc_title: PARTITION
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — удалить все значения в столбце для заданной партиции;
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — очистить построенные вторичные индексы для заданной партиции;
 -   [FREEZE PARTITION](#alter_freeze-partition) — создать резервную копию партиции;
--   [FETCH PARTITION](#alter_fetch-partition) — скачать партицию с другого сервера;
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — удалить резервную копию партиции;
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — скачать партицию/кусок с другого сервера;
 -   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
+-   [UPDATE IN PARTITION](#update-in-partition) — обновить данные внутри партиции по условию.
+-   [DELETE IN PARTITION](#delete-in-partition) — удалить данные внутри партиции по условию.
 
 ## DETACH PARTITION\|PART {#alter_detach-partition}
 
@@ -38,7 +41,7 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 После того как запрос будет выполнен, вы сможете производить любые операции с данными в директории `detached`. Например, можно удалить их из файловой системы.
 
-Запрос реплицируется — данные будут перенесены в директорию `detached` и забыты на всех репликах. Обратите внимание, запрос может быть отправлен только на реплику-лидер. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к системной таблице [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas). Либо можно выполнить запрос `DETACH` на всех репликах — тогда на всех репликах, кроме реплики-лидера, запрос вернет ошибку.
+Запрос реплицируется — данные будут перенесены в директорию `detached` и забыты на всех репликах. Обратите внимание, запрос может быть отправлен только на реплику-лидер. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к системной таблице [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas). Либо можно выполнить запрос `DETACH` на всех репликах — тогда на всех репликах, кроме реплик-лидеров (поскольку допускается несколько лидеров), запрос вернет ошибку.
 
 ## DROP PARTITION\|PART {#alter_drop-partition}
 
@@ -83,9 +86,13 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Как корректно задать имя партиции или куска, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-Этот запрос реплицируется. Реплика-иницатор проверяет, есть ли данные в директории `detached`. Если данные есть, то запрос проверяет их целостность. В случае успеха данные добавляются в таблицу. Все остальные реплики загружают данные с реплики-инициатора запроса.
+Этот запрос реплицируется. Реплика-иницатор проверяет, есть ли данные в директории `detached`.
+Если данные есть, то запрос проверяет их целостность. В случае успеха данные добавляются в таблицу.
 
-Это означает, что вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
+Если реплика, не являющаяся инициатором запроса, получив команду присоединения, находит кусок с правильными контрольными суммами в своей собственной папке `detached`, она присоединяет данные, не скачивая их с других реплик.
+Если нет куска с правильными контрольными суммами, данные загружаются из любой реплики, имеющей этот кусок.
+
+Вы можете поместить данные в директорию `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -93,7 +100,8 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2` и добавляет к существующим данным `table2`. Данные из `table1` не удаляются.
+Копирует партицию из таблицы `table1` в таблицу `table2`.
+Обратите внимание, что данные не удаляются ни из `table1`, ни из `table2`.
 
 Следует иметь в виду:
 
@@ -157,7 +165,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name FREEZE [PARTITION partition_expr]
+ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
 ```
 
 Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.
@@ -165,21 +173,22 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 !!! note "Примечание"
     Создание резервной копии не требует остановки сервера.
 
-Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, ‘2019’). В этом случае резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, `2019`). В этом случае, резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-Запрос делает следующее — для текущего состояния таблицы он формирует жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
+Запрос формирует для текущего состояния таблицы жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
 
 -   `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 -   `N` — инкрементальный номер резервной копии.
+-   если задан параметр `WITH NAME`, то вместо инкрементального номера используется значение параметра `'backup_name'`.
 
 !!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
 
-Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит ‘chmod’ для всех файлов, запрещая запись в них.
+Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит `chmod` для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
 
-Резервная копия создается почти мгновенно (однако сначала запрос дожидается завершения всех запросов, которые выполняются для соответствующей таблицы).
+Резервная копия создается почти мгновенно (однако, сначала запрос дожидается завершения всех запросов, которые выполняются для соответствующей таблицы).
 
 `ALTER TABLE t FREEZE PARTITION` копирует только данные, но не метаданные таблицы. Чтобы сделать резервную копию метаданных таблицы, скопируйте файл `/var/lib/clickhouse/metadata/database/table.sql`
 
@@ -193,29 +202,43 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../../../operations/backup.md).
 
-## FETCH PARTITION {#alter_fetch-partition}
+## UNFREEZE PARTITION {#alter_unfreeze-partition}
 
 ``` sql
-ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+Удаляет с диска "замороженные" партиции с указанным именем. Если секция `PARTITION` опущена, запрос удаляет резервную копию всех партиций сразу.
+
+## FETCH PARTITION\|PART {#alter_fetch-partition}
+
+``` sql
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Загружает партицию с другого сервера. Этот запрос работает только для реплицированных таблиц.
 
 Запрос выполняет следующее:
 
-1.  Загружает партицию с указанного шарда. Путь к шарду задается в секции `FROM` (‘path-in-zookeeper’). Обратите внимание, нужно задавать путь к шарду в ZooKeeper.
+1.  Загружает партицию/кусок с указанного шарда. Путь к шарду задается в секции `FROM` (‘path-in-zookeeper’). Обратите внимание, нужно задавать путь к шарду в ZooKeeper.
 2.  Помещает загруженные данные в директорию `detached` таблицы `table_name`. Чтобы прикрепить эти данные к таблице, используйте запрос [ATTACH PARTITION\|PART](#alter_attach-partition).
 
 Например:
 
+1. FETCH PARTITION
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
+2. FETCH PART
+``` sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
 
 Следует иметь в виду:
 
--   Запрос `ALTER TABLE t FETCH PARTITION` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
+-   Запрос `ALTER TABLE t FETCH PARTITION|PART` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
 -   Запрос `ALTER TABLE t ATTACH` реплицируется — он добавляет данные в таблицу сразу на всех репликах. На одной из реплик данные будут добавлены из директории `detached`, а на других — из соседних реплик.
 
 Перед загрузкой данных система проверяет, существует ли партиция и совпадает ли её структура со структурой таблицы. При этом автоматически выбирается наиболее актуальная реплика среди всех живых реплик.
@@ -305,5 +328,3 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 `IN PARTITION` указывает на партицию, для которой применяются выражения [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) или [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) в результате запроса `ALTER TABLE`. Новые куски создаются только в указанной партиции. Таким образом, `IN PARTITION` помогает снизить нагрузку, когда таблица разбита на множество партиций, а вам нужно обновить данные лишь точечно.
 
 Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/partition/) <!--hide-->

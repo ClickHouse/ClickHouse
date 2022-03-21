@@ -4,11 +4,10 @@
 #include <optional>
 #include <mutex>
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 
@@ -20,41 +19,51 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemoryBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageMemory>;
+friend class MemorySink;
+friend struct shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }
 
+    /// Snapshot for StorageMemory contains current set of blocks
+    /// at the moment of the start of query.
+    struct SnapshotData : public StorageSnapshot::Data
+    {
+        std::shared_ptr<const Blocks> blocks;
+    };
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
+
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -97,7 +106,7 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+    /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;
 
@@ -115,6 +124,7 @@ protected:
         const StorageID & table_id_,
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
+        const String & comment,
         bool compress_ = false);
 };
 

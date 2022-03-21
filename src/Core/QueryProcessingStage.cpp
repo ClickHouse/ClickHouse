@@ -24,6 +24,8 @@ namespace QueryProcessingStage
             stage = WithMergeableState;
         else if (stage_string == "with_mergeable_state_after_aggregation")
             stage = WithMergeableStateAfterAggregation;
+        else if (stage_string == "with_mergeable_state_after_aggregation_and_limit")
+            stage = WithMergeableStateAfterAggregationAndLimit;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query processing stage: {}", stage_string);
 

@@ -2,8 +2,8 @@
 
 #include <Common/LRUCache.h>
 #include <Common/SipHash.h>
-#include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
+#include <Common/HashTable/Hash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -42,7 +42,7 @@ private:
     using Base = LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    UncompressedCache(size_t max_size_in_bytes)
+    explicit UncompressedCache(size_t max_size_in_bytes)
         : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
@@ -53,21 +53,22 @@ public:
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(offset);
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         return key;
     }
 
-    MappedPtr get(const Key & key)
+    template <typename LoadFunc>
+    MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        MappedPtr res = Base::get(key);
+        auto result = Base::getOrSet(key, std::forward<LoadFunc>(load));
 
-        if (res)
-            ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
-        else
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 
-        return res;
+        return result.first;
     }
 
 private:

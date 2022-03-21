@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+#include <Common/ThreadStatus.h>
+#include <base/StringRef.h>
+
 #include <memory>
 #include <string>
-
-#include <common/StringRef.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace ProfileEvents
@@ -18,7 +19,6 @@ class MemoryTracker;
 namespace DB
 {
 
-class Context;
 class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
@@ -45,6 +45,9 @@ public:
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
+
+    static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
+    static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
     static void setFatalErrorCallback(std::function<void()> callback);
 
@@ -87,7 +90,7 @@ public:
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope
     {
-        explicit QueryScope(Context & query_context);
+        explicit QueryScope(ContextMutablePtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();
@@ -99,7 +102,7 @@ private:
 
     /// Sets query_context for current thread group
     /// Can by used only through QueryScope
-    static void attachQueryContext(Context & query_context);
+    static void attachQueryContext(ContextPtr query_context);
 };
 
 }

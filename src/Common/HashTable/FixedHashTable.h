@@ -19,10 +19,10 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {}
+    FixedHashTableCell() {} //-V730 /// NOLINT
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
-    const VoidKey getKey() const { return {}; }
+    const VoidKey getKey() const { return {}; } /// NOLINT
     VoidMapped getMapped() const { return {}; }
 
     bool isZero(const State &) const { return !full; }
@@ -39,7 +39,7 @@ struct FixedHashTableCell
     {
         Key key;
 
-        const VoidKey getKey() const { return {}; }
+        const VoidKey getKey() const { return {}; } /// NOLINT
         VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
@@ -138,7 +138,7 @@ protected:
 
 
     template <typename Derived, bool is_const>
-    class iterator_base
+    class iterator_base /// NOLINT
     {
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
@@ -149,7 +149,7 @@ protected:
         friend class FixedHashTable;
 
     public:
-        iterator_base() {}
+        iterator_base() {} /// NOLINT
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_)
         {
             cell.update(ptr - container->buf, ptr);
@@ -163,7 +163,7 @@ protected:
             ++ptr;
 
             /// Skip empty cells in the main buffer.
-            auto buf_end = container->buf + container->NUM_CELLS;
+            const auto * buf_end = container->buf + container->NUM_CELLS;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -204,7 +204,7 @@ public:
 
     FixedHashTable() { alloc(); }
 
-    FixedHashTable(FixedHashTable && rhs) : buf(nullptr) { *this = std::move(rhs); }
+    FixedHashTable(FixedHashTable && rhs) noexcept : buf(nullptr) { *this = std::move(rhs); } /// NOLINT
 
     ~FixedHashTable()
     {
@@ -212,7 +212,7 @@ public:
         free();
     }
 
-    FixedHashTable & operator=(FixedHashTable && rhs)
+    FixedHashTable & operator=(FixedHashTable && rhs) noexcept
     {
         destroyElements();
         free();
@@ -229,7 +229,7 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        Reader(DB::ReadBuffer & in_) : in(in_) {}
+        explicit Reader(DB::ReadBuffer & in_) : in(in_) {}
 
         Reader(const Reader &) = delete;
         Reader & operator=(const Reader &) = delete;
@@ -267,19 +267,19 @@ public:
         DB::ReadBuffer & in;
         Cell cell;
         size_t read_count = 0;
-        size_t size;
+        size_t size = 0;
         bool is_eof = false;
         bool is_initialized = false;
     };
 
 
-    class iterator : public iterator_base<iterator, false>
+    class iterator : public iterator_base<iterator, false> /// NOLINT
     {
     public:
         using iterator_base<iterator, false>::iterator_base;
     };
 
-    class const_iterator : public iterator_base<const_iterator, true>
+    class const_iterator : public iterator_base<const_iterator, true> /// NOLINT
     {
     public:
         using iterator_base<const_iterator, true>::iterator_base;
@@ -331,7 +331,6 @@ public:
     }
 
 
-public:
     /// The last parameter is unused but exists for compatibility with HashTable interface.
     void ALWAYS_INLINE emplace(const Key & x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
     {

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +12,7 @@ $CLICKHOUSE_CLIENT --query "
         key UInt64,
         value String
     )
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01318/mutation_table', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutation_table', '1')
     ORDER BY key
     PARTITION BY key % 10
 "
@@ -47,7 +48,7 @@ done
 
 echo "$query_result"
 
-$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
+$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id' and database='$CLICKHOUSE_DATABASE'"
 
 check_query="SELECT sum(parts_to_do) FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
 

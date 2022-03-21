@@ -1,20 +1,19 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
-
+#include <Interpreters/Context.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 
 namespace DB
 {
 
-class Context;
 class ReadBuffer;
-
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
@@ -34,13 +33,17 @@ public:
     String getName() const override { return "ValuesBlockInputFormat"; }
 
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
     /// TODO: remove context somehow.
-    void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
+    void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:
+    ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
+                           const FormatSettings & format_settings_);
+
     enum class ParserType
     {
         Streaming,
@@ -66,14 +69,11 @@ private:
     void readPrefix();
     void readSuffix();
 
-    bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
-
-private:
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
 
     const RowInputFormatParams params;
 
-    std::unique_ptr<Context> context;   /// pimpl
+    ContextPtr context;   /// pimpl
     const FormatSettings format_settings;
 
     const size_t num_columns;
@@ -89,8 +89,23 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     const DataTypes types;
+    Serializations serializations;
 
     BlockMissingValues block_missing_values;
+};
+
+class ValuesSchemaReader : public IRowSchemaReader
+{
+public:
+    ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    PeekableReadBuffer buf;
+    ContextPtr context;
+    ParserExpression parser;
+    bool first_row = true;
 };
 
 }

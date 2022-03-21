@@ -355,4 +355,4 @@ USE db
 現在のデータベースは、データベースがクエリで明示的に定義されていない場合、テーブルの検索に使用されます。
 セッションの概念がないため、HTTPプロトコルを使用する場合は、このクエリを実行できません。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/misc/) <!--hide-->

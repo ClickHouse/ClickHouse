@@ -21,11 +21,11 @@ def dict_setup(node, table_name, dict_name, type="UInt64"):
         yield
 
     finally:
-        with Finally("I drop the table", flags=TE):
-            node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-        with And("I drop the dictionary", flags=TE):
+        with Finally("I drop the dictionary", flags=TE):
             node.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
+
+        with And("I drop the table", flags=TE):
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestSuite
 def dictGet_granted_directly(self, node=None):
@@ -39,8 +39,8 @@ def dictGet_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dictGet_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGet_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictGet_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -60,60 +60,67 @@ def dictGet_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictGet_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGet_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictGet_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictGet_RequiredPrivilege("1.0")
 )
-def dictGet_check(self, privilege, grant_target_name, user_name, node=None):
+def dictGet_check(self, privilege, on, grant_target_name, user_name, node=None):
     """Check that user is able to execute `dictGet` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I attempt to dictGet without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictGet without privilege"):
                 node.query(f"SELECT dictGet ({dict_name},'y',toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When(f"I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictGet with privilege"):
                 node.query(f"SELECT dictGet ({dict_name},'y',toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictGet without privilege"):
                 node.query(f"SELECT dictGet ({dict_name},'y',toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
@@ -130,8 +137,8 @@ def dictGetOrDefault_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dictGetOrDefault_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGetOrDefault_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictGetOrDefault_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -151,60 +158,67 @@ def dictGetOrDefault_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictGetOrDefault_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGetOrDefault_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictGetOrDefault_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictGet_OrDefault_RequiredPrivilege("1.0")
 )
-def dictGetOrDefault_check(self, privilege, grant_target_name, user_name, node=None):
+def dictGetOrDefault_check(self, privilege, on, grant_target_name, user_name, node=None):
     """Check that user is able to execute `dictGetOrDefault` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I attempt to dictGetOrDefault without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictGetOrDefault without privilege"):
                 node.query(f"SELECT dictGetOrDefault ({dict_name},'y',toUInt64(1),toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When(f"I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictGetOrDefault with privilege"):
                 node.query(f"SELECT dictGetOrDefault ({dict_name},'y',toUInt64(1),toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictGetOrDefault without privilege"):
                 node.query(f"SELECT dictGetOrDefault ({dict_name},'y',toUInt64(1),toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
@@ -221,8 +235,8 @@ def dictHas_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dictHas_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictHas_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictHas_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -242,60 +256,67 @@ def dictHas_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictHas_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictHas_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictHas_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictHas_RequiredPrivilege("1.0")
 )
-def dictHas_check(self, privilege, grant_target_name, user_name, node=None):
+def dictHas_check(self, privilege, on, grant_target_name, user_name, node=None):
     """Check that user is able to execute `dictHas` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I attempt to dictHas without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictHas without privilege"):
                 node.query(f"SELECT dictHas({dict_name},toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictHas with privilege"):
                 node.query(f"SELECT dictHas({dict_name},toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictHas without privilege"):
                 node.query(f"SELECT dictHas({dict_name},toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
@@ -311,8 +332,8 @@ def dictGetHierarchy_granted_directly(self, node=None):
         node = self.context.node
 
     with user(node, f"{user_name}"):
-        Suite(run=dictGetHierarchy_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGetHierarchy_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictGetHierarchy_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -332,60 +353,67 @@ def dictGetHierarchy_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictGetHierarchy_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictGetHierarchy_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictGetHierarchy_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictGetHierarchy_RequiredPrivilege("1.0")
 )
-def dictGetHierarchy_check(self, privilege, grant_target_name, user_name, node=None):
+def dictGetHierarchy_check(self, privilege, on, grant_target_name, user_name, node=None):
     """Check that user is able to execute `dictGetHierarchy` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I attempt to dictGetHierarchy without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictGetHierarchy without privilege"):
                 node.query(f"SELECT dictGetHierarchy({dict_name},toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictGetHierarchy with privilege"):
                 node.query(f"SELECT dictGetHierarchy({dict_name},toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictGetHierarchy without privilege"):
                 node.query(f"SELECT dictGetHierarchy({dict_name},toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
@@ -401,8 +429,8 @@ def dictIsIn_granted_directly(self, node=None):
         node = self.context.node
 
     with user(node, f"{user_name}"):
-        Suite(run=dictIsIn_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictIsIn_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictIsIn_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -422,60 +450,67 @@ def dictIsIn_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictIsIn_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name", [
+        Suite(run=dictIsIn_check,
+            examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictIsIn_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictIsIn_RequiredPrivilege("1.0")
 )
-def dictIsIn_check(self, privilege, grant_target_name, user_name, node=None):
+def dictIsIn_check(self, privilege, on, grant_target_name, user_name, node=None):
     """Check that user is able to execute `dictIsIn` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I attempt to dictIsIn without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictIsIn without privilege"):
                 node.query(f"SELECT dictIsIn({dict_name},toUInt64(1),toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictIsIn with privilege"):
                 node.query(f"SELECT dictIsIn({dict_name},toUInt64(1),toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictIsIn without privilege"):
                 node.query(f"SELECT dictIsIn({dict_name},toUInt64(1),toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
@@ -507,8 +542,8 @@ def dictGetType_granted_directly(self, type, node=None):
         node = self.context.node
 
     with user(node, f"{user_name}"):
-        Suite(run=dictGetType_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name type", [
+        Suite(run=dictGetType_check,
+            examples=Examples("privilege on grant_target_name user_name type", [
                 tuple(list(row)+[user_name,user_name,type]) for row in dictGetType_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
@@ -544,103 +579,106 @@ def dictGetType_granted_via_role(self, type, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictGetType_check, setup=instrument_clickhouse_server_log,
-            examples=Examples("privilege grant_target_name user_name type", [
+        Suite(run=dictGetType_check,
+            examples=Examples("privilege on grant_target_name user_name type", [
                 tuple(list(row)+[role_name,user_name,type]) for row in dictGetType_check.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
-@Examples("privilege",[
-    ("dictGet",),
-    ("dictHas",),
-    ("dictGetHierarchy",),
-    ("dictIsIn",),
+@Examples("privilege on",[
+    ("ALL", "*.*"),
+    ("dictGet", "dict"),
+    ("dictHas", "dict"),
+    ("dictGetHierarchy", "dict"),
+    ("dictIsIn", "dict"),
 ])
 @Requirements(
     RQ_SRS_006_RBAC_dictGet_Type_RequiredPrivilege("1.0")
 )
-def dictGetType_check(self, privilege, grant_target_name, user_name, type, node=None):
+def dictGetType_check(self, privilege, on, grant_target_name, user_name, type, node=None):
     """Check that user is able to execute `dictGet` if and only if they have the necessary privileges.
     """
     if node is None:
         node = self.context.node
 
+    dict_name = f"dict_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    on = on.replace("dict", f"{dict_name}")
+
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
-    with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user without privilege"):
 
         with dict_setup(node, table_name, dict_name, type):
 
-            with When("I attempt to dictGet without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to dictGet without privilege"):
                 node.query(f"SELECT dictGet{type}({dict_name},'z',toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
-    with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
-        table_name = f"table_{getuid()}"
+    with Scenario("user with privilege"):
 
         with dict_setup(node, table_name, dict_name, type):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with Then("I attempt to dictGet with privilege"):
                 node.query(f"SELECT dictGet{type}({dict_name},'z',toUInt64(1))", settings = [("user", user_name)])
 
-    with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
-        dict_name = f"dict_{getuid()}"
+    with Scenario("user with revoked privilege"):
 
         with dict_setup(node, table_name, dict_name, type):
 
             with When("I grant privilege"):
-                node.query(f"GRANT {privilege} ON {dict_name} TO {grant_target_name}")
+                node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
             with And("I revoke privilege"):
-                node.query(f"REVOKE {privilege} ON {dict_name} FROM {grant_target_name}")
+                node.query(f"REVOKE {privilege} ON {on} FROM {grant_target_name}")
 
             with When("I attempt to dictGet without privilege"):
                 node.query(f"SELECT dictGet{type}({dict_name},'z',toUInt64(1))", settings = [("user", user_name)], exitcode=exitcode, message=message)
 
 @TestFeature
 @Requirements(
-    RQ_SRS_006_RBAC_dictGet_Privilege("1.0")
+    RQ_SRS_006_RBAC_dictGet_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Name("dictGet")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of dictGet.
     """
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
-    pool = Pool(20)
-    try:
-        tasks = []
+    with Pool(20) as pool:
         try:
-
-            run_scenario(pool, tasks, Suite(test=dictGet_granted_directly))
-            run_scenario(pool, tasks, Suite(test=dictGet_granted_via_role))
-            run_scenario(pool, tasks, Suite(test=dictGetOrDefault_granted_directly))
-            run_scenario(pool, tasks, Suite(test=dictGetOrDefault_granted_via_role))
-            run_scenario(pool, tasks, Suite(test=dictHas_granted_directly))
-            run_scenario(pool, tasks, Suite(test=dictHas_granted_via_role))
-            run_scenario(pool, tasks, Suite(test=dictGetHierarchy_granted_directly))
-            run_scenario(pool, tasks, Suite(test=dictGetHierarchy_granted_via_role))
-            run_scenario(pool, tasks, Suite(test=dictIsIn_granted_directly))
-            run_scenario(pool, tasks, Suite(test=dictIsIn_granted_via_role))
+            Suite(run=dictGet_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGet_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetOrDefault_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetOrDefault_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictHas_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictHas_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetHierarchy_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetHierarchy_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictIsIn_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictIsIn_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
 
             for example in dictGetType_granted_directly.examples:
                 type, = example
+                args = {"type" : type}
 
                 with Example(example):
-                    run_scenario(pool, tasks, Suite(test=dictGetType_granted_directly),{"type" : type})
-                    run_scenario(pool, tasks, Suite(test=dictGetType_granted_via_role),{"type" : type})
+                    Suite(test=dictGetType_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
+                    Suite(test=dictGetType_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
 
         finally:
-            join(tasks)
-    finally:
-        pool.close()
+            join()

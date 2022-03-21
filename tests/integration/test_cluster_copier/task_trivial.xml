@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <!-- How many simualteneous workers are posssible -->
     <max_workers>3</max_workers>
 
@@ -44,7 +44,7 @@
         <source_trivial_cluster>
             <shard>
                 <replica>
-                    <host>s0_0_0</host>
+                    <host>first_trivial</host>
                     <port>9000</port>
                 </replica>
             </shard>
@@ -54,11 +54,11 @@
         <destination_trivial_cluster>
             <shard>
                 <replica>
-                    <host>s1_0_0</host>
+                    <host>second_trivial</host>
                     <port>9000</port>
                 </replica>
             </shard>
         </destination_trivial_cluster>
     </remote_servers>
 
-</yandex>
+</clickhouse>

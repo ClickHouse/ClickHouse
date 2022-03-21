@@ -1,8 +1,5 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
-    ConnectionParameters.cpp
-    QueryFuzzer.cpp
-    Suggest.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
@@ -21,4 +18,4 @@ list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 clickhouse_program_add(client)
 
-install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
+install (FILES clickhouse-client.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-client" COMPONENT clickhouse-client RENAME config.xml)

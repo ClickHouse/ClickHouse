@@ -12,4 +12,3 @@ Check if another query is passed
 Modify max_concurrent_queries back to 1
 Check if another query with less marks to read is throttled
 yes
-finished	long_running_query	default	select sleepEachRow(0.01) from simple settings max_block_size = 1 format Null

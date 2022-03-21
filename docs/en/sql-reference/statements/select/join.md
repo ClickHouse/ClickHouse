@@ -6,7 +6,7 @@ toc_title: JOIN
 
 Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as “self-join”.
 
-Syntax:
+**Syntax**
 
 ``` sql
 SELECT <expr_list>
@@ -36,21 +36,128 @@ Additional join types available in ClickHouse:
 -   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 -   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Setting {#join-settings}
+!!! note "Note"
+    When [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+
+## Settings {#join-settings}
+
+The default join type can be overridden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+
+The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+
+**See also**
+
+- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
+- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+- [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
+- [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
+- [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
+- [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
+
+## ON Section Conditions {#on-section-conditions}
+
+An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either the left or the right table of a query.
+
+Rows are joined if the whole complex condition is met. If the conditions are not met, still rows may be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
+
+The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
 !!! note "Note"
-    The default join type can be overriden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+    If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
 
-    Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+**Example**
 
-### ASOF JOIN Usage {#asof-join-usage}
+Consider `table_1` and `table_2`:
+
+```
+┌─Id─┬─name─┐     ┌─Id─┬─text───────────┬─scores─┐
+│  1 │ A    │     │  1 │ Text A         │     10 │
+│  2 │ B    │     │  1 │ Another text A │     12 │
+│  3 │ C    │     │  2 │ Text B         │     15 │
+└────┴──────┘     └────┴────────────────┴────────┘
+```
+
+Query with one join key condition and an additional condition for `table_2`:
+
+``` sql
+SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 
+    ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
+```
+
+Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
+
+```
+┌─name─┬─text───┐
+│ A    │ Text A │
+│ B    │ Text B │
+│ C    │        │
+└──────┴────────┘
+```
+
+Query with `INNER` type of a join and multiple conditions:
+
+``` sql
+SELECT name, text, scores FROM table_1 INNER JOIN table_2 
+    ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
+```
+
+Result:
+
+```
+┌─name─┬─text───┬─scores─┐
+│ B    │ Text B │     15 │
+└──────┴────────┴────────┘
+```
+Query with `INNER` type of a join and condition with `OR`:
+
+``` sql
+CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
+
+CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
+
+INSERT INTO t1 SELECT number as a, -a as b from numbers(5);
+
+INSERT INTO t2 SELECT if(number % 2 == 0, toInt64(number), -number) as key, number as val from numbers(5);
+
+SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
+```
+
+Result:
+
+```
+┌─a─┬──b─┬─val─┐
+│ 0 │  0 │   0 │
+│ 1 │ -1 │   1 │
+│ 2 │ -2 │   2 │
+│ 3 │ -3 │   3 │
+│ 4 │ -4 │   4 │
+└───┴────┴─────┘
+```
+
+Query with `INNER` type of a join and conditions with `OR` and `AND`:
+
+``` sql
+SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
+```
+
+Result:
+
+```
+┌─a─┬──b─┬─val─┐
+│ 0 │  0 │   0 │
+│ 2 │ -2 │   2 │
+│ 4 │ -4 │   4 │
+└───┴────┴─────┘
+```
+## ASOF JOIN Usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
 
 Algorithm requires the special column in tables. This column:
 
 -   Must contain an ordered sequence.
--   Can be one of the following types: [Int*, UInt*](../../../sql-reference/data-types/int-uint.md), [Float\*](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal\*](../../../sql-reference/data-types/decimal.md).
+-   Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
 -   Can’t be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
@@ -75,7 +182,7 @@ ASOF JOIN table_2
 USING (equi_column1, ... equi_columnN, asof_column)
 ```
 
-`ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table_2.asof_column` condition. The `asof_column` column always the last one in the `USING` clause.
+`ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table_2.asof_column` condition. The `asof_column` column is always the last one in the `USING` clause.
 
 For example, consider the following tables:
 
@@ -93,7 +200,7 @@ For example, consider the following tables:
 !!! note "Note"
     `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 
-## Distributed Join {#global-join}
+## Distributed JOIN {#global-join}
 
 There are two ways to execute join involving distributed tables:
 
@@ -101,6 +208,42 @@ There are two ways to execute join involving distributed tables:
 -   When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../../sql-reference/operators/in.md#select-distributed-subqueries) section.
+
+## Implicit Type Conversion {#implicit-type-conversion}
+
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
+
+**Example**
+
+Consider the table `t_1`:
+```text
+┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
+│ 1 │ 1 │ UInt16        │ UInt8         │
+│ 2 │ 2 │ UInt16        │ UInt8         │
+└───┴───┴───────────────┴───────────────┘
+```
+and the table `t_2`:
+```text
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│ -1 │    1 │ Int16         │ Nullable(Int64) │
+│  1 │   -1 │ Int16         │ Nullable(Int64) │
+│  1 │    1 │ Int16         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
+
+The query
+```sql
+SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
+```
+returns the set:
+```text
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│  1 │    1 │ Int32         │ Nullable(Int64) │
+│  2 │    2 │ Int32         │ Nullable(Int64) │
+│ -1 │    1 │ Int32         │ Nullable(Int64) │
+│  1 │   -1 │ Int32         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
 
 ## Usage Recommendations {#usage-recommendations}
 
@@ -139,9 +282,9 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 ### Memory Limitations {#memory-limitations}
 
-By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_table>` and creates a hash table for it in RAM. After some threshold of memory consumption, ClickHouse falls back to merge join algorithm.
+By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) setting.
 
-If you need to restrict join operation memory consumption use the following settings:
+If you need to restrict `JOIN` operation memory consumption use the following settings:
 
 -   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.

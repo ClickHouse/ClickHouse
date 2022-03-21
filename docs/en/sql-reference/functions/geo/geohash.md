@@ -4,7 +4,7 @@ toc_title: Geohash
 
 # Functions for Working with Geohash {#geohash}
 
-[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location. 
+[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
@@ -29,7 +29,7 @@ geohashEncode(longitude, latitude, [precision])
 **Example**
 
 ``` sql
-SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
 ``` text
@@ -53,7 +53,7 @@ Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 **Example**
 
 ``` sql
-SELECT geohashDecode('ezs42') AS res
+SELECT geohashDecode('ezs42') AS res;
 ```
 
 ``` text
@@ -98,8 +98,9 @@ Type: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-
 Query:
 
 ``` sql
-SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
+
 Result:
 
 ``` text
@@ -108,4 +109,4 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/geohash) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/geohash) <!--hide-->

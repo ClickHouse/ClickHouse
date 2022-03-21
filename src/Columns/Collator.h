@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <optional>
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -32,7 +33,7 @@ public:
 
 private:
     AvailableCollationLocales();
-private:
+
     AvailableLocalesMap locales_map;
 };
 

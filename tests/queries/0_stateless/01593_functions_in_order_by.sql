@@ -1,6 +1,6 @@
 EXPLAIN SYNTAX
 SELECT msg, toDateTime(intDiv(ms, 1000)) AS time
-FROM 
+FROM
 (
     SELECT
         'hello' AS msg,

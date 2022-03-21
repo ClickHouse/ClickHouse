@@ -1,12 +1,18 @@
 #pragma once
 
+#include <Client/ClientBase.h>
+#include <Client/LocalConnection.h>
+
+#include <Common/ProgressIndication.h>
+#include <Common/StatusFile.h>
+#include <Common/InterruptListener.h>
+#include <loggers/Loggers.h>
 #include <Core/Settings.h>
-#include <Poco/Util/Application.h>
+#include <Interpreters/Context.h>
+
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <loggers/Loggers.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -15,18 +21,30 @@ namespace DB
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public Poco::Util::Application, public Loggers
+class LocalServer : public ClientBase, public Loggers
 {
 public:
-    LocalServer();
+    LocalServer() = default;
 
     void initialize(Poco::Util::Application & self) override;
 
-    int main(const std::vector<std::string> & args) override;
+    int main(const std::vector<String> & /*args*/) override;
 
-    void init(int argc, char ** argv);
+protected:
+    void connect() override;
 
-    ~LocalServer() override;
+    void processError(const String & query) const override;
+
+    String getName() const override { return "local"; }
+
+    void printHelpMessage(const OptionsDescription & options_description) override;
+
+    void addOptions(OptionsDescription & options_description) override;
+
+    void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
+                        const std::vector<Arguments> &, const std::vector<Arguments> &) override;
+
+    void processConfig() override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
@@ -36,19 +54,13 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyCmdOptions(Context & context);
-    void applyCmdSettings(Context & context);
-    void processQueries();
     void setupUsers();
     void cleanup();
 
-protected:
-    SharedContextHolder shared_context;
-    std::unique_ptr<Context> global_context;
+    void applyCmdOptions(ContextMutablePtr context);
+    void applyCmdSettings(ContextMutablePtr context);
 
-    /// Settings specified via command line args
-    Settings cmd_settings;
-
+    std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
 

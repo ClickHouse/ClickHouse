@@ -1,9 +1,14 @@
-drop table if exists join_tbl;
+DROP TABLE IF EXISTS join_tbl;
 
-create table join_tbl (`id` String, `name` String) engine Join(any, left, id);
+CREATE TABLE join_tbl (`id` String, `name` String, lcname LowCardinality(String)) ENGINE = Join(any, left, id);
 
-insert into join_tbl values ('xxx', 'yyy');
+INSERT INTO join_tbl VALUES ('xxx', 'yyy', 'yyy');
 
-select joinGet('join_tbl', 'name', toLowCardinality('xxx'));
+SELECT joinGet('join_tbl', 'name', 'xxx') == 'yyy';
+SELECT joinGet('join_tbl', 'name', toLowCardinality('xxx')) == 'yyy';
+SELECT joinGet('join_tbl', 'name', toLowCardinality(materialize('xxx'))) == 'yyy';
+SELECT joinGet('join_tbl', 'lcname', 'xxx') == 'yyy';
+SELECT joinGet('join_tbl', 'lcname', toLowCardinality('xxx')) == 'yyy';
+SELECT joinGet('join_tbl', 'lcname', toLowCardinality(materialize('xxx'))) == 'yyy';
 
-drop table if exists join_tbl;
+DROP TABLE IF EXISTS join_tbl;

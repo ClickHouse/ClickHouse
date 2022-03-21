@@ -24,20 +24,11 @@ class Loggers;
 class OwnPatternFormatter : public Poco::PatternFormatter
 {
 public:
-    /// ADD_LAYER_TAG is needed only for Yandex.Metrika, that share part of ClickHouse code.
-    enum Options
-    {
-        ADD_NOTHING = 0,
-        ADD_LAYER_TAG = 1 << 0
-    };
-
-    OwnPatternFormatter(const Loggers * loggers_, Options options_ = ADD_NOTHING, bool color_ = false);
+    OwnPatternFormatter(bool color_ = false);
 
     void format(const Poco::Message & msg, std::string & text) override;
-    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
+    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
 
 private:
-    const Loggers * loggers;
-    Options options;
     bool color;
 };

@@ -184,4 +184,4 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 式のリストは、カンマで区切られた一つ以上の式です。
 関数と演算子は、引数として式を持つことができます。
 
-[元の記事](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->

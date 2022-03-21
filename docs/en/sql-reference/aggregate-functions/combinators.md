@@ -13,7 +13,7 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 
 Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` and so on.
 
-With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, in Yandex.Metrica, conditional aggregate functions are used to implement the segment comparison functionality.
+With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, conditional aggregate functions can be used to implement the segment comparison functionality.
 
 ## -Array {#agg-functions-combinator-array}
 
@@ -25,13 +25,49 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
 
+## -Map {#agg-functions-combinator-map}
+
+The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
+
+Examples: `sumMap(map(1,1))`, `avgMap(map('a', 1))`.
+
 ## -SimpleState {#agg-functions-combinator-simplestate}
 
-If you apply this combinator, the aggregate function returns the same value but with a different type. This is an `SimpleAggregateFunction(...)` that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines.
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
+
+**Syntax**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
+
+**Example**
+
+Query:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Result:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
 
 ## -State {#agg-functions-combinator-state}
 
-If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
 To work with these states, use:
 
@@ -47,7 +83,7 @@ If you apply this combinator, the aggregate function takes the intermediate aggr
 
 ## -MergeState {#aggregate_functions_combinators-mergestate}
 
-Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
+Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
 ## -ForEach {#agg-functions-combinator-foreach}
 
@@ -62,7 +98,7 @@ Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTI
 
 Changes behavior of an aggregate function.
 
-If an aggregate function doesn’t have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
+If an aggregate function does not have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
 
 `-OrDefault` can be used with other combinators.
 
@@ -192,7 +228,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 **Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
+-   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
 -   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
 -   `resampling_key` — Column whose values are used for separating data into intervals.
 -   `aggFunction_params` — `aggFunction` parameters.
@@ -249,5 +285,3 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

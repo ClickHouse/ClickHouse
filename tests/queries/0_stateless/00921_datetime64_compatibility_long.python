@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+# encoding: utf-8
+
+import re
+import itertools
+import sys
+import argparse
+
+# Create SQL statement to verify dateTime64 is accepted as argument to functions taking DateTime.
+FUNCTIONS="""
+toTimeZone(N, 'UTC')
+toYear(N, 'Europe/Moscow')
+toQuarter(N, 'Europe/Moscow')
+toMonth(N, 'Europe/Moscow')
+toDayOfYear(N, 'Europe/Moscow')
+toDayOfMonth(N, 'Europe/Moscow')
+toDayOfWeek(N, 'Europe/Moscow')
+toHour(N, 'Europe/Moscow')
+toMinute(N, 'Europe/Moscow')
+toSecond(N, 'Europe/Moscow')
+toUnixTimestamp(N)
+toStartOfYear(N, 'Europe/Moscow')
+toStartOfISOYear(N, 'Europe/Moscow')
+toStartOfQuarter(N, 'Europe/Moscow')
+toStartOfMonth(N, 'Europe/Moscow')
+toMonday(N, 'Europe/Moscow')
+toStartOfWeek(N, 'Europe/Moscow')
+toStartOfDay(N, 'Europe/Moscow')
+toStartOfHour(N, 'Europe/Moscow')
+toStartOfMinute(N, 'Europe/Moscow')
+toStartOfFiveMinute(N, 'Europe/Moscow')
+toStartOfTenMinutes(N, 'Europe/Moscow')
+toStartOfFifteenMinutes(N, 'Europe/Moscow')
+toStartOfInterval(N, INTERVAL 1 year, 'Europe/Moscow')
+toStartOfInterval(N, INTERVAL 1 month, 'Europe/Moscow')
+toStartOfInterval(N, INTERVAL 1 day, 'Europe/Moscow')
+toStartOfInterval(N, INTERVAL 15 minute, 'Europe/Moscow')
+date_trunc('year', N, 'Europe/Moscow')
+date_trunc('month', N, 'Europe/Moscow')
+date_trunc('day', N, 'Europe/Moscow')
+date_trunc('minute', N, 'Europe/Moscow')
+toTime(N, 'Europe/Moscow')
+toRelativeYearNum(N, 'Europe/Moscow')
+toRelativeQuarterNum(N, 'Europe/Moscow')
+toRelativeMonthNum(N, 'Europe/Moscow')
+toRelativeWeekNum(N, 'Europe/Moscow')
+toRelativeDayNum(N, 'Europe/Moscow')
+toRelativeHourNum(N, 'Europe/Moscow')
+toRelativeMinuteNum(N, 'Europe/Moscow')
+toRelativeSecondNum(N, 'Europe/Moscow')
+toISOYear(N, 'Europe/Moscow')
+toISOWeek(N, 'Europe/Moscow')
+toWeek(N, 'Europe/Moscow')
+toYearWeek(N, 'Europe/Moscow')
+timeSlot(N, 'Europe/Moscow')
+toYYYYMM(N, 'Europe/Moscow')
+toYYYYMMDD(N, 'Europe/Moscow')
+toYYYYMMDDhhmmss(N, 'Europe/Moscow')
+addYears(N, 1, 'Europe/Moscow')
+addMonths(N, 1, 'Europe/Moscow')
+addWeeks(N, 1, 'Europe/Moscow')
+addDays(N, 1, 'Europe/Moscow')
+addHours(N, 1, 'Europe/Moscow')
+addMinutes(N, 1, 'Europe/Moscow')
+addSeconds(N, 1, 'Europe/Moscow')
+addQuarters(N, 1, 'Europe/Moscow')
+subtractYears(N, 1, 'Europe/Moscow')
+subtractMonths(N, 1, 'Europe/Moscow')
+subtractWeeks(N, 1, 'Europe/Moscow')
+subtractDays(N, 1, 'Europe/Moscow')
+subtractHours(N, 1, 'Europe/Moscow')
+subtractMinutes(N, 1, 'Europe/Moscow')
+subtractSeconds(N, 1, 'Europe/Moscow')
+subtractQuarters(N, 1, 'Europe/Moscow')
+CAST(N as DateTime('Europe/Minsk'))
+CAST(N as Date)
+CAST(N as UInt64)
+CAST(N as DateTime64(0, 'Europe/Minsk'))
+CAST(N as DateTime64(3, 'Europe/Minsk'))
+CAST(N as DateTime64(6, 'Europe/Minsk'))
+CAST(N as DateTime64(9, 'Europe/Minsk'))
+# Casting our test values to DateTime(12) will cause an overflow and hence will fail the test under UB sanitizer.
+# CAST(N as DateTime64(12, 'Europe/Moscow'))
+# DateTime64(18) will always fail due to zero precision, but it is Ok to test here:
+# CAST(N as DateTime64(18, 'Europe/Moscow'))
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%', 'Europe/Moscow')
+""".splitlines()
+
+# Expanded later to cartesian product of all arguments, using format string.
+extra_ops = [
+    # With same type:
+    (
+        ['N {op} N'],
+        {
+            'op':
+            [
+                '- ', # does not work, but should it?
+                '+ ', # does not work, but should it?
+                '!=', '==', # equality and inequality supposed to take sub-second part in account
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ]
+        }
+    ),
+    # With other DateTime types:
+    (
+        [
+            'N {op} {arg}',
+            '{arg} {op} N'
+        ],
+        {
+            'op':
+            [
+                '-', # does not work, but should it?
+                '!=', '==',
+                # these are naturally expected to work, but they don't:
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ],
+            'arg': ['DT', 'D', 'DT64'],
+        }
+    ),
+    # With arithmetic types
+    (
+        [
+            'N {op} {arg}',
+            '{arg} {op} N'
+        ],
+        {
+            'op':
+            [
+                '+ ',
+                '- ',
+                '==',
+                '!=',
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ],
+            'arg':
+            [
+                'toUInt8(1)',
+                'toInt8(-1)',
+                'toUInt16(1)',
+                'toInt16(-1)',
+                'toUInt32(1)',
+                'toInt32(-1)',
+                'toUInt64(1)',
+                'toInt64(-1)'
+            ],
+        },
+    ),
+]
+
+# Expand extra_ops here
+for funcs, args in extra_ops:
+    args_keys = list(args.keys())
+    for args_vals in itertools.product(*list(args.values())):
+        for func in funcs:
+            result_func = func.format(**dict(list(zip(args_keys, args_vals))))
+            FUNCTIONS.append(result_func)
+
+# filter out empty lines and commented out lines
+COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
+FUNCTIONS = list([f for f in FUNCTIONS if len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None])
+TYPES = ['D', 'DT', 'DT64']
+
+def escape_string(s):
+    if sys.version_info[0] > 2:
+        return s.encode('unicode_escape').decode('utf-8').replace("'", "\\'")
+    else:
+        return s.encode('string-escape').decode('utf-8')
+
+
+def execute_functions_for_types(functions, types):
+    # NOTE: use string.Template here to allow lines with missing keys, like type, e.g. SELECT CAST(toDateTime64(1234567890), 'DateTime64')
+    for func in functions:
+        print(("""SELECT 'SELECT {func}';""".format(func=escape_string(func))))
+        for dt in types:
+            prologue = "\
+WITH \
+toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
+toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
+toDate('2019-09-16') as D, {X} as N".format(X=dt)
+            print(("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func)))
+        print("""SELECT '------------------------------------------';""")
+
+def main():
+    def parse_args():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--functions_re', type=re.compile, help="RE to enable functions", default=None)
+        parser.add_argument('--types_re',
+                type=lambda s: re.compile('^(' + s + ')$'),
+                help="RE to enable types, supported types: " + ",".join(TYPES), default=None)
+        parser.add_argument('--list_functions', action='store_true', help="List all functions to be tested and exit")
+        return parser.parse_args()
+
+    args = parse_args()
+
+    functions = FUNCTIONS
+    types = TYPES
+
+    if args.functions_re:
+        functions = list([f for f in functions if args.functions_re.search(f)])
+        if len(functions) == 0:
+            print("functions list is empty")
+            return -1
+
+    if args.types_re:
+        types = list([t for t in types if args.types_re.match(t)])
+        if len(types) == 0:
+            print("types list is empty")
+            return -1
+
+    if args.list_functions:
+        print(("\n".join(functions)))
+        return 0
+
+    execute_functions_for_types(functions, types)
+
+if __name__ == '__main__':
+    exit(main())

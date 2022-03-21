@@ -32,4 +32,4 @@ toc_title: 比较函数
 
 ## 大于等于, >= 运算符 {#greaterorequals-operator}
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/comparison_functions/) <!--hide-->

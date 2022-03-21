@@ -1,6 +1,6 @@
 ---
 toc_priority: 49
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0431\u0438\u0442\u043c\u0430\u043f\u043e\u0432"
+toc_title: "Функции для битмапов"
 ---
 
 # Функции для битовых масок {#bitmap-functions}
@@ -13,19 +13,19 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u
 bitmapBuild(array)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `array` – массив типа `UInt*`.
 
 **Пример**
 
 ``` sql
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
+SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ```
 
 ``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)    │
+│     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
 ```
 
@@ -37,14 +37,14 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 bitmapToArray(bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ``` text
@@ -63,33 +63,70 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
-
--   `range_start` – Начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
--   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+-   `bitmap` – битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `range_start` – начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+-   `cardinality_limit` – верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
 
 **Возвращаемое значение**
 
 Подмножество битмапа.
 
-Тип: `Bitmap object`.
+Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
 
 **Пример**
 
 Запрос:
 
 ``` sql
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res;
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
+```
+
+## subBitmap {#subbitmap}
+
+Возвращает элементы битмапа, начиная с позиции `offset`. Число возвращаемых элементов ограничивается параметром `cardinality_limit`. Аналог строковой функции [substring](string-functions.md#substring)), но для битмапа.
+
+**Синтаксис**
+
+``` sql
+subBitmap(bitmap, offset, cardinality_limit)
+```
+
+**Аргументы**
+
+-   `bitmap` – битмап. Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `offset` – позиция первого элемента возвращаемого подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `cardinality_limit` – максимальное число элементов возвращаемого подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+Подмножество битмапа.
+
+Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────────────────┐
+│ [10,11,12,13,14,15,16,17,18,19] │
+└─────────────────────────────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}
@@ -100,11 +137,10 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 bitmapContains(haystack, needle)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
 -   `needle` – значение, которое функция ищет. Тип — [UInt32](../../sql-reference/data-types/int-uint.md).
-
 
 **Возвращаемые значения**
 
@@ -116,7 +152,7 @@ bitmapContains(haystack, needle)
 **Пример**
 
 ``` sql
-SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res;
 ```
 
 ``` text
@@ -135,7 +171,7 @@ bitmapHasAny(bitmap1, bitmap2)
 
 Если вы уверены, что `bitmap2` содержит строго один элемент, используйте функцию [bitmapContains](#bitmap_functions-bitmapcontains). Она работает эффективнее.
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap*` – массив любого типа с набором элементов.
 
@@ -147,7 +183,7 @@ bitmapHasAny(bitmap1, bitmap2)
 **Пример**
 
 ``` sql
-SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 ``` text
@@ -165,14 +201,14 @@ SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 bitmapHasAll(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 ``` text
@@ -189,14 +225,14 @@ SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 bitmapAnd(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -213,14 +249,14 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 bitmapOr(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -237,14 +273,14 @@ SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 bitmapXor(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -261,14 +297,14 @@ SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 bitmapAndnot(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -285,14 +321,14 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 bitmapCardinality(bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
 **Пример**
 
 ``` sql
-SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ``` text
@@ -309,7 +345,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 bitmapAndCardinality(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
@@ -333,7 +369,7 @@ SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 bitmapOrCardinality(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
@@ -357,7 +393,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 bitmapXorCardinality(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
@@ -381,7 +417,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 bitmapAndnotCardinality(bitmap,bitmap)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `bitmap` – битовый массив.
 
@@ -397,4 +433,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 └─────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bitmap_functions/) <!--hide-->

@@ -12,19 +12,19 @@
 namespace DB
 {
 
-class ClusterCopier
+class ClusterCopier : WithMutableContext
 {
 public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  Context & context_)
-            :
+                  ContextMutablePtr context_,
+                  Poco::Logger * log_)
+            : WithMutableContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),
-            context(context_),
-            log(&Poco::Logger::get("ClusterCopier")) {}
+            log(log_) {}
 
     void init();
 
@@ -36,7 +36,7 @@ public:
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
     void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0);
 
-    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force);
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, bool force);
 
     void reloadTaskDescription();
 
@@ -63,6 +63,23 @@ public:
     void setExperimentalUseSampleOffset(bool value)
     {
         experimental_use_sample_offset = value;
+    }
+
+    void setMaxTableTries(UInt64 tries)
+    {
+        max_table_tries = tries;
+    }
+    void setMaxShardPartitionTries(UInt64 tries)
+    {
+        max_shard_partition_tries = tries;
+    }
+    void setMaxShardPartitionPieceTriesForAlter(UInt64 tries)
+    {
+        max_shard_partition_piece_tries_for_alter = tries;
+    }
+    void setRetryDelayMs(std::chrono::milliseconds ms)
+    {
+        retry_delay_ms = ms;
     }
 
 protected:
@@ -118,17 +135,14 @@ protected:
     TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
+    static ASTPtr removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns);
 
-    bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
+    bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
-
-    static constexpr UInt64 max_table_tries = 1000;
-    static constexpr UInt64 max_shard_partition_tries = 600;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 100;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
+    TaskStatus tryCreateDestinationTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
     /// Job for copying partition from particular shard.
     TaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
                                        ShardPartition & task_partition,
@@ -140,7 +154,7 @@ protected:
 
     TaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts,
                                              ShardPartition & task_partition,
-                                             const size_t current_piece_number,
+                                             size_t current_piece_number,
                                              bool is_unprioritized_task);
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
@@ -148,6 +162,8 @@ protected:
     void dropLocalTableIfExists(const DatabaseAndTableName & table_name) const;
 
     void dropHelpingTables(const TaskTable & task_table);
+
+    void dropHelpingTablesByPieceNumber(const TaskTable & task_table, size_t current_piece_number);
 
     /// Is used for usage less disk space.
     /// After all pieces were successfully moved to original destination
@@ -187,9 +203,7 @@ protected:
             const ClusterPtr & cluster,
             const String & query,
             const Settings & current_settings,
-            PoolMode pool_mode = PoolMode::GET_ALL,
-            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
-            UInt64 max_successful_executions_per_shard = 0) const;
+            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD) const;
 
 private:
     String task_zookeeper_path;
@@ -206,7 +220,6 @@ private:
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_description_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 
@@ -216,9 +229,11 @@ private:
 
     bool experimental_use_sample_offset{false};
 
-    Context & context;
     Poco::Logger * log;
 
-    std::chrono::milliseconds default_sleep_time{1000};
+    UInt64 max_table_tries = 3;
+    UInt64 max_shard_partition_tries = 3;
+    UInt64 max_shard_partition_piece_tries_for_alter = 10;
+    std::chrono::milliseconds retry_delay_ms{1000};
 };
 }

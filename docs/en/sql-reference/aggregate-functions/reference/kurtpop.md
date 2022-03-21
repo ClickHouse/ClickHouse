@@ -21,5 +21,5 @@ The kurtosis of the given distribution. Type — [Float64](../../../sql-referenc
 **Example**
 
 ``` sql
-SELECT kurtPop(value) FROM series_with_value_column
+SELECT kurtPop(value) FROM series_with_value_column;
 ```

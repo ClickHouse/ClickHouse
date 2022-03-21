@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,7 +26,7 @@ class FunctionArrayDistinct : public IFunction
 public:
     static constexpr auto name = "arrayDistinct";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionArrayDistinct>();
     }
@@ -37,6 +37,8 @@ public:
     }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -270,7 +272,7 @@ void FunctionArrayDistinct::executeHashed(
             UInt128 hash;
             SipHash hash_function;
             src_data.updateHashWithValue(j, hash_function);
-            hash_function.get128(reinterpret_cast<char *>(&hash));
+            hash_function.get128(hash);
 
             if (!set.find(hash))
             {

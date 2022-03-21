@@ -9,9 +9,8 @@ import sys
 SCRIPT_PATH = os.path.realpath(__file__)
 
 IMAGE_MAP = {
-    "deb": "yandex/clickhouse-deb-builder",
-    "binary": "yandex/clickhouse-binary-builder",
-    "unbundled": "yandex/clickhouse-unbundled-builder"
+    "deb": "clickhouse/deb-builder",
+    "binary": "clickhouse/binary-builder",
 }
 
 def check_image_exists_locally(image_name):
@@ -30,7 +29,13 @@ def pull_image(image_name):
         return False
 
 def build_image(image_name, filepath):
-    subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
+    context = os.path.dirname(filepath)
+    build_cmd = "docker build --network=host -t {} -f {} {}".format(image_name, filepath, context)
+    logging.info("Will build image with cmd: '{}'".format(build_cmd))
+    subprocess.check_call(
+        build_cmd,
+        shell=True,
+    )
 
 def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir, docker_image_version):
     env_part = " -e ".join(env_variables)
@@ -55,25 +60,21 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
-    CLANG_PREFIX = "clang"
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
     DARWIN_SUFFIX = "-darwin"
+    DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
+    PPC_SUFFIX = '-ppc64le'
 
     result = []
-    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
+    cmake_flags = ['$CMAKE_FLAGS']
 
-    is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
+    is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_cross_compile = is_cross_darwin or is_cross_arm or is_cross_freebsd
-
-    # Explicitly use LLD with Clang by default.
-    # Don't force linker for cross-compilation.
-    if is_clang and not is_cross_compile:
-        cmake_flags.append("-DLINKER_NAME=lld")
 
     if is_cross_darwin:
         cc = compiler[:-len(DARWIN_SUFFIX)]
@@ -82,20 +83,35 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
+    elif is_cross_darwin_arm:
+        cc = compiler[:-len(DARWIN_ARM_SUFFIX)]
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/aarch64-apple-darwin-install_name_tool")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/aarch64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake")
     elif is_cross_arm:
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
+        result.append("DEB_ARCH_FLAG=-aarm64")
     elif is_cross_freebsd:
         cc = compiler[:-len(FREEBSD_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
+    elif is_cross_ppc:
+        cc = compiler[:-len(PPC_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake")
     else:
         cc = compiler
+        result.append("DEB_ARCH_FLAG=-aamd64")
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if image_type == "deb" or image_type == "unbundled":
+    if image_type == "deb":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
+        # For building fuzzers
+        result.append("CC={}".format(cc))
+        result.append("CXX={}".format(cxx))
     elif image_type == "binary":
         result.append("CC={}".format(cc))
         result.append("CXX={}".format(cxx))
@@ -140,11 +156,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append('ENABLE_TESTS=1')
         result.append('BINARY_OUTPUT=tests')
         cmake_flags.append('-DENABLE_TESTS=1')
-        cmake_flags.append('-DUSE_GTEST=1')
-
-    if unbundled:
-        # TODO: fix build with ENABLE_RDKAFKA
-        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
@@ -155,6 +166,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     if clang_tidy:
         cmake_flags.append('-DENABLE_CLANG_TIDY=1')
+        cmake_flags.append('-DENABLE_UTILS=1')
+        cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DENABLE_EXAMPLES=1')
         # Don't stop on first error to find more clang-tidy errors in one run.
         result.append('NINJA_FLAGS=-k0')
 
@@ -182,11 +196,11 @@ if __name__ == "__main__":
     parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-10", "clang-10-darwin", "clang-10-aarch64", "clang-10-freebsd",
-                                               "clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
-                                               "gcc-9", "gcc-10"), default="gcc-9")
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
+                                               "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
+                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64", "clang-13-ppc64le",
+                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
-    parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
@@ -205,7 +219,7 @@ if __name__ == "__main__":
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_type = 'binary' if args.package_type == 'performance' else 'unbundled' if args.unbundled else args.package_type
+    image_type = 'binary' if args.package_type == 'performance' else args.package_type
     image_name = IMAGE_MAP[image_type]
 
     if not os.path.isabs(args.clickhouse_repo_path):
@@ -229,7 +243,7 @@ if __name__ == "__main__":
             build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
-        args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
+        args.cache, args.distcc_hosts, args.split_binary, args.clang_tidy,
         args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
 
     run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir, args.docker_image_version)

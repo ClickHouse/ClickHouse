@@ -44,6 +44,11 @@
     * 4.7.1 [BindDN Parameter](#binddn-parameter)
       * 4.7.1.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN](#rqsrs-014ldaprolemappingconfigurationserverbinddn)
       * 4.7.1.2 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN](#rqsrs-014ldaprolemappingconfigurationserverbinddnconflictwithauthdn)
+    * 4.7.2 [User DN Detection](#user-dn-detection)
+      * 4.7.2.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection](#rqsrs-014ldaprolemappingconfigurationserveruserdndetection)
+      * 4.7.2.2 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionbasedn)
+      * 4.7.2.3 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionscope)
+      * 4.7.2.4 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionsearchfilter)
   * 4.8 [External User Directory Configuration](#external-user-directory-configuration)
     * 4.8.1 [Syntax](#syntax)
       * 4.8.1.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Syntax](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingsyntax)
@@ -71,6 +76,8 @@
       * 4.8.8.3 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithUTF8Characters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithutf8characters)
       * 4.8.8.4 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialXMLCharacters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithspecialxmlcharacters)
       * 4.8.8.5 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Prefix.WithSpecialRegexCharacters](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingprefixwithspecialregexcharacters)
+  * 4.9 [Cluster With And Without Secret](#cluster-with-and-without-secret)
+      * 4.9.8.1 [RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable](#rqsrs-014ldapclusterwithandwithoutsecretdistributedtable)
 * 5 [References](#references)
 
 ## Revision History
@@ -301,7 +308,7 @@ with the actual user name during each authentication attempt.
 For example, 
 
 ```xml
-<yandex>
+<clickhouse>
     <ldap_servers>
         <my_ldap_server>
             <!-- ... -->
@@ -309,7 +316,7 @@ For example,
             <!-- ... -->
         </my_ldap_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN
@@ -317,6 +324,67 @@ version: 1.0
 
 [ClickHouse] SHALL return an error if both `<bind_dn>` and `<auth_dn_prefix>` or `<auth_dn_suffix>` parameters
 are specified as part of [LDAP] server description in the `<ldap_servers>` section of the `config.xml`.
+
+#### User DN Detection
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection
+version: 1.0
+
+[ClickHouse] SHALL support the `user_dn_detection` sub-section in the `<ldap_servers><server_name>` section
+of the `config.xml` that SHALL be used to enable detecting the actual user DN of the bound user. 
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN
+version: 1.0
+
+[ClickHouse] SHALL support `base_dn` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify how 
+to construct the base DN for the LDAP search to detect the actual user DN.
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <base_dn>CN=Users,DC=example,DC=com</base_dn>
+</user_dn_detection>
+```
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope
+version: 1.0
+
+[ClickHouse] SHALL support `scope` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL the scope of the 
+LDAP search to detect the actual user DN. The `scope` parameter SHALL support the following values
+
+* `base`
+* `one_level`
+* `children`
+* `subtree`
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <scope>one_level</scope>
+</user_dn_detection>
+```
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter
+version: 1.0
+
+[ClickHouse] SHALL support `search_filter` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify the LDAP search
+filter used to detect the actual user DN.
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+</user_dn_detection>
+```
 
 ### External User Directory Configuration
 
@@ -331,7 +399,7 @@ of the `config.xml`.
 For example,
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <!-- ... -->
@@ -344,7 +412,7 @@ For example,
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 #### Special Characters Escaping
@@ -382,7 +450,7 @@ version: 1.0
 [ClickHouse] SHALL support the `<base_dn>` parameter in the `<user_directories><ldap><role_mapping>` section 
 of the `config.xml` that SHALL specify the template to be used to construct the base `DN` for the [LDAP] search.
 
-The resulting `DN` SHALL be constructed by replacing all the `{user_name}` and `{bind_dn}` substrings of 
+The resulting `DN` SHALL be constructed by replacing all the `{user_name}`, `{bind_dn}`, and `user_dn` substrings of 
 the template with the actual user name and bind `DN` during each [LDAP] search.
 
 #### Attribute Parameter
@@ -445,7 +513,7 @@ version: 1.0
 section of the `config.xml` that SHALL specify the template used to construct 
 the [LDAP filter](https://ldap.com/ldap-filters/) for the search.
 
-The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings 
+The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, `{base_dn}`, and `{user_dn}` substrings 
 of the template with the actual user name, bind `DN`, and base `DN` during each the [LDAP] search.
  
 #### Prefix Parameter
@@ -482,22 +550,83 @@ version: 1.0
 [ClickHouse] SHALL support regex special characters as the value of the `<prefix>` parameter in
 the `<user directories><ldap><role_mapping>` section of the `config.xml`.
 
+### Cluster With And Without Secret
+
+##### RQ.SRS-014.LDAP.ClusterWithAndWithoutSecret.DistributedTable
+version: 1.0
+
+[ClickHouse] SHALL support propagating query user roles and their corresponding privileges
+when using `Distributed` table to the remote servers for the users that are authenticated
+using LDAP either via external user directory or defined in `users.xml` when
+cluster is configured with and without `<secret>`.
+
+For example,
+
+```xml
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <secret>qwerty123</secret>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host1</host>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host2</host>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>
+```
+
+or 
+
+```xml
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host1</host>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>dwh</default_database>
+                    <host>host2</host>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>
+```
+
 ## References
 
-* **Access Control and Account Management**: https://clickhouse.tech/docs/en/operations/access-rights/
+* **Access Control and Account Management**: https://clickhouse.com/docs/en/operations/access-rights/
 * **LDAP**: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository**: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 * **Revision History**: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md 
 * **Git:** https://git-scm.com/
 
-[RBAC]: https://clickhouse.tech/docs/en/operations/access-rights/
+[RBAC]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS]: #srs
-[Access Control and Account Management]: https://clickhouse.tech/docs/en/operations/access-rights/
+[Access Control and Account Management]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS-009 ClickHouse LDAP External User Directory]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [SRS-007 ClickHouse Authentication of Users via LDAP]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 [Git]: https://git-scm.com/

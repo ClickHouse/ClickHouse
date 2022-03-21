@@ -1,17 +1,14 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
 {
-
-class PostgreSQLConnection;
-using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -21,17 +18,16 @@ public:
 
 private:
     StoragePtr executeImpl(
-            const ASTPtr & ast_function, const Context & context,
+            const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "PostgreSQL"; }
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    String connection_str;
-    String remote_table_name;
-    PostgreSQLConnectionPtr connection;
+    postgres::PoolWithFailoverPtr connection_pool;
+    std::optional<StoragePostgreSQLConfiguration> configuration;
 };
 
 }

@@ -25,13 +25,14 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "date_trunc";
 
-    explicit FunctionDateTrunc(const Context & context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateTrunc>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -62,7 +63,7 @@ public:
 
         bool second_argument_is_date = false;
         auto check_second_argument = [&] {
-            if (!isDateOrDateTime(arguments[1].type))
+            if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(
                     "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -142,11 +143,11 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { true, true, true };
+        return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 

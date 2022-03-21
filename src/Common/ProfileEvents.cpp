@@ -8,6 +8,7 @@
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
+    M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
@@ -22,16 +23,20 @@
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.") \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.") \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.") \
-    M(ReadBufferAIORead, "") \
-    M(ReadBufferAIOReadBytes, "") \
-    M(WriteBufferAIOWrite, "") \
-    M(WriteBufferAIOWriteBytes, "") \
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
+    M(MMappedFileCacheHits, "") \
+    M(MMappedFileCacheMisses, "") \
+    M(OpenedFileCacheHits, "") \
+    M(OpenedFileCacheMisses, "") \
+    M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
+    M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
+    M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
+    M(AIOReadBytes, "Number of bytes read with Linux or FreeBSD AIO interface") \
     M(IOBufferAllocs, "") \
     M(IOBufferAllocBytes, "") \
     M(ArenaAllocChunks, "") \
@@ -41,14 +46,16 @@
     M(MarkCacheHits, "") \
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
-    M(CreatedReadBufferAIO, "") \
-    M(CreatedReadBufferAIOFailed, "") \
+    M(CreatedReadBufferDirectIO, "") \
+    M(CreatedReadBufferDirectIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
-    M(NetworkReceiveElapsedMicroseconds, "") \
-    M(NetworkSendElapsedMicroseconds, "") \
+    M(NetworkReceiveElapsedMicroseconds, "Total time spent waiting for data to receive or receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries..") \
+    M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
@@ -97,6 +104,8 @@
     M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
     \
+    M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
+    \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
@@ -131,6 +140,12 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
+    M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.") \
+    M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.") \
+    M(MergeTreeDataProjectionWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables projection.") \
+    M(MergeTreeDataProjectionWriterBlocks, "Number of blocks INSERTed to MergeTree tables projection. Each block forms a data part of level zero.") \
+    M(MergeTreeDataProjectionWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables projection that appeared to be already sorted.") \
+    \
     M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.") \
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
@@ -142,6 +157,11 @@
     M(StorageBufferPassedTimeMaxThreshold, "") \
     M(StorageBufferPassedRowsMaxThreshold, "") \
     M(StorageBufferPassedBytesMaxThreshold, "") \
+    M(StorageBufferPassedTimeFlushThreshold, "") \
+    M(StorageBufferPassedRowsFlushThreshold, "") \
+    M(StorageBufferPassedBytesFlushThreshold, "") \
+    M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading") \
+    M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers)") \
     \
     M(DictCacheKeysRequested, "") \
     M(DictCacheKeysRequestedMiss, "") \
@@ -170,8 +190,6 @@
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
-    M(VoluntaryContextSwitches, "") \
-    M(InvoluntaryContextSwitches, "") \
     \
     M(OSIOWaitMicroseconds, "Total time a thread spent waiting for a result of IO operation, from the OS point of view. This is real IO that doesn't include page cache.") \
     M(OSCPUWaitMicroseconds, "Total time a thread was ready for execution but waiting to be scheduled by OS, from the OS point of view.") \
@@ -207,10 +225,11 @@
     M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
     M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
-    M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
+    M(CreatedHTTPConnections, "Total amount of created HTTP connections (counter increase every time connection is created).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
-    M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerRuns, "Number of times QueryProfiler had been run.") \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
     M(NotCreatedLogEntryForMerge, "Log entry to merge parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.") \
@@ -231,7 +250,43 @@
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
-
+    \
+    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
+    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
+    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
+    \
+    M(RemoteFSSeeks, "Total number of seeks for async buffer") \
+    M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
+    M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
+    M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSLazySeeks, "Number of lazy seeks") \
+    M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
+    M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
+    M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
+    \
+    M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
+    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
+    \
+    M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from page cache.") \
+    M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from page cache.") \
+    M(ThreadPoolReaderPageCacheHitElapsedMicroseconds, "Time spent reading data from page cache in ThreadPoolReader.") \
+    M(ThreadPoolReaderPageCacheMiss, "Number of times the read inside ThreadPoolReader was not done from page cache and was hand off to thread pool.") \
+    M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
+    M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
+    \
+    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    \
+    M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
+    \
+    M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
+    M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
+    M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
 
 namespace ProfileEvents
 {
@@ -272,11 +327,15 @@ void Counters::reset()
     resetCounters();
 }
 
-Counters Counters::getPartiallyAtomicSnapshot() const
+Counters::Snapshot::Snapshot()
+    : counters_holder(new Count[num_counters] {})
+{}
+
+Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
-    Counters res(VariableContext::Snapshot, nullptr);
+    Snapshot res;
     for (Event i = 0; i < num_counters; ++i)
-        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
 
@@ -311,6 +370,24 @@ Event end() { return END; }
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
+{
+    init();
+    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+}
+
+CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
+{
+    init();
+    for (Event i = 0; i < Counters::num_counters; ++i)
+        increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
+}
+
+void CountersIncrement::init()
+{
+    increment_holder = std::make_unique<Increment[]>(Counters::num_counters);
 }
 
 }

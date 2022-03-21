@@ -5,9 +5,7 @@ SELECT extractAllGroupsVertical('hello', 123);  --{serverError 43} invalid argum
 SELECT extractAllGroupsVertical(123, 'world');  --{serverError 43}  invalid argument type
 SELECT extractAllGroupsVertical('hello world', '((('); --{serverError 427}  invalid re
 SELECT extractAllGroupsVertical('hello world', materialize('\\w+')); --{serverError 44} non-const needle
-
-SELECT '0 groups, zero matches';
-SELECT extractAllGroupsVertical('hello world', '\\w+'); -- { serverError 36 }
+SELECT extractAllGroupsVertical('hello world', '\\w+'); -- { serverError 36 } 0 groups
 
 SELECT '1 group, multiple matches, String and FixedString';
 SELECT extractAllGroupsVertical('hello world', '(\\w+)');

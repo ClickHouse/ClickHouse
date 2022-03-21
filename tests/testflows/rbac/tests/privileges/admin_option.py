@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(test=grant_role, flags=TE)(grant_target_name=user_name, user_name=user_name)
+        Suite(test=grant_role)(grant_target_name=user_name, user_name=user_name)
 
 @TestSuite
 def privileges_granted_via_role(self, node=None):
@@ -35,7 +35,7 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(test=grant_role, flags=TE)(grant_target_name=role_name, user_name=user_name)
+        Suite(test=grant_role)(grant_target_name=role_name, user_name=user_name)
 
 @TestSuite
 def grant_role(self, grant_target_name, user_name, node=None):
@@ -52,7 +52,13 @@ def grant_role(self, grant_target_name, user_name, node=None):
 
         with user(node, target_user_name), role(node, grant_role_name):
 
-            with When("I check the user can't grant a role"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't grant a role"):
                 node.query(f"GRANT {grant_role_name} TO {target_user_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -109,6 +115,7 @@ def grant_role(self, grant_target_name, user_name, node=None):
 @Name("admin option")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AdminOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of ADMIN OPTION.

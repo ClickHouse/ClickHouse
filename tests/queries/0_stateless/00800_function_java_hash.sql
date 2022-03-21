@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 select javaHash('abc');
 select javaHash('874293087');
 select javaHashUTF16LE(convertCharset('a1가', 'utf-8', 'utf-16le'));

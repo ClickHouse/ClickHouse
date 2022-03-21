@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 from testflows.core import *
 
@@ -11,6 +12,7 @@ from aes_encryption.requirements import *
 issue_18249 = "https://github.com/ClickHouse/ClickHouse/issues/18249"
 issue_18250 = "https://github.com/ClickHouse/ClickHouse/issues/18250"
 issue_18251 = "https://github.com/ClickHouse/ClickHouse/issues/18251"
+issue_24029 = "https://github.com/ClickHouse/ClickHouse/issues/24029"
 
 xfails = {
     # encrypt
@@ -48,7 +50,20 @@ xfails = {
     "compatibility/mysql/:engine/encrypt/mysql_datatype='TEXT'/:":
      [(Fail, issue_18250)],
     "compatibility/mysql/:engine/encrypt/mysql_datatype='VARCHAR(100)'/:":
-     [(Fail, issue_18250)]
+     [(Fail, issue_18250)],
+    # reinterpretAsFixedString for UUID stopped working
+    "decrypt/decryption/mode=:datatype=UUID:":
+     [(Fail, issue_24029)],
+    "encrypt/:/mode=:datatype=UUID:":
+     [(Fail, issue_24029)],
+    "decrypt/invalid ciphertext/mode=:/invalid ciphertext=reinterpretAsFixedString(toUUID:":
+     [(Fail, issue_24029)],
+    "encrypt_mysql/encryption/mode=:datatype=UUID:":
+     [(Fail, issue_24029)],
+    "decrypt_mysql/decryption/mode=:datatype=UUID:":
+     [(Fail, issue_24029)],
+    "decrypt_mysql/invalid ciphertext/mode=:/invalid ciphertext=reinterpretAsFixedString(toUUID:":
+     [(Fail, issue_24029)],
 }
 
 @TestFeature
@@ -60,21 +75,30 @@ xfails = {
     RQ_SRS008_AES_Functions_DifferentModes("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse AES encryption functions regression module.
     """
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
+    if stress is not None:
+        self.context.stress = stress
+    self.context.clickhouse_version = clickhouse_version
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "aes_encryption_env")) as cluster:
         self.context.cluster = cluster
 
-        Feature(run=load("aes_encryption.tests.encrypt", "feature"), flags=TE)
-        Feature(run=load("aes_encryption.tests.decrypt", "feature"), flags=TE)
-        Feature(run=load("aes_encryption.tests.encrypt_mysql", "feature"), flags=TE)
-        Feature(run=load("aes_encryption.tests.decrypt_mysql", "feature"), flags=TE)
-        Feature(run=load("aes_encryption.tests.compatibility.feature", "feature"), flags=TE)
+        with Pool(5) as pool:
+            try:
+                Feature(run=load("aes_encryption.tests.encrypt", "feature"), flags=TE, parallel=True, executor=pool)
+                Feature(run=load("aes_encryption.tests.decrypt", "feature"), flags=TE, parallel=True, executor=pool)
+                Feature(run=load("aes_encryption.tests.encrypt_mysql", "feature"), flags=TE, parallel=True, executor=pool)
+                Feature(run=load("aes_encryption.tests.decrypt_mysql", "feature"), flags=TE, parallel=True, executor=pool)
+                Feature(run=load("aes_encryption.tests.compatibility.feature", "feature"), flags=TE, parallel=True, executor=pool)
+            finally:
+                join()
 
 if main():
     regression()

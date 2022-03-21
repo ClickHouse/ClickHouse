@@ -25,7 +25,7 @@ TEST(ThreadPool, GlobalFull1)
     std::atomic<size_t> counter = 0;
     static constexpr size_t num_jobs = capacity + 1;
 
-    auto func = [&] { ++counter; while (counter != num_jobs) {} };
+    auto func = [&] { ++counter; while (counter != num_jobs) {} }; //-V776
 
     ThreadPool pool(num_jobs);
 
@@ -63,7 +63,7 @@ TEST(ThreadPool, GlobalFull2)
     global_pool.wait();
 
     std::atomic<size_t> counter = 0;
-    auto func = [&] { ++counter; while (counter != capacity + 1) {} };
+    auto func = [&] { ++counter; while (counter != capacity + 1) {} }; //-V776
 
     ThreadPool pool(capacity, 0, capacity);
     for (size_t i = 0; i < capacity; ++i)

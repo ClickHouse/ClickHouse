@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
     static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override
@@ -42,6 +43,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

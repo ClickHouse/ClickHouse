@@ -13,7 +13,7 @@ private:
     DataTypePtr dictionary_type;
 
 public:
-    DataTypeLowCardinality(DataTypePtr dictionary_type_);
+    explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
 
@@ -23,50 +23,6 @@ public:
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
-
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
-
-    void serializeBinaryBulkStatePrefixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkStateSuffixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkStatePrefixImpl(
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkWithMultipleStreamsImpl(
-            const IColumn & column,
-            size_t offset,
-            size_t limit,
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
-            IColumn & column,
-            size_t limit,
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsCache * cache) const override;
-
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -95,11 +51,14 @@ public:
     bool isNullable() const override { return false; }
     bool onlyNull() const override { return false; }
     bool lowCardinality() const override { return true; }
+    bool supportsSparseSerialization() const override { return false; }
+    bool isLowCardinalityNullable() const override { return dictionary_type->isNullable(); }
 
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
 private:
+    SerializationPtr doGetDefaultSerialization() const override;
 
     template <typename ... Params>
     using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;

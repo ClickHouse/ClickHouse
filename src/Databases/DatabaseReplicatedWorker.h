@@ -21,13 +21,16 @@ class DatabaseReplicated;
 class DatabaseReplicatedDDLWorker : public DDLWorker
 {
 public:
-    DatabaseReplicatedDDLWorker(DatabaseReplicated * db, const Context & context_);
+    DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
 
     String enqueueQuery(DDLLogEntry & entry) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
 
     void shutdown() override;
+
+    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
 
 private:
     bool initializeMainThread() override;
@@ -40,7 +43,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable wait_current_task_change;
     String current_task;
-    UInt32 logs_to_keep = std::numeric_limits<UInt32>::max();
+    std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
 };
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Core/Types.h>
 #include <atomic>
 #include <map>
@@ -15,13 +15,13 @@ class SummingStateMachine : public nuraft::state_machine
 public:
     SummingStateMachine();
 
-    nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
+    nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const size_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
 
-    void rollback(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {} /// NOLINT
 
-    size_t last_commit_index() override { return last_committed_idx; }
+    uint64_t last_commit_index() override { return last_committed_idx; }
 
     bool apply_snapshot(nuraft::snapshot & s) override;
 
@@ -33,7 +33,7 @@ public:
 
     void save_logical_snp_obj(
         nuraft::snapshot & s,
-        size_t & obj_id,
+        uint64_t & obj_id,
         nuraft::buffer & data,
         bool is_first_obj,
         bool is_last_obj) override;
@@ -41,7 +41,7 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s,
         void* & user_snp_ctx,
-        size_t obj_id,
+        uint64_t obj_id,
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 

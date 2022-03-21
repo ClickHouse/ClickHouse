@@ -28,7 +28,6 @@ public:
     class Reader;
     class Locus;
 
-public:
     CompactArray() = default;
 
     UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
@@ -55,28 +54,6 @@ public:
         return locus;
     }
 
-    /// Used only in arcadia/metrika
-    void readText(ReadBuffer & in)
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                assertChar(',', in);
-            readIntText(bitset[i], in);
-        }
-    }
-
-    /// Used only in arcadia/metrika
-    void writeText(WriteBuffer & out) const
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                writeCString(",", out);
-            writeIntText(bitset[i], out);
-        }
-    }
-
 private:
     /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
@@ -89,7 +66,7 @@ template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray<BucketIndex, content_width, bucket_count>::Reader final
 {
 public:
-    Reader(ReadBuffer & in_)
+    explicit Reader(ReadBuffer & in_)
         : in(in_)
     {
     }
@@ -159,12 +136,12 @@ private:
     /// The number of bytes read.
     size_t read_count = 0;
     /// The content in the current position.
-    UInt8 value_l;
-    UInt8 value_r;
+    UInt8 value_l = 0;
+    UInt8 value_r = 0;
     ///
     bool is_eof = false;
     /// Does the cell fully fit into one byte?
-    bool fits_in_byte;
+    bool fits_in_byte = false;
 };
 
 /** TODO This code looks very suboptimal.
@@ -182,7 +159,7 @@ class CompactArray<BucketIndex, content_width, bucket_count>::Locus final
     friend class CompactArray::Reader;
 
 public:
-    ALWAYS_INLINE operator UInt8() const
+    ALWAYS_INLINE operator UInt8() const /// NOLINT
     {
         if (content_l == content_r)
             return read(*content_l);
@@ -216,7 +193,7 @@ public:
 private:
     Locus() = default;
 
-    Locus(BucketIndex bucket_index)
+    explicit Locus(BucketIndex bucket_index)
     {
         init(bucket_index);
     }
@@ -252,7 +229,6 @@ private:
             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
     }
 
-private:
     size_t index_l;
     size_t offset_l;
     size_t index_r;

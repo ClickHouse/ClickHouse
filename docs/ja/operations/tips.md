@@ -78,7 +78,7 @@ HDDの場合、ライトキャッシュを有効にします。
 
 ## ファイルシス {#file-system}
 
-Ext4は最も信頼性の高いオプションです。 マウントオプションの設定 `noatime, nobarrier`.
+Ext4は最も信頼性の高いオプションです。 マウントオプションの設定 `noatime`.
 XFSも適していますが、ClickHouseで徹底的にテストされていません。
 他のほとんどのファイルシステム仕様。 ファイルシステムの遅配ます。
 
@@ -248,4 +248,4 @@ script
 end script
 ```
 
-{## [元の記事](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/operations/tips/) ##}

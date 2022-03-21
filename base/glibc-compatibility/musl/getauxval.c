@@ -1,4 +1,5 @@
 #include <sys/auxv.h>
+#include "atomic.h"
 #include <unistd.h> // __environ
 #include <errno.h>
 
@@ -17,18 +18,7 @@ static size_t __find_auxv(unsigned long type)
     return (size_t) -1;
 }
 
-__attribute__((constructor)) static void __auxv_init()
-{
-    size_t i;
-    for (i = 0; __environ[i]; i++);
-    __auxv = (unsigned long *) (__environ + i + 1);
-
-    size_t secure_idx = __find_auxv(AT_SECURE);
-    if (secure_idx != ((size_t) -1))
-        __auxv_secure = __auxv[secure_idx];
-}
-
-unsigned long getauxval(unsigned long type)
+unsigned long __getauxval(unsigned long type)
 {
     if (type == AT_SECURE)
         return __auxv_secure;
@@ -42,4 +32,39 @@ unsigned long getauxval(unsigned long type)
 
     errno = ENOENT;
     return 0;
+}
+
+static void * volatile getauxval_func;
+
+static unsigned long  __auxv_init(unsigned long type)
+{
+    if (!__environ)
+    {
+        // __environ is not initialized yet so we can't initialize __auxv right now.
+        // That's normally occurred only when getauxval() is called from some sanitizer's internal code.
+        errno = ENOENT;
+        return 0;
+    }
+
+    // Initialize __auxv and __auxv_secure.
+    size_t i;
+    for (i = 0; __environ[i]; i++);
+    __auxv = (unsigned long *) (__environ + i + 1);
+
+    size_t secure_idx = __find_auxv(AT_SECURE);
+    if (secure_idx != ((size_t) -1))
+        __auxv_secure = __auxv[secure_idx];
+
+    // Now we've initialized __auxv, next time getauxval() will only call __get_auxval().
+    a_cas_p(&getauxval_func, (void *)__auxv_init, (void *)__getauxval);
+
+    return __getauxval(type);
+}
+
+// First time getauxval() will call __auxv_init().
+static void * volatile getauxval_func = (void *)__auxv_init;
+
+unsigned long getauxval(unsigned long type)
+{
+    return ((unsigned long (*)(unsigned long))getauxval_func)(type);
 }

@@ -1,16 +1,21 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -26,20 +31,16 @@ class MemorySource : public SourceWithProgress
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We use pointer to the beginning of the list and its current size.
-    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
-    /// only new elements can be added to the back of the list, so our iterators remain valid
 
     MemorySource(
         Names column_names_,
-        const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        , column_names_and_types(storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -59,26 +60,26 @@ protected:
 
         size_t current_index = getAndIncrementExecutionIndex();
 
-        if (current_index >= data->size())
+        if (!data || current_index >= data->size())
         {
             return {};
         }
 
         const Block & src = (*data)[current_index];
+
         Columns columns;
-        columns.reserve(columns.size());
+        size_t num_columns = column_names_and_types.size();
+        columns.reserve(num_columns);
 
-        /// Add only required columns to `res`.
-        for (const auto & elem : column_names_and_types)
+        auto name_and_type = column_names_and_types.begin();
+        for (size_t i = 0; i < num_columns; ++i)
         {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
-
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
+            columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
+            ++name_and_type;
         }
+
+        fillMissingColumns(columns, src.rows(), column_names_and_types, /*metadata_snapshot=*/ nullptr);
+        assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -104,22 +105,32 @@ private:
 };
 
 
-class MemoryBlockOutputStream : public IBlockOutputStream
+class MemorySink : public SinkToStorage
 {
 public:
-    MemoryBlockOutputStream(
+    MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "MemorySink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
-        metadata_snapshot->check(block, true);
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        storage_snapshot->metadata->check(block, true);
+        if (!storage_snapshot->object_columns.empty())
+        {
+            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
+            auto extended_storage_columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+            convertObjectsToTuples(columns, block, extended_storage_columns);
+        }
 
         if (storage.compress)
         {
@@ -135,7 +146,7 @@ public:
         }
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
@@ -160,7 +171,7 @@ private:
     Blocks new_blocks;
 
     StorageMemory & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 
@@ -168,26 +179,47 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
+    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->blocks = data.get();
+
+    if (!hasObjectColumns(metadata_snapshot->getColumns()))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    auto object_columns = getObjectColumns(
+        snapshot_data->blocks->begin(),
+        snapshot_data->blocks->end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
 
 Pipe StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
+
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
+    auto current_data = snapshot_data.blocks;
 
     if (delay_read_for_global_subqueries)
     {
@@ -201,17 +233,15 @@ Pipe StorageMemory::read(
 
         return Pipe(std::make_shared<MemorySource>(
             column_names,
-            *this,
-            metadata_snapshot,
+            storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [this](std::shared_ptr<const Blocks> & data_to_initialize)
+            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = data.get();
+                data_to_initialize = current_data;
             }));
     }
 
-    auto current_data = data.get();
     size_t size = current_data->size();
 
     if (num_streams > size)
@@ -223,16 +253,16 @@ Pipe StorageMemory::read(
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, storage_snapshot, current_data, parallel_execution_index));
     }
 
     return Pipe::unitePipes(std::move(pipes));
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot);
 }
 
 
@@ -258,18 +288,26 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-void StorageMemory::mutate(const MutationCommands & commands, const Context & context)
+void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-    auto in = interpreter->execute();
 
-    in->readPrefix();
+    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// which will lead to inconsistency after updateBlockData.
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("max_streams_to_max_threads_ratio", 1);
+    new_context->setSetting("max_threads", 1);
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
+    auto pipeline = interpreter->execute();
+    PullingPipelineExecutor executor(pipeline);
+
     Blocks out;
-    while (Block block = in->read())
+    Block block;
+    while (executor.pull(block))
     {
         if (compress)
             for (auto & elem : block)
@@ -277,7 +315,6 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
 
         out.push_back(block);
     }
-    in->readSuffix();
 
     std::unique_ptr<Blocks> new_data;
 
@@ -313,14 +350,14 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
         rows += buffer.rows();
         bytes += buffer.bytes();
     }
-    total_size_bytes.store(rows, std::memory_order_relaxed);
-    total_size_rows.store(bytes, std::memory_order_relaxed);
+    total_size_bytes.store(bytes, std::memory_order_relaxed);
+    total_size_rows.store(rows, std::memory_order_relaxed);
     data.set(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
@@ -353,7 +390,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

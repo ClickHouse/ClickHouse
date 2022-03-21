@@ -3,7 +3,6 @@
 #include <errno.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +31,7 @@ WriteBufferFromFile::WriteBufferFromFile(
     mode_t mode,
     char * existing_memory,
     size_t alignment)
-    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
+    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -65,25 +64,23 @@ WriteBufferFromFile::WriteBufferFromFile(
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
-    :
-    WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
-    file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
+    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, original_file_name)
 {
     fd_ = -1;
 }
 
-
 WriteBufferFromFile::~WriteBufferFromFile()
+{
+    finalize();
+    ::close(fd);
+}
+
+void WriteBufferFromFile::finalizeImpl()
 {
     if (fd < 0)
         return;
 
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-
     next();
-
-    ::close(fd);
 }
 
 

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -28,14 +28,27 @@
                 </replica>
             </shard>
         </shard_with_local_replica>
-	<shard_with_low_cardinality>
+        <shard_with_local_replica_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </shard_with_local_replica_internal_replication>
+        <shard_with_low_cardinality>
             <shard>
                 <replica>
                     <host>shard1</host>
                     <port>9000</port>
                 </replica>
-	    </shard>
-	    <shard>
+            </shard>
+            <shard>
                 <replica>
                     <host>shard2</host>
                     <port>9000</port>
@@ -43,4 +56,4 @@
             </shard>
         </shard_with_low_cardinality>
     </remote_servers>
-</yandex>
+</clickhouse>

@@ -17,17 +17,15 @@ public:
 
     String getName() const override {return "PostgreSQLOutputFormat";}
 
-    void doWritePrefix() override;
-    void consume(Chunk) override;
-    void finalize() override;
     void flush() override;
 
 private:
-    bool initialized = false;
+    void writePrefix() override;
+    void consume(Chunk) override;
 
     FormatSettings format_settings;
     PostgreSQLProtocol::Messaging::MessageTransport message_transport;
-    DataTypes data_types;
+    Serializations serializations;
 };
 
 }

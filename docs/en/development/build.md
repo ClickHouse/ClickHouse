@@ -23,57 +23,26 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install clang-11 (recommended) {#install-clang-11}
+### Install the latest clang (recommended)
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-```bash 
+```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use clang-11 for Builds {#use-gcc-10-for-builds}
+#### Use the latest clang for Builds
 
 ``` bash
-$ export CC=clang-11
-$ export CXX=clang++-11
+$ export CC=clang-14
+$ export CXX=clang++-14
 ```
 
-### Install GCC 10 {#install-gcc-10}
+In this example we use version 14 that is the latest as of Feb 2022.
 
-We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
-
-If you want to use GCC-10 there are several ways to install it.
-
-#### Install from Repository {#install-from-repository}
-
-On Ubuntu 19.10 or newer:
-
-    $ sudo apt-get update
-    $ sudo apt-get install gcc-10 g++-10
-
-#### Install from a PPA Package {#install-from-a-ppa-package}
-
-On older Ubuntu:
-
-``` bash
-$ sudo apt-get install software-properties-common
-$ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
-$ sudo apt-get update
-$ sudo apt-get install gcc-10 g++-10
-```
-
-#### Install from Sources {#install-from-sources}
-
-See [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
-
-#### Use GCC 10 for Builds {#use-gcc-10-for-builds}
-
-``` bash
-$ export CC=gcc-10
-$ export CXX=g++-10
-```
+Gcc can also be used though it is discouraged.
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
@@ -106,17 +75,16 @@ The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
--   Ninja (recommended) or Make
--   C++ compiler: gcc 10 or clang 8 or newer
--   Linker: lld or gold (the classic GNU ld won’t work)
--   Python (is only used inside LLVM build and it is optional)
+-   Ninja
+-   C++ compiler: clang-13 or newer
+-   Linker: lld
 
 If all the components are installed, you may build in the same way as the steps above.
 
 Example for Ubuntu Eoan:
 ``` bash
 sudo apt update
-sudo apt install git cmake ninja-build g++ python
+sudo apt install git cmake ninja-build clang++ python
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -125,7 +93,7 @@ ninja
 
 Example for OpenSUSE Tumbleweed:
 ``` bash
-sudo zypper install git cmake ninja gcc-c++ python lld
+sudo zypper install git cmake ninja clang-c++ python lld
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -135,21 +103,44 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make gcc-c++ python3
+yum --nogpg install git cmake make clang-c++ python3
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
 make -j $(nproc)
 ```
 
+Here is an example of how to build `clang` and all the llvm infrastructure from sources:
+
+```
+ git clone git@github.com:llvm/llvm-project.git
+ mkdir llvm-build && cd llvm-build
+ cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all ../llvm-project/llvm/
+ make -j16
+ sudo make install
+ hash clang
+ clang --version
+```
+
+You can install the older clang like clang-11 from packages and then use it to build the new clang from sources.
+
+Here is an example of how to install the new `cmake` from the official website:
+
+```
+wget https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.sh
+chmod +x cmake-3.22.2-linux-x86_64.sh
+./cmake-3.22.2-linux-x86_64.sh 
+export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
+hash cmake
+```
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
-### Install Git and Pbuilder {#install-git-and-pbuilder}
+### Install Git {#install-git}
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
+$ sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
@@ -165,14 +156,6 @@ $ cd ClickHouse
 $ ./release
 ```
 
-## Faster builds for development
-
-Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. Two common ways to improve linking time are to use `lld` linker, and use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into serveral shared libraries. To enable these tweaks, pass the following flags to `cmake`:
-
-```
--DCMAKE_C_FLAGS="-fuse-ld=lld" -DCMAKE_CXX_FLAGS="-fuse-ld=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
-```
-
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
@@ -181,13 +164,17 @@ They are built for stable, prestable and testing releases as long as for every c
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
 
-## Split build configuration {#split-build}
+## Faster builds for development: Split build configuration {#split-build}
 
-Normally ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary is linked again, which is slow and may be inconvenient for development. There is an alternative configuration which creates dynamically loaded shared libraries instead, allowing faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+Normally, ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary needs to be linked, which is slow and may be inconvenient for development. There is an alternative configuration which instead creates dynamically loaded shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
-Note that in this configuration there is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client` etc.
+Note that the split build has several drawbacks:
+* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
+* Risk of segfault if you run any of the programs while rebuilding the project.
+* You cannot run the integration tests since they only work a single complete binary.
+* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
-[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/build/) <!--hide-->

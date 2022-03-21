@@ -10,16 +10,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
+    : IOutputFormat(header, out_)
+    , types(header.getDataTypes())
+    , params(params_)
+{
+    num_columns = types.size();
+    serializations.reserve(num_columns);
+    for (const auto & type : types)
+        serializations.push_back(type->getDefaultSerialization());
+}
+
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (!first_row)
+        if (!first_row || getRowsReadBefore() != 0)
             writeRowBetweenDelimiter();
 
         write(columns, row);
@@ -33,9 +42,6 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
         throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
@@ -49,9 +55,6 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
@@ -64,17 +67,8 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeAfterExtremes();
 }
 
-void IRowOutputFormat::finalize()
-{
-    writePrefixIfNot();
-    writeSuffixIfNot();
-    writeLastSuffix();
-}
-
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -82,7 +76,7 @@ void IRowOutputFormat::write(const Columns & columns, size_t row_num)
         if (i != 0)
             writeFieldDelimiter();
 
-        writeField(*columns[i], *types[i], row_num);
+        writeField(*columns[i], *serializations[i], row_num);
     }
 
     writeRowEndDelimiter();
@@ -93,7 +87,7 @@ void IRowOutputFormat::writeMinExtreme(const DB::Columns & columns, size_t row_n
     write(columns, row_num);
 }
 
-void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num)
+void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num) //-V524
 {
     write(columns, row_num);
 }

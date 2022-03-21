@@ -166,4 +166,4 @@ SELECT format('{} {}', 'Hello', 'World')
 
 返回一个字符串，用于删除任一侧的空白字符。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/string_functions/) <!--hide-->

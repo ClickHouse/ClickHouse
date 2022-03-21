@@ -74,6 +74,7 @@ public:
     {
         const Base::NestedPoolPtr pool;
         size_t error_count;
+        size_t slowdown_count;
         std::chrono::seconds estimated_recovery_time;
     };
 
@@ -108,7 +109,6 @@ private:
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
-private:
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
     size_t last_used = 0; /// Last used for round_robin policy.
     LoadBalancing default_load_balancing;

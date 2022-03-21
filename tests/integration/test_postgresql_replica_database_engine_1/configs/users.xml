@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_database_materialized_postgresql>1</allow_experimental_database_materialized_postgresql>
+        </default>
+    </profiles>
+</clickhouse>

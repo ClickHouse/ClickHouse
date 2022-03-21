@@ -2,7 +2,7 @@ SET any_join_distinct_right_table_keys = 1;
 
 SELECT
     floor((ReferrerTimestamp - InstallTimestamp) / 86400) AS DaysSinceInstallations
-FROM 
+FROM
 (
     SELECT 6534090703218709881 AS DeviceIDHash, 1458586663 AS InstallTimestamp
     UNION ALL SELECT 2697418689476658272, 1458561552

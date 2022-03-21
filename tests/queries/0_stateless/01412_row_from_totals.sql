@@ -11,7 +11,7 @@ insert into tracking_events_tmp select 2, '2020-07-10' from numbers(1881);
 insert into tracking_events_tmp select 2, '2020-07-11' from numbers(1623);
 
 SELECT EventDate
-FROM 
+FROM
 (
     SELECT EventDate
     FROM tracking_events_tmp AS t1

@@ -14,4 +14,4 @@ It is supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHAN
 CREATE DATABASE test ENGINE = Atomic;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/database_engines/atomic/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/database_engines/atomic/) <!--hide-->

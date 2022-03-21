@@ -6,8 +6,8 @@
 #include <string>
 #include <iostream>
 #include <mutex>
+#include <filesystem>
 
-#include <Poco/File.h>
 #include <Poco/Exception.h>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -16,7 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -29,6 +29,7 @@ namespace DB
     }
 }
 
+namespace fs = std::filesystem;
 
 /** Stores a number in the file.
  * Designed for rare calls (not designed for performance).
@@ -40,7 +41,7 @@ private:
 
 public:
     /// path - the name of the file, including the path
-    CounterInFile(const std::string & path_) : path(path_) {}
+    explicit CounterInFile(const std::string & path_) : path(path_) {}
 
     /** Add `delta` to the number in the file and return the new value.
      * If the `create_if_need` parameter is not set to true, then
@@ -59,7 +60,7 @@ public:
 
         Int64 res = -1;
 
-        bool file_doesnt_exists = !Poco::File(path).exists();
+        bool file_doesnt_exists = !fs::exists(path);
         if (file_doesnt_exists && !create_if_need)
         {
             throw Poco::Exception("File " + path + " does not exist. "
@@ -138,7 +139,7 @@ public:
     // Not thread-safe and not synchronized between processes.
     void fixIfBroken(UInt64 value)
     {
-        bool file_exists = Poco::File(path).exists();
+        bool file_exists = fs::exists(path);
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)

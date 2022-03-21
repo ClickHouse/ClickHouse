@@ -41,23 +41,23 @@ def test_cleanup_dir_after_bad_zk_conn(start_cluster):
         pm.drop_instance_zk_connections(node1)
         time.sleep(3)
         error = node1.query_and_get_error(query_create)
-        assert "Poco::Exception. Code: 1000" and \
-               "All connection tries failed while connecting to ZooKeeper" in error
+        time.sleep(3)
         error = node1.query_and_get_error(query_create)
         assert "Directory for table data data/replica/test/ already exists" not in error
-    node1.query(query_create)
-    node1.query('''INSERT INTO replica.test VALUES (1, now())''')
+    node1.query_with_retry(query_create)
+    node1.query_with_retry('''INSERT INTO replica.test VALUES (1, now())''')
     assert "1\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
-
+    node1.query("DROP TABLE replica.test SYNC")
+    node1.query("DROP DATABASE replica")
 
 def test_cleanup_dir_after_wrong_replica_name(start_cluster):
-    node1.query(
-        "CREATE TABLE test2_r1 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test2/', 'r1') ORDER BY n")
+    node1.query_with_retry(
+        "CREATE TABLE IF NOT EXISTS test2_r1 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test2/', 'r1') ORDER BY n")
     error = node1.query_and_get_error(
         "CREATE TABLE test2_r2 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test2/', 'r1') ORDER BY n")
     assert "already exists" in error
-    node1.query(
-        "CREATE TABLE test_r2 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test2/', 'r2') ORDER BY n")
+    node1.query_with_retry(
+        "CREATE TABLE IF NOT EXISTS test_r2 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test2/', 'r2') ORDER BY n")
 
 
 def test_cleanup_dir_after_wrong_zk_path(start_cluster):
@@ -68,10 +68,11 @@ def test_cleanup_dir_after_wrong_zk_path(start_cluster):
     assert "Cannot create" in error
     node1.query(
         "CREATE TABLE test3_r2 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test3/', 'r2') ORDER BY n")
-
+    node1.query("DROP TABLE test3_r1 SYNC")
+    node1.query("DROP TABLE test3_r2 SYNC")
 
 def test_attach_without_zk(start_cluster):
-    node1.query(
+    node1.query_with_retry(
         "CREATE TABLE test4_r1 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test4/', 'r1') ORDER BY n")
     node1.query("DETACH TABLE test4_r1")
     with PartitionManager() as pm:
@@ -82,3 +83,4 @@ def test_attach_without_zk(start_cluster):
             pass
     node1.query("ATTACH TABLE IF NOT EXISTS test4_r1")
     node1.query("SELECT * FROM test4_r1")
+    node1.query("DROP TABLE test4_r1 SYNC")

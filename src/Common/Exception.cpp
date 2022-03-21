@@ -4,22 +4,23 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
+#include <base/demangle.h>
+#include <base/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -34,9 +35,9 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-/// Aborts the process if error code is LOGICAL_ERROR.
-/// Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code)
+/// - Aborts the process if error code is LOGICAL_ERROR.
+/// - Increments error codes statistics.
+void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -47,20 +48,21 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code)
         abort();
     }
 #endif
-    ErrorCodes::increment(code);
+
+    ErrorCodes::increment(code, remote, msg, trace);
 }
 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, code);
+    handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(const std::string & msg, const Exception & nested, int code)
     : Poco::Exception(msg, nested, code)
 {
-    handle_error_code(msg, code);
+    handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -91,6 +93,22 @@ std::string getExceptionStackTraceString(const std::exception & e)
 #endif
 }
 
+std::string getExceptionStackTraceString(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const std::exception & exception)
+    {
+        return getExceptionStackTraceString(exception);
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
 
 std::string Exception::getStackTraceString() const
 {
@@ -99,6 +117,31 @@ std::string Exception::getStackTraceString() const
 #else
     return trace.toString();
 #endif
+}
+
+Exception::FramePointers Exception::getStackFramePointers() const
+{
+    FramePointers frame_pointers;
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    {
+        frame_pointers.resize(get_stack_trace_size());
+        for (size_t i = 0; i < frame_pointers.size(); ++i)
+        {
+            frame_pointers[i] = get_stack_trace_frames()[i];
+        }
+    }
+#else
+    {
+        size_t stack_trace_size = trace.getSize();
+        size_t stack_trace_offset = trace.getOffset();
+        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
+        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+        {
+            frame_pointers.push_back(trace.getFramePointers()[i]);
+        }
+    }
+#endif
+    return frame_pointers;
 }
 
 
@@ -112,20 +155,8 @@ void throwFromErrnoWithPath(const std::string & s, const std::string & path, int
     throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
-    tryLogCurrentException(&Poco::Logger::get(log_name), start_of_message);
-}
-
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
-{
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker;
-
     try
     {
         if (start_of_message.empty())
@@ -138,7 +169,32 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+{
+    /// Under high memory pressure, any new allocation will definitelly lead
+    /// to MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+    /// Poco::Logger::get can allocate memory too
+    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
+}
+
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
+{
+    /// Under high memory pressure, any new allocation will definitelly lead
+    /// to MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+    tryLogCurrentExceptionImpl(logger, start_of_message);
+}
+
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -151,8 +207,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & 
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
-        ReadableSize(fs.f_blocks * fs.f_bsize),
-        ReadableSize(fs.f_bavail * fs.f_bsize),
+        ReadableSize(fs.f_blocks * fs.f_frsize),
+        ReadableSize(fs.f_bavail * fs.f_frsize),
         formatReadableQuantity(fs.f_files),
         formatReadableQuantity(fs.f_favail),
         mount_point);
@@ -225,22 +281,12 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
-        if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        if (const auto * file_exception = dynamic_cast<const fs::filesystem_error *>(&e))
         {
-            if (file_exception->code() == ENOSPC)
-            {
-                /// See Poco::FileImpl::handleLastErrorImpl(...)
-                constexpr const char * expected_error_message = "no space left on device: ";
-                if (startsWith(file_exception->message(), expected_error_message))
-                {
-                    String path = file_exception->message().substr(strlen(expected_error_message));
-                    getNoSpaceLeftInfoMessage(path, msg);
-                }
-                else
-                {
-                    msg += "\nCannot print extra info for Poco::Exception";
-                }
-            }
+            if (file_exception->code() == std::errc::no_space_on_device)
+                getNoSpaceLeftInfoMessage(file_exception->path1(), msg);
+            else
+                msg += "\nCannot print extra info for Poco::Exception";
         }
         else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
@@ -282,7 +328,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         try
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText()
+                << ", " << e.displayText()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -334,6 +380,30 @@ int getCurrentExceptionCode()
     catch (const Exception & e)
     {
         return e.code();
+    }
+    catch (const Poco::Exception &)
+    {
+        return ErrorCodes::POCO_EXCEPTION;
+    }
+    catch (const std::exception &)
+    {
+        return ErrorCodes::STD_EXCEPTION;
+    }
+    catch (...)
+    {
+        return ErrorCodes::UNKNOWN_EXCEPTION;
+    }
+}
+
+int getExceptionErrorCode(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const Exception & exception)
+    {
+        return exception.code();
     }
     catch (const Poco::Exception &)
     {
@@ -402,7 +472,12 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
             }
         }
 
-        stream << "Code: " << e.code() << ", e.displayText() = " << text;
+        stream << "Code: " << e.code() << ". " << text;
+
+        if (!text.empty() && text.back() != '.')
+            stream << '.';
+
+        stream << " (" << ErrorCodes::getName(e.code()) << ")";
 
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
@@ -458,6 +533,13 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
+ExecutionStatus ExecutionStatus::fromText(const std::string & data)
+{
+    ExecutionStatus status;
+    status.deserializeText(data);
+    return status;
+}
+
 ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
@@ -473,19 +555,19 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        if (line_number_ == -1)
-            formatted_message_ = message();
+        if (line_number == -1)
+            formatted_message = message();
         else
-            formatted_message_ = message() + fmt::format(": (at row {})\n", line_number_);
+            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
     }
     catch (...)
     {}
 
-    if (!formatted_message_.empty())
+    if (!formatted_message.empty())
     {
         std::string result = name();
         result.append(": ");
-        result.append(formatted_message_);
+        result.append(formatted_message);
         return result;
     }
     else

@@ -7,14 +7,12 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -38,8 +36,8 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
-    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
-    using ColVecC = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+    using ColVecA = ColumnVectorOrDecimal<A>;
+    using ColVecC = ColumnVectorOrDecimal<ResultType>;
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
@@ -83,6 +81,8 @@ class FunctionUnaryArithmetic : public IFunction
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
+    ContextPtr context;
+
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
@@ -91,6 +91,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt128,
             DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
@@ -108,9 +109,28 @@ class FunctionUnaryArithmetic : public IFunction
         >(type, std::forward<F>(f));
     }
 
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    {
+        if (!isTuple(type))
+            return {};
+
+        /// Special case when the function is negate, argument is tuple.
+        /// We construct another function (example: tupleNegate) and call it.
+
+        if constexpr (!IsUnaryOperation<Op>::negate)
+            return {};
+
+        return FunctionFactory::instance().get("tupleNegate", context);
+    }
+
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
+
+    explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -119,11 +139,28 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        return getReturnTypeImplStatic(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        {
+            ColumnsWithTypeAndName new_arguments(1);
+
+            new_arguments[0].type = arguments[0];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
         DataTypePtr result;
         bool valid = castType(arguments[0].get(), [&](const auto & type)
         {
@@ -150,13 +187,19 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + String(name),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
+        {
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
+
         ColumnPtr result_column;
         bool valid = castType(arguments[0].type.get(), [&](const auto & type)
         {
@@ -243,7 +286,7 @@ public:
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(1 == types.size() && 1 == values.size());
 
@@ -260,7 +303,7 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
+                    auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<T1>>());
                     result = Op<T0>::compile(b, v, is_signed_v<T1>);
                     return true;
                 }
@@ -288,7 +331,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 
