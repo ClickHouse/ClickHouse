@@ -56,11 +56,13 @@ Pipe StorageSystemDisks::read(
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         col_type->insert(toString(disk_ptr->getType()));
 
+        String cache_path;
         if (disk_ptr->isRemote())
         {
             const auto * remote_disk = assert_cast<IDiskRemote *>(disk_ptr.get());
-            col_cache_path->insert(remote_disk->getCachePath());
+            cache_path = remote_disk->getCachePath();
         }
+        col_cache_path->insert(cache_path);
     }
 
     Columns res_columns;
@@ -70,6 +72,7 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_total));
     res_columns.emplace_back(std::move(col_keep));
     res_columns.emplace_back(std::move(col_type));
+    res_columns.emplace_back(std::move(col_cache_path));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

@@ -40,7 +40,7 @@ FileSegment::FileSegment(
         {
             break;
         }
-        /// DOWNLOADED is used either on inital cache metadata load into memory on server startup
+        /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
         /// or on reduceSizeToDownloaded() -- when file segment object is updated.
         case (State::DOWNLOADED):
         {
