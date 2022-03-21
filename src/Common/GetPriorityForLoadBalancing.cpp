@@ -3,12 +3,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
 {
     std::function<size_t(size_t index)> get_priority;
     switch (load_balance)
     {
         case LoadBalancing::NEAREST_HOSTNAME:
+            if (hostname_differences.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_differences is not initialized");
             get_priority = [&](size_t i) { return hostname_differences[i]; };
             break;
         case LoadBalancing::IN_ORDER:

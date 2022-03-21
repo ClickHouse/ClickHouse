@@ -13,8 +13,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/randomSeed.h>
 #include <Common/GetPriorityForLoadBalancing.h>
+#include <Common/thread_local_rng.h>
 #include <unistd.h>
 #include <random>
 
@@ -48,7 +48,7 @@ struct ShuffleHost
 
     void randomize()
     {
-        random = rng();
+        random = thread_local_rng();
     }
 
     static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
@@ -56,9 +56,6 @@ struct ShuffleHost
         return std::forward_as_tuple(lhs.priority, lhs.random)
                < std::forward_as_tuple(rhs.priority, rhs.random);
     }
-
-private:
-    std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
 using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;

@@ -11,9 +11,14 @@ public:
     GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
     GetPriorityForLoadBalancing(){}
 
-    bool operator!=(const GetPriorityForLoadBalancing & other)
+    bool operator == (const GetPriorityForLoadBalancing & other) const
     {
-        return load_balancing != other.load_balancing || hostname_differences != other.hostname_differences;
+        return load_balancing == other.load_balancing && hostname_differences == other.hostname_differences;
+    }
+
+    bool operator != (const GetPriorityForLoadBalancing & other) const
+    {
+        return !(*this == other);
     }
 
     std::function<size_t(size_t index)> getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
