@@ -136,6 +136,7 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool case_insensitive_column_matching = false;
     } parquet;
 
     struct Pretty
@@ -216,6 +217,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
+        bool case_insensitive_column_matching = false;
     } orc;
 
     /// For capnProto format we should determine how to

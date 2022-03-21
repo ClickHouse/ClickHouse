@@ -269,8 +269,18 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
+const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
 {
+    if (case_insensitive)
+    {
+        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return equalsCaseInsensitive(column.name, name); });
+        if (found == data.end())
+        {
+            return nullptr;
+        }
+        return &*found;
+    }
+
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
     {
@@ -280,19 +290,23 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 }
 
 
-const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
+const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool case_insensitive) const
 {
-    const auto * result = findByName(name);
+    const auto * result = findByName(name, case_insensitive);
     if (!result)
-        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
-            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception(
+            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return *result;
 }
 
 
-bool Block::has(const std::string & name) const
+bool Block::has(const std::string & name, bool case_insensitive) const
 {
+    if (case_insensitive)
+        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return equalsCaseInsensitive(column.name, name); })
+            != data.end();
+
     return index_by_name.end() != index_by_name.find(name);
 }
 
@@ -301,8 +315,8 @@ size_t Block::getPositionByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
-            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception(
+            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return it->second;
 }

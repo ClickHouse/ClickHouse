@@ -1,4 +1,5 @@
 #include "ORCBlockInputFormat.h"
+#include "Common/StringUtils/StringUtils.h"
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
@@ -130,7 +131,7 @@ void ORCBlockInputFormat::prepareReader()
         return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns);
+        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns, format_settings.orc.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -146,12 +147,34 @@ void ORCBlockInputFormat::prepareReader()
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
-        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
+        const bool contains_column = std::invoke([&]
+        {
+            if (getPort().getHeader().has(name, format_settings.parquet.case_insensitive_column_matching))
+            {
+                return true; 
+            }
+
+            if (!format_settings.parquet.case_insensitive_column_matching)
+            {
+                return nested_table_names.contains(name);
+            }
+
+            return std::find_if(
+                nested_table_names.begin(),
+                nested_table_names.end(),
+                [&](const auto & nested_table_name)
+                {
+                    return equalsCaseInsensitive(nested_table_name, name);
+                }) != nested_table_names.end();
+        });
+
+        if (contains_column)
         {
             column_names.push_back(name);
             for (int j = 0; j != indexes_count; ++j)
                 include_indices.push_back(index + j);
         }
+
         index += indexes_count;
     }
 }
