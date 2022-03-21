@@ -41,22 +41,15 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("The argument of function " + getName() + " must have String type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * arg_column = arguments[0].column.get();
-        const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
+        auto type = getType(arguments[0]);
 
-        if (!arg_string)
-            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
-
-        DataTypePtr type = DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
@@ -67,6 +60,25 @@ public:
         });
         col_res_offsets.push_back(col_res_strings.size());
         return ColumnConst::create(std::move(col_res), input_rows_count);
+    }
+
+private:
+    static DataTypePtr getType(const ColumnWithTypeAndName & argument) 
+    {
+        const IColumn * arg_column = argument.column.get();
+        const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
+        if (!arg_string)
+            return argument.type;
+
+        try
+        {
+            DataTypePtr type = DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
+            return type;
+        }
+        catch (const DB::Exception &)
+        {
+            return argument.type;
+        }
     }
 };
 
