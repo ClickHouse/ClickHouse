@@ -20,10 +20,10 @@ namespace
     }
 
 
-    void formatAsKind(RowPolicyKind kind, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
-                      << RowPolicyKindInfo::get(kind).name;
+                      << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
@@ -156,20 +156,20 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, settings);
 
+    if (is_restrictive)
+        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
+
     formatForClauses(filters, alter, settings);
 
-    if (kind)
-        formatAsKind(*kind, settings);
-
-    if (to_roles)
-        formatToRoles(*to_roles, settings);
+    if (roles && (!roles->empty() || alter))
+        formatToRoles(*roles, settings);
 }
 
 
 void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
-    if (to_roles)
-        to_roles->replaceCurrentUserTag(current_user_name);
+    if (roles)
+        roles->replaceCurrentUserTag(current_user_name);
 }
 
 void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const
