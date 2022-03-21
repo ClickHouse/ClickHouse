@@ -89,6 +89,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
+    format_settings.use_lowercase_column_name = settings.input_format_use_lowercase_column_name;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
@@ -129,6 +130,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -277,9 +279,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
-        (WriteBuffer & output) -> OutputFormatPtr
-        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+        auto formatter_creator = [output_getter, sample, callback, format_settings] (WriteBuffer & output) -> OutputFormatPtr
+        {
+            return output_getter(output, sample, {callback}, format_settings);
+        };
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 

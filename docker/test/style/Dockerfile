@@ -11,6 +11,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     curl \
     git \
     libxml2-utils \
+    moreutils \
     pylint \
     python3-pip \
     shellcheck \

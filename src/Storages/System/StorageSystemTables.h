@@ -20,7 +20,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -30,7 +30,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    StorageSystemTables(const StorageID & table_id_);
+    explicit StorageSystemTables(const StorageID & table_id_);
 };
 
 }

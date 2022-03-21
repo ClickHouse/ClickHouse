@@ -517,7 +517,7 @@ Block ActionsDAG::updateHeader(Block header) const
             {
                 auto & list = it->second;
                 pos_to_remove.insert(pos);
-                node_to_column[inputs[list.front()]] = std::move(col);
+                node_to_column[inputs[list.front()]] = col;
                 list.pop_front();
             }
         }
@@ -590,7 +590,7 @@ Block ActionsDAG::updateHeader(Block header) const
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    for (const auto & item : header)
+    for (auto && item : header)
         res.insert(std::move(item));
 
     return res;
@@ -602,8 +602,8 @@ NameSet ActionsDAG::foldActionsByProjection(
     std::unordered_set<const Node *> visited_nodes;
     std::unordered_set<std::string_view> visited_index_names;
     std::stack<Node *> stack;
-    std::vector<const ColumnWithTypeAndName *> missing_input_from_projection_keys;
 
+    /// Record all needed index nodes to start folding.
     for (const auto & node : index)
     {
         if (required_columns.find(node->result_name) != required_columns.end() || node->result_name == predicate_column_name)
@@ -614,6 +614,9 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// If some required columns are not in any index node, try searching from all projection key
+    /// columns. If still missing, return empty set which means current projection fails to match
+    /// (missing columns).
     if (add_missing_keys)
     {
         for (const auto & column : required_columns)
@@ -636,6 +639,7 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// Traverse the DAG from root to leaf. Substitute any matched node with columns in projection_block_for_keys.
     while (!stack.empty())
     {
         auto * node = stack.top();
@@ -647,8 +651,8 @@ NameSet ActionsDAG::foldActionsByProjection(
             {
                 /// Projection folding.
                 node->type = ActionsDAG::ActionType::INPUT;
-                node->result_type = std::move(column_with_type_name->type);
-                node->result_name = std::move(column_with_type_name->name);
+                node->result_type = column_with_type_name->type;
+                node->result_name = column_with_type_name->name;
                 node->children.clear();
                 inputs.push_back(node);
             }
@@ -664,10 +668,12 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
+    /// Clean up unused nodes after folding.
     std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
     std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 
+    /// Calculate the required columns after folding.
     NameSet next_required_columns;
     for (const auto & input : inputs)
         next_required_columns.insert(input->result_name);
@@ -718,7 +724,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases)
             Node node;
             node.type = ActionType::ALIAS;
             node.result_type = child->result_type;
-            node.result_name = std::move(item.second);
+            node.result_name = item.second;
             node.column = child->column;
             node.children.emplace_back(child);
 
@@ -765,7 +771,7 @@ void ActionsDAG::project(const NamesWithAliases & projection)
             Node node;
             node.type = ActionType::ALIAS;
             node.result_type = child->result_type;
-            node.result_name = std::move(item.second);
+            node.result_name = item.second;
             node.column = child->column;
             node.children.emplace_back(child);
 
@@ -1055,7 +1061,6 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                                         "Cannot find column `{}` in source stream, there are only columns: [{}]",
                                         res_elem.name, Block(source).dumpNames());
-
                 }
                 else
                 {
@@ -1074,14 +1079,16 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 if (ignore_constant_values)
                     dst_node = &actions_dag->addColumn(res_elem);
                 else if (res_const->getField() != src_const->getField())
-                    throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
-                                    "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
+                        res_elem.name);
             }
             else
-                throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
-                                "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot convert column `{}` because it is non constant in source stream but must be constant in result",
+                    res_elem.name);
         }
 
         /// Add CAST function to convert into result type if needed.
@@ -1113,10 +1120,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             if (add_casted_columns)
             {
                 if (inputs.contains(dst_node->result_name))
-                    throw Exception("Cannot convert column " + backQuote(res_elem.name) +
-                                    " to "+ backQuote(dst_node->result_name) +
-                                    " because other column have same name",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column `{}` to `{}` because other column have same name",
+                                    res_elem.name, dst_node->result_name);
                 if (new_names)
                     new_names->emplace(res_elem.name, dst_node->result_name);
 

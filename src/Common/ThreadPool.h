@@ -189,12 +189,12 @@ public:
         });
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
         if (joinable())
             abort();

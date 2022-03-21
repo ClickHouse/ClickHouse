@@ -65,13 +65,13 @@ Row 1:
 ──────
 database:               merge
 table:                  visits_v2
-replica_name:           mtgiga001-1t.metrika.yandex.net
+replica_name:           mtgiga001-1t
 position:               15
 node_name:              queue-0009325559
 type:                   MERGE_PARTS
 create_time:            2020-12-07 14:04:21
 required_quorum:        0
-source_replica:         mtgiga001-1t.metrika.yandex.net
+source_replica:         mtgiga001-1t
 new_part_name:          20201130_121373_121384_2
 parts_to_merge:         ['20201130_121373_121378_1','20201130_121379_121379_0','20201130_121380_121380_0','20201130_121381_121381_0','20201130_121382_121382_0','20201130_121383_121383_0','20201130_121384_121384_0']
 is_detach:              0

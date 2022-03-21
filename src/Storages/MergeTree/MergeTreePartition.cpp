@@ -124,6 +124,18 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
+        void operator() (const Object & x) const
+        {
+            UInt8 type = Field::Types::Object;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & [key, value]: x)
+            {
+                hash.update(key);
+                applyVisitor(*this, value);
+            }
+        }
         void operator() (const DecimalField<Decimal32> & x) const
         {
             UInt8 type = Field::Types::Decimal32;
@@ -375,17 +387,17 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
 }
 
-void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    store(partition_key_sample, disk, part_path, checksums);
+    return store(partition_key_sample, disk, part_path, checksums);
 }
 
-void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     if (!partition_key_sample)
-        return;
+        return nullptr;
 
     auto out = disk->writeFile(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(*out);
@@ -395,7 +407,8 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-    out->finalize();
+    out->preFinalize();
+    return out;
 }
 
 void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)

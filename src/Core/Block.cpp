@@ -122,6 +122,11 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
     initializeIndexByName();
 }
 
+Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
+{
+    initializeIndexByName();
+}
+
 
 void Block::initializeIndexByName()
 {
@@ -721,18 +726,6 @@ void convertToFullIfSparse(Block & block)
         column.column = recursiveRemoveSparse(column.column);
 }
 
-ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
-{
-    auto current_column = block.getByName(column.getNameInStorage()).column;
-    current_column = current_column->decompress();
-
-    if (column.isSubcolumn())
-        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
-
-    return current_column;
-}
-
-
 Block materializeBlock(const Block & block)
 {
     if (!block)
@@ -753,6 +746,32 @@ void materializeBlockInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
         block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
+}
+
+Block concatenateBlocks(const std::vector<Block> & blocks)
+{
+    if (blocks.empty())
+        return {};
+
+    size_t num_rows = 0;
+    for (const auto & block : blocks)
+        num_rows += block.rows();
+
+    Block out = blocks[0].cloneEmpty();
+    MutableColumns columns = out.mutateColumns();
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        columns[i]->reserve(num_rows);
+        for (const auto & block : blocks)
+        {
+            const auto & tmp_column = *block.getByPosition(i).column;
+            columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
+        }
+    }
+
+    out.setColumns(std::move(columns));
+    return out;
 }
 
 }

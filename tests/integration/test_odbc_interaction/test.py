@@ -480,9 +480,9 @@ def test_odbc_postgres_conversions(started_cluster):
 
     node1.query(
         """INSERT INTO test_types
-        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)""")
+        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)""")
 
-    expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)")
+    expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)")
     result = node1.query("SELECT * FROM test_types")
     logging.debug(result)
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")

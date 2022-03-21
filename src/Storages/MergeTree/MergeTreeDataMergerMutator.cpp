@@ -303,7 +303,6 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FutureMergedMutatedPartPtr future_part,
-    UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -355,6 +354,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
         ++it;
     }
 
+    auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     /// Enough disk space to cover the new merge with a margin.
     auto required_disk_space = sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT;
     if (available_disk_space <= required_disk_space)
@@ -382,7 +382,6 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part->assign(std::move(parts));
 
-    available_disk_space -= required_disk_space;
     return SelectPartsDecision::SELECTED;
 }
 
@@ -694,11 +693,10 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         }
     }
 
-    bool is_wide_part = isWidePart(source_part);
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, info] : serialization_infos)
     {
-        if (is_wide_part && removed_columns.count(name))
+        if (removed_columns.count(name))
             continue;
 
         auto it = renamed_columns_from_to.find(name);
@@ -710,7 +708,7 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a
     /// single file
-    if (!is_wide_part)
+    if (!isWidePart(source_part))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
     Names source_column_names = source_part->getColumns().getNames();
@@ -782,11 +780,5 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-
-bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
-{
-    std::lock_guard lock(tmp_parts_lock);
-    return tmp_parts.contains(basename);
-}
 
 }

@@ -173,7 +173,7 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
         return getPosition();
     }
 
-    pos = working_buffer.end();
+    resetWorkingBuffer();
     impl->seek(offset_, whence);
     return impl->getPosition();
 }
@@ -182,6 +182,11 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 off_t ReadBufferFromHDFS::getPosition()
 {
     return impl->getPosition() - available();
+}
+
+size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
+{
+    return impl->getPosition();
 }
 
 }
