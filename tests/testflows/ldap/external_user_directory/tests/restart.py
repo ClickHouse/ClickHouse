@@ -1,6 +1,5 @@
 import random
 
-from helpers.common import Pool
 from testflows.core import *
 from testflows.asserts import error
 

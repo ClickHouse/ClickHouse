@@ -240,6 +240,7 @@ def main():
                     "https://s3.amazonaws.com/clickhouse-builds/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
+        success = len(build_urls) > 0
         create_json_artifact(
             TEMP_PATH,
             build_name,
@@ -247,9 +248,13 @@ def main():
             build_urls,
             build_config,
             0,
-            len(build_urls) > 0,
+            success,
         )
-        return
+        # Fail build job if not successeded
+        if not success:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
     image_name = get_image_name(build_config)
     docker_image = get_image_with_version(IMAGES_PATH, image_name)

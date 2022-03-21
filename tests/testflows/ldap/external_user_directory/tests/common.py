@@ -27,8 +27,9 @@ def table(name, create_statement, on_cluster=False):
                 node.query(f"DROP TABLE IF EXISTS {name}")
 
 @contextmanager
-def rbac_users(*users):
-    node = current().context.node
+def rbac_users(*users, node=None):
+    if node is None:
+        node = current().context.node
     try:
         with Given("I have local users"):
             for user in users:
@@ -42,8 +43,9 @@ def rbac_users(*users):
                     node.query(f"DROP USER IF EXISTS {user['cn']}")
 
 @contextmanager
-def rbac_roles(*roles):
-    node = current().context.node
+def rbac_roles(*roles, node=None):
+    if node is None:
+        node = current().context.node
     try:
         with Given("I have roles"):
             for role in roles:

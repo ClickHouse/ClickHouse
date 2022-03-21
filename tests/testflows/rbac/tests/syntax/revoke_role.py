@@ -4,6 +4,7 @@ from testflows.core import *
 
 import rbac.helper.errors as errors
 from rbac.requirements import *
+from helpers.common import check_clickhouse_version
 
 @TestFeature
 @Name("revoke role")
@@ -70,7 +71,7 @@ def feature(self, node="clickhouse1"):
             RQ_SRS_006_RBAC_Revoke_Role("1.0")]):
         with setup(0,0):
             with When("I revoke nonexistent role from a nonexistent user"):
-                exitcode, message = errors.role_not_found_in_disk(name="user0")
+                exitcode, message = errors.role_not_found_in_disk(name="user0") if check_clickhouse_version(">=21.09")(self) else errors.role_not_found_in_disk(name="role0")
                 node.query("REVOKE role0 FROM user0", exitcode=exitcode, message=message)
 
     with Scenario("I revoke a role from multiple users", requirements=[

@@ -2,8 +2,6 @@
 from testflows.core import *
 from testflows.asserts import error
 
-from helpers.common import Pool
-
 from ldap.role_mapping.requirements import *
 from ldap.role_mapping.tests.common import *
 from ldap.external_user_directory.tests.common import randomword

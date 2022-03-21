@@ -1,3 +1,5 @@
+include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
+
 set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ColumnInfoHandler.cpp
     getIdentifierQuote.cpp
@@ -37,7 +39,13 @@ if (USE_GDB_ADD_INDEX)
     add_custom_command(TARGET clickhouse-odbc-bridge POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} ../clickhouse-odbc-bridge COMMENT "Adding .gdb-index to clickhouse-odbc-bridge" VERBATIM)
 endif()
 
-install(TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+if (BUILD_STRIPPED_BINARIES_PREFIX)
+    clickhouse_strip_binary(TARGET clickhouse-odbc-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${BUILD_STRIPPED_BINARIES_PREFIX} BINARY_PATH ../clickhouse-odbc-bridge)
+endif()
+
+if (NOT BUILD_STRIPPED_BINARIES_PREFIX)
+    install(TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+endif()
 
 if(ENABLE_TESTS)
     add_subdirectory(tests)

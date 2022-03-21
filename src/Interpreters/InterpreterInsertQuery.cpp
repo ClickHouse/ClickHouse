@@ -60,6 +60,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     {
         const auto & factory = TableFunctionFactory::instance();
         TableFunctionPtr table_function_ptr = factory.get(query.table_function, getContext());
+
+        /// If table function needs structure hint from select query
+        /// we can create a temporary pipeline and get the header.
+        if (query.select && table_function_ptr->needStructureHint())
+        {
+            InterpreterSelectWithUnionQuery interpreter_select{
+                query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+            QueryPipelineBuilder tmp_pipeline = interpreter_select.buildQueryPipeline();
+            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+            table_function_ptr->setStructureHint(structure_hint);
+        }
+
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
@@ -185,7 +197,7 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, std::move(sample) , thread_status, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
@@ -283,6 +295,9 @@ BlockIO InterpreterInsertQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
+
+    /// For table functions we check access while executing
+    /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 

@@ -517,7 +517,7 @@ Block ActionsDAG::updateHeader(Block header) const
             {
                 auto & list = it->second;
                 pos_to_remove.insert(pos);
-                node_to_column[inputs[list.front()]] = std::move(col);
+                node_to_column[inputs[list.front()]] = col;
                 list.pop_front();
             }
         }
@@ -590,7 +590,7 @@ Block ActionsDAG::updateHeader(Block header) const
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    for (const auto & item : header)
+    for (auto && item : header)
         res.insert(std::move(item));
 
     return res;
@@ -651,8 +651,8 @@ NameSet ActionsDAG::foldActionsByProjection(
             {
                 /// Projection folding.
                 node->type = ActionsDAG::ActionType::INPUT;
-                node->result_type = std::move(column_with_type_name->type);
-                node->result_name = std::move(column_with_type_name->name);
+                node->result_type = column_with_type_name->type;
+                node->result_name = column_with_type_name->name;
                 node->children.clear();
                 inputs.push_back(node);
             }
@@ -724,7 +724,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases)
             Node node;
             node.type = ActionType::ALIAS;
             node.result_type = child->result_type;
-            node.result_name = std::move(item.second);
+            node.result_name = item.second;
             node.column = child->column;
             node.children.emplace_back(child);
 
@@ -771,7 +771,7 @@ void ActionsDAG::project(const NamesWithAliases & projection)
             Node node;
             node.type = ActionType::ALIAS;
             node.result_type = child->result_type;
-            node.result_name = std::move(item.second);
+            node.result_name = item.second;
             node.column = child->column;
             node.children.emplace_back(child);
 

@@ -9,6 +9,7 @@ append_path(sys.path, "..")
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
 from rbac.requirements import SRS_006_ClickHouse_Role_Based_Access_Control
+from helpers.common import check_clickhouse_version
 
 issue_14091 = "https://github.com/ClickHouse/ClickHouse/issues/14091"
 issue_14149 = "https://github.com/ClickHouse/ClickHouse/issues/14149"
@@ -144,7 +145,7 @@ xfails = {
     "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted directly":
         [(Fail, issue_26746)],
     "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted through a role":
-        [(Fail, issue_26746)]
+        [(Fail, issue_26746)],
 }
 
 xflags = {
@@ -152,15 +153,23 @@ xflags = {
     (SKIP, 0)
 }
 
+ffails ={
+    "/clickhouse/rbac/privileges/:/table_type='ReplicatedReplacingMergeTree-sharded_cluster":
+        (Skip, "Causes clickhouse timeout on 21.10", (lambda test: check_clickhouse_version(">=21.10")(test) and check_clickhouse_version("<21.11")(test))),
+    "/clickhouse/rbac/views":
+        (Skip, "Does not work on clickhouse 21.09", (lambda test: check_clickhouse_version(">=21.9")(test) and check_clickhouse_version("<21.10")(test)))
+}
+
 @TestModule
 @ArgumentParser(argparser)
 @XFails(xfails)
 @XFlags(xflags)
+@FFails(ffails)
 @Name("rbac")
 @Specifications(
     SRS_006_ClickHouse_Role_Based_Access_Control
 )
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """RBAC regression.
     """
     nodes = {
@@ -168,11 +177,21 @@ def regression(self, local, clickhouse_binary_path, stress=None):
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
 
+    self.context.clickhouse_version = clickhouse_version
+
     if stress is not None:
         self.context.stress = stress
 
+    from platform import processor as current_cpu
+
+    folder_name = os.path.basename(current_dir())
+    if current_cpu() == 'aarch64':
+        env = f"{folder_name}_env_arm64"
+    else:
+        env = f"{folder_name}_env"
+
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
-            docker_compose_project_dir=os.path.join(current_dir(), "rbac_env")) as cluster:
+            docker_compose_project_dir=os.path.join(current_dir(), env)) as cluster:
         self.context.cluster = cluster
 
         Feature(run=load("rbac.tests.syntax.feature", "feature"))

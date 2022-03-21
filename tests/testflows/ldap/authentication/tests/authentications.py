@@ -2,7 +2,6 @@
 import random
 import time
 
-from helpers.common import Pool
 from testflows.core import *
 from testflows.asserts import error
 from ldap.authentication.tests.common import *

@@ -8,6 +8,7 @@ append_path(sys.path, "..", "..")
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
 from ldap.external_user_directory.requirements import *
+from helpers.common import check_clickhouse_version
 
 # Cross-outs of known fails
 xfails = {
@@ -27,6 +28,11 @@ xfails = {
      [(Fail, "can't get it to work")]
 }
 
+ffails ={
+    "user authentications/verification cooldown performance/:":
+        (Skip, "causes timeout on 21.8", (lambda test: check_clickhouse_version(">=21.8")(test) and check_clickhouse_version("<21.9")(test)))
+}
+
 @TestFeature
 @Name("external user directory")
 @ArgumentParser(argparser)
@@ -37,20 +43,29 @@ xfails = {
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+@FFails(ffails)
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=None):
     """ClickHouse LDAP external user directory regression module.
     """
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
+    self.context.clickhouse_version = clickhouse_version
+
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
+
+    from platform import processor as current_cpu
+
+    folder_name = os.path.basename(current_dir())
+    if current_cpu() == 'aarch64':
+        env = f"{folder_name}_env_arm64"
+    else:
+        env = f"{folder_name}_env"
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
-            docker_compose_project_dir=os.path.join(current_dir(), "ldap_external_user_directory_env")) as cluster:
+            docker_compose_project_dir=os.path.join(current_dir(), env)) as cluster:
         self.context.cluster = cluster
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))

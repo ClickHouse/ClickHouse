@@ -732,7 +732,7 @@ void Changelog::cleanLogThread()
     while (!log_files_to_delete_queue.isFinishedAndEmpty())
     {
         std::string path;
-        if (log_files_to_delete_queue.tryPop(path))
+        if (log_files_to_delete_queue.pop(path))
         {
             std::error_code ec;
             if (std::filesystem::remove(path, ec))

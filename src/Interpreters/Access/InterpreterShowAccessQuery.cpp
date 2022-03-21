@@ -11,7 +11,7 @@
 #include <Access/AccessControl.h>
 #include <base/range.h>
 #include <base/sort.h>
-#include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -76,11 +76,11 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
         if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
-            boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
     }
 
     ASTs result = std::move(create_queries);
-    boost::range::push_back(result, std::move(grant_queries));
+    insertAtEnd(result, std::move(grant_queries));
     return result;
 }
 

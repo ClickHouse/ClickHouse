@@ -1367,7 +1367,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
 
         auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
-            step.addRequiredOutput(std::move(child_name));
+            step.addRequiredOutput(child_name);
     }
 
     return true;

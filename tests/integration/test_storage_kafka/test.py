@@ -3322,7 +3322,7 @@ def test_issue26643(kafka_cluster):
 
         CREATE TABLE test.log
         (
-            `tnow` DateTime CODEC(DoubleDelta, LZ4),
+            `tnow` DateTime('Asia/Istanbul') CODEC(DoubleDelta, LZ4),
             `server` LowCardinality(String),
             `client` LowCardinality(String),
             `sPort` LowCardinality(UInt16),

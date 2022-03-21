@@ -61,7 +61,7 @@ xfails = {
     RQ_SRS_010_DateTime64_ExtendedRange("1.0"),
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=False):
+def regression(self, local, clickhouse_binary_path, clickhouse_version=None, stress=False):
     """ClickHouse DateTime64 Extended Range regression module.
     """
     nodes = {
@@ -70,6 +70,7 @@ def regression(self, local, clickhouse_binary_path, stress=False):
 
     if stress is not None:
         self.context.stress = stress
+    self.context.clickhouse_version = clickhouse_version
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "datetime64_extended_range_env")) as cluster:

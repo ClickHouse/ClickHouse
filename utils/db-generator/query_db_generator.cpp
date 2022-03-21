@@ -857,7 +857,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 std::string value = applyVisitor(DB::FieldVisitorToString(), literal->value);
                 std::string example{};
-                for (size_t i = 0; i != value.size(); ++i)
+                for (size_t i = 0; i != value.size(); ++i) /// NOLINT
                 {
                     if (value[i] == '%')
                         example += randomString(rng() % 10);

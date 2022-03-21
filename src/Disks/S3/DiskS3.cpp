@@ -153,10 +153,11 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     DiskPtr metadata_disk_,
+    FileCachePtr cache_,
     ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(name_, s3_root_path_, metadata_disk_, "DiskS3", settings_->thread_pool_size)
+    : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -223,17 +224,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    ReadSettings disk_read_settings{read_settings};
+    if (cache)
+        disk_read_settings.remote_fs_cache = cache;
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        path,
-        settings->client, bucket, metadata,
-        settings->s3_max_single_read_retries, read_settings, threadpool_read);
+        path, settings->client, bucket, metadata,
+        settings->s3_max_single_read_retries, disk_read_settings);
 
-    if (threadpool_read)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(s3_impl));
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
     {
@@ -272,6 +274,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
             SCOPE_EXIT_SAFE(
                 if (thread_group)
                     CurrentThread::detachQueryIfNotDetached();
+
+                /// After we detached from the thread_group, parent for memory_tracker inside ThreadStatus will be reset to it's parent.
+                /// Typically, it may be changes from Process to User.
+                /// Usually it could be ok, because thread pool task is executed before user-level memory tracker is destroyed.
+                /// However, thread could stay alive inside the thread pool, and it's ThreadStatus as well.
+                /// When, finally, we destroy the thread (and the ThreadStatus),
+                /// it can use memory tracker in the ~ThreadStatus in order to alloc/free untracked_memory,\
+                /// and by this time user-level memory tracker may be already destroyed.
+                ///
+                /// As a work-around, reset memory tracker to total, which is always alive.
+                CurrentThread::get().memory_tracker.setParent(&total_memory_tracker);
             );
             callback();
         });
@@ -286,7 +299,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_upload_part_size_multiply_parts_count_threshold,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size /*, std::move(schedule) */);
+        buf_size, std::move(schedule));
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {

@@ -139,7 +139,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
 
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
-        .name = std::move(name),
+        .name = name,
         .command = std::move(command_value),
         .command_arguments = std::move(command_arguments),
         .arguments = std::move(arguments),
