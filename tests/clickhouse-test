@@ -59,6 +59,8 @@ MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
 
+VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
+
 
 def stringhash(s):
     # default hash() function consistent
@@ -202,6 +204,29 @@ def get_processlist(args):
         return clickhouse_execute_json(args, 'SHOW PROCESSLIST')
 
 
+def get_processlist_after_test(args):
+    log_comment = args.testcase_basename
+    database = args.testcase_database
+    if args.replicated_database:
+        return clickhouse_execute_json(args, f"""
+        SELECT materialize((hostName(), tcpPort())) as host, *
+        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+        WHERE
+            query NOT LIKE '%system.processes%' AND
+            Settings['log_comment'] = '{log_comment}' AND
+            current_database = '{database}'
+        """)
+    else:
+        return clickhouse_execute_json(args, f"""
+        SELECT *
+        FROM system.processes
+        WHERE
+            query NOT LIKE '%system.processes%' AND
+            Settings['log_comment'] = '{log_comment}' AND
+            current_database = '{database}'
+        """)
+
+
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
@@ -331,6 +356,7 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
+    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -409,7 +435,7 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
+        testcase_args.testcase_client = f"{testcase_args.client} --log_comment '{testcase_basename}'"
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -484,6 +510,28 @@ class TestCase:
         self.base_url_params = os.environ['CLICKHOUSE_URL_PARAMS'] if 'CLICKHOUSE_URL_PARAMS' in os.environ else ''
         self.base_client_options = os.environ['CLICKHOUSE_CLIENT_OPT'] if 'CLICKHOUSE_CLIENT_OPT' in os.environ else ''
 
+    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
+    def check_backward_incompatible_tag(self) -> bool:
+        for tag in self.tags:
+            if tag.startswith("no-backward-compatibility-check"):
+                split = tag.split(':')
+
+                # If version is not specified in tag, always skip this test.
+                if len(split) == 1:
+                    return True
+                version_from_tag = split[1]
+
+                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
+                if re.match(VERSION_PATTERN, version_from_tag) is None:
+                    return True
+
+                server_version = str(clickhouse_execute(args, "SELECT version()").decode())
+                # If server version is less or equal from the version specified in tag, we should skip this test.
+                if list(map(int, server_version.split('.'))) <= list(map(int, version_from_tag.split('.'))):
+                    return True
+
+        return False
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -516,9 +564,11 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif args.backward_compatibility_check and self.check_backward_incompatible_tag():
+            return FailureReason.BACKWARD_INCOMPATIBLE
+
         elif tags and ('no-s3-storage' in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-
 
         elif tags:
             for build_flag in args.build_flags:
@@ -676,6 +726,16 @@ class TestCase:
             maybe_passed = (proc.returncode == 0) and (proc.stderr is None) and (
                         proc.stdout is None or 'Exception' not in proc.stdout)
             need_drop_database = not maybe_passed
+
+        left_queries_check = args.no_left_queries_check is False
+        if self.tags and 'no-left-queries-check' in self.tags:
+            left_queries_check = False
+        if left_queries_check:
+            processlist = get_processlist_after_test(args)
+            if processlist:
+                print(colored(f"\nFound queries left in processlist after running {args.testcase_basename} (database={database}):", args, "red", attrs=["bold"]))
+                print(json.dumps(processlist, indent=4))
+                exit_code.value = 1
 
         if need_drop_database:
             seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
@@ -1416,6 +1476,7 @@ if __name__ == '__main__':
     parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
+    parser.add_argument('--no-left-queries-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
@@ -1449,6 +1510,8 @@ if __name__ == '__main__':
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
+    group.add_argument('--backward-compatibility-check', action='store_true', help='Run tests for further backwoard compatibility testing by ignoring all'
+                                                                                   'drop queries in tests for collecting data from new version of server')
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -1524,6 +1587,9 @@ if __name__ == '__main__':
         args.client_database = client_database
     else:
         args.client_database = 'default'
+
+    if args.backward_compatibility_check:
+        args.client += ' --fake-drop'
 
     if args.client_option:
         # Set options for client

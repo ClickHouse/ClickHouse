@@ -12,7 +12,8 @@ namespace DB
 class ReadBufferFromMemory : public SeekableReadBuffer
 {
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ReadBufferFromMemory(const CharT * buf, size_t size)
         : SeekableReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
 
