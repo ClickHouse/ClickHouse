@@ -33,6 +33,8 @@
 #    include <base/logger_useful.h>
 
 #    include <fstream>
+#include <aws/s3/S3Client.h>  // Y_IGNORE
+#include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 namespace
 {
@@ -682,6 +684,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -838,6 +841,26 @@ namespace S3
         if (bucket.length() < 3 || bucket.length() > 63)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
+    }
+
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error)
+    {
+        Aws::S3::Model::HeadObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
+
+        if (outcome.IsSuccess())
+        {
+            auto read_result = outcome.GetResultWithOwnership();
+            return static_cast<size_t>(read_result.GetContentLength());
+        }
+        else if (throw_on_error)
+        {
+            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        }
+        return 0;
     }
 }
 

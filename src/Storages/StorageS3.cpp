@@ -1,4 +1,6 @@
 #include <Common/config.h>
+#include "IO/ParallelReadBuffer.h"
+#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -273,9 +275,13 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
+    size_t object_size = DB::S3::getObjectSize(client, bucket, current_key, false);
+    auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, current_key, 10 * 1024 * 1024, object_size, max_single_read_retries, getContext()->getReadSettings());
+
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
+        std::make_unique<ParallelReadBuffer>(std::move(factory), &IOThreadPool::get(), 4),
         chooseCompressionMethod(current_key, compression_hint));
+
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
