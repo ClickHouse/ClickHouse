@@ -35,7 +35,7 @@ public:
     /// Get missing columns that exists in header but not in arrow::Schema
     std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
 
-    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, bool lowercase_names = false);
+    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name);
 
 private:
     const Block & header;
