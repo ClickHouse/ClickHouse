@@ -60,6 +60,7 @@ struct DirectionalGraphGenericData
         size_t size;
         readVarUInt(size, buf);
         
+        graph.reserve(size);
         for (size_t i = 0; i < size; ++i) {
           StringRef key = readStringBinaryInto(*arena, buf);
           size_t children_count = 0;
@@ -69,6 +70,7 @@ struct DirectionalGraphGenericData
             throw Exception("Too large graph size to serialize", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
           }
           auto& children = graph[key];
+          children.reserve(children_count);
           for (size_t child_idx = 0; child_idx < children_count; ++child_idx) {
             children.push_back(readStringBinaryInto(*arena, buf));
           }
