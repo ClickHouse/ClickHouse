@@ -1,3 +1,10 @@
+#include <gtest/gtest.h>
+#include <Common/config.h>
+
+#if USE_HIVE
+#include <string>
+#include <vector>
+#include <Core/iostream_debug_helpers.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -8,13 +15,7 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
-#include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-
-#include <Core/iostream_debug_helpers.h>
 
 
 template <typename T>
@@ -64,7 +65,7 @@ TEST_P(ParseDataTypeFromHiveTest, parseStringValue)
     for (const auto & value : p.values)
     {
         ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-        data_type->getDefaultSerialization()->deserializeTextHiveText(*col, buffer, HiveTextRowInputFormat::updateFormatSettings({}));
+        data_type->getDefaultSerialization()->deserializeTextHiveText(*col, buffer, HiveTextRowInputFormat::updateFormatSettings({}, {}));
     }
 
     ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
@@ -144,3 +145,4 @@ INSTANTIATE_TEST_SUITE_P(ParseTupleFromHive,
         }
     )
 );
+#endif
