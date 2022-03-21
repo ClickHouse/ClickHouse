@@ -1,1 +1,0 @@
-ATTACH ROW POLICY p0 ON mydb.mytable FOR SELECT USING a = 0 TO ID('a44bf717-218f-09e8-e1cd-f101f5b7cbbb');
