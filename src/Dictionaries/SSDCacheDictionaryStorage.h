@@ -16,6 +16,7 @@
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/HashMap.h>
@@ -760,9 +761,9 @@ private:
 
         FileDescriptor() = default;
 
-        FileDescriptor(FileDescriptor && rhs) : fd(rhs.fd) { rhs.fd = -1; }
+        FileDescriptor(FileDescriptor && rhs) noexcept : fd(rhs.fd) { rhs.fd = -1; }
 
-        FileDescriptor & operator=(FileDescriptor && rhs)
+        FileDescriptor & operator=(FileDescriptor && rhs) noexcept
         {
             if (this == &rhs)
                 return *this;

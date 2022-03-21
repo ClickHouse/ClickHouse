@@ -10,6 +10,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -135,6 +136,12 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
 
+}
+
+void MergeTreeDataWriter::TemporaryPart::finalize()
+{
+    for (auto & stream : streams)
+        stream.finalizer.finish();
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -270,10 +277,21 @@ Block MergeTreeDataWriter::mergeBlock(
     return block.cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
+    TemporaryPart temp_part;
     Block & block = block_with_partition.block;
+    auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    auto storage_snapshot = data.getStorageSnapshot(metadata_snapshot);
+
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto extended_storage_columns = storage_snapshot->getColumns(
+            GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+        convertObjectsToTuples(columns, block, extended_storage_columns);
+    }
 
     static const String TMP_PREFIX = "tmp_insert_";
 
@@ -343,14 +361,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     /// If optimize_on_insert is true, block may become empty after merge.
     /// There is no need to create empty part.
     if (expected_size == 0)
-        return nullptr;
+        return temp_part;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
@@ -419,30 +436,37 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
+    auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
 
-    bool sync_on_insert = data_settings->fsync_after_insert;
-
-    out.writeWithPermutation(block, perm_ptr);
+    out->writeWithPermutation(block, perm_ptr);
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         auto projection_block = projection.calculate(block, context);
         if (projection_block.rows())
-            new_data_part->addProjectionPart(
-                projection.name, writeProjectionPart(data, log, projection_block, projection, new_data_part.get()));
+        {
+            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
+            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
+            for (auto & stream : proj_temp_part.streams)
+                temp_part.streams.emplace_back(std::move(stream));
+        }
     }
-    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
+    auto finalizer = out->finalizePartAsync(new_data_part, data_settings->fsync_after_insert);
+
+    temp_part.part = new_data_part;
+    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+
+    /// out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
-    return new_data_part;
+    return temp_part;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     MergeTreeDataPartType part_type,
     const String & relative_path,
@@ -453,6 +477,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block block,
     const ProjectionDescription & projection)
 {
+    TemporaryPart temp_part;
     const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
     auto new_data_part = data.createPart(
@@ -525,24 +550,28 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(
+    auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
         columns,
-        {},
+        MergeTreeIndices{},
         compression_codec);
 
-    out.writeWithPermutation(block, perm_ptr);
-    out.writeSuffixAndFinalizePart(new_data_part);
+    out->writeWithPermutation(block, perm_ptr);
+    auto finalizer = out->finalizePartAsync(new_data_part, false);
+    temp_part.part = new_data_part;
+    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+
+    // out.finish(new_data_part, std::move(written_files), false);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
-    return new_data_part;
+    return temp_part;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     MergeTreeData & data, Poco::Logger * log, Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part)
 {
     String part_name = projection.name;
@@ -574,7 +603,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPart(
 
 /// This is used for projection materialization process which may contain multiple stages of
 /// projection part merges.
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     MergeTreeData & data,
     Poco::Logger * log,
     Block block,
@@ -609,7 +638,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeInMemoryProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionPart(
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,

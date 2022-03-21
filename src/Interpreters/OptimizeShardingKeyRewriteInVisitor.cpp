@@ -55,7 +55,12 @@ bool shardContains(
         data.sharding_key_column_name);
     /// The value from IN can be non-numeric,
     /// but in this case it should be convertible to numeric type, let's try.
-    sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
+    ///
+    /// NOTE: that conversion should not be done for signed types,
+    /// since it uses accurate cast, that will return Null,
+    /// but we need static_cast<> (as createBlockSelector()).
+    if (!isInt64OrUInt64FieldType(sharding_value.getType()))
+        sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
     /// In case of conversion is not possible (NULL), shard cannot contain the value anyway.
     if (sharding_value.isNull())
         return false;

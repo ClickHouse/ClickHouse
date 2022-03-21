@@ -53,19 +53,25 @@ bool Bzip2ReadBuffer::nextImpl()
     if (eof_flag)
         return false;
 
-    if (!bz->stream.avail_in)
+    int ret;
+    do
     {
-        in->nextIfAtEnd();
-        bz->stream.avail_in = in->buffer().end() - in->position();
-        bz->stream.next_in = in->position();
+        if (!bz->stream.avail_in)
+        {
+            in->nextIfAtEnd();
+            bz->stream.avail_in = in->buffer().end() - in->position();
+            bz->stream.next_in = in->position();
+        }
+
+        bz->stream.avail_out = internal_buffer.size();
+        bz->stream.next_out = internal_buffer.begin();
+
+        ret = BZ2_bzDecompress(&bz->stream);
+
+        in->position() = in->buffer().end() - bz->stream.avail_in;
     }
+    while (bz->stream.avail_out == internal_buffer.size() && ret == BZ_OK && !in->eof());
 
-    bz->stream.avail_out = internal_buffer.size();
-    bz->stream.next_out = internal_buffer.begin();
-
-    int ret = BZ2_bzDecompress(&bz->stream);
-
-    in->position() = in->buffer().end() - bz->stream.avail_in;
     working_buffer.resize(internal_buffer.size() - bz->stream.avail_out);
 
     if (ret == BZ_STREAM_END)

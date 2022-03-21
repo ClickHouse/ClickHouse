@@ -325,7 +325,7 @@ Chunk DDLQueryStatusSource::generate()
                 return {};
             }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, fmt::runtime(msg_format), node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
             NameSet unfinished_hosts = waiting_hosts;
             for (const auto & host_id : finished_hosts)
