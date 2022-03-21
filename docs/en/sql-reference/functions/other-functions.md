@@ -2508,10 +2508,13 @@ return the enumerated stream paths of data type.
 
 ``` sql
 enumerateStreams(type_name)
+
+enumerateStreams(arg)
 ```
 
 **Arguments**
 - `type_name` - Name of data type to enumerate its stream paths. [String](../../sql-reference/data-types/string.md#string).
+- `arg`       - any column which has a data type
 
 **Returned value**
 - List of enumerated stream paths.
