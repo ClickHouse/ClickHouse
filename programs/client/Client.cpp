@@ -21,7 +21,6 @@
 #include <Common/Config/configReadClient.h>
 
 #include <Core/QueryProcessingStage.h>
-#include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 
@@ -43,7 +42,6 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include "TestTags.h"
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -99,212 +97,6 @@ void Client::processError(const String & query) const
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
     assert(have_error == (client_exception || server_exception));
-}
-
-
-bool Client::executeMultiQuery(const String & all_queries_text)
-{
-    // It makes sense not to base any control flow on this, so that it is
-    // the same in tests and in normal usage. The only difference is that in
-    // normal mode we ignore the test hints.
-    const bool test_mode = config().has("testmode");
-    if (test_mode)
-    {
-        /// disable logs if expects errors
-        TestHint test_hint(test_mode, all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-    }
-
-    bool echo_query = echo_queries;
-
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
-    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
-
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end;
-    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
-
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
-    ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
-
-    while (true)
-    {
-        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
-        switch (stage)
-        {
-            case MultiQueryProcessingStage::QUERIES_END:
-            case MultiQueryProcessingStage::PARSING_FAILED:
-            {
-                return true;
-            }
-            case MultiQueryProcessingStage::CONTINUE_PARSING:
-            {
-                continue;
-            }
-            case MultiQueryProcessingStage::PARSING_EXCEPTION:
-            {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
-                // Try to find test hint for syntax error. We don't know where
-                // the query ends because we failed to parse it, so we consume
-                // the entire line.
-                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.serverError())
-                {
-                    // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
-                    current_exception->rethrow();
-                }
-
-                if (hint.clientError() != current_exception->code())
-                {
-                    if (hint.clientError())
-                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
-                    current_exception->rethrow();
-                }
-
-                /// It's expected syntax error, skip the line
-                this_query_begin = this_query_end;
-                current_exception.reset();
-
-                continue;
-            }
-            case MultiQueryProcessingStage::EXECUTE_QUERY:
-            {
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-                if (query_fuzzer_runs)
-                {
-                    if (!processWithFuzzing(full_query))
-                        return false;
-                    this_query_begin = this_query_end;
-                    continue;
-                }
-
-                // Now we know for sure where the query ends.
-                // Look for the hint in the text of query + insert data + trailing
-                // comments,
-                // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-                // Use the updated query boundaries we just calculated.
-                TestHint test_hint(test_mode, full_query);
-                // Echo all queries if asked; makes for a more readable reference
-                // file.
-                echo_query = test_hint.echoQueries().value_or(echo_query);
-                try
-                {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
-                }
-                catch (...)
-                {
-                    // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-                // Check whether the error (or its absence) matches the test hints
-                // (or their absence).
-                bool error_matches_hint = true;
-                if (have_error)
-                {
-                    if (test_hint.serverError())
-                    {
-                        if (!server_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverError(), full_query);
-                        }
-                        else if (server_exception->code() != test_hint.serverError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverError(), server_exception->code(), full_query);
-                        }
-                    }
-                    if (test_hint.clientError())
-                    {
-                        if (!client_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientError(), full_query);
-                        }
-                        else if (client_exception->code() != test_hint.clientError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientError(), client_exception->code(), full_query);
-                        }
-                    }
-                    if (!test_hint.clientError() && !test_hint.serverError())
-                    {
-                        // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
-                        // diagnostics.
-                        error_matches_hint = false;
-                    }
-                }
-                else
-                {
-                    if (test_hint.clientError())
-                    {
-                        fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientError(), full_query);
-                        error_matches_hint = false;
-                    }
-                    if (test_hint.serverError())
-                    {
-                        fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverError(), full_query);
-                        error_matches_hint = false;
-                    }
-                }
-                // If the error is expected, force reconnect and ignore it.
-                if (have_error && error_matches_hint)
-                {
-                    client_exception.reset();
-                    server_exception.reset();
-                    have_error = false;
-
-                    if (!connection->checkConnected())
-                        connect();
-                }
-
-                // For INSERTs with inline data: use the end of inline data as
-                // reported by the format parser (it is saved in sendData()).
-                // This allows us to handle queries like:
-                //   insert into t values (1); select 1
-                // , where the inline data is delimited by semicolon and not by a
-                // newline.
-                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
-                {
-                    this_query_end = insert_ast->end;
-                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
-                }
-
-                // Report error.
-                if (have_error)
-                    processError(full_query);
-
-                // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
-
-                this_query_begin = this_query_end;
-                break;
-            }
-        }
-    }
 }
 
 
@@ -370,6 +162,13 @@ void Client::initialize(Poco::Util::Application & self)
         home_path = home_path_cstr;
 
     configReadClient(config(), home_path);
+
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_user)
+        config().setString("user", env_user);
+    if (env_password)
+        config().setString("password", env_password);
 
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
@@ -489,7 +288,7 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = static_cast<UInt16>(ConnectionParameters::getPortFromConfig(config()));
+        UInt16 port = ConnectionParameters::getPortFromConfig(config());
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
@@ -988,6 +787,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
+    std::cout << options_description.hosts_and_ports_description.value() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
 }
 
@@ -1008,7 +808,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
@@ -1021,6 +820,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
     ;
 
     /// Commandline options related to external tables.
@@ -1051,7 +851,7 @@ void Client::addOptions(OptionsDescription & options_description)
          "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
          "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
          "if there is no such host, the port will be attached to the next first host or to default host.")
-         ("port", po::value<UInt16>()->default_value(DBMS_DEFAULT_PORT), "server ports")
+         ("port", po::value<UInt16>(), "server ports")
     ;
 }
 
@@ -1099,8 +899,11 @@ void Client::processOptions(const OptionsDescription & options_description,
             = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
         po::variables_map host_and_port_options;
         po::store(parsed_hosts_and_ports, host_and_port_options);
-        hosts_and_ports.emplace_back(
-            HostAndPort{host_and_port_options["host"].as<std::string>(), host_and_port_options["port"].as<UInt16>()});
+        std::string host = host_and_port_options["host"].as<std::string>();
+        std::optional<UInt16> port = !host_and_port_options["port"].empty()
+                                     ? std::make_optional(host_and_port_options["port"].as<UInt16>())
+                                     : std::nullopt;
+        hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
     send_external_tables = true;
@@ -1119,7 +922,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))
@@ -1139,14 +947,14 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("ask-password", true);
     if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.count("testmode"))
-        config().setBool("testmode", true);
     if (options.count("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
+    if (options.count("fake-drop"))
+        fake_drop = true;
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {

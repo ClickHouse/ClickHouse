@@ -13,7 +13,7 @@ class BackupEntryFromMemory : public IBackupEntry
 public:
     /// The constructor is allowed to not set `checksum_`, in that case it will be calculated from the data.
     BackupEntryFromMemory(const void * data_, size_t size_, const std::optional<UInt128> & checksum_ = {});
-    BackupEntryFromMemory(String data_, const std::optional<UInt128> & checksum_ = {});
+    explicit BackupEntryFromMemory(String data_, const std::optional<UInt128> & checksum_ = {});
 
     UInt64 getSize() const override { return data.size(); }
     std::optional<UInt128> getChecksum() const override { return checksum; }

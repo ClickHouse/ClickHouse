@@ -25,6 +25,10 @@ public:
     }
     bool hasStaticStructure() const override { return s3_configuration->structure != "auto"; }
 
+    bool needStructureHint() const override { return s3_configuration->structure == "auto"; }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -38,6 +42,7 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::optional<StorageS3Configuration> s3_configuration;
+    ColumnsDescription structure_hint;
 };
 
 class TableFunctionCOS : public TableFunctionS3

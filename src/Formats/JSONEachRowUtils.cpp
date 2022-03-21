@@ -9,9 +9,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 
 #include <base/find_symbols.h>
 
@@ -169,6 +169,10 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
 
             value_type = type;
         }
+
+        if (!value_type)
+            return nullptr;
+
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
     }
 
