@@ -12,20 +12,23 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Columns/ColumnArray.h>
-
 #include <Interpreters/Context.h>
-#include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
+
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <cassert>
 #include <chrono>
@@ -46,6 +49,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -167,7 +171,7 @@ Chunk LogSource::generate()
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
+            res.insert(ColumnWithTypeAndName(column, name_type.type, name_type.name));
     }
 
     if (res)
@@ -728,8 +732,21 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
+    const Settings & settings = context->getSettingsRef();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
+    return std::chrono::seconds{lock_timeout};
+}
+
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
+{
+    WriteLock lock{rwlock, getLockTimeout(context)};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
     disk->clearDirectory(table_path);
 
     for (auto & data_file : data_files)
@@ -746,26 +763,16 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
-{
-    const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
-    return std::chrono::seconds{lock_timeout};
-}
-
-
 Pipe StorageLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
@@ -775,7 +782,7 @@ Pipe StorageLog::read(
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();
@@ -784,7 +791,8 @@ Pipe StorageLog::read(
     if (num_streams > max_streams)
         num_streams = max_streams;
 
-    auto all_columns = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::vector<size_t> offsets;
@@ -876,6 +884,162 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     }
 
     return column_sizes;
+}
+
+
+BackupEntries StorageLog::backup(const ASTs & partitions, ContextPtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto lock_timeout = getLockTimeout(context);
+    loadMarks(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+        return {};
+
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir = temp_dir_owner->getPath();
+    disk->createDirectories(temp_dir);
+
+    BackupEntries backup_entries;
+
+    /// *.bin
+    for (const auto & data_file : data_files)
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String data_file_name = fileName(data_file.path);
+        String temp_file_path = temp_dir + "/" + data_file_name;
+        disk->copy(data_file.path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            data_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+    }
+
+    /// __marks.mrk
+    if (use_marks_file)
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String marks_file_name = fileName(marks_file_path);
+        String temp_file_path = temp_dir + "/" + marks_file_name;
+        disk->copy(marks_file_path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            marks_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+    }
+
+    /// sizes.json
+    String files_info_path = file_checker.getPath();
+    backup_entries.emplace_back(fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+
+    /// columns.txt
+    backup_entries.emplace_back(
+        "columns.txt", std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+
+    /// count.txt
+    if (use_marks_file)
+    {
+        size_t num_rows = data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty() ? 0 : data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows;
+        backup_entries.emplace_back("count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+    }
+
+    return backup_entries;
+}
+
+RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto restore_task = [this, backup, data_path_in_backup, context]()
+    {
+        auto lock_timeout = getLockTimeout(context);
+        WriteLock lock{rwlock, lock_timeout};
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        if (!num_data_files)
+            return;
+
+        /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
+        loadMarks(lock);
+
+        /// If there were no files, save zero file sizes to be able to rollback in case of error.
+        saveFileSizes(lock);
+
+        try
+        {
+            /// Append data files.
+            for (const auto & data_file : data_files)
+            {
+                String file_path_in_backup = data_path_in_backup + fileName(data_file.path);
+                auto backup_entry = backup->readFile(file_path_in_backup);
+                auto in = backup_entry->getReadBuffer();
+                auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
+                copyData(*in, *out);
+            }
+
+            if (use_marks_file)
+            {
+                /// Append marks.
+                size_t num_extra_marks = 0;
+                String file_path_in_backup = data_path_in_backup + fileName(marks_file_path);
+                size_t file_size = backup->getFileSize(file_path_in_backup);
+                if (file_size % (num_data_files * sizeof(Mark)) != 0)
+                    throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
+
+                num_extra_marks = file_size / (num_data_files * sizeof(Mark));
+
+                size_t num_marks = data_files[0].marks.size();
+                for (auto & data_file : data_files)
+                    data_file.marks.reserve(num_marks + num_extra_marks);
+
+                std::vector<size_t> old_data_sizes;
+                std::vector<size_t> old_num_rows;
+                old_data_sizes.resize(num_data_files);
+                old_num_rows.resize(num_data_files);
+                for (size_t i = 0; i != num_data_files; ++i)
+                {
+                    old_data_sizes[i] = file_checker.getFileSize(data_files[i].path);
+                    old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
+                }
+
+                auto backup_entry = backup->readFile(file_path_in_backup);
+                auto marks_rb = backup_entry->getReadBuffer();
+
+                for (size_t i = 0; i != num_extra_marks; ++i)
+                {
+                    for (size_t j = 0; j != num_data_files; ++j)
+                    {
+                        Mark mark;
+                        mark.read(*marks_rb);
+                        mark.rows += old_num_rows[j];     /// Adjust the number of rows.
+                        mark.offset += old_data_sizes[j]; /// Adjust the offset.
+                        data_files[j].marks.push_back(mark);
+                    }
+                }
+            }
+
+            /// Finish writing.
+            saveMarks(lock);
+            saveFileSizes(lock);
+        }
+        catch (...)
+        {
+            /// Rollback partial writes.
+            file_checker.repair();
+            removeUnsavedMarks(lock);
+            throw;
+        }
+
+    };
+    return {restore_task};
 }
 
 

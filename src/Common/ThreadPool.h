@@ -147,7 +147,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
     {}
 
 public:
-    static void initialize(size_t max_threads = 10000);
+    static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
     static GlobalThreadPool & instance();
 };
 
@@ -189,12 +189,12 @@ public:
         });
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
         if (joinable())
             abort();

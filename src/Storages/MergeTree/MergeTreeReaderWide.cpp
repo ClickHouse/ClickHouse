@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -35,14 +36,14 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
+        data_part_,
+        columns_,
         metadata_snapshot_,
         uncompressed_cache_,
-        std::move(mark_cache_),
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        mark_cache_,
+        mark_ranges_,
+        settings_,
+        avg_value_size_hints_)
 {
     try
     {
@@ -55,7 +56,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
         throw;
     }
 }
@@ -105,7 +106,10 @@ size_t MergeTreeReaderWide::readRows(
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = type->createColumn();
+            {
+                auto serialization = data_part->getSerialization(column_from_part);
+                res_columns[pos] = type->createColumn(*serialization);
+            }
 
             auto & column = res_columns[pos];
             try
@@ -140,7 +144,7 @@ size_t MergeTreeReaderWide::readRows(
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            storage.reportBrokenPart(data_part->name);
+            storage.reportBrokenPart(data_part);
 
         /// Better diagnostics.
         e.addMessage("(while reading from part " + data_part->getFullPath() + " "
@@ -150,7 +154,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
 
         throw;
     }
@@ -184,9 +188,7 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    auto serialization = data_part->getSerializationForColumn(name_and_type);
-    serialization->enumerateStreams(callback);
-    serializations.emplace(name_and_type.name, std::move(serialization));
+    data_part->getSerialization(name_and_type)->enumerateStreams(callback);
 }
 
 
@@ -210,7 +212,7 @@ static ReadBuffer * getStream(
         return nullptr;
 
     MergeTreeReaderStream & stream = *it->second;
-    stream.adjustForRange(MarkRange(seek_to_start ? 0 : from_mark, current_task_last_mark));
+    stream.adjustRightMark(current_task_last_mark);
 
     if (seek_to_start)
         stream.seekToStart();
@@ -220,6 +222,23 @@ static ReadBuffer * getStream(
     return stream.data_buffer;
 }
 
+void MergeTreeReaderWide::deserializePrefix(
+    const SerializationPtr & serialization,
+    const NameAndTypePair & name_and_type,
+    size_t current_task_last_mark,
+    ISerialization::SubstreamsCache & cache)
+{
+    const auto & name = name_and_type.name;
+    if (deserialize_binary_bulk_state_map.count(name) == 0)
+    {
+        ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
+        };
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
+    }
+}
 
 void MergeTreeReaderWide::prefetch(
     const NameAndTypePair & name_and_type,
@@ -229,8 +248,8 @@ void MergeTreeReaderWide::prefetch(
     ISerialization::SubstreamsCache & cache,
     std::unordered_set<std::string> & prefetched_streams)
 {
-    const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto serialization = data_part->getSerialization(name_and_type);
+    deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -258,16 +277,9 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
     const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto serialization = data_part->getSerialization(name_and_type);
 
-    if (deserialize_binary_bulk_state_map.count(name) == 0)
-    {
-        deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, from_mark, /* seek_to_mark = */false, current_task_last_mark, cache);
-        };
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
-    }
+    deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {

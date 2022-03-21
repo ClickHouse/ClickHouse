@@ -4,8 +4,9 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
@@ -171,4 +172,13 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
+Names IndicesDescription::getAllRegisteredNames() const
+{
+    Names result;
+    for (const auto & index : *this)
+    {
+        result.emplace_back(index.name);
+    }
+    return result;
+}
 }

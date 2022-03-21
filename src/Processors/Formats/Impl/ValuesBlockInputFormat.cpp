@@ -3,20 +3,21 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
 
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -105,6 +106,7 @@ Chunk ValuesBlockInputFormat::generate()
         return {};
     }
 
+    finalizeObjectColumns(columns);
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
 }
@@ -178,12 +180,20 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        const auto & type = types[column_idx];
-        const auto & serialization = serializations[column_idx];
-        if (format_settings.null_as_default && !type->isNullable())
-            read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
+        {
+            column.insertDefault();
+            read = false;
+        }
         else
-            serialization->deserializeTextQuoted(column, *buf, format_settings);
+        {
+            const auto & type = types[column_idx];
+            const auto & serialization = serializations[column_idx];
+            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+            else
+                serialization->deserializeTextQuoted(column, *buf, format_settings);
+        }
 
         rollback_on_exception = true;
 
@@ -288,6 +298,50 @@ namespace
     }
 }
 
+/// Can be used in fileSegmentationEngine for parallel parsing of Values
+static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int balance)
+{
+    skipWhitespaceIfAny(*buf);
+    if (buf->eof() || *buf->position() == ';')
+        return false;
+    bool quoted = false;
+
+    size_t chunk_begin_buf_count = buf->count();
+    while (!buf->eof() && (balance || buf->count() - chunk_begin_buf_count < min_chunk_bytes))
+    {
+        buf->position() = find_first_symbols<'\\', '\'', ')', '('>(buf->position(), buf->buffer().end());
+        if (buf->position() == buf->buffer().end())
+            continue;
+        if (*buf->position() == '\\')
+        {
+            ++buf->position();
+            if (!buf->eof())
+                ++buf->position();
+        }
+        else if (*buf->position() == '\'')
+        {
+            quoted ^= true;
+            ++buf->position();
+        }
+        else if (*buf->position() == ')')
+        {
+            ++buf->position();
+            if (!quoted)
+                --balance;
+        }
+        else if (*buf->position() == '(')
+        {
+            ++buf->position();
+            if (!quoted)
+                ++balance;
+        }
+    }
+
+    if (!buf->eof() && *buf->position() == ',')
+        ++buf->position();
+    return true;
+}
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -295,7 +349,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     auto settings = context->getSettingsRef();
 
     /// We need continuous memory containing the expression to use Lexer
-    skipToNextRow(0, 1);
+    skipToNextRow(buf.get(), 0, 1);
     buf->makeContinuousMemoryFromCheckpointToPos();
     buf->rollbackToCheckpoint();
 
@@ -421,7 +475,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !type.isNullable())
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
@@ -436,50 +490,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     column.insert(value);
-    return true;
-}
-
-/// Can be used in fileSegmentationEngine for parallel parsing of Values
-bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_bytes, int balance)
-{
-    skipWhitespaceIfAny(*buf);
-    if (buf->eof() || *buf->position() == ';')
-        return false;
-    bool quoted = false;
-
-    size_t chunk_begin_buf_count = buf->count();
-    while (!buf->eof() && (balance || buf->count() - chunk_begin_buf_count < min_chunk_bytes))
-    {
-        buf->position() = find_first_symbols<'\\', '\'', ')', '('>(buf->position(), buf->buffer().end());
-        if (buf->position() == buf->buffer().end())
-            continue;
-        if (*buf->position() == '\\')
-        {
-            ++buf->position();
-            if (!buf->eof())
-                ++buf->position();
-        }
-        else if (*buf->position() == '\'')
-        {
-            quoted ^= true;
-            ++buf->position();
-        }
-        else if (*buf->position() == ')')
-        {
-            ++buf->position();
-            if (!quoted)
-                --balance;
-        }
-        else if (*buf->position() == '(')
-        {
-            ++buf->position();
-            if (!quoted)
-                ++balance;
-        }
-    }
-
-    if (!buf->eof() && *buf->position() == ',')
-        ++buf->position();
     return true;
 }
 
@@ -561,6 +571,63 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(*buf);
 }
 
+ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), context(context_)
+{
+}
+
+DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
+{
+    if (first_row)
+    {
+        skipBOMIfExists(buf);
+        first_row = false;
+    }
+
+    skipWhitespaceIfAny(buf);
+    if (buf.eof())
+        return {};
+
+    assertChar('(', buf);
+    PeekableReadBufferCheckpoint checkpoint(buf);
+    skipToNextRow(&buf, 0, 1);
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
+
+    Tokens tokens(buf.position(), buf.buffer().end());
+    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+
+    DataTypes data_types;
+    bool finish = false;
+    while (!finish)
+    {
+        Expected expected;
+        ASTPtr ast;
+
+        bool parsed = parser.parse(token_iterator, ast, expected);
+        /// Consider delimiter after value (',' or ')') as part of expression
+        parsed &= token_iterator->type == TokenType::Comma || token_iterator->type == TokenType::ClosingRoundBracket;
+
+        if (!parsed)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse expression here: {}, token: {}",
+                            String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())), String(token_iterator.get().begin, token_iterator.get().end));
+
+        std::pair<Field, DataTypePtr> result = evaluateConstantExpression(ast, context);
+        data_types.push_back(generalizeDataType(result.second));
+
+        if (token_iterator->type == TokenType::ClosingRoundBracket)
+            finish = true;
+        ++token_iterator;
+        buf.position() = const_cast<char *>(token_iterator->begin);
+    }
+
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() && *buf.position() == ',')
+        ++buf.position();
+
+    return data_types;
+}
+
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -570,6 +637,14 @@ void registerInputFormatValues(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
+    });
+}
+
+void registerValuesSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+    {
+        return std::make_shared<ValuesSchemaReader>(buf, settings, context);
     });
 }
 

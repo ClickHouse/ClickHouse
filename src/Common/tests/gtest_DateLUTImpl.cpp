@@ -1,5 +1,5 @@
-#include <base/DateLUT.h>
-#include <base/DateLUTImpl.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 #include <gtest/gtest.h>
 
@@ -79,8 +79,12 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
-    EXPECT_EQ(0, lut.makeDayNum(2500, 12, 25));
     EXPECT_EQ(0, lut.makeDayNum(1924, 12, 31));
+    EXPECT_EQ(-1, lut.makeDayNum(1924, 12, 31, -1));
+    EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
+    EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
+    EXPECT_EQ(114635, lut.makeDayNum(2283, 11, 11));
+    EXPECT_EQ(114635, lut.makeDayNum(2500, 12, 25));
 }
 
 

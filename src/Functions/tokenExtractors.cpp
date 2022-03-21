@@ -68,17 +68,9 @@ public:
                     "Function {} second argument type should be constant UInt. Actual {}",
                     getName(),
                     arguments[1].type->getName());
-
-            Field ngram_argument_value;
-            ngram_argument_column->get(0, ngram_argument_value);
-            auto ngram_value = ngram_argument_value.safeGet<UInt64>();
-
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(ngram_value));
         }
-        else
-        {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-        }
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
@@ -93,16 +85,16 @@ public:
 
             NgramTokenExtractor extractor(ngram_value);
 
-            auto result_column_fixed_string = ColumnFixedString::create(ngram_value);
+            auto result_column_string = ColumnString::create();
 
             auto input_column = arguments[0].column;
 
             if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-                executeImpl(extractor, *column_string, *result_column_fixed_string, *column_offsets);
+                executeImpl(extractor, *column_string, *result_column_string, *column_offsets);
             else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-                executeImpl(extractor, *column_fixed_string, *result_column_fixed_string, *column_offsets);
+                executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets);
 
-            return ColumnArray::create(std::move(result_column_fixed_string), std::move(column_offsets));
+            return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
         }
         else
         {

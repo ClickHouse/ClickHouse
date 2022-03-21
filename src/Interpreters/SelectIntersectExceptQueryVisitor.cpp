@@ -1,5 +1,6 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
 
 
@@ -43,16 +44,16 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
 
     ASTs children = {selects.back()};
     selects.pop_back();
-    ASTSelectWithUnionQuery::UnionModes modes;
+    SelectUnionModes modes;
 
     for (const auto & mode : union_modes)
     {
         switch (mode)
         {
-            case ASTSelectWithUnionQuery::Mode::EXCEPT:
+            case SelectUnionMode::EXCEPT:
             {
                 auto left = std::make_shared<ASTSelectWithUnionQuery>();
-                left->union_mode = ASTSelectWithUnionQuery::Mode::ALL;
+                left->union_mode = SelectUnionMode::ALL;
 
                 left->list_of_selects = std::make_shared<ASTExpressionList>();
                 left->children.push_back(left->list_of_selects);
@@ -71,7 +72,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 children = {except_node};
                 break;
             }
-            case ASTSelectWithUnionQuery::Mode::INTERSECT:
+            case SelectUnionMode::INTERSECT:
             {
                 bool from_except = false;
                 const auto * except_ast = typeid_cast<const ASTSelectIntersectExceptQuery *>(children.back().get());
@@ -121,7 +122,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
         children.emplace_back(std::move(right));
     }
 
-    ast.union_mode = ASTSelectWithUnionQuery::Mode::Unspecified;
+    ast.union_mode = SelectUnionMode::Unspecified;
     ast.list_of_selects->children = std::move(children);
     ast.list_of_modes = std::move(modes);
 }

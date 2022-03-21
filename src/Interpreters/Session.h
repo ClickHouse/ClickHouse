@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Access/Authentication.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -14,7 +14,7 @@ namespace Poco::Net { class SocketAddress; }
 namespace DB
 {
 class Credentials;
-class Authentication;
+class AuthenticationData;
 struct NamedSessionData;
 class NamedSessionsStorage;
 struct User;
@@ -36,15 +36,15 @@ public:
     ~Session();
 
     Session(const Session &&) = delete;
-    Session& operator=(const Session &&) = delete;
+    Session & operator=(const Session &&) = delete;
     Session(const Session &) = delete;
-    Session& operator=(const Session &) = delete;
+    Session & operator=(const Session &) = delete;
 
     /// Provides information about the authentication type of a specified user.
-    Authentication::Type getAuthenticationType(const String & user_name) const;
+    AuthenticationType getAuthenticationType(const String & user_name) const;
 
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
-    Authentication::Type getAuthenticationTypeOrLogInFailure(const String & user_name) const;
+    AuthenticationType getAuthenticationTypeOrLogInFailure(const String & user_name) const;
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
@@ -79,6 +79,7 @@ private:
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;
+    const ClientInfo::Interface interface;
 
     /// ClientInfo that will be copied to a session context when it's created.
     std::optional<ClientInfo> prepared_client_info;
@@ -96,4 +97,3 @@ private:
 };
 
 }
-

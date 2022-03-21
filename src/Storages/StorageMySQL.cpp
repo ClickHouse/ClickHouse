@@ -4,6 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/MySQL/MySQLHelpers.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
@@ -74,17 +75,17 @@ StorageMySQL::StorageMySQL(
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned)
 {
-    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
-        metadata_snapshot->getColumns().getOrdinary(),
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         remote_database_name,
         remote_table_name,
@@ -94,7 +95,7 @@ Pipe StorageMySQL::read(
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
         WhichDataType which(column_data.type);
         /// Convert enum to string.
@@ -177,7 +178,7 @@ public:
     {
         /// Avoid Excessive copy when block is small enough
         if (block.rows() <= max_rows)
-            return Blocks{std::move(block)};
+            return {block};
 
         const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
         Blocks split_blocks(split_block_size);
@@ -237,15 +238,17 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 
-StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_)
+StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
 {
     StorageMySQLConfiguration configuration;
 
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context_))
+    if (auto named_collection = getExternalDataSourceConfiguration(
+            engine_args, context_, /* is_database_engine */false, /* throw_on_no_collection */true, storage_settings))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
         configuration.set(common_configuration);
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+        storage_settings.applyChanges(settings_changes);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
@@ -278,13 +281,13 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-
         if (engine_args.size() >= 6)
             configuration.replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-
+    for (const auto & address : configuration.addresses)
+        context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
     if (configuration.replace_query && !configuration.on_duplicate_clause.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them");
@@ -297,22 +300,16 @@ void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext());
-
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
+        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings);
+
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 
         if (!mysql_settings.connection_pool_size)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
-        mysqlxx::PoolWithFailover pool(
-            configuration.database, configuration.addresses,
-            configuration.username, configuration.password,
-            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            mysql_settings.connection_wait_timeout);
+        mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
         return StorageMySQL::create(
             args.table_id,

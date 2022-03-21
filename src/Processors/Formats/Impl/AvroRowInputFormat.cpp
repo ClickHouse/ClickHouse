@@ -68,6 +68,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -280,7 +281,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
                     {
                         total += n;
-                        for (size_t i = 0; i < n; i++)
+                        for (size_t i = 0; i < n; ++i)
                         {
                             nested_deserialize(nested_column, decoder);
                         }
@@ -344,7 +345,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isString())
             {
                 std::vector<std::string> symbols;
-                for (size_t i = 0; i < root_node->names(); i++)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
                 }
@@ -359,7 +360,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 Row symbol_mapping;
-                for (size_t i = 0; i < root_node->names(); i++)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
                 }
@@ -443,11 +444,19 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_UNION:
         {
             std::vector<SkipFn> union_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); i++)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
-            return [union_skip_fns](avro::Decoder & decoder) { union_skip_fns[decoder.decodeUnionIndex()](decoder); };
+            return [union_skip_fns](avro::Decoder & decoder)
+            {
+                auto index = decoder.decodeUnionIndex();
+                if (index >= union_skip_fns.size())
+                {
+                    throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                }
+                union_skip_fns[index](decoder);
+            };
         }
         case avro::AVRO_NULL:
             return [](avro::Decoder & decoder) { decoder.decodeNull(); };
@@ -476,7 +485,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_RECORD:
         {
             std::vector<SkipFn> field_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); i++)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -806,6 +815,92 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     return it->second;
 }
 
+AvroSchemaReader::AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_)
+    : ISchemaReader(in_), confluent(confluent_), format_settings(format_settings_)
+{
+}
+
+NamesAndTypesList AvroSchemaReader::readSchema()
+{
+    avro::NodePtr root_node;
+    if (confluent)
+    {
+        UInt32 schema_id = readConfluentSchemaId(in);
+        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id).root();
+    }
+    else
+    {
+        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+        root_node = file_reader_ptr->dataSchema().root();
+    }
+
+    if (root_node->type() != avro::Type::AVRO_RECORD)
+        throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
+
+    NamesAndTypesList names_and_types;
+    for (size_t i = 0; i != root_node->leaves(); ++i)
+        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
+
+    return names_and_types;
+}
+
+DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+{
+    switch (node->type())
+    {
+        case avro::Type::AVRO_INT:
+            return {std::make_shared<DataTypeInt32>()};
+        case avro::Type::AVRO_LONG:
+            return std::make_shared<DataTypeInt64>();
+        case avro::Type::AVRO_BOOL:
+            return std::make_shared<DataTypeUInt8>();
+        case avro::Type::AVRO_FLOAT:
+            return std::make_shared<DataTypeFloat32>();
+        case avro::Type::AVRO_DOUBLE:
+            return std::make_shared<DataTypeFloat64>();
+        case avro::Type::AVRO_STRING:
+            return std::make_shared<DataTypeString>();
+        case avro::Type::AVRO_BYTES:
+            return std::make_shared<DataTypeFloat32>();
+        case avro::Type::AVRO_ENUM:
+        {
+            if (node->names() < 128)
+            {
+                EnumValues<Int8>::Values values;
+                for (size_t i = 0; i != node->names(); ++i)
+                    values.emplace_back(node->nameAt(i), i);
+                return std::make_shared<DataTypeEnum8>(std::move(values));
+            }
+            else if (node->names() < 32768)
+            {
+                EnumValues<Int16>::Values values;
+                for (size_t i = 0; i != node->names(); ++i)
+                    values.emplace_back(node->nameAt(i), i);
+                return std::make_shared<DataTypeEnum16>(std::move(values));
+            }
+
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse supports only 8 and 16-bit Enum.");
+        }
+        case avro::Type::AVRO_FIXED:
+            return std::make_shared<DataTypeFixedString>(node->fixedSize());
+        case avro::Type::AVRO_ARRAY:
+            return std::make_shared<DataTypeArray>(avroNodeToDataType(node->leafAt(0)));
+        case avro::Type::AVRO_NULL:
+            return std::make_shared<DataTypeNothing>();
+        case avro::Type::AVRO_UNION:
+            if (node->leaves() == 2 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
+            {
+                size_t nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
+                return makeNullable(avroNodeToDataType(node->leafAt(nested_leaf_index)));
+            }
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro type  UNION is not supported for inserting.");
+        case avro::Type::AVRO_SYMBOLIC:
+            return avroNodeToDataType(avro::resolveSymbol(node));
+        default:
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.");
+    }
+}
+
 void registerInputFormatAvro(FormatFactory & factory)
 {
     factory.registerInputFormat("Avro", [](
@@ -827,6 +922,21 @@ void registerInputFormatAvro(FormatFactory & factory)
     });
 }
 
+void registerAvroSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+           return std::make_shared<AvroSchemaReader>(buf, false, settings);
+    });
+
+    factory.registerSchemaReader("AvroConfluent", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_shared<AvroSchemaReader>(buf, true, settings);
+    });
+
+}
+
+
 }
 
 #else
@@ -837,6 +947,8 @@ class FormatFactory;
 void registerInputFormatAvro(FormatFactory &)
 {
 }
+
+void registerAvroSchemaReader(FormatFactory &) {}
 }
 
 #endif

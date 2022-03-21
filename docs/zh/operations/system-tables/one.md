@@ -1,12 +1,23 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.one {#system-one}
 
-# 系统。一 {#system-one}
+此表包含一行只有一个值为 0 的 `dummy` UInt8 列的数据。
 
-此表包含一行，其中包含一行 `dummy` UInt8列包含值0。
+如果 `SELECT` 查询没有指定 `FROM` 子句，就会使用这个表来查询。
 
-如果使用此表 `SELECT` 查询不指定 `FROM` 条款
+这个表类似于其他数据库管理系统(DMBS)中的 `DUAL` 表。
 
-这类似于 `DUAL` 表在其他Dbms中找到。
+**示例**
+
+```sql
+:) SELECT * FROM system.one LIMIT 10;
+```
+
+```text
+┌─dummy─┐
+│     0 │
+└───────┘
+
+1 rows in set. Elapsed: 0.001 sec.
+```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/one) <!--hide-->

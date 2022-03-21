@@ -4,6 +4,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/WhereConstraintsOptimizer.h>
+#include <Interpreters/SubstituteColumnOptimizer.h>
+#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -164,7 +167,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 if (value.getType() == Field::Types::UInt64)
                 {
                     auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->children.size())
+                    if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }
             }
@@ -407,10 +410,17 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
                                           const TablesWithColumns & tables_with_columns,
-                                          const Names & sorting_key_columns)
+                                          const TreeRewriterResult & result)
 {
     auto order_by = select_query->orderBy();
     if (!order_by)
+        return;
+
+    /// Do not apply optimization for Distributed and Merge storages,
+    /// because we can't get the sorting key of their undelying tables
+    /// and we can break the matching of the sorting key for `read_in_order`
+    /// optimization by removing monotonous functions from the prefix of key.
+    if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
         return;
 
     for (const auto & child : order_by->children)
@@ -434,6 +444,8 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             group_by_hashes.insert(key);
         }
     }
+
+    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
     for (size_t i = 0; i < order_by->children.size(); ++i)
@@ -537,6 +549,44 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 
     if (unique_elems.size() < elems.size())
         elems = std::move(unique_elems);
+}
+
+/// Use constraints to get rid of useless parts of query
+void optimizeWithConstraints(ASTSelectQuery * select_query,
+                             Aliases & /*aliases*/,
+                             const NameSet & /*source_columns_set*/,
+                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                             const StorageMetadataPtr & metadata_snapshot,
+                             const bool optimize_append_index)
+{
+    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
+}
+
+void optimizeSubstituteColumn(ASTSelectQuery * select_query,
+                              Aliases & /*aliases*/,
+                              const NameSet & /*source_columns_set*/,
+                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                              const StorageMetadataPtr & metadata_snapshot,
+                              const ConstStoragePtr & storage)
+{
+    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
+}
+
+/// Transform WHERE to CNF for more convenient optimization.
+bool convertQueryToCNF(ASTSelectQuery * select_query)
+{
+    if (select_query->where())
+    {
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        if (!cnf_form)
+            return false;
+
+        cnf_form->pushNotInFuntions();
+        select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
+        return true;
+    }
+
+    return false;
 }
 
 /// Remove duplicated columns from USING(...).
@@ -690,15 +740,26 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage
-        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
-        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
-
-    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
+    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
+        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
+
+    bool converted_to_cnf = false;
+    if (settings.convert_query_to_cnf)
+        converted_to_cnf = convertQueryToCNF(select_query);
+
+    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
+    {
+        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
+            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
+
+        if (settings.optimize_substitute_columns)
+            optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
+                tables_with_columns, result.storage_snapshot->metadata, result.storage);
+    }
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
@@ -747,8 +808,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
-            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
+        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

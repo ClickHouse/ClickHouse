@@ -5,9 +5,15 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
+#include "OwnSplitChannel.h"
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+
+#ifdef WITH_TEXT_LOG
+    #include <Interpreters/TextLog.h>
+#endif
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -28,17 +34,21 @@ static std::string createDirectory(const std::string & file)
     return path;
 };
 
+#ifdef WITH_TEXT_LOG
 void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
     text_log_max_priority = max_priority;
 }
+#endif
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
+#ifdef WITH_TEXT_LOG
     if (split)
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
+#endif
 
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger) //-V1051
@@ -62,7 +72,13 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (!log_path.empty())
     {
         createDirectory(log_path);
-        std::cerr << "Logging " << log_level_string << " to " << log_path << std::endl;
+
+        std::string ext;
+        if (config.getRawString("logger.stream_compress", "false") == "true")
+            ext = ".lz4";
+
+        std::cerr << "Logging " << log_level_string << " to " << log_path << ext << std::endl;
+
         auto log_level = Poco::Logger::parseLevel(log_level_string);
         if (log_level > max_log_level)
         {
@@ -75,6 +91,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
         log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
         log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
@@ -100,13 +117,18 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             max_log_level = errorlog_level;
         }
 
-        std::cerr << "Logging errors to " << errorlog_path << std::endl;
+        std::string ext;
+        if (config.getRawString("logger.stream_compress", "false") == "true")
+            ext = ".lz4";
+
+        std::cerr << "Logging errors to " << errorlog_path << ext << std::endl;
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
         error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
@@ -233,11 +255,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (log_level > max_log_level)
         max_log_level = log_level;
 
-    const auto log_path = config.getString("logger.log", "");
-    if (!log_path.empty())
+    if (log_file)
         split->setLevel("log", log_level);
-    else
-        split->setLevel("log", 0);
 
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
@@ -249,15 +268,13 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->setLevel("console", 0);
 
     // Set level to errorlog
-    int errorlog_level = 0;
-    const auto errorlog_path = config.getString("logger.errorlog", "");
-    if (!errorlog_path.empty())
+    if (error_log_file)
     {
-        errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
+        int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
         if (errorlog_level > max_log_level)
             max_log_level = errorlog_level;
+        split->setLevel("errorlog", errorlog_level);
     }
-    split->setLevel("errorlog", errorlog_level);
 
     // Set level to syslog
     int syslog_level = 0;

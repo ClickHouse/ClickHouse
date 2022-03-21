@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 namespace DB
 {
@@ -23,7 +25,7 @@ struct OpenTelemetrySpan
 struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
 {
     OpenTelemetrySpanLogElement() = default;
-    OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
+    explicit OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
         : OpenTelemetrySpan(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
@@ -42,7 +44,12 @@ public:
 
 struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
 {
-    OpenTelemetrySpanHolder(const std::string & _operation_name);
+    explicit OpenTelemetrySpanHolder(const std::string & _operation_name);
+    void addAttribute(const std::string& name, UInt64 value);
+    void addAttribute(const std::string& name, const std::string& value);
+    void addAttribute(const Exception & e);
+    void addAttribute(std::exception_ptr e);
+
     ~OpenTelemetrySpanHolder();
 };
 

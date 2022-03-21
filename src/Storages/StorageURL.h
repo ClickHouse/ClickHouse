@@ -30,7 +30,7 @@ class IStorageURLBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -39,9 +39,19 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    bool supportsPartitionBy() const override { return true; }
+
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const String & uri,
+        const String & compression_method,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
+
 protected:
     IStorageURLBase(
-        const Poco::URI & uri_,
+        const String & uri_,
         ContextPtr context_,
         const StorageID & id_,
         const String & format_name_,
@@ -50,9 +60,11 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
+        const String & method_ = "",
+        ASTPtr partition_by = nullptr);
 
-    Poco::URI uri;
+    String uri;
     String compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
@@ -61,12 +73,14 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+    String http_method; /// For insert can choose Put instead of default Post.
+    ASTPtr partition_by;
 
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -74,27 +88,30 @@ protected:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
+    bool isColumnOriented() const override;
+
 private:
-    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
 class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        const Poco::URI & uri,
+        const String & uri,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method);
+        CompressionMethod compression_method,
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
@@ -103,8 +120,6 @@ public:
 private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-
-    bool is_first_chunk = true;
 };
 
 class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
@@ -112,7 +127,7 @@ class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
     friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
-        const Poco::URI & uri_,
+        const String & uri_,
         const StorageID & table_id_,
         const String & format_name_,
         const std::optional<FormatSettings> & format_settings_,
@@ -121,16 +136,18 @@ public:
         const String & comment,
         ContextPtr context_,
         const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
+        const String & method_ = "",
+        ASTPtr partition_by_ = nullptr);
 
     String getName() const override
     {
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
     {
-        return metadata_snapshot->getSampleBlock();
+        return storage_snapshot->metadata->getSampleBlock();
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
@@ -155,7 +172,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -170,6 +187,6 @@ public:
     };
 
 private:
-    std::vector<Poco::URI> uri_options;
+    std::vector<String> uri_options;
 };
 }

@@ -1,8 +1,9 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Poco/Event.h>
 #include <Common/setThreadName.h>
-#include <base/scope_guard_safe.h>
+#include <Common/ThreadPool.h>
 #include <iostream>
 
 namespace DB
@@ -37,11 +38,6 @@ static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupSt
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
-
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        );
 
         data.executor->execute(num_threads);
     }

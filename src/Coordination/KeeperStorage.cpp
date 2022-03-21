@@ -1,15 +1,19 @@
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/setThreadName.h>
-#include <mutex>
-#include <functional>
-#include <base/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <sstream>
-#include <iomanip>
+#include <Common/hex.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Poco/SHA1Engine.h>
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
+#include <Coordination/pathUtils.h>
+#include <sstream>
+#include <iomanip>
+#include <mutex>
+#include <functional>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -18,20 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-static String parentPath(const String & path)
-{
-    auto rslash_pos = path.rfind('/');
-    if (rslash_pos > 0)
-        return path.substr(0, rslash_pos);
-    return "/";
-}
-
-static std::string getBaseName(const String & path)
-{
-    size_t basename_start = path.rfind('/');
-    return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
 static String base64Encode(const String & decoded)
@@ -90,8 +80,7 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
 static bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
-    std::vector<Coordination::ACL> & result_acls,
-    bool hash_acls)
+    std::vector<Coordination::ACL> & result_acls)
 {
     if (request_acls.empty())
         return true;
@@ -124,8 +113,6 @@ static bool fixupACL(
                 return false;
 
             valid_found = true;
-            if (hash_acls)
-                new_acl.id = generateDigest(new_acl.id);
             result_acls.push_back(new_acl);
         }
     }
@@ -155,12 +142,12 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     Strings paths_to_check_for_list_watches;
     if (event_type == Coordination::Event::CREATED)
     {
-        paths_to_check_for_list_watches.push_back(parent_path); /// Trigger list watches for parent
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// Trigger list watches for parent
     }
     else if (event_type == Coordination::Event::DELETED)
     {
         paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
-        paths_to_check_for_list_watches.push_back(parent_path); /// And for parent path
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// And for parent path
     }
     /// CHANGED event never trigger list wathes
 
@@ -204,7 +191,7 @@ struct KeeperStorageRequestProcessor
     explicit KeeperStorageRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : zk_request(zk_request_)
     {}
-    virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id) const = 0;
+    virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const = 0;
     virtual KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & /*watches*/, KeeperStorage::Watches & /*list_watches*/) const { return {}; }
     virtual bool checkAuth(KeeperStorage & /*storage*/, int64_t /*session_id*/) const { return true; }
 
@@ -214,7 +201,7 @@ struct KeeperStorageRequestProcessor
 struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
     {
         return {zk_request->makeResponse(), {}};
     }
@@ -223,7 +210,7 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
 struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
     {
         auto response = zk_request->makeResponse();
         dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
@@ -244,7 +231,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto parent_path = parentPath(zk_request->getPath());
+        auto path = zk_request->getPath();
+        auto parent_path = parentPath(path);
 
         auto it = container.find(parent_path);
         if (it == container.end())
@@ -258,7 +246,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         return checkACL(Coordination::ACL::Create, node_acls, session_auths);
     }
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
     {
         auto & container = storage.container;
         auto & ephemerals = storage.ephemerals;
@@ -297,8 +285,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             response.error = Coordination::Error::ZNODEEXISTS;
             return { response_ptr, undo };
         }
-        auto child_path = getBaseName(path_created);
-        if (child_path.empty())
+        if (getBaseName(path_created).size == 0)
         {
             response.error = Coordination::Error::ZBADARGUMENTS;
             return { response_ptr, undo };
@@ -309,7 +296,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         KeeperStorage::Node created_node;
 
         Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+        if (!fixupACL(request.acls, session_auth_ids, node_acls))
         {
             response.error = Coordination::Error::ZINVALIDACL;
             return {response_ptr, {}};
@@ -322,13 +309,17 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.stat.czxid = zxid;
         created_node.stat.mzxid = zxid;
         created_node.stat.pzxid = zxid;
-        created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
-        created_node.stat.mtime = created_node.stat.ctime;
+        created_node.stat.ctime = time;
+        created_node.stat.mtime = time;
         created_node.stat.numChildren = 0;
         created_node.stat.dataLength = request.data.length();
         created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
         created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
+
+        auto [map_key, _] = container.insert(path_created, created_node);
+        /// Take child path from key owned by map.
+        auto child_path = getBaseName(map_key->getKey());
 
         int32_t parent_cversion = request.parent_cversion;
         int64_t prev_parent_zxid;
@@ -336,8 +327,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
-
             parent.children.insert(child_path);
+            parent.size_bytes += child_path.size;
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -355,14 +346,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         });
 
         response.path_created = path_created;
-        container.insert(path_created, std::move(created_node));
 
         if (request.is_ephemeral)
             ephemerals[session_id].emplace(path_created);
 
         undo = [&storage, prev_parent_zxid, prev_parent_cversion, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
         {
-            storage.container.erase(path_created);
             storage.acl_map.removeUsage(acl_id);
 
             if (is_ephemeral)
@@ -375,7 +364,10 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.children.erase(child_path);
+                undo_parent.size_bytes -= child_path.size;
             });
+
+            storage.container.erase(path_created);
         };
 
         response.error = Coordination::Error::ZOK;
@@ -402,7 +394,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /* zxid */, int64_t /* session_id */) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
     {
         auto & container = storage.container;
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
@@ -461,7 +453,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /* time */) const override
     {
         auto & container = storage.container;
         auto & ephemerals = storage.ephemerals;
@@ -502,31 +494,34 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
             storage.acl_map.removeUsage(prev_node.acl_id);
 
-            auto child_basename = getBaseName(it->key);
-            container.updateValue(parentPath(request.path), [&child_basename] (KeeperStorage::Node & parent)
+            container.updateValue(parentPath(request.path), [child_basename = getBaseName(it->key)] (KeeperStorage::Node & parent)
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.children.erase(child_basename);
+                parent.size_bytes -= child_basename.size;
             });
 
             response.error = Coordination::Error::ZOK;
-
+            /// Erase full path from container after child removed from parent
             container.erase(request.path);
 
-            undo = [prev_node, &storage, path = request.path, child_basename]
+            undo = [prev_node, &storage, path = request.path]
             {
                 if (prev_node.stat.ephemeralOwner != 0)
                     storage.ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
 
                 storage.acl_map.addUsage(prev_node.acl_id);
 
-                storage.container.insert(path, prev_node);
-                storage.container.updateValue(parentPath(path), [&child_basename] (KeeperStorage::Node & parent)
+                /// Dangerous place: we are adding StringRef to child into children unordered_hash set.
+                /// That's why we are taking getBaseName from inserted key, not from the path from request object.
+                auto [map_key, _] = storage.container.insert(path, prev_node);
+                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key->getKey())] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
-                    parent.children.insert(child_basename);
+                    parent.children.insert(child_name);
+                    parent.size_bytes += child_name.size;
                 });
             };
         }
@@ -543,7 +538,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /* session_id */) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /* session_id */, int64_t /* time */) const override
     {
         auto & container = storage.container;
 
@@ -584,7 +579,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /* session_id */) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /* session_id */, int64_t time) const override
     {
         auto & container = storage.container;
 
@@ -603,13 +598,13 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto prev_node = it->value;
 
-            auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
+            auto itr = container.updateValue(request.path, [zxid, request, time] (KeeperStorage::Node & value)
             {
-                value.data = request.data;
                 value.stat.version++;
                 value.stat.mzxid = zxid;
-                value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+                value.stat.mtime = time;
                 value.stat.dataLength = request.data.length();
+                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
@@ -662,12 +657,13 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
     {
         auto & container = storage.container;
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
+
         auto it = container.find(request.path);
         if (it == container.end())
         {
@@ -679,7 +675,10 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+            response.names.reserve(it->value.children.size());
+
+            for (const auto child : it->value.children)
+                response.names.push_back(child.toString());
 
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
@@ -707,7 +706,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     }
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
     {
         auto & container = storage.container;
 
@@ -752,7 +751,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
 
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id, int64_t /* time */) const override
     {
         auto & container = storage.container;
 
@@ -773,7 +772,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             auto & session_auth_ids = storage.session_and_auth[session_id];
             Coordination::ACLs node_acls;
 
-            if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+            if (!fixupACL(request.acls, session_auth_ids, node_acls))
             {
                 response.error = Coordination::Error::ZINVALIDACL;
                 return {response_ptr, {}};
@@ -816,7 +815,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     }
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
@@ -878,7 +877,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         }
     }
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
@@ -889,7 +888,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             size_t i = 0;
             for (const auto & concrete_request : concrete_requests)
             {
-                auto [ cur_response, undo_action ] = concrete_request->process(storage, zxid, session_id);
+                auto [ cur_response, undo_action ] = concrete_request->process(storage, zxid, session_id, time);
 
                 response.responses[i] = cur_response;
                 if (cur_response->error != Coordination::Error::ZOK)
@@ -946,7 +945,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage &, int64_t, int64_t) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage &, int64_t, int64_t, int64_t /* time */) const override
     {
         throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
@@ -955,7 +954,7 @@ struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestPro
 struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id, int64_t /* time */) const override
     {
         Coordination::ZooKeeperAuthRequest & auth_request = dynamic_cast<Coordination::ZooKeeperAuthRequest &>(*zk_request);
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
@@ -1068,7 +1067,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 }
 
 
-KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl)
+KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl)
 {
     KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
@@ -1088,13 +1087,16 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         {
             for (const auto & ephemeral_path : it->second)
             {
-                container.erase(ephemeral_path);
                 container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (KeeperStorage::Node & parent)
                 {
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
-                    parent.children.erase(getBaseName(ephemeral_path));
+                    auto base_name = getBaseName(ephemeral_path);
+                    parent.children.erase(base_name);
+                    parent.size_bytes -= base_name.size;
                 });
+
+                container.erase(ephemeral_path);
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
@@ -1117,7 +1119,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
         KeeperStorageRequestProcessorPtr storage_request = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
-        auto [response, _] = storage_request->process(*this, zxid, session_id);
+        auto [response, _] = storage_request->process(*this, zxid, session_id, time);
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
@@ -1136,7 +1138,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         }
         else
         {
-            std::tie(response, std::ignore) = request_processor->process(*this, zxid, session_id);
+            std::tie(response, std::ignore) = request_processor->process(*this, zxid, session_id, time);
         }
 
         /// Watches for this requests are added to the watches lists
@@ -1219,5 +1221,97 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
         sessions_and_watchers.erase(watches_it);
     }
 }
+
+void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
+{
+    for (const auto & [session_id, watches_paths] : sessions_and_watchers)
+    {
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+        for (const String & path : watches_paths)
+            buf << "\t" << path << "\n";
+    }
+}
+
+void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+{
+    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
+    {
+        for (int64_t session_id : session_ids)
+        {
+            buf << "\t0x" << getHexUIntLowercase(session_id) << "\n";
+        }
+    };
+
+    for (const auto & [watch_path, sessions] : watches)
+    {
+        buf << watch_path << "\n";
+        write_int_vec(sessions);
+    }
+
+    for (const auto & [watch_path, sessions] : list_watches)
+    {
+        buf << watch_path << "\n";
+        write_int_vec(sessions);
+    }
+}
+
+void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+{
+    auto write_str_set = [&buf](const std::unordered_set<String> & ephemeral_paths)
+    {
+        for (const String & path : ephemeral_paths)
+        {
+            buf << "\t" << path << "\n";
+        }
+    };
+
+    buf << "Sessions dump (" << session_and_timeout.size() << "):\n";
+
+    for (const auto & [session_id, _] : session_and_timeout)
+    {
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+    }
+
+    buf << "Sessions with Ephemerals (" << getSessionWithEphemeralNodesCount() << "):\n";
+    for (const auto & [session_id, ephemeral_paths] : ephemerals)
+    {
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+        write_str_set(ephemeral_paths);
+    }
+}
+
+uint64_t KeeperStorage::getTotalWatchesCount() const
+{
+    uint64_t ret = 0;
+    for (const auto & [path, subscribed_sessions] : watches)
+        ret += subscribed_sessions.size();
+
+    for (const auto & [path, subscribed_sessions] : list_watches)
+        ret += subscribed_sessions.size();
+
+    return ret;
+}
+
+uint64_t KeeperStorage::getSessionsWithWatchesCount() const
+{
+    std::unordered_set<int64_t> counter;
+    for (const auto & [path, subscribed_sessions] : watches)
+        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
+
+    for (const auto & [path, subscribed_sessions] : list_watches)
+        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
+
+    return counter.size();
+}
+
+uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
+{
+    uint64_t ret = 0;
+    for (const auto & [session_id, nodes] : ephemerals)
+        ret += nodes.size();
+
+    return ret;
+}
+
 
 }

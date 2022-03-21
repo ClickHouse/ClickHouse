@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <memory>
-#include <experimental/type_traits>
 #include <type_traits>
 
 #include <IO/WriteHelpers.h>
@@ -98,7 +97,7 @@ struct AggregateFunctionSumData
 
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         const auto * end = ptr + count;
 
@@ -125,7 +124,8 @@ struct AggregateFunctionSumData
             /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
             static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
+            using equivalent_integer = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
+
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
 
@@ -164,13 +164,13 @@ struct AggregateFunctionSumData
     template <typename Value>
     void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
-        return addManyConditional_internal<Value, true>(ptr, null_map, count);
+        return addManyConditionalInternal<Value, true>(ptr, null_map, count);
     }
 
     template <typename Value>
     void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
     {
-        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
+        return addManyConditionalInternal<Value, false>(ptr, cond_map, count);
     }
 
     void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
@@ -249,7 +249,7 @@ struct AggregateFunctionSumKahanData
     }
 
     template <typename Value, bool add_if_zero>
-    void NO_INLINE addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         constexpr size_t unroll_count = 4;
         T partial_sums[unroll_count]{};
@@ -282,13 +282,13 @@ struct AggregateFunctionSumKahanData
     template <typename Value>
     void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
-        return addManyConditional_internal<Value, true>(ptr, null_map, count);
+        return addManyConditionalInternal<Value, true>(ptr, null_map, count);
     }
 
     template <typename Value>
     void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
     {
-        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
+        return addManyConditionalInternal<Value, false>(ptr, cond_map, count);
     }
 
     void ALWAYS_INLINE mergeImpl(T & to_sum, T & to_compensation, T from_sum, T from_compensation)
@@ -352,7 +352,7 @@ public:
         __builtin_unreachable();
     }
 
-    AggregateFunctionSum(const DataTypes & argument_types_)
+    explicit AggregateFunctionSum(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
         , scale(0)
     {}
@@ -425,12 +425,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
     }

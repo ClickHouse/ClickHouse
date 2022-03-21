@@ -52,9 +52,19 @@ public:
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
 
+    /// Check if table function needs a structure hint from SELECT query in case of
+    /// INSERT INTO FUNCTION ... SELECT ...
+    /// It's used for schema inference.
+    virtual bool needStructureHint() const { return false; }
+
+    /// Set a structure hint from SELECT query in case of
+    /// INSERT INTO FUNCTION ... SELECT ...
+    /// This hint could be used not to repeat schema in function arguments.
+    virtual void setStructureHint(const ColumnsDescription &) {}
+
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
 
     virtual ~ITableFunction() = default;
 

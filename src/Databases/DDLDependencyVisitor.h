@@ -10,6 +10,10 @@ class ASTFunction;
 class ASTFunctionWithKeyValueArguments;
 class ASTStorage;
 
+using TableNamesSet = std::unordered_set<QualifiedTableName>;
+
+TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast);
+
 /// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
 /// from column default expressions (joinGet, dictGet, etc)
 /// or dictionary source (for dictionaries from local ClickHouse table).
@@ -19,7 +23,6 @@ class DDLDependencyVisitor
 public:
     struct Data
     {
-        using TableNamesSet = std::set<QualifiedTableName>;
         String default_database;
         TableNamesSet dependencies;
         ContextPtr global_context;

@@ -12,6 +12,7 @@ import test
 import util
 import website
 
+TEMPORARY_FILE_NAME = 'single.md'
 
 def recursive_values(item):
     if isinstance(item, dict):
@@ -89,7 +90,10 @@ def concatenate(lang, docs_path, single_page_file, nav):
                                 line)
 
                             # If failed to replace the relative link, print to log
-                            if '../' in line:
+                            # But with some exceptions:
+                            # - "../src/" -- for cmake-in-clickhouse.md (link to sources)
+                            # - "../usr/share" -- changelog entry that has "../usr/share/zoneinfo"
+                            if '../' in line and (not '../usr/share' in line) and (not '../src/' in line):
                                 logging.info('Failed to resolve relative link:')
                                 logging.info(path)
                                 logging.info(line)
@@ -101,6 +105,14 @@ def concatenate(lang, docs_path, single_page_file, nav):
 
     single_page_file.flush()
 
+def get_temporary_file_name(lang, args):
+    return os.path.join(args.docs_dir, lang, TEMPORARY_FILE_NAME)
+
+def remove_temporary_files(lang, args):
+    single_md_path = get_temporary_file_name(lang, args)
+    if os.path.exists(single_md_path):
+        os.unlink(single_md_path)
+
 
 def build_single_page_version(lang, args, nav, cfg):
     logging.info(f'Building single page version for {lang}')
@@ -109,7 +121,7 @@ def build_single_page_version(lang, args, nav, cfg):
     extra['single_page'] = True
     extra['is_amp'] = False
 
-    single_md_path = os.path.join(args.docs_dir, lang, 'single.md')
+    single_md_path = get_temporary_file_name(lang, args)
     with open(single_md_path, 'w') as single_md:
         concatenate(lang, args.docs_dir, single_md, nav)
 
@@ -186,45 +198,6 @@ def build_single_page_version(lang, args, nav, cfg):
                     test.test_single_page(
                         os.path.join(test_dir, 'single', 'index.html'), lang)
 
-                    if not args.skip_pdf:
-                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
-                        single_page_pdf = os.path.abspath(
-                            os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
-                        )
-
-                        with open(single_page_index_html, 'r') as f:
-                            soup = bs4.BeautifulSoup(
-                                f.read(),
-                                features='html.parser'
-                            )
-                        soup_prefix = f'file://{test_dir}'
-                        for img in soup.findAll('img'):
-                            if img['src'].startswith('/'):
-                                img['src'] = soup_prefix + img['src']
-                        for script in soup.findAll('script'):
-                            script_src = script.get('src')
-                            if script_src:
-                                script['src'] = soup_prefix + script_src.split('?', 1)[0]
-                        for link in soup.findAll('link'):
-                            link['href'] = soup_prefix + link['href'].split('?', 1)[0]
-
-                        with open(single_page_index_html, 'w') as f:
-                            f.write(str(soup))
-
-                        create_pdf_command = [
-                            'wkhtmltopdf',
-                            '--print-media-type',
-                            '--log-level', 'warn',
-                            single_page_index_html, single_page_pdf
-                        ]
-
-                        logging.info(' '.join(create_pdf_command))
-                        try:
-                            subprocess.check_call(' '.join(create_pdf_command), shell=True)
-                        except:
-                            pass  # TODO: fix pdf issues
-
         logging.info(f'Finished building single page version for {lang}')
 
-        if os.path.exists(single_md_path):
-            os.unlink(single_md_path)
+        remove_temporary_files(lang, args)

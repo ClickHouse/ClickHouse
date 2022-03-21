@@ -37,12 +37,13 @@ public:
 };
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
+    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
     , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
     , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
+    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
@@ -79,12 +80,12 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
     fs::remove_all(getMetadataPath());
 }
 
-void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
@@ -96,7 +97,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
-StoragePtr DatabaseAtomic::detachTable(const String & name)
+StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
     DetachedTables not_in_use;
     std::unique_lock lock(mutex);
@@ -139,9 +140,6 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
 
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
-
-    if (table->dropTableImmediately())
-        table->drop();
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
@@ -229,15 +227,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
 
-    if (table->isDictionary() && !dictionary)
-    {
-        if (exchange)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use EXCHANGE DICTIONARIES for dictionaries and EXCHANGE TABLES for tables.");
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
-    }
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
@@ -245,6 +236,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        if (dictionary && !other_table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }
@@ -295,9 +288,9 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         std::unique_lock lock{mutex};
-        if (query.database != database_name)
+        if (query.getDatabase() != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
-                            database_name, query.database);
+                            database_name, query.getDatabase());
         /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
@@ -314,8 +307,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
-        attachTableUnlocked(query.table, table, lock);   /// Should never throw
-        table_name_to_path.emplace(query.table, table_data_path);
+        attachTableUnlocked(query.getTable(), table, lock);   /// Should never throw
+        table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
     {
@@ -325,7 +318,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         throw;
     }
     if (table->storesDataOnDisk())
-        tryCreateSymlink(query.table, table_data_path);
+        tryCreateSymlink(query.getTable(), table_data_path);
 }
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
@@ -473,7 +466,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -486,7 +479,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -514,16 +507,24 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     }
 }
 
-void DatabaseAtomic::renameDatabase(const String & new_name)
+void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
+
+    if (query_context->getSettingsRef().check_table_dependencies)
+    {
+        std::lock_guard lock(mutex);
+        for (auto & table : tables)
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
+    }
+
     try
     {
         fs::remove(path_to_metadata_symlink);
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
@@ -535,7 +536,13 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
 
     {
         std::lock_guard lock(mutex);
-        DatabaseCatalog::instance().updateDatabaseName(database_name, new_name);
+        {
+            Strings table_names;
+            table_names.reserve(tables.size());
+            for (auto & table : tables)
+                table_names.push_back(table.first);
+            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+        }
         database_name = new_name;
 
         for (auto & table : tables)

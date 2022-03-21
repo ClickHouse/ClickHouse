@@ -11,6 +11,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Storages/AlterCommands.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -111,10 +113,11 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const DictionaryStructure & dictionary_structure_,
+    const String & comment,
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_, context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, comment, location_, context_)
 {
 }
 
@@ -126,6 +129,7 @@ StorageDictionary::StorageDictionary(
         table_id,
         table_id.getFullNameNotQuoted(),
         context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
+        dictionary_configuration->getString("dictionary.comment", ""),
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
@@ -159,7 +163,7 @@ void StorageDictionary::checkTableCanBeDetached() const
 
 Pipe StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -212,19 +216,39 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    bool has_configuration = false;
+    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    if (location != Location::SameDatabaseAndNameAsDictionary)
+        return;
+
+    /// It's DDL dictionary, need to update configuration and reload
+
+    bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
+    bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
+    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+
     {
         std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
-        if (configuration)
-        {
-            has_configuration = true;
-            configuration->setString("dictionary.database", new_table_id.database_name);
-            configuration->setString("dictionary.name", new_table_id.table_name);
-        }
+        configuration->setString("dictionary.database", new_table_id.database_name);
+        configuration->setString("dictionary.name", new_table_id.table_name);
+        if (move_to_atomic)
+            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+        else if (move_to_ordinary)
+            configuration->remove("dictionary.uuid");
     }
 
-    if (has_configuration)
+    /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
+    bool recreate_dictionary = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
+
+    if (recreate_dictionary)
+    {
+        /// It's too hard to update both name and uuid, better to reload dictionary with new name
+        removeDictionaryConfigurationFromRepository();
+        auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
+        remove_repository_callback = getContext()->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+        /// Dictionary will be reloaded lazily to avoid exceptions in the middle of renaming
+    }
+    else
     {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
@@ -238,6 +262,40 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
         external_dictionaries_loader.reloadConfig(old_table_id.getInternalDictionaryName());
         dictionary_name = new_table_id.getFullNameNotQuoted();
     }
+}
+
+void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (location == Location::DictionaryDatabase || command.type != AlterCommand::COMMENT_TABLE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
+}
+
+void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
+{
+    IStorage::alter(params, alter_context, lock_holder);
+
+    if (location == Location::Custom)
+        return;
+
+    auto new_comment = getInMemoryMetadataPtr()->comment;
+
+    auto storage_id = getStorageID();
+    const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+    auto result = external_dictionaries_loader.getLoadResult(storage_id.getInternalDictionaryName());
+
+    if (result.object)
+    {
+        auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
+        auto * dictionary_non_const = const_cast<IDictionary *>(dictionary.get());
+        dictionary_non_const->setDictionaryComment(new_comment);
+    }
+
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    configuration->setString("dictionary.comment", new_comment);
 }
 
 void registerStorageDictionary(StorageFactory & factory)

@@ -48,7 +48,6 @@ enum class JoinTableSide
 
 class TableJoin
 {
-
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
@@ -104,19 +103,18 @@ private:
 
     friend class TreeRewriter;
 
-    const SizeLimits size_limits;
+    SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
     JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
-    const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
     /// the limit has no technical reasons, it supposed to improve safety
-    const size_t MAX_DISJUNCTS = 16;
+    const size_t MAX_DISJUNCTS = 16; /// NOLINT
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -154,7 +152,8 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename) const;
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+        bool make_nullable) const;
 
     void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
 
@@ -162,7 +161,7 @@ private:
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
+    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 
@@ -206,7 +205,6 @@ public:
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
-    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
     bool oneDisjunct() const;
@@ -285,6 +283,10 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+
+    void resetKeys();
+    void resetToCross();
+
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);

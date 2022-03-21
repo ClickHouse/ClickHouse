@@ -100,83 +100,77 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
-    /// In case of expression/function (order by 1+2 and 2*x1, greatest(1, 2)) replace
-    /// positions only if all literals are numbers, otherwise it is not positional.
-    bool positional = true;
-
-    /// Case when GROUP BY element is position.
-    if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
+    const auto * group_by_expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
+    if (group_by_expr_with_alias && !group_by_expr_with_alias->alias.empty())
     {
-        auto which = ast_literal->value.getType();
-        if (which == Field::Types::UInt64)
+        for (const auto & column : columns)
         {
-            auto pos = ast_literal->value.get<UInt64>();
-            if (pos > 0 && pos <= columns.size())
+            const auto * col_with_alias = dynamic_cast<const ASTWithAlias *>(column.get());
+            if (col_with_alias)
             {
-                const auto & column = columns[--pos];
-                if (typeid_cast<const ASTIdentifier *>(column.get()))
-                {
-                    argument = column->clone();
-                }
-                else if (typeid_cast<const ASTFunction *>(column.get()))
-                {
-                    std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
-                    {
-                        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
-                        {
-                            auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
-                            if (is_aggregate_function)
-                            {
-                                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                                "Illegal value (aggregate function) for positional argument in {}",
-                                                ASTSelectQuery::expressionToString(expression));
-                            }
-                            else
-                            {
-                                if (function->arguments)
-                                {
-                                    for (const auto & arg : function->arguments->children)
-                                        throw_if_aggregate_function(arg);
-                                }
-                            }
-                        }
-                    };
+                const auto & alias = col_with_alias->alias;
+                if (!alias.empty() && alias == group_by_expr_with_alias->alias)
+                    return false;
+            }
+        }
+    }
 
-                    if (expression == ASTSelectQuery::Expression::GROUP_BY)
-                        throw_if_aggregate_function(column);
+    const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
+    if (!ast_literal)
+        return false;
 
-                    argument = column->clone();
+    auto which = ast_literal->value.getType();
+    if (which != Field::Types::UInt64)
+        return false;
+
+    auto pos = ast_literal->value.get<UInt64>();
+    if (!pos || pos > columns.size())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                        pos, columns.size());
+
+    const auto & column = columns[--pos];
+    if (typeid_cast<const ASTIdentifier *>(column.get()))
+    {
+        argument = column->clone();
+    }
+    else if (typeid_cast<const ASTFunction *>(column.get()))
+    {
+        std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
+        {
+            if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+            {
+                auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
+                if (is_aggregate_function)
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "Illegal value (aggregate function) for positional argument in {}",
+                                    ASTSelectQuery::expressionToString(expression));
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal value for positional argument in {}",
-                                    ASTSelectQuery::expressionToString(expression));
+                    if (function->arguments)
+                    {
+                        for (const auto & arg : function->arguments->children)
+                            throw_if_aggregate_function(arg);
+                    }
                 }
             }
-            else if (pos > columns.size() || !pos)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Positional argument out of bounds: {} (exprected in range [1, {}]",
-                                pos, columns.size());
-            }
-            /// Do not throw if pos < 0, because of TreeOptimizer::appendUnusedColumn()
-        }
-        else
-            positional = false;
-    }
-    else if (const auto * ast_function = typeid_cast<const ASTFunction *>(argument.get()))
-    {
-        if (ast_function->arguments)
-        {
-            for (auto & arg : ast_function->arguments->children)
-                positional &= checkPositionalArguments(arg, select_query, expression);
-        }
+        };
+
+        if (expression == ASTSelectQuery::Expression::GROUP_BY)
+            throw_if_aggregate_function(column);
+
+        argument = column->clone();
     }
     else
-        positional = false;
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal value for positional argument in {}",
+                        ASTSelectQuery::expressionToString(expression));
+    }
 
-    return positional;
+    return true;
 }
 
 void replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
@@ -307,7 +301,7 @@ NamesAndTypesList ExpressionAnalyzer::analyzeJoin(ActionsDAGPtr & actions, const
     }
 
     NamesAndTypesList result_columns = src_columns;
-    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns,false);
+    syntax->analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, false);
     return result_columns;
 }
 
@@ -950,7 +944,10 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         * - JOIN tables will need aliases to correctly resolve USING clause.
         */
     auto interpreter = interpretSubquery(
-        join_element.table_expression, context, original_right_columns, query_options.copy().setWithAllColumns().ignoreAlias(false));
+        join_element.table_expression,
+        context,
+        original_right_columns,
+        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
@@ -994,7 +991,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
+        auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
@@ -1369,7 +1367,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
 
         auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
-            step.addRequiredOutput(std::move(child_name));
+            step.addRequiredOutput(child_name);
     }
 
     return true;
@@ -1887,7 +1885,7 @@ std::string ExpressionAnalysisResult::dump() const
     if (!selected_columns.empty())
     {
         ss << "selected_columns ";
-        for (size_t i = 0; i < selected_columns.size(); i++)
+        for (size_t i = 0; i < selected_columns.size(); ++i)
         {
             if (i > 0)
             {

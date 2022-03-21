@@ -139,7 +139,7 @@ def delete_runner(access_token, runner):
 
     response = requests.delete(f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}", headers=headers)
     response.raise_for_status()
-    print(f"Response code deleting {runner.name} is {response.status_code}")
+    print(f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}")
     return response.status_code == 204
 
 
@@ -197,7 +197,7 @@ def main(github_secret_key, github_app_id, event):
     print("Going to delete runners:", ', '.join([runner.name for runner in to_delete_runners]))
     for runner in to_delete_runners:
         if delete_runner(access_token, runner):
-            print(f"Runner {runner.name} successfuly deleted from github")
+            print(f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github")
             instances_to_kill.append(runner.name)
         else:
             print(f"Cannot delete {runner.name} from github")

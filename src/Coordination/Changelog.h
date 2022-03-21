@@ -7,11 +7,12 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
 
-using Checksum = UInt64;
+using Checksum = uint64_t;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
@@ -142,7 +143,9 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description);
 
-private:
+    /// Clean useless log files in a background thread
+    void cleanLogThread();
+
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
@@ -160,6 +163,10 @@ private:
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
+    /// For compaction, queue of delete not used logs
+    /// 128 is enough, even if log is not removed, it's not a problem
+    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
+    ThreadFromGlobalPool clean_log_thread;
 };
 
 }

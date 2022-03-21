@@ -2,8 +2,10 @@
 #include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <filesystem>
 
@@ -74,9 +76,11 @@ void DatabaseMemory::dropTable(
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
-    create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
+    auto engine = makeASTFunction(getEngineName());
+    engine->no_empty_args = true;
+    create_query->storage->set(create_query->storage->engine, engine);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
@@ -111,7 +115,7 @@ void DatabaseMemory::drop(ContextPtr local_context)
     std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
-void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_id.table_name);
@@ -119,6 +123,8 @@ void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const St
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
 }

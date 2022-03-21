@@ -1,3 +1,4 @@
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
@@ -39,6 +40,50 @@ const char * ASTSystemQuery::typeToString(Type type)
     return type_name.data();
 }
 
+String ASTSystemQuery::getDatabase() const
+{
+    String name;
+    tryGetIdentifierNameInto(database, name);
+    return name;
+}
+
+String ASTSystemQuery::getTable() const
+{
+    String name;
+    tryGetIdentifierNameInto(table, name);
+    return name;
+}
+
+void ASTSystemQuery::setDatabase(const String & name)
+{
+    if (database)
+    {
+        std::erase(children, database);
+        database.reset();
+    }
+
+    if (!name.empty())
+    {
+        database = std::make_shared<ASTIdentifier>(name);
+        children.push_back(database);
+    }
+}
+
+void ASTSystemQuery::setTable(const String & name)
+{
+    if (table)
+    {
+        std::erase(children, table);
+        table.reset();
+    }
+
+    if (!name.empty())
+    {
+        table = std::make_shared<ASTIdentifier>(name);
+        children.push_back(table);
+    }
+}
+
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM ";
@@ -47,19 +92,19 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_database_table = [&]
     {
         settings.ostr << " ";
-        if (!database.empty())
+        if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getTable())
                       << (settings.hilite ? hilite_none : "");
     };
 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
-        if (!table.empty())
+        if (table)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
                           << (settings.hilite ? hilite_none : "");
@@ -70,11 +115,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
                           << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
         }
-        else if (!database.empty())
+        else if (database)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
                           << (settings.hilite ? hilite_none : "");
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
                           << (settings.hilite ? hilite_none : "");
         }
     };
@@ -86,6 +131,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "")
                       << "."
                       << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
+    auto print_identifier = [&](const String & identifier)
+    {
+        settings.ostr << " " << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
                       << (settings.hilite ? hilite_none : "");
     };
 
@@ -107,7 +158,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
-        if (!table.empty())
+        if (table)
             print_database_table();
         else if (!volume.empty())
             print_on_volume();
@@ -116,9 +167,19 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
             || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY)
+            || type == Type::RELOAD_DICTIONARY
+            || type == Type::RELOAD_MODEL
+            || type == Type::RELOAD_FUNCTION
+            || type == Type::RESTART_DISK)
     {
-        print_database_table();
+        if (table)
+            print_database_table();
+        else if (!target_model.empty())
+            print_identifier(target_model);
+        else if (!target_function.empty())
+            print_identifier(target_function);
+        else if (!disk.empty())
+            print_identifier(disk);
     }
     else if (type == Type::DROP_REPLICA)
     {

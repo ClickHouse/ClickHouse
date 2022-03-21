@@ -19,6 +19,12 @@
 #if defined(__SSE4_2__)
     #include <smmintrin.h>
     #include <nmmintrin.h>
+    #define CRC_INT _mm_crc32_u64
+#endif
+
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+    #include <arm_acle.h>
+    #define CRC_INT __crc32cd
 #endif
 
 
@@ -40,15 +46,17 @@ struct StringRef
 
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
-    StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
+    StringRef(const std::string & s) : data(s.data()), size(s.size()) {} /// NOLINT
     constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
+    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
     constexpr StringRef() = default;
 
     std::string toString() const { return std::string(data, size); }
 
     explicit operator std::string() const { return toString(); }
-    constexpr explicit operator std::string_view() const { return {data, size}; }
+    std::string_view toView() const { return std::string_view(data, size); }
+
+    constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
 /// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
@@ -203,7 +211,7 @@ struct StringRefHash64
     }
 };
 
-#if defined(__SSE4_2__)
+#if defined(CRC_INT)
 
 /// Parts are taken from CityHash.
 
@@ -279,13 +287,13 @@ struct CRC32Hash
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = _mm_crc32_u64(res, word);
+            res = CRC_INT(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = _mm_crc32_u64(res, word);
+        res = CRC_INT(res, word);
 
         return res;
     }

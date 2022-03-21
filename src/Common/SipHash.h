@@ -18,6 +18,7 @@
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
+#include <base/extended_types.h>
 
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -70,7 +71,7 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
@@ -138,7 +139,7 @@ public:
     template <typename T>
     void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x));
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
     void update(const std::string & x)
@@ -189,6 +190,15 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     SipHash hash;
     hash.update(data, size);
     hash.get128(out);
+}
+
+inline UInt128 sipHash128(const char * data, const size_t size)
+{
+    SipHash hash;
+    hash.update(data, size);
+    UInt128 res;
+    hash.get128(res);
+    return res;
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)

@@ -28,6 +28,9 @@ option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries n
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
+elseif (ARCH_AARCH64)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+
 else ()
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
@@ -42,7 +45,6 @@ else ()
     if (HAVE_SSSE3 AND ENABLE_SSSE3)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
-
 
     set (TEST_FLAG "-msse4.1")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
@@ -132,15 +134,17 @@ else ()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
-    set (TEST_FLAG "-mavx512f -mavx512bw")
+    set (TEST_FLAG "-mavx512f -mavx512bw -mavx512vl")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <immintrin.h>
         int main() {
             auto a = _mm512_setzero_epi32();
-            (void)a;            
+            (void)a;
             auto b = _mm512_add_epi16(__m512i(), __m512i());
             (void)b;
+            auto c = _mm_cmp_epi8_mask(__m128i(), __m128i(), 0);
+            (void)c;
             return 0;
         }
     " HAVE_AVX512)
@@ -160,9 +164,9 @@ else ()
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()   
+    endif ()
 
-#Limit avx2/avx512 flag for specific source build
+    # Limit avx2/avx512 flag for specific source build
     set (X86_INTRINSICS_FLAGS "")
     if (ENABLE_AVX2_FOR_SPEC_OP)
         if (HAVE_BMI)
@@ -179,7 +183,7 @@ else ()
             set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
         endif ()
         if (HAVE_AVX512)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mprefer-vector-width=256")
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
         endif ()
     endif ()
 endif ()

@@ -54,11 +54,6 @@ ChangelogFileDescription getChangelogFileDescription(const std::string & path_st
     return result;
 }
 
-LogEntryPtr makeClone(const LogEntryPtr & entry)
-{
-    return cs_new<nuraft::log_entry>(entry->get_term(), nuraft::buffer::clone(entry->get_buf()), entry->get_val_type());
-}
-
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -79,7 +74,7 @@ class ChangelogWriter
 public:
     ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
         : filepath(filepath_)
-        , file_buf(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY))
+        , file_buf(std::make_unique<WriteBufferFromFile>(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY)))
         , start_index(start_index_)
     {
         auto compression_method = chooseCompressionMethod(filepath_, "");
@@ -89,7 +84,7 @@ public:
         }
         else if (compression_method == CompressionMethod::Zstd)
         {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(file_buf, /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
+            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
         }
         else
         {
@@ -120,12 +115,14 @@ public:
             compressed_buffer->next();
         }
 
-        /// Flush working buffer to file system
-        file_buf.next();
+        WriteBuffer * working_buf = compressed_buffer ? compressed_buffer->getNestedBuffer() : file_buf.get();
+
+            /// Flush working buffer to file system
+        working_buf->next();
 
         /// Fsync file system if needed
         if (force_fsync)
-            file_buf.sync();
+            working_buf->sync();
     }
 
     uint64_t getStartIndex() const
@@ -138,12 +135,12 @@ private:
     {
         if (compressed_buffer)
             return *compressed_buffer;
-        return file_buf;
+        return *file_buf;
     }
 
     std::string filepath;
-    WriteBufferFromFile file_buf;
-    std::unique_ptr<WriteBuffer> compressed_buffer;
+    std::unique_ptr<WriteBufferFromFile> file_buf;
+    std::unique_ptr<WriteBufferWithOwnMemoryDecorator> compressed_buffer;
     uint64_t start_index;
 };
 
@@ -250,7 +247,7 @@ public:
         catch (const Exception & ex)
         {
             if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
-                throw ex;
+                throw;
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
@@ -296,6 +293,8 @@ Changelog::Changelog(
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
+
+    clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -379,6 +378,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
         min_log_id = last_commited_log_index;
         max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
+    }
+    else if (last_commited_log_index != 0 && max_log_id < last_commited_log_index - 1) /// If we have more fresh snapshot than our logs
+    {
+        LOG_WARNING(log, "Our most fresh log_id {} is smaller than stored data in snapshot {}. It can indicate data loss. Removing outdated logs.", max_log_id, last_commited_log_index - 1);
+
+        removeAllLogs();
+        min_log_id = last_commited_log_index;
+        max_log_id = last_commited_log_index - 1;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
@@ -509,7 +516,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         rotate(index);
 
     current_writer->appendRecord(buildRecord(index, log_entry));
-    logs[index] = makeClone(log_entry);
+    logs[index] = log_entry;
     max_log_id = index;
 }
 
@@ -576,7 +583,17 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            std::filesystem::remove(itr->second.path);
+            /// If failed to push to queue for background removing, then we will remove it now
+            if (!log_files_to_delete_queue.tryPush(itr->second.path, 1))
+            {
+                std::error_code ec;
+                std::filesystem::remove(itr->second.path, ec);
+                if (ec)
+                    LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", itr->second.path, ec.message());
+                else
+                    LOG_INFO(log, "Removed changelog {} because of compaction", itr->second.path);
+            }
+
             itr = existing_changelogs.erase(itr);
         }
         else /// Files are ordered, so all subsequent should exist
@@ -700,10 +717,29 @@ Changelog::~Changelog()
     try
     {
         flush();
+        log_files_to_delete_queue.finish();
+        if (clean_log_thread.joinable())
+            clean_log_thread.join();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void Changelog::cleanLogThread()
+{
+    while (!log_files_to_delete_queue.isFinishedAndEmpty())
+    {
+        std::string path;
+        if (log_files_to_delete_queue.pop(path))
+        {
+            std::error_code ec;
+            if (std::filesystem::remove(path, ec))
+                LOG_INFO(log, "Removed changelog {} because of compaction.", path);
+            else
+                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
+        }
     }
 }
 

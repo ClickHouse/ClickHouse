@@ -2,7 +2,10 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Access/Authentication.h>
+#include <Access/Common/AuthenticationData.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -42,7 +45,7 @@ struct SessionLogElement
     Decimal64 event_time_microseconds{};
 
     String user;
-    Authentication::Type user_identified_with = Authentication::Type::NO_PASSWORD;
+    AuthenticationType user_identified_with = AuthenticationType::NO_PASSWORD;
     String external_auth_server;
     Strings roles;
     Strings profiles;

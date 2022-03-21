@@ -195,15 +195,19 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 
 void XMLRowOutputFormat::onProgress(const Progress & value)
 {
-    progress.incrementPiecewiseAtomically(value);
+    statistics.progress.incrementPiecewiseAtomically(value);
 }
 
-void XMLRowOutputFormat::writeLastSuffix()
+void XMLRowOutputFormat::finalizeImpl()
 {
 
     writeCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
+
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
@@ -216,10 +220,10 @@ void XMLRowOutputFormat::writeLastSuffix()
 
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
-    if (applied_limit)
+    if (statistics.applied_limit)
     {
         writeCString("\t<rows_before_limit_at_least>", *ostr);
-        writeIntText(rows_before_limit, *ostr);
+        writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
     }
 }
@@ -228,13 +232,13 @@ void XMLRowOutputFormat::writeStatistics()
 {
     writeCString("\t<statistics>\n", *ostr);
     writeCString("\t\t<elapsed>", *ostr);
-    writeText(watch.elapsedSeconds(), *ostr);
+    writeText(statistics.watch.elapsedSeconds(), *ostr);
     writeCString("</elapsed>\n", *ostr);
     writeCString("\t\t<rows_read>", *ostr);
-    writeText(progress.read_rows.load(), *ostr);
+    writeText(statistics.progress.read_rows.load(), *ostr);
     writeCString("</rows_read>\n", *ostr);
     writeCString("\t\t<bytes_read>", *ostr);
-    writeText(progress.read_bytes.load(), *ostr);
+    writeText(statistics.progress.read_bytes.load(), *ostr);
     writeCString("</bytes_read>\n", *ostr);
     writeCString("\t</statistics>\n", *ostr);
 }
@@ -250,6 +254,9 @@ void registerOutputFormatXML(FormatFactory & factory)
     {
         return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("XML");
+    factory.markFormatHasNoAppendSupport("XML");
 }
 
 }

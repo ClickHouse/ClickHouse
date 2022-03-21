@@ -56,7 +56,7 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
     final_operator = ast->final_operator;
 
-    const auto & children = ast->children;
+    const auto & children = ast->getListOfSelects();
     size_t num_children = children.size();
 
     /// AST must have been changed by the visitor.
@@ -68,7 +68,10 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     nested_interpreters.resize(num_children);
 
     for (size_t i = 0; i < num_children; ++i)
+    {
         nested_interpreters[i] = buildCurrentChildInterpreter(children.at(i));
+        uses_view_source |= nested_interpreters[i]->usesViewSource();
+    }
 
     Blocks headers(num_children);
     for (size_t query_num = 0; query_num < num_children; ++query_num)

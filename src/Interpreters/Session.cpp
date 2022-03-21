@@ -1,6 +1,6 @@
 #include <Interpreters/Session.h>
 
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
@@ -246,6 +246,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
+      interface(interface_),
       log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
@@ -271,12 +272,12 @@ Session::~Session()
     }
 }
 
-Authentication::Type Session::getAuthenticationType(const String & user_name) const
+AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getType();
+    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
 }
 
-Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
+AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
 {
     try
     {
@@ -310,7 +311,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControlManager().login(credentials_, address.host());
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), user_id ? toString(*user_id) : "<EMPTY>");
     }
@@ -418,6 +419,11 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
 
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
+    /// For the LOCAL interface we don't send events to the session log
+    /// because the LOCAL interface is internal, it does nothing with networking.
+    if (interface == ClientInfo::Interface::LOCAL)
+        return nullptr;
+
     // take it from global context, since it outlives the Session and always available.
     // please note that server may have session_log disabled, hence this may return nullptr.
     return global_context->getSessionLog();
@@ -462,8 +468,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         res_client_info.initial_address = res_client_info.current_address;
     }
 
-    /// Sets that row policies from the initial user should be used too.
-    query_context->setInitialRowPolicy();
+    /// Sets that row policies of the initial user should be used too.
+    query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getUser())

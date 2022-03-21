@@ -4,7 +4,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
-#include <base/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 #include <Interpreters/Context.h>

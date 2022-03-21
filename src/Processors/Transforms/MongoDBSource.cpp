@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int UNKNOWN_TYPE;
+    extern const int MONGODB_ERROR;
 }
 
 
@@ -327,6 +328,14 @@ Chunk MongoDBSource::generate()
 
         for (auto & document : response.documents())
         {
+            if (document->exists("ok") && document->exists("$err")
+                && document->exists("code") && document->getInteger("ok") == 0)
+            {
+                auto code = document->getInteger("code");
+                const Poco::MongoDB::Element::Ptr value = document->get("$err");
+                auto message = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(*value).value();
+                throw Exception(ErrorCodes::MONGODB_ERROR, "Got error from MongoDB: {}, code: {}", message, code);
+            }
             ++num_rows;
 
             for (const auto idx : collections::range(0, size))

@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -21,7 +20,7 @@ void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_nu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x;
 
@@ -31,6 +30,9 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
         readText(x, istr);
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Number");
 }
 
 template <typename T>
@@ -92,7 +94,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
 {
     FieldType x;
     readCSV(x, istr);

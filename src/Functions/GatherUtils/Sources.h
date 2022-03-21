@@ -184,7 +184,7 @@ struct ConstSource : public Base
 
     virtual void accept(ArraySourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IArraySource, Base>::value)
+        if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
             throw Exception(
@@ -194,7 +194,7 @@ struct ConstSource : public Base
 
     virtual void accept(ValueSourceVisitor & visitor) // override
     {
-        if constexpr (std::is_base_of<IValueSource, Base>::value)
+        if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
             throw Exception(
@@ -356,6 +356,11 @@ struct UTF8StringSource : public StringSource
             UTF8::syncBackward(pos, begin);
         }
         return pos;
+    }
+
+    size_t getElementSize() const
+    {
+        return UTF8::countCodePoints(&elements[prev_offset], StringSource::getElementSize());
     }
 
     Slice getSliceFromLeft(size_t offset) const

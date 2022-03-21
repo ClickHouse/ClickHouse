@@ -17,7 +17,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -517,8 +516,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     });
 
             if (insert_it == metadata.secondary_indices.end())
-                throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
-                        ErrorCodes::BAD_ARGUMENTS);
+            {
+                auto hints = metadata.secondary_indices.getHints(after_index_name);
+                auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                throw Exception(
+                    "Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after" + hints_string,
+                    ErrorCodes::BAD_ARGUMENTS);
+            }
 
             ++insert_it;
         }
@@ -541,7 +545,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 if (if_exists)
                     return;
-                throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
+                auto hints = metadata.secondary_indices.getHints(index_name);
+                auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                throw Exception(
+                    "Wrong index name. Cannot find index " + backQuote(index_name) + " to drop" + hints_string, ErrorCodes::BAD_ARGUMENTS);
             }
 
             metadata.secondary_indices.erase(erase_it);
@@ -549,9 +556,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_CONSTRAINT)
     {
+        auto constraints = metadata.constraints.getConstraints();
         if (std::any_of(
-                metadata.constraints.constraints.cbegin(),
-                metadata.constraints.constraints.cend(),
+                constraints.cbegin(),
+                constraints.cend(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
@@ -563,28 +571,30 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto insert_it = metadata.constraints.constraints.end();
-
-        metadata.constraints.constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
+        auto insert_it = constraints.end();
+        constraints.emplace(insert_it, constraint_decl);
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
+        auto constraints = metadata.constraints.getConstraints();
         auto erase_it = std::find_if(
-                metadata.constraints.constraints.begin(),
-                metadata.constraints.constraints.end(),
+                constraints.begin(),
+                constraints.end(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
                 });
 
-        if (erase_it == metadata.constraints.constraints.end())
+        if (erase_it == constraints.end())
         {
             if (if_exists)
                 return;
-            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
+            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop",
                     ErrorCodes::BAD_ARGUMENTS);
         }
-        metadata.constraints.constraints.erase(erase_it);
+        constraints.erase(erase_it);
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == ADD_PROJECTION)
     {
@@ -654,8 +664,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         if (metadata.table_ttl.definition_ast)
             rename_visitor.visit(metadata.table_ttl.definition_ast);
 
-        for (auto & constraint : metadata.constraints.constraints)
+        auto constraints_data = metadata.constraints.getConstraints();
+        for (auto & constraint : constraints_data)
             rename_visitor.visit(constraint);
+        metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);
@@ -759,8 +771,12 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
+
+    /// Drop alias is metadata alter, in other case mutation is required.
+    if (type == DROP_COLUMN)
+        return metadata.columns.hasPhysical(column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;

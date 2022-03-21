@@ -121,14 +121,16 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
             auto projection_compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
             auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
             MergedBlockOutputStream projection_out(
-                projection_data_part, desc.metadata, projection_part->columns, projection_indices, projection_compression_codec);
+                projection_data_part, desc.metadata, projection_part->columns, projection_indices,
+                projection_compression_codec);
+
             projection_out.write(projection_part->block);
-            projection_out.writeSuffixAndFinalizePart(projection_data_part);
+            projection_out.finalizePart(projection_data_part, false);
             new_data_part->addProjectionPart(projection_name, std::move(projection_data_part));
         }
     }
 
-    out.writeSuffixAndFinalizePart(new_data_part);
+    out.finalizePart(new_data_part, false);
 }
 
 void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const

@@ -38,6 +38,11 @@ void FileChecker::setPath(const String & file_info_path_)
     files_info_path = file_info_path_;
 }
 
+String FileChecker::getPath() const
+{
+    return files_info_path;
+}
+
 void FileChecker::update(const String & full_file_path)
 {
     bool exists = disk->exists(full_file_path);

@@ -46,6 +46,11 @@ public:
         throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
+    T operator() (const Object &) const
+    {
+        throw Exception("Cannot convert Object to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
@@ -64,7 +69,7 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
-            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
+            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
             {
                 throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
@@ -113,7 +118,8 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
+    template <typename U>
+    requires is_big_int_v<U>
     T operator() (const U & x) const
     {
         if constexpr (is_decimal<T>)
@@ -123,6 +129,8 @@ public:
         else
             return static_cast<T>(x);
     }
+
+    T operator() (const bool & x) const { return T(x); }
 };
 
 }

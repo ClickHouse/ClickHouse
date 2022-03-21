@@ -290,7 +290,7 @@ ngrams(string, ngramsize)
 
 -   Array with n-grams.
 
-Type: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 

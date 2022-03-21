@@ -19,9 +19,20 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
+#include <base/logger_useful.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric PendingAsyncInsert;
+}
+
+namespace ProfileEvents
+{
+    extern const Event AsyncInsertQuery;
+}
 
 namespace DB
 {
@@ -154,9 +165,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([=, data = std::make_shared<InsertDataPtr>(std::move(data))]
+    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(std::move(key), std::move(*data), std::move(global_context));
+        processData(key, std::move(*data), std::move(global_context));
     });
 }
 
@@ -173,7 +184,10 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
-    query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+    /// For table functions we check access while executing
+    /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
+    if (insert_query.table_id)
+        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
     String bytes;
     {
@@ -222,6 +236,9 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     if (data->size > max_data_size)
         scheduleDataProcessingJob(it->first, std::move(data), getContext());
+
+    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -397,7 +414,7 @@ try
     };
 
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
-    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields && insert_query.table_id)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -436,6 +453,8 @@ try
     for (const auto & entry : data->entries)
         if (!entry->isFinished())
             entry->finish();
+
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
 }
 catch (const Exception & e)
 {
@@ -469,6 +488,8 @@ void AsynchronousInsertQueue::finishWithException(
             entry->finish(std::make_exception_ptr(exception));
         }
     }
+
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, entries.size());
 }
 
 }

@@ -3,11 +3,11 @@ toc_priority: 33
 toc_title: INSERT INTO
 ---
 
-## INSERT {#insert}
+## INSERT INTO {#insert}
 
-Добавление данных.
+Добавляет данные в таблицу.
 
-Базовый формат запроса:
+**Синтаксис**
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
@@ -21,17 +21,15 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 SHOW CREATE insert_select_testtable
 ```
 
-```
-┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE insert_select_testtable
+```text
+CREATE TABLE insert_select_testtable
 (
     `a` Int8,
     `b` String,
     `c` Int8
 )
 ENGINE = MergeTree()
-ORDER BY a │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ORDER BY a
 ```
 
 ``` sql
@@ -57,7 +55,12 @@ SELECT * FROM insert_select_testtable
 └───┴───┴───┘
 ```
 
-В этом примере мы видим, что вторая строка содержит столбцы `a` и `c`, заполненные переданными значениями и `b`, заполненный значением по умолчанию.
+В этом примере мы видим, что вторая строка содержит столбцы `a` и `c`, заполненные переданными значениями и `b`, заполненный значением по умолчанию. Также можно использовать ключевое слово `DEFAULT` для вставки значений по умолчанию:
+
+``` sql
+INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
+```
+
 Если список столбцов не включает все существующие столбцы, то все остальные столбцы заполняются следующим образом:
 
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
@@ -93,6 +96,8 @@ INSERT INTO t FORMAT TabSeparated
 
 ### Вставка результатов `SELECT` {#insert_query_insert-select}
 
+**Синтаксис**
+
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
@@ -108,6 +113,68 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 секция `FORMAT`.
 
 Чтобы вставить значение по умолчанию вместо `NULL` в столбец, который не позволяет хранить `NULL`, включите настройку [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default).
+
+### Вставка данных из файла {#inserting-data-from-a-file}
+
+**Синтаксис**
+
+``` sql
+INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
+```
+
+Используйте этот синтаксис, чтобы вставить данные из файла, который хранится на стороне **клиента**. `file_name` и `type` задаются в виде строковых литералов. [Формат](../../interfaces/formats.md) входного файла должен быть задан в секции `FORMAT`. 
+
+Поддерживаются сжатые файлы. Формат сжатия определяется по расширению файла, либо он может быть задан в секции `COMPRESSION`. Поддерживаются форматы: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+Эта функциональность поддерживается [клиентом командной строки](../../interfaces/cli.md) и [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+
+**Пример**
+
+Выполните следующие запросы, используя [клиент командной строки](../../interfaces/cli.md):
+
+```bash
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+Результат:
+
+```text
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
+### Вставка в табличную функцию {#inserting-into-table-function}
+
+Данные могут быть вставлены в таблицы, заданные с помощью [табличных функций](../../sql-reference/table-functions/index.md).
+
+**Синтаксис**
+``` sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
+
+**Пример**
+
+Табличная функция [remote](../../sql-reference/table-functions/index.md#remote) используется в следующих запросах:
+
+``` sql
+CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table) 
+    VALUES (100, 'inserted via remote()');
+SELECT * FROM simple_table;
+```
+
+Результат:
+
+``` text
+┌──id─┬─text──────────────────┐
+│ 100 │ inserted via remote() │
+└─────┴───────────────────────┘
+```
 
 ### Замечания о производительности {#zamechaniia-o-proizvoditelnosti}
 

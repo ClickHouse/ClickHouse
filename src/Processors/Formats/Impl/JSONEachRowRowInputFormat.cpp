@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -136,37 +137,10 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     if (seen_columns[index])
         throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
-    try
-    {
-        seen_columns[index] = read_columns[index] = true;
-        const auto & type = getPort().getHeader().getByPosition(index).type;
-        const auto & serialization = serializations[index];
-
-        if (yield_strings)
-        {
-            String str;
-            readJSONString(str, *in);
-
-            ReadBufferFromString buf(str);
-
-            if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
-            else
-                serialization->deserializeWholeText(*columns[index], buf, format_settings);
-        }
-        else
-        {
-            if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], *in, format_settings, serialization);
-            else
-                serialization->deserializeTextJSON(*columns[index], *in, format_settings);
-        }
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("(while reading the value of key " + columnName(index) + ")");
-        throw;
-    }
+    seen_columns[index] = true;
+    const auto & type = getPort().getHeader().getByPosition(index).type;
+    const auto & serialization = serializations[index];
+    read_columns[index] = readFieldImpl(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
@@ -282,8 +256,13 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
-    /// return info about defaults set
-    ext.read_columns = read_columns;
+    /// Return info about defaults set.
+    /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.
+    if (format_settings.defaults_for_omitted_fields)
+        ext.read_columns = read_columns;
+    else
+        ext.read_columns.assign(read_columns.size(), true);
+
     return true;
 }
 
@@ -308,11 +287,7 @@ void JSONEachRowRowInputFormat::readPrefix()
     skipBOMIfExists(*in);
 
     skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == '[')
-    {
-        ++in->position();
-        data_in_square_brackets = true;
-    }
+    data_in_square_brackets = checkChar('[', *in);
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
@@ -331,6 +306,43 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings)
+    : IRowWithNamesSchemaReader(in_, format_settings.max_rows_to_read_for_schema_inference), json_strings(json_strings_)
+{
+}
+
+
+std::unordered_map<String, DataTypePtr> JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes()
+{
+    if (first_row)
+    {
+        skipBOMIfExists(in);
+        skipWhitespaceIfAny(in);
+        if (checkChar('[', in))
+            data_in_square_brackets = true;
+        first_row = false;
+    }
+    else
+    {
+        skipWhitespaceIfAny(in);
+        /// If data is in square brackets then ']' means the end of data.
+        if (data_in_square_brackets && checkChar(']', in))
+            return {};
+
+        /// ';' means end of data.
+        if (checkChar(';', in))
+            return {};
+
+        /// There may be optional ',' between rows.
+        checkChar(',', in);
+    }
+
+    skipWhitespaceIfAny(in);
+    if (in.eof())
+        return {};
+
+    return readRowAndGetNamesAndDataTypesForJSONEachRow(in, json_strings);
+}
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
@@ -342,6 +354,9 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
+
+    factory.registerFileExtension("ndjson", "JSONEachRow");
+    factory.registerFileExtension("jsonl", "JSONEachRow");
 
     factory.registerInputFormat("JSONStringsEachRow", [](
         ReadBuffer & buf,
@@ -355,14 +370,27 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+}
+
+void registerJSONEachRowSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
+    });
+
+    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    {
+        return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
+    });
 }
 
 }

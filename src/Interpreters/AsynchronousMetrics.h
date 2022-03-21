@@ -30,6 +30,11 @@ class ReadBuffer;
 using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
+struct ProtocolServerMetrics
+{
+    String port_name;
+    size_t current_threads;
+};
 
 /** Periodically (by default, each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
@@ -41,24 +46,25 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 class AsynchronousMetrics : WithContext
 {
 public:
+    using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
-        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
-        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     ~AsynchronousMetrics();
 
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start();
 
+    void stop();
+
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
 private:
     const std::chrono::seconds update_period;
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables{nullptr};
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers{nullptr};
+    ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;
@@ -70,9 +76,11 @@ private:
     bool first_run = true;
     std::chrono::system_clock::time_point previous_update_time;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
+#endif
 
+#if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo;
     std::optional<ReadBufferFromFilePRead> loadavg;
     std::optional<ReadBufferFromFilePRead> proc_stat;

@@ -16,28 +16,16 @@ namespace
 {
     constexpr UInt64 ALL_THREADS = 0;
 
-    UInt64 calculateNewCoresNumber(DB::ThreadIdToTimeMap const & prev, DB::ThreadIdToTimeMap const& next)
+    double calculateCPUUsage(DB::ThreadIdToTimeMap times, UInt64 elapsed)
     {
-        if (next.find(ALL_THREADS) == next.end())
-            return 0;
-
-        auto accumulated = std::accumulate(next.cbegin(), next.cend(), 0,
-            [&prev](UInt64 acc, const auto & elem)
-            {
-                if (elem.first == ALL_THREADS)
-                    return acc;
-
-                auto thread_time = elem.second.time();
-                auto it = prev.find(elem.first);
-                if (it != prev.end())
-                    thread_time -= it->second.time();
-                return acc + thread_time;
-            });
-
-        auto elapsed = next.at(ALL_THREADS).time() - (prev.contains(ALL_THREADS) ? prev.at(ALL_THREADS).time() : 0);
-        if (elapsed == 0)
-            return 0;
-        return (accumulated + elapsed - 1) / elapsed;
+        auto accumulated = std::accumulate(times.begin(), times.end(), 0,
+        [](Int64 acc, const auto & elem)
+        {
+            if (elem.first == ALL_THREADS)
+                return acc;
+            return acc + elem.second.time();
+        });
+        return static_cast<double>(accumulated) / elapsed;
     }
 }
 
@@ -65,7 +53,7 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
-    host_active_cores.clear();
+    host_cpu_usage.clear();
     thread_data.clear();
 }
 
@@ -89,14 +77,12 @@ void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
 {
     for (auto & new_host_map : new_thread_data)
     {
-        auto & host_map = thread_data[new_host_map.first];
-        auto new_cores = calculateNewCoresNumber(host_map, new_host_map.second);
-        host_active_cores[new_host_map.first] = new_cores;
-        host_map = std::move(new_host_map.second);
+        host_cpu_usage[new_host_map.first] = calculateCPUUsage(new_host_map.second, elapsed_time);
+        thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
 }
 
@@ -109,13 +95,12 @@ size_t ProgressIndication::getUsedThreadsCount() const
         });
 }
 
-UInt64 ProgressIndication::getApproximateCoresNumber() const
+double ProgressIndication::getCPUUsage() const
 {
-    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), 0,
-        [](UInt64 acc, auto const & elem)
-        {
-            return acc + elem.second;
-        });
+    double res = 0;
+    for (const auto & elem : host_cpu_usage)
+        res += elem.second;
+    return res;
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -129,6 +114,7 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
             // memory consumption it's enough to look for data with thread id 0.
             if (auto it = host_data.second.find(ALL_THREADS); it != host_data.second.end())
                 host_usage = it->second.memory_usage;
+
             return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
@@ -196,26 +182,28 @@ void ProgressIndication::writeProgress()
 
     written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
 
-    // If approximate cores number is known, display it.
-    auto cores_number = getApproximateCoresNumber();
+    /// Display resource usage if possible.
     std::string profiling_msg;
-    if (cores_number != 0 && print_hardware_utilization)
+
+    double cpu_usage = getCPUUsage();
+    auto [memory_usage, max_host_usage] = getMemoryUsage();
+
+    if (cpu_usage > 0 || memory_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
-        // Calculated cores number may be not accurate
-        // so it's better to print min(threads, cores).
-        UInt64 threads_number = getUsedThreadsCount();
-        profiling_msg_builder << " Running " << threads_number << " threads on "
-            << std::min(cores_number, threads_number) << " cores";
 
-        auto [memory_usage, max_host_usage] = getMemoryUsage();
-        if (memory_usage != 0)
-            profiling_msg_builder << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used";
-        if (thread_data.size() > 1 && max_host_usage)
-            profiling_msg_builder << " total (per host max: " << formatReadableSizeWithDecimalSuffix(max_host_usage) << ")";
-        profiling_msg_builder << ".";
+        profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
+
+        if (memory_usage > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
+        if (max_host_usage < memory_usage)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
+
+        profiling_msg_builder << ")";
         profiling_msg = profiling_msg_builder.str();
     }
+
+    int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
 
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_raw_bytes_to_read)
@@ -243,14 +231,46 @@ void ProgressIndication::writeProgress()
 
             if (show_progress_bar)
             {
-                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%") - profiling_msg.length();
+                /// We will display profiling info only if there is enough space for it.
+                int64_t width_of_progress_bar = remaining_space - strlen(" 99%");
+
+                /// We need at least twice the space, because it will be displayed either
+                /// at right after progress bar or at left on top of the progress bar.
+                if (width_of_progress_bar <= 1 + 2 * static_cast<int64_t>(profiling_msg.size()))
+                    profiling_msg.clear();
+
                 if (width_of_progress_bar > 0)
                 {
-                    std::string bar
-                        = UnicodeBar::render(UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar));
-                    message << "\033[0;32m" << bar << "\033[0m";
-                    if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                    double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
+                    std::string bar = UnicodeBar::render(bar_width);
+                    size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
+
+                    if (profiling_msg.empty())
+                    {
+                        message << "\033[0;32m" << bar << "\033[0m"
+                            << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
+                    }
+                    else
+                    {
+                        bool render_profiling_msg_at_left = current_count * 2 >= max_count;
+
+                        if (render_profiling_msg_at_left)
+                        {
+                            /// Render profiling_msg at left on top of the progress bar.
+
+                            message << "\033[30;42m" << profiling_msg << "\033[0m"
+                                << "\033[0;32m" << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
+                                << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
+                        }
+                        else
+                        {
+                            /// Render profiling_msg at right after the progress bar.
+
+                            message << "\033[0;32m" << bar << "\033[0m"
+                                << std::string(width_of_progress_bar - bar_width_in_terminal - profiling_msg.size(), ' ')
+                                << "\033[2m" << profiling_msg << "\033[0m";
+                        }
+                    }
                 }
             }
         }
@@ -258,8 +278,17 @@ void ProgressIndication::writeProgress()
         /// Underestimate percentage a bit to avoid displaying 100%.
         message << ' ' << (99 * current_count / max_count) << '%';
     }
+    else
+    {
+        /// We can still display profiling info.
+        if (remaining_space >= static_cast<int64_t>(profiling_msg.size()))
+        {
+            if (remaining_space > static_cast<int64_t>(profiling_msg.size()))
+                message << std::string(remaining_space - profiling_msg.size(), ' ');
+            message << "\033[2m" << profiling_msg << "\033[0m";
+        }
+    }
 
-    message << profiling_msg;
     message << CLEAR_TO_END_OF_LINE;
     ++increment;
 

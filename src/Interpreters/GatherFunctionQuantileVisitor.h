@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/IAST.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class ASTFunction;
 
 /// Gather all the `quantile*` functions
 class GatherFunctionQuantileData

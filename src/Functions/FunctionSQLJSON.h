@@ -8,16 +8,18 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <base/range.h>
 
 #include "config_functions.h"
@@ -240,7 +242,7 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        Element res;
+
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
@@ -260,15 +262,26 @@ public:
         }
 
         if (status == VisitorStatus::Exhausted)
-        {
             return false;
-        }
 
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(output_str.data(), output_str.size());
+        ColumnString::Chars & data = col_str.getChars();
+        ColumnString::Offsets & offsets = col_str.getOffsets();
+
+        if (current_element.isString())
+        {
+            ReadBufferFromString buf(output_str);
+            readJSONStringInto(data, buf);
+            data.push_back(0);
+            offsets.push_back(data.size());
+        }
+        else
+        {
+            col_str.insertData(output_str.data(), output_str.size());
+        }
         return true;
     }
 };

@@ -18,12 +18,12 @@ class KafkaSource : public SourceWithProgress
 public:
     KafkaSource(
         StorageKafka & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
         size_t max_block_size_,
-        bool commit_in_suffix = true);
+        bool commit_in_suffix = false);
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -35,7 +35,7 @@ public:
 
 private:
     StorageKafka & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
     Poco::Logger * log;

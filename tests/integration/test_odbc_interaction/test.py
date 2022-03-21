@@ -338,6 +338,8 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')")
     node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+    node1.exec_in_container(["ss", "-K", "dport", "postgresql"], privileged=True, user='root')
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
@@ -478,9 +480,9 @@ def test_odbc_postgres_conversions(started_cluster):
 
     node1.query(
         """INSERT INTO test_types
-        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)""")
+        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)""")
 
-    expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)")
+    expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Etc/UTC'), toDecimal32(1.1, 1)")
     result = node1.query("SELECT * FROM test_types")
     logging.debug(result)
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")

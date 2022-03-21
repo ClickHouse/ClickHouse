@@ -397,7 +397,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `<query>` 値は以下の定義済みクエリです `<predefined_query_handler>` これは、Http要求が一致し、クエリの結果が返されたときにClickHouseによって実行されます。 これは必須構成です。
 
-次の例では、次の値を定義します `max_threads` と `max_alter_threads` 設定、そしてクエリのテーブルから設定設定します。
+次の例では、次の値を定義します `max_threads` と `max_final_threads` 設定、そしてクエリのテーブルから設定設定します。
 
 例:
 
@@ -420,9 +420,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "注意"
@@ -434,7 +434,7 @@ max_alter_threads   2
 
 クリックハウスは、 `<query_param_name>` HTTP要求のurlの値。 のデフォルト値 `<query_param_name>` は `/query` . これはオプションの構成です。 設定ファイルに定義がない場合、paramは渡されません。
 
-この機能を試すために、この例ではmax_threadsとmax_alter_threadsの値を定義し、設定が正常に設定されたかどうかを照会します。
+この機能を試すために、この例ではmax_threadsとmax_final_threadsの値を定義し、設定が正常に設定されたかどうかを照会します。
 
 例:
 
@@ -452,9 +452,9 @@ max_alter_threads   2
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ## 静的 {#static}

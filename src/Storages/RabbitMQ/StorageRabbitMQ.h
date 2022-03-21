@@ -40,7 +40,7 @@ public:
     /// Always return virtual columns in addition to required columns
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -63,10 +63,13 @@ public:
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
-    bool exchangeRemoved() { return exchange_removed.load(); }
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
+    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
+
+    void incrementReader();
+    void decrementReader();
 
 protected:
     StorageRabbitMQ(
@@ -118,9 +121,7 @@ private:
 
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
-    std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
-    std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
-    std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
+
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
@@ -131,7 +132,33 @@ private:
 
     uint64_t milliseconds_to_wait;
 
-    std::atomic<bool> stream_cancelled{false};
+    /**
+     * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
+     */
+    /// Needed for tell MV or producer background tasks
+    /// that they must finish as soon as possible.
+    std::atomic<bool> shutdown_called{false};
+    /// Counter for producer buffers, needed for channel id.
+    /// Needed to generate unique producer buffer identifiers.
+    std::atomic<size_t> producer_id = 1;
+    /// Has connection background task completed successfully?
+    /// It is started only once -- in constructor.
+    std::atomic<bool> rabbit_is_ready = false;
+    /// Allow to remove exchange only once.
+    std::atomic<bool> exchange_removed = false;
+    /// For select query we must be aware of the end of streaming
+    /// to be able to turn off the loop.
+    std::atomic<size_t> readers_count = 0;
+    std::atomic<bool> mv_attached = false;
+
+    /// In select query we start event loop, but do not stop it
+    /// after that select is finished. Then in a thread, which
+    /// checks for MV we also check if we have select readers.
+    /// If not - we turn off the loop. The checks are done under
+    /// mutex to avoid having a turned off loop when select was
+    /// started.
+    std::mutex loop_mutex;
+
     size_t read_attempts = 0;
     mutable bool drop_table = false;
     bool is_attach;
@@ -144,6 +171,10 @@ private:
     void streamingToViewsFunc();
     void loopingFunc();
     void connectionFunc();
+
+    void startLoop();
+    void stopLoop();
+    void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);

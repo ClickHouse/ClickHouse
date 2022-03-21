@@ -12,7 +12,7 @@ class AggregatedArenasChunkInfo : public ChunkInfo
 {
 public:
     Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
+    explicit AggregatedArenasChunkInfo(Arenas arenas_)
         : arenas(std::move(arenas_))
     {}
 };
@@ -23,6 +23,9 @@ public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
 };
+
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;

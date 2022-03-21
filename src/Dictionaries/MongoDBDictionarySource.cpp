@@ -8,6 +8,9 @@
 namespace DB
 {
 
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method"};
+
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     auto create_mongo_db_dictionary = [](
@@ -21,10 +24,11 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         ExternalDataSourceConfiguration configuration;
-        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context);
+        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
+        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context, has_config_key);
         if (named_collection)
         {
-            configuration = *named_collection;
+            configuration = named_collection->configuration;
         }
         else
         {

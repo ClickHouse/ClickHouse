@@ -775,6 +775,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
+Пользователь может сбалансированно распределять новые большие куски данных по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures), используя настройку [min_bytes_to_rebalance_partition_over_jbod](../../../operations/settings/merge-tree-settings.md#min-bytes-to-rebalance-partition-over-jbod).
+
 ## Использование сервиса S3 для хранения данных {#table_engine-mergetree-s3}
 
 Таблицы семейства `MergeTree` могут хранить данные в сервисе [S3](https://aws.amazon.com/s3/) при использовании диска типа `s3`.
@@ -870,3 +872,13 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`.
+
+## Виртуальные столбцы {#virtual-columns}
+
+-   `_part` — Имя куска.
+-   `_part_index` — Номер куска по порядку в результате запроса.
+-   `_partition_id` — Имя партиции.
+-   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
+-   `_partition_value` — Значения (кортеж) выражения `partition by`.
+-   `_sample_factor` — Коэффициент сэмплирования (из запроса).
+

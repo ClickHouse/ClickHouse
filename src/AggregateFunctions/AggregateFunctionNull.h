@@ -77,7 +77,7 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        return result_is_nullable ? place[0] : 1;
+        return result_is_nullable ? place[0] : true;
     }
 
 public:
@@ -137,24 +137,24 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         bool flag = getFlag(place);
         if constexpr (serialize_flag)
             writeBinary(flag, buf);
         if (flag)
-            nested_function->serialize(nestedPlace(place), buf);
+            nested_function->serialize(nestedPlace(place), buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        bool flag = 1;
+        bool flag = true;
         if constexpr (serialize_flag)
             readBinary(flag, buf);
         if (flag)
         {
             setFlag(place);
-            nested_function->deserialize(nestedPlace(place), buf, arena);
+            nested_function->deserialize(nestedPlace(place), buf, version, arena);
         }
     }
 
@@ -306,7 +306,7 @@ public:
         }
     }
 
-    void addBatchSinglePlace(
+    void addBatchSinglePlace( /// NOLINT
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
