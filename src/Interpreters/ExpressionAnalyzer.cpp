@@ -68,7 +68,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -1205,9 +1204,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
-    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
 
-    const ColumnsWithTypeAndName & right_columns = right_sample_block.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
@@ -1216,6 +1214,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
+    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
     if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
     {
         joined_plan.reset();
