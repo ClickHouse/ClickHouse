@@ -205,6 +205,7 @@ def parse_env_variables(
         result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if additional_pkgs:
+        result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
 
@@ -337,7 +338,7 @@ if __name__ == "__main__":
         ch_root = args.clickhouse_repo_path
 
     if args.additional_pkgs and image_type != "deb":
-        raise Exception("Can build tgz and rpm packages only in deb build")
+        raise Exception("Can build additional packages only in deb build")
 
     if args.with_binaries != "" and image_type != "deb":
         raise Exception("Can add additional binaries only in deb build")
