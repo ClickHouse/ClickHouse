@@ -32,7 +32,7 @@ jobs:
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{runner.temp}}/release_packages/*
+        file: ${{runner.temp}}/push_to_artifactory/*
         overwrite: true
         tag: ${{ github.ref }}
         file_glob: true

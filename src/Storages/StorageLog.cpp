@@ -171,7 +171,7 @@ Chunk LogSource::generate()
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
+            res.insert(ColumnWithTypeAndName(column, name_type.type, name_type.name));
     }
 
     if (res)
@@ -765,14 +765,14 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
 Pipe StorageLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
@@ -782,7 +782,7 @@ Pipe StorageLog::read(
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();
@@ -791,7 +791,8 @@ Pipe StorageLog::read(
     if (num_streams > max_streams)
         num_streams = max_streams;
 
-    auto all_columns = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::vector<size_t> offsets;
