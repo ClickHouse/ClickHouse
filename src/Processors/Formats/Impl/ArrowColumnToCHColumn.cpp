@@ -484,11 +484,17 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
+Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, const Block * hint_header)
 {
     ColumnsWithTypeAndName sample_columns;
+    std::unordered_set<String> nested_table_names;
+    if (hint_header)
+        nested_table_names = Nested::getAllTableNames(*hint_header);
     for (const auto & field : schema.fields())
     {
+        if (hint_header && !hint_header->has(field->name()) && !nested_table_names.contains(field->name()))
+            continue;
+
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
         arrow::MemoryPool* pool = arrow::default_memory_pool();
         std::unique_ptr<arrow::ArrayBuilder> array_builder;
@@ -603,7 +609,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
 {
     std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name);
+    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, &header);
     auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)
     {
