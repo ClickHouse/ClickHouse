@@ -127,7 +127,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         MergeTreeData::DataPart::Checksums * additional_column_checksums,
         const WriteSettings & write_settings)
 {
-    std::cerr << "\n\n\n\nCACHE ON INSERT: " << write_settings.remote_fs_cache_on_insert << "\n\n\n";
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
 

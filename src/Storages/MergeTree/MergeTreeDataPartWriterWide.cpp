@@ -115,7 +115,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             compression_codec,
-            settings.max_compress_block_size);
+            settings.max_compress_block_size,
+            settings.query_write_settings);
     };
 
     ISerialization::SubstreamPath path;

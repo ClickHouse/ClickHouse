@@ -359,7 +359,6 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
             keyToStr(key), offset);
 
     auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
-
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -381,6 +380,7 @@ bool LRUFileCache::tryReserve(
 
     auto is_overflow = [&]
     {
+        /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
         return (max_size != 0 && current_size + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size);
     };
