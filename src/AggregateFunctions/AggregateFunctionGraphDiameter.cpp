@@ -1,16 +1,14 @@
 #include "AggregateFunctionGraphOperation.h"
 
-#include <utility>
-
 namespace DB
 {
 
-class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData>
+class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData>::GraphOperationGeneral;
+    using GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>::GraphOperationGeneral;
 
-    String getName() const override { return "GraphDiameter"; }
+    static constexpr const char* name = "graphDiameter";
 
     std::pair<UInt64, StringRef> calculateDiameter(const StringRef& vertex, const StringRef& parent, const HashMap<StringRef, std::vector<StringRef>>& graph) const {
         std::pair<UInt64, StringRef> answer = {0, vertex};
@@ -38,9 +36,6 @@ public:
     }
 };
 
-void registerAggregateFunctionGraphDiameter(AggregateFunctionFactory & factory)
-{
-    factory.registerFunction("graphDiameter", { createGraphOperation<GraphDiameterGeneral>, AggregateFunctionProperties{} });
-}
+template void registerGraphAggregateFunction<GraphDiameterGeneral>(AggregateFunctionFactory & factory);
 
 }

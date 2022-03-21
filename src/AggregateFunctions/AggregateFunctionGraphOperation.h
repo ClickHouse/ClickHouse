@@ -9,6 +9,7 @@
 #include "AggregateFunctions/FactoryHelpers.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
+#include "AggregateFunctionGraphFactory.h"
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
@@ -95,9 +96,9 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
     }
 };
 
-template<typename Data>
+template<typename Data, typename OpType>
 class GraphOperationGeneral
-    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data>>
+    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType>>
 {
 public:
     GraphOperationGeneral(const DataTypePtr & data_type_, const Array & parameters_)
@@ -105,6 +106,7 @@ public:
             {data_type_}, parameters_) {
     }
 
+    String getName() const final { return OpType::name; }
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -134,20 +136,7 @@ public:
 
     virtual UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const = 0;
 
-    bool allocatesMemoryInArena() const override { return true; }
+    bool allocatesMemoryInArena() const final { return true; }
 };
-
-template<typename GraphOperation>
-AggregateFunctionPtr createGraphOperation(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-{
-    assertBinary(name, argument_types);
-    assertNoParameters(name, parameters);
-
-    if (!argument_types[0]->equals(*argument_types[1])) {
-        throw Exception("Parameters for aggregate function " + name + " should be of equal types. Got " + argument_types[0]->getName() + " and " + argument_types[1]->getName(), ErrorCodes::BAD_ARGUMENTS);
-    }
-    return std::make_shared<GraphOperation>(argument_types[0], parameters);
-}
 
 }
