@@ -13,9 +13,11 @@
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {
@@ -145,7 +147,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 template <typename T, typename Comp>
 size_t sortAndUnique(std::vector<T> & vec, Comp comp)
 {
-    std::sort(vec.begin(), vec.end(),
+    ::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
 
     auto new_end = std::unique(vec.begin(), vec.end(),
@@ -336,7 +338,7 @@ void IPAddressDictionary::createAttributes()
             if (attribute.is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "{}: array or nullable attributes not supported for dictionary of type {}",
-                    full_name,
+                    getFullName(),
                     getTypeName());
 
             attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -345,7 +347,7 @@ void IPAddressDictionary::createAttributes()
             if (attribute.hierarchical)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "{}: hierarchical attributes not supported for dictionary of type {}",
-                    full_name,
+                    getFullName(),
                     getTypeName());
         }
     };
@@ -520,7 +522,7 @@ void IPAddressDictionary::loadData()
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
     if (require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 template <typename T>
@@ -781,7 +783,7 @@ const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const s
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", getFullName(), attribute_name);
 
     return attributes[it->second];
 }

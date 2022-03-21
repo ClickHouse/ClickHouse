@@ -101,7 +101,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
-            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), chroot);
+            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
     }
     else if (args.implementation == "testkeeper")
     {
@@ -1051,7 +1051,7 @@ std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts
         if (check_starts_with_slash)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
         if (log)
-            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases");
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
         zookeeper_path = "/" + zookeeper_path;
     }
 

@@ -3,14 +3,16 @@
 #include <Common/config.h>
 
 #include <atomic>
+#include <Common/FileCache_fwd.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/Executor.h>
 #include <utility>
+#include <mutex>
+#include <shared_mutex>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -25,7 +27,7 @@ namespace DB
 class RemoteFSPathKeeper
 {
 public:
-    RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
+    explicit RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
 
     virtual ~RemoteFSPathKeeper() = default;
 
@@ -53,20 +55,28 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
+        FileCachePtr cache_,
         const String & log_name_,
         size_t thread_pool_size);
 
     struct Metadata;
+    using MetadataUpdater = std::function<bool(Metadata & metadata)>;
 
     const String & getName() const final override { return name; }
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
 
-    Metadata readMeta(const String & path) const;
+    /// Methods for working with metadata. For some operations (like hardlink
+    /// creation) metadata can be updated concurrently from multiple threads
+    /// (file actually rewritten on disk). So additional RW lock is required for
+    /// metadata read and write, but not for create new metadata.
+    Metadata readMetadata(const String & path) const;
+    Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
+    Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
 
-    Metadata createMeta(const String & path) const;
-
-    Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
+    Metadata createAndStoreMetadata(const String & path, bool sync);
+    Metadata createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -94,11 +104,13 @@ public:
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
-    void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+    void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFileIfExists(const String & path, bool keep_in_remote_fs) override;
+    void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
+
+    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -135,39 +147,35 @@ public:
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
+    static ThreadPool & getThreadPoolWriter();
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const override;
-
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode) override;
-
-    virtual void removeMetaFileIfExists(
-        const String & path) override;
+    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
 
     UInt32 getRefCount(const String & path) const override;
 
+    /// Return metadata for each file path. Also, before serialization reset
+    /// ref_count for each metadata to zero. This function used only for remote
+    /// fetches/sends in replicated engines. That's why we reset ref_count to zero.
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 protected:
     Poco::Logger * log;
     const String name;
     const String remote_fs_root_path;
 
     DiskPtr metadata_disk;
+    FileCachePtr cache;
 
 private:
-    void removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
-    void removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
     bool tryReserve(UInt64 bytes);
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
+    mutable std::shared_mutex metadata_mutex;
 };
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
@@ -197,6 +205,7 @@ struct RemoteMetadata
 
 struct IDiskRemote::Metadata : RemoteMetadata
 {
+    using Updater = std::function<bool(IDiskRemote::Metadata & metadata)>;
     /// Metadata file version.
     static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
@@ -208,22 +217,36 @@ struct IDiskRemote::Metadata : RemoteMetadata
     size_t total_size = 0;
 
     /// Number of references (hardlinks) to this metadata file.
+    ///
+    /// FIXME: Why we are tracking it explicetly, without
+    /// info from filesystem????
     UInt32 ref_count = 0;
 
     /// Flag indicates that file is read only.
     bool read_only = false;
 
-    /// Load metadata by path or create empty if `create` flag is set.
-    Metadata(const String & remote_fs_root_path_,
-            DiskPtr metadata_disk_,
-            const String & metadata_file_path_,
-            bool create = false);
+    Metadata(
+        const String & remote_fs_root_path_,
+        DiskPtr metadata_disk_,
+        const String & metadata_file_path_);
 
     void addObject(const String & path, size_t size);
 
+    static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
+    static Metadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+
+    static Metadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
+    static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static Metadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
+
+    /// Serialize metadata to string (very same with saveToBuffer)
+    std::string serializeToString();
+
+private:
     /// Fsync metadata file if 'sync' flag is set.
     void save(bool sync = false);
-
+    void saveToBuffer(WriteBuffer & buffer, bool sync);
+    void load();
 };
 
 class DiskRemoteReservation final : public IReservation

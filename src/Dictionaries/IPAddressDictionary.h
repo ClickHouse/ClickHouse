@@ -26,7 +26,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
+        const DictionaryLifetime dict_lifetime_, /// NOLINT
         bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
@@ -114,6 +114,7 @@ private:
             Decimal64,
             Decimal128,
             Decimal256,
+            DateTime64,
             Float32,
             Float64,
             UUID,
@@ -137,6 +138,7 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
@@ -158,7 +160,7 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
@@ -175,7 +177,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 

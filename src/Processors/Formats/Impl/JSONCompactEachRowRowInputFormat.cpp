@@ -27,7 +27,7 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
     : RowInputFormatWithNamesAndTypes(
         header_,
         in_,
-        std::move(params_),
+        params_,
         with_names_,
         with_types_,
         format_settings_,
@@ -188,6 +188,16 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(ReadBuffer 
 
 DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
 {
+    if (first_row)
+        first_row = false;
+    else
+    {
+        skipWhitespaceIfAny(in);
+        /// ',' and ';' are possible between the rows.
+        if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
+            ++in.position();
+    }
+
     skipWhitespaceIfAny(in);
     if (in.eof())
         return {};

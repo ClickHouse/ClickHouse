@@ -184,6 +184,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))
             return false;
+        /// In case of INSERT INTO ... VALUES SETTINGS ... (...), (...), ...
+        /// we should move data pointer after all settings.
+        if (data != nullptr)
+            data = pos->begin;
     }
 
     if (select)

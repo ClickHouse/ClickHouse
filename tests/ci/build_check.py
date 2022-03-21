@@ -175,7 +175,7 @@ def get_release_or_pr(
         # for pushes to master - major version, but not for performance builds
         # they havily relies on a fixed path for build package and nobody going
         # to deploy them somewhere, so it's ok.
-        return ".".join(version.as_tuple()[:2])
+        return f"{version.major}.{version.minor}"
     # PR number for anything else
     return str(pr_info.number)
 
@@ -218,7 +218,7 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo(REPO_COPY)
+    version = get_version_from_repo()
     release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
@@ -240,6 +240,7 @@ def main():
                     "https://s3.amazonaws.com/clickhouse-builds/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
+        success = len(build_urls) > 0
         create_json_artifact(
             TEMP_PATH,
             build_name,
@@ -247,21 +248,25 @@ def main():
             build_urls,
             build_config,
             0,
-            len(build_urls) > 0,
+            success,
         )
-        return
+        # Fail build job if not successeded
+        if not success:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
     image_name = get_image_name(build_config)
     docker_image = get_image_with_version(IMAGES_PATH, image_name)
     image_version = docker_image.version
 
-    logging.info("Got version from repo %s", version.get_version_string())
+    logging.info("Got version from repo %s", version.string)
 
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
 
-    update_version_local(REPO_COPY, pr_info.sha, version, version_type)
+    update_version_local(REPO_COPY, version, version_type)
 
     logging.info("Updated local files with version")
 
@@ -290,7 +295,7 @@ def main():
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
-        version.get_version_string(),
+        version.string,
         image_version,
         ccache_path,
         pr_info,

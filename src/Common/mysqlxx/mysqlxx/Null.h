@@ -27,17 +27,17 @@ public:
     Null() : is_null(true) {}
     Null(const Null<T> &) = default;
     Null(Null<T> &&) noexcept = default;
-    Null(NullType) : is_null(true) {}
+    Null(NullType) : is_null(true) {} /// NOLINT
     explicit Null(const T & data_) : data(data_), is_null(false) {}
 
-    operator T & ()
+    operator T & () /// NOLINT
     {
         if (is_null)
             throw Exception("Value is NULL");
         return data;
     }
 
-    operator const T & () const
+    operator const T & () const /// NOLINT
     {
         if (is_null)
             throw Exception("Value is NULL");

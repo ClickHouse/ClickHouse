@@ -69,7 +69,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -270,7 +270,6 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
-
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
@@ -494,7 +493,8 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             auto keys = cache_storage_ptr->getCachedSimpleKeys();
-            key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            auto keys_column = getColumnFromPODArray(std::move(keys));
+            key_columns = {ColumnWithTypeAndName(keys_column, std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
         }
         else
         {

@@ -3,6 +3,9 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Access/Common/AuthenticationData.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {

@@ -1,3 +1,4 @@
+set group_by_two_level_threshold = 100000;
 set enable_positional_arguments = 1;
 
 drop table if exists test;
@@ -13,7 +14,7 @@ select x3, x2, x1 from test order by x3;
 select x3, x2, x1 from test order by 1 desc;
 select x3, x2, x1 from test order by x3 desc;
 
-insert into test values (1, 10, 200), (10, 1, 200), (100, 100, 1);
+insert into test values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 select x3, x2 from test group by x3, x2;
 select x3, x2 from test group by 1, 2;
 

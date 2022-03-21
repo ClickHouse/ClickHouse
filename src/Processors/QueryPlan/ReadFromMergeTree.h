@@ -89,8 +89,7 @@ public:
         Names virt_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
-        StorageMetadataPtr metadata_snapshot_,
-        StorageMetadataPtr metadata_snapshot_base_,
+        StorageSnapshotPtr storage_snapshot,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
@@ -141,8 +140,8 @@ private:
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
 
-    StorageMetadataPtr metadata_snapshot;
-    StorageMetadataPtr metadata_snapshot_base;
+    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_for_reading;
 
     ContextPtr context;
 
@@ -173,7 +172,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
         const Names & column_names,
-        const ActionsDAGPtr & sorting_key_prefix_expr,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 

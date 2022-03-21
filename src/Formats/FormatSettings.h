@@ -32,14 +32,16 @@ struct FormatSettings
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
+    bool use_lowercase_column_name = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
     enum class DateTimeInputFormat
     {
-        Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort  /// Use sophisticated rules to parse whatever possible.
+        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort,   /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -231,9 +233,17 @@ struct FormatSettings
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
     } capn_proto;
 
+    enum class MsgPackUUIDRepresentation
+    {
+        STR, // Output UUID as a string of 36 characters.
+        BIN, // Output UUID as 16-bytes binary.
+        EXT, // Output UUID as ExtType = 2
+    };
+
     struct
     {
         UInt64 number_of_columns = 0;
+        MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
 };
 

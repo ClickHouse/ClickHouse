@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ public:
     UInt64 getPriority() override { return priority; }
 
 private:
-    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -41,6 +42,7 @@ private:
     MutationCommandsConstPtr commands;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
+    std::optional<ZeroCopyLock> zero_copy_lock;
     StopwatchUniquePtr stopwatch_ptr{nullptr};
 
     MergeTreeData::MutableDataPartPtr new_part{nullptr};

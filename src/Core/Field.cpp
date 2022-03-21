@@ -99,12 +99,24 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return value;
         }
+        case Field::Types::Object:
+        {
+            Object value;
+            readBinary(value, buf);
+            return value;
+        }
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
             readStringBinary(value.name, buf);
             readStringBinary(value.data, buf);
             return value;
+        }
+        case Field::Types::Bool:
+        {
+            UInt8 value;
+            readBinary(value, buf);
+            return bool(value);
         }
     }
     return Field();
@@ -198,6 +210,40 @@ void writeBinary(const Map & x, WriteBuffer & buf)
 }
 
 void writeText(const Map & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
+void readBinary(Object & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+    {
+        UInt8 type;
+        String key;
+        readBinary(type, buf);
+        readBinary(key, buf);
+        x[key] = getBinaryValue(type, buf);
+    }
+}
+
+void writeBinary(const Object & x, WriteBuffer & buf)
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & [key, value] : x)
+    {
+        const UInt8 type = value.getType();
+        writeBinary(type, buf);
+        writeBinary(key, buf);
+        Field::dispatch([&buf] (const auto & val) { FieldVisitorWriteBinary()(val, buf); }, value);
+    }
+}
+
+void writeText(const Object & x, WriteBuffer & buf)
 {
     writeFieldText(Field(x), buf);
 }
@@ -344,6 +390,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
         return str;
+    }
+
+    prefix = std::string_view{"Bool_"};
+    if (dump.starts_with(prefix))
+    {
+        bool value = parseFromString<bool>(dump.substr(prefix.length()));
+        return value;
     }
 
     prefix = std::string_view{"Array_["};

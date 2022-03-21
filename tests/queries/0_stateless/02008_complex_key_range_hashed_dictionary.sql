@@ -45,13 +45,13 @@ SELECT dictHas('range_dictionary', (toUInt64(2), '2'), toDate('2019-05-29'));
 SELECT dictHas('range_dictionary', (toUInt64(2), '2'), toDate('2019-05-31'));
 SELECT 'select columns from dictionary';
 SELECT 'allColumns';
-SELECT * FROM range_dictionary;
+SELECT * FROM range_dictionary ORDER BY CountryID, StartDate, EndDate;
 SELECT 'noColumns';
-SELECT 1 FROM range_dictionary;
+SELECT 1 FROM range_dictionary ORDER BY CountryID, StartDate, EndDate;
 SELECT 'onlySpecificColumns';
-SELECT CountryID, StartDate, Tax FROM range_dictionary;
+SELECT CountryID, StartDate, Tax FROM range_dictionary ORDER BY CountryID, StartDate, EndDate;
 SELECT 'onlySpecificColumn';
-SELECT Tax FROM range_dictionary;
+SELECT Tax FROM range_dictionary ORDER BY CountryID, StartDate, EndDate;
 
 DROP TABLE date_table;
 DROP DICTIONARY range_dictionary;
@@ -99,13 +99,13 @@ SELECT dictHas('range_dictionary_nullable', (toUInt64(2), '2'), toDate('2019-05-
 SELECT dictHas('range_dictionary_nullable', (toUInt64(2), '2'), toDate('2019-05-31'));
 SELECT 'select columns from dictionary';
 SELECT 'allColumns';
-SELECT * FROM range_dictionary_nullable;
+SELECT * FROM range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
 SELECT 'noColumns';
-SELECT 1 FROM range_dictionary_nullable;
+SELECT 1 FROM range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
 SELECT 'onlySpecificColumns';
-SELECT CountryID, StartDate, Tax FROM range_dictionary_nullable;
+SELECT CountryID, StartDate, Tax FROM range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
 SELECT 'onlySpecificColumn';
-SELECT Tax FROM range_dictionary_nullable;
+SELECT Tax FROM range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
 
 DROP TABLE date_table;
 DROP DICTIONARY range_dictionary_nullable;

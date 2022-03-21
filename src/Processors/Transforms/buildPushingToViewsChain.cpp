@@ -331,7 +331,7 @@ Chain buildPushingToViewsChain(
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
-            executing_inner_query->setRuntimeData(view_thread_status, elapsed_counter_ms);
+            executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
         }
@@ -381,7 +381,7 @@ Chain buildPushingToViewsChain(
         processors.emplace_front(std::move(copying_data));
         processors.emplace_back(std::move(finalizing_views));
         result_chain = Chain(std::move(processors));
-        result_chain.setNumThreads(max_parallel_streams);
+        result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
@@ -695,7 +695,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
             return Status::Ready;
 
         if (any_exception)
-            output.pushException(std::move(any_exception));
+            output.pushException(any_exception);
 
         output.finish();
         return Status::Finished;
@@ -708,7 +708,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 {
     try
     {
-        std::rethrow_exception(std::move(ptr));
+        std::rethrow_exception(ptr);
     }
     catch (DB::Exception & exception)
     {
@@ -736,7 +736,7 @@ void FinalizingViewsTransform::work()
             if (!any_exception)
                 any_exception = status.exception;
 
-            view.setException(addStorageToException(std::move(status.exception), view.table_id));
+            view.setException(addStorageToException(status.exception, view.table_id));
         }
         else
         {

@@ -54,11 +54,14 @@ class IDictionary : public IExternalLoadable
 public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
-    , full_name(dictionary_id.getInternalDictionaryName())
     {
     }
 
-    const std::string & getFullName() const{ return full_name; }
+    std::string getFullName() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
+    }
 
     StorageID getDictionaryID() const
     {
@@ -73,7 +76,11 @@ public:
         dictionary_id = new_name;
     }
 
-    const std::string & getLoadableName() const override final { return getFullName(); }
+    std::string getLoadableName() const override final
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
+    }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
@@ -143,7 +150,7 @@ public:
 
             auto & key_column_to_cast = key_columns[key_attribute_type_index];
             ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(std::move(column_to_cast), key_attribute_type);
+            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
             key_column_to_cast = std::move(casted_column);
             key_type = key_attribute_type;
         }
@@ -270,7 +277,6 @@ private:
     mutable StorageID dictionary_id;
 
 protected:
-    const String full_name;
     String dictionary_comment;
 };
 

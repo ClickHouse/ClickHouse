@@ -3,6 +3,7 @@ title: 'Package Repository Behind CDN'
 image: 'https://blog-images.clickhouse.com/en/2020/package-repository-behind-cdn/main.jpg'
 date: '2020-07-02'
 tags: ['article', 'CDN', 'Cloudflare', 'repository', 'deb', 'rpm', 'tgz']
+author: 'Ivan Blinkov'
 ---
 
 On initial open-source launch, ClickHouse packages were published at an independent repository implemented on Yandex infrastructure. We'd love to use the default repositories of Linux distributions, but, unfortunately, they have their own strict rules on third-party library usage and software compilation options. These rules happen to contradict with how ClickHouse is produced. In 2018 ClickHouse was added to [official Debian repository](https://packages.debian.org/sid/clickhouse-server) as an experiment, but it didn't get much traction. Adaptation to those rules ended up producing more like a demo version of ClickHouse with crippled performance and limited features.
@@ -68,4 +69,3 @@ Or you can take a look at all key charts for `repo.clickhouse.com` together on a
 * CDN is a must-have if you want people from all over the world to download some artifacts that you produce. Beware the huge pay-for-traffic bills from most CDN providers though.
 * Generic technical system metrics and drill-downs are a good starting point, but not always enough.
 * Serverless is not a myth. Nowadays it is indeed possible to build useful products by just integrating various infrastructure services together, without any dedicated servers to take care of.
-

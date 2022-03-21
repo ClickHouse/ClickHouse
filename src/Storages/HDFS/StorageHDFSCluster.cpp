@@ -2,17 +2,9 @@
 
 #if USE_HDFS
 
-#include <Common/Exception.h>
-#include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/UUID.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromS3.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -21,7 +13,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowBlockInputStreams.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
@@ -29,16 +20,13 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/StorageHDFSCluster.h>
-#include <base/logger_useful.h>
 
-#include <ios>
 #include <memory>
-#include <string>
-#include <thread>
-#include <cassert>
+
 
 namespace DB
 {
+
 StorageHDFSCluster::StorageHDFSCluster(
     String cluster_name_,
     const String & uri_,
@@ -62,14 +50,14 @@ StorageHDFSCluster::StorageHDFSCluster(
 /// The code executes on initiator
 Pipe StorageHDFSCluster::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
     auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
@@ -118,12 +106,12 @@ Pipe StorageHDFSCluster::read(
         }
     }
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
     return Pipe::unitePipes(std::move(pipes));
 }
 
 QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -138,9 +126,8 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 NamesAndTypesList StorageHDFSCluster::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 

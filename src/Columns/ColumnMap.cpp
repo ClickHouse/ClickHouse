@@ -4,8 +4,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/map.h>
-#include <base/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -64,8 +62,9 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 
 Field ColumnMap::operator[](size_t n) const
 {
-    auto array = DB::get<Array>((*nested)[n]);
-    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
+    Field res;
+    get(n, res);
+    return res;
 }
 
 void ColumnMap::get(size_t n, Field & res) const
@@ -74,11 +73,12 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    res = Map(size);
+    res = Map();
     auto & map = DB::get<Map &>(res);
+    map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        getNestedData().get(offset + i, map[i]);
+        map.push_back(getNestedData()[offset + i]);
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -207,14 +207,16 @@ bool ColumnMap::hasEqualValues() const
     return hasEqualValuesImpl<ColumnMap>();
 }
 
-void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    nested->getPermutation(reverse, limit, nan_direction_hint, res);
+    nested->getPermutation(direction, stability, limit, nan_direction_hint, res);
 }
 
-void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    nested->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
+    nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 void ColumnMap::gather(ColumnGathererStream & gatherer)
@@ -225,6 +227,11 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::ensureOwnership()
+{
+    nested->ensureOwnership();
 }
 
 size_t ColumnMap::byteSize() const
