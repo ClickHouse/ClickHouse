@@ -2,13 +2,13 @@
 #include "Common/StringUtils/StringUtils.h"
 #if USE_ORC
 
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include "ArrowBufferedStreams.h"
-#include "ArrowColumnToCHColumn.h"
-#include <DataTypes/NestedUtils.h>
+#    include <DataTypes/NestedUtils.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <IO/WriteHelpers.h>
+#    include <IO/copyData.h>
+#    include "ArrowBufferedStreams.h"
+#    include "ArrowColumnToCHColumn.h"
 
 namespace DB
 {
@@ -131,7 +131,11 @@ void ORCBlockInputFormat::prepareReader()
         return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.orc.allow_missing_columns, format_settings.orc.case_insensitive_column_matching);
+        getPort().getHeader(),
+        "ORC",
+        format_settings.orc.import_nested,
+        format_settings.orc.allow_missing_columns,
+        format_settings.orc.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
@@ -147,26 +151,25 @@ void ORCBlockInputFormat::prepareReader()
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
-        const bool contains_column = std::invoke([&]
-        {
-            if (getPort().getHeader().has(name, format_settings.parquet.case_insensitive_column_matching))
+        const bool contains_column = std::invoke(
+            [&]
             {
-                return true; 
-            }
-
-            if (!format_settings.parquet.case_insensitive_column_matching)
-            {
-                return nested_table_names.contains(name);
-            }
-
-            return std::find_if(
-                nested_table_names.begin(),
-                nested_table_names.end(),
-                [&](const auto & nested_table_name)
+                if (getPort().getHeader().has(name, format_settings.parquet.case_insensitive_column_matching))
                 {
-                    return equalsCaseInsensitive(nested_table_name, name);
-                }) != nested_table_names.end();
-        });
+                    return true;
+                }
+
+                if (!format_settings.parquet.case_insensitive_column_matching)
+                {
+                    return nested_table_names.contains(name);
+                }
+
+                return std::find_if(
+                           nested_table_names.begin(),
+                           nested_table_names.end(),
+                           [&](const auto & nested_table_name) { return equalsCaseInsensitive(nested_table_name, name); })
+                    != nested_table_names.end();
+            });
 
         if (contains_column)
         {
@@ -179,7 +182,8 @@ void ORCBlockInputFormat::prepareReader()
     }
 }
 
-ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_) : ISchemaReader(in_), format_settings(format_settings_)
+ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
@@ -196,14 +200,9 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerInputFormat(
-            "ORC",
-            [](ReadBuffer &buf,
-                const Block &sample,
-                const RowInputFormatParams &,
-                const FormatSettings & settings)
-            {
-                return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
-            });
+        "ORC",
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
+        { return std::make_shared<ORCBlockInputFormat>(buf, sample, settings); });
     factory.markFormatAsColumnOriented("ORC");
 }
 
@@ -211,11 +210,7 @@ void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "ORC",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
-        {
-            return std::make_shared<ORCSchemaReader>(buf, settings);
-        }
-        );
+        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr) { return std::make_shared<ORCSchemaReader>(buf, settings); });
 }
 
 }
@@ -223,14 +218,14 @@ void registerORCSchemaReader(FormatFactory & factory)
 
 namespace DB
 {
-    class FormatFactory;
-    void registerInputFormatORC(FormatFactory &)
-    {
-    }
+class FormatFactory;
+void registerInputFormatORC(FormatFactory &)
+{
+}
 
-    void registerORCSchemaReader(FormatFactory &)
-    {
-    }
+void registerORCSchemaReader(FormatFactory &)
+{
+}
 }
 
 #endif
