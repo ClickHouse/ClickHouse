@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <Common/ObjectPool.h>
 
 namespace DB
 {
@@ -65,7 +66,8 @@ private:
 
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-    mutable Parser parser;
+    /// Pool of parser objects to make SerializationObject thread safe.
+    mutable SimpleObjectPool<Parser> parsers_pool;
 };
 
 SerializationPtr getObjectSerialization(const String & schema_format);

@@ -1560,7 +1560,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
+bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part)
 {
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
     String replica = findReplicaHavingCoveringPart(entry, true);
@@ -1684,6 +1684,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
             if (replica.empty())
             {
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+
+                if (!need_to_check_missing_part)
+                    return false;
+
                 throw Exception("No active replica has part " + entry.new_part_name + " or covering part", ErrorCodes::NO_REPLICA_HAS_PART);
             }
         }
@@ -7715,7 +7719,12 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
     {
         try
         {
-            zookeeper->createAncestors(zookeeper_node);
+            /// Ephemeral locks can be created only when we fetch shared data.
+            /// So it never require to create ancestors. If we create them
+            /// race condition with source replica drop is possible.
+            if (mode == zkutil::CreateMode::Persistent)
+                zookeeper->createAncestors(zookeeper_node);
+
             if (replace_existing_lock && zookeeper->exists(zookeeper_node))
             {
                 Coordination::Requests ops;

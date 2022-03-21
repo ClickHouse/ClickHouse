@@ -36,15 +36,15 @@ PathInData::PathInData(std::string_view path_)
 }
 
 PathInData::PathInData(const Parts & parts_)
-    : path(buildPath(parts_))
-    , parts(buildParts(path, parts_))
 {
+    buildPath(parts_);
+    buildParts(parts_);
 }
 
 PathInData::PathInData(const PathInData & other)
     : path(other.path)
-    , parts(buildParts(path, other.getParts()))
 {
+    buildParts(other.getParts());
 }
 
 PathInData & PathInData::operator=(const PathInData & other)
@@ -52,7 +52,7 @@ PathInData & PathInData::operator=(const PathInData & other)
     if (this != &other)
     {
         path = other.path;
-        parts = buildParts(path, other.parts);
+        buildParts(other.parts);
     }
     return *this;
 }
@@ -79,8 +79,8 @@ void PathInData::writeBinary(WriteBuffer & out) const
     for (const auto & part : parts)
     {
         writeStringBinary(part.key, out);
-        writeVarUInt(part.is_nested, out);
-        writeVarUInt(part.anonymous_array_level, out);
+        writeIntBinary(part.is_nested, out);
+        writeIntBinary(part.anonymous_array_level, out);
     }
 }
 
@@ -99,48 +99,47 @@ void PathInData::readBinary(ReadBuffer & in)
         UInt8 anonymous_array_level;
 
         auto ref = readStringBinaryInto(arena, in);
-        readVarUInt(is_nested, in);
-        readVarUInt(anonymous_array_level, in);
+        readIntBinary(is_nested, in);
+        readIntBinary(anonymous_array_level, in);
 
         temp_parts.emplace_back(static_cast<std::string_view>(ref), is_nested, anonymous_array_level);
     }
 
     /// Recreate path and parts.
-    path = buildPath(temp_parts);
-    parts = buildParts(path, temp_parts);
+    buildPath(temp_parts);
+    buildParts(temp_parts);
 }
 
-String PathInData::buildPath(const Parts & other_parts)
+void PathInData::buildPath(const Parts & other_parts)
 {
     if (other_parts.empty())
-        return "";
+        return;
 
-    String res;
+    path.clear();
     auto it = other_parts.begin();
-    res += it->key;
+    path += it->key;
     ++it;
     for (; it != other_parts.end(); ++it)
     {
-        res += ".";
-        res += it->key;
+        path += ".";
+        path += it->key;
     }
-
-    return res;
 }
 
-PathInData::Parts PathInData::buildParts(const String & other_path, const Parts & other_parts)
+void PathInData::buildParts(const Parts & other_parts)
 {
     if (other_parts.empty())
-        return {};
+        return;
 
-    Parts res;
-    const char * begin = other_path.data();
+    parts.clear();
+    parts.reserve(other_parts.size());
+    const char * begin = path.data();
     for (const auto & part : other_parts)
     {
-        res.emplace_back(std::string_view{begin, part.key.length()}, part.is_nested, part.anonymous_array_level);
+        has_nested |= part.is_nested;
+        parts.emplace_back(std::string_view{begin, part.key.length()}, part.is_nested, part.anonymous_array_level);
         begin += part.key.length() + 1;
     }
-    return res;
 }
 
 size_t PathInData::Hash::operator()(const PathInData & value) const

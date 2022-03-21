@@ -38,30 +38,24 @@ LAYOUT(CACHE(SIZE_IN_CELLS 10));
 
 function thread1()
 {
-    for _ in {1..50}
-    do
-        # This query will be ended with exception, because source dictionary has UUID as a key type.
-        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
-    done
+    # This query will be ended with exception, because source dictionary has UUID as a key type.
+    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
 }
 
 
 function thread2()
 {
-    for _ in {1..50}
-    do
-        # This query will be ended with exception, because source dictionary has UUID as a key type.
-        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
-    done
+    # This query will be ended with exception, because source dictionary has UUID as a key type.
+    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
 }
 
-export -f thread1;
-export -f thread2;
+export -f thread1
+export -f thread2
 
 TIMEOUT=5
 
-timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
+clickhouse_client_loop_timeout $TIMEOUT thread1 > /dev/null 2>&1 &
+clickhouse_client_loop_timeout $TIMEOUT thread2 > /dev/null 2>&1 &
 
 wait
 
