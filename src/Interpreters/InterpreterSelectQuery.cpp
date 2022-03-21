@@ -85,6 +85,7 @@
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
 #include <memory>
+#include <ranges>
 
 
 namespace DB
@@ -599,7 +600,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         const auto &header= query_result->first;
         const auto &chunks = query_result->second;
 
-        Pipe pipe(std::make_shared<ReadFromCacheTransform>(header, chunks));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(header, to_single_chunk(chunks)));
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
@@ -2641,6 +2642,16 @@ void InterpreterSelectQuery::initSettings()
 }
 Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
 {
-    return Chunk{};
+    if (chunks.empty()) {
+        return {};
+    }
+    auto result_columns = chunks[0].clone().mutateColumns();
+    for (const auto & chunk : result_columns | std::views::drop(1)) {
+        auto columns = chunks[chunk].getColumns();
+        for (size_t i = 0; i != columns.size(); ++i) {
+            result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
+    }
+    return Chunk(result_columns, result_columns[0]->size());
 }
 }
