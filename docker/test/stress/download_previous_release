@@ -4,6 +4,9 @@ import requests
 import re
 import os
 
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 
 CLICKHOUSE_COMMON_STATIC_DOWNLOAD_URL = "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/clickhouse-common-static_{version}_amd64.deb"
@@ -66,8 +69,18 @@ def get_previous_release(server_version):
     return previous_release
 
 
-def download_packet(url, local_file_name):
-    response = requests.get(url)
+def download_packet(url, local_file_name, retries=10, backoff_factor=0.3):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    response = session.get(url)
     print(url)
     if response.ok:
         open(PACKETS_DIR + local_file_name, 'wb').write(response.content)
