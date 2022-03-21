@@ -85,7 +85,6 @@
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
 #include <memory>
-#include <ranges>
 
 
 namespace DB
@@ -2647,12 +2646,12 @@ Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
         return {};
     }
     auto result_columns = chunks[0].clone().mutateColumns();
-    for (const auto & chunk : result_columns | std::views::drop(1))
+    for (size_t i = 1; i != chunks.size(); ++i)
     {
-        auto columns = chunk.getColumns();
-        for (size_t i = 0; i != columns.size(); ++i)
+        auto columns = chunks[i].getColumns();
+        for (size_t j = 0; j != columns.size(); ++j)
         {
-            result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+            result_columns[j]->insertRangeFrom(*columns[j], 0, columns[j]->size());
         }
     }
     return Chunk(result_columns, result_columns[0]->size());
