@@ -4,10 +4,11 @@ import argparse
 import logging
 import os
 import re
-from typing import Tuple
+from typing import List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
+from env_helper import RUNNER_TEMP
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
@@ -19,7 +20,7 @@ def getenv(name: str, default: str = None):
     raise KeyError(f"Necessary {name} environment is not set")
 
 
-TEMP_PATH = getenv("TEMP_PATH", ".")
+TEMP_PATH = os.path.join(RUNNER_TEMP, "push_to_artifactory")
 # One of the following ENVs is necessary
 JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
@@ -45,11 +46,11 @@ class Packages:
             for name, arch in self.packages
         )
 
-        self.tgz = tuple("{}-{}.tgz".format(name, version) for name, _ in self.packages)
+        self.tgz = tuple(f"{name}-{version}.tgz" for name, _ in self.packages)
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:
-            raise ValueError("{} not in {}".format(deb_pkg, self.deb))
+            raise ValueError(f"{deb_pkg} not in {self.deb}")
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
     @staticmethod
@@ -282,27 +283,28 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_deb(s3: S3, art_client: Artifactory):
+def process_deb(s3: S3, art_clients: List[Artifactory]):
     s3.download_deb()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_deb(s3.packages)
 
 
-def process_rpm(s3: S3, art_client: Artifactory):
+def process_rpm(s3: S3, art_clients: List[Artifactory]):
     s3.download_rpm()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_rpm(s3.packages)
 
 
-def process_tgz(s3: S3, art_client: Artifactory):
+def process_tgz(s3: S3, art_clients: List[Artifactory]):
     s3.download_tgz()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_tgz(s3.packages)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
+    os.makedirs(TEMP_PATH, exist_ok=True)
     s3 = S3(
         args.bucket_name,
         args.pull_request,
@@ -311,16 +313,18 @@ def main():
         args.release.version,
         args.force_download,
     )
-    art_client = None
+    art_clients = []
     if args.artifactory:
-        art_client = Artifactory(args.artifactory_url, args.release.type)
+        art_clients.append(Artifactory(args.artifactory_url, args.release.type))
+        if args.release.type == "lts":
+            art_clients.append(Artifactory(args.artifactory_url, "stable"))
 
     if args.deb:
-        process_deb(s3, art_client)
+        process_deb(s3, art_clients)
     if args.rpm:
-        process_rpm(s3, art_client)
+        process_rpm(s3, art_clients)
     if args.tgz:
-        process_tgz(s3, art_client)
+        process_tgz(s3, art_clients)
 
 
 if __name__ == "__main__":

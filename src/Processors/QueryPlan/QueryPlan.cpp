@@ -22,8 +22,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
+QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 
 void QueryPlan::checkInitialized() const
 {

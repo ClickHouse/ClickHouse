@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <base/types.h>
+
 namespace DB
 {
 

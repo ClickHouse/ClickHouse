@@ -117,7 +117,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
@@ -130,13 +130,17 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         return std::make_unique<QueryPlan>();
 
     const auto & settings = context->getSettingsRef();
+    const auto & metadata_for_reading = storage_snapshot->getMetadataForQuery();
+
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
+
     if (!query_info.projection)
     {
         auto plan = readFromParts(
-            query_info.merge_tree_select_result_ptr ? MergeTreeData::DataPartsVector{} : data.getDataPartsVector(),
+            query_info.merge_tree_select_result_ptr ? MergeTreeData::DataPartsVector{} : parts,
             column_names_to_return,
-            metadata_snapshot,
-            metadata_snapshot,
+            storage_snapshot,
             query_info,
             context,
             max_block_size,
@@ -146,7 +150,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             enable_parallel_reading);
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_snapshot->projections.empty())
+            && !metadata_for_reading->projections.empty())
             throw Exception(
                 "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
                 ErrorCodes::PROJECTION_NOT_USED);
@@ -178,8 +182,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         projection_plan = readFromParts(
             {},
             query_info.projection->required_columns,
-            metadata_snapshot,
-            query_info.projection->desc->metadata,
+            storage_snapshot,
             query_info,
             context,
             max_block_size,
@@ -822,7 +825,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 auto [it, inserted] = merged_indices.try_emplace({index_helper->index.type, index_helper->getGranularity()});
                 if (inserted)
-                    it->second.condition = index_helper->createIndexMergedCondtition(query_info, metadata_snapshot);
+                    it->second.condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
 
                 it->second.addIndex(index_helper);
             }
@@ -1204,8 +1207,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot_base,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
@@ -1237,8 +1239,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
-        metadata_snapshot,
-        metadata_snapshot_base,
+        storage_snapshot,
         context,
         max_block_size,
         num_streams,
