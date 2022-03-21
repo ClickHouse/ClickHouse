@@ -37,24 +37,18 @@ function insert3()
 
 function select1()
 {
-    while true; do
-        ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts FORMAT Null"
-    done
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts FORMAT Null"
 }
 
 function select2()
 {
-    while true; do
-        ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.asynchronous_inserts FORMAT Null"
-    done
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.asynchronous_inserts FORMAT Null"
 }
 
 function truncate1()
 {
-    while true; do
-        sleep 0.1
-        ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE async_inserts"
-    done
+    sleep 0.1
+    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE async_inserts"
 }
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts"
@@ -75,9 +69,9 @@ for _ in {1..5}; do
     timeout $TIMEOUT bash -c insert3 &
 done
 
-timeout $TIMEOUT bash -c select1 &
-timeout $TIMEOUT bash -c select2 &
-timeout $TIMEOUT bash -c truncate1 &
+clickhouse_client_loop_timeout $TIMEOUT select1 &
+clickhouse_client_loop_timeout $TIMEOUT select2 &
+clickhouse_client_loop_timeout $TIMEOUT truncate1 &
 
 wait
 echo "OK"
