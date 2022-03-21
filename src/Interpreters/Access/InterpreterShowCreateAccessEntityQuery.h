@@ -26,7 +26,7 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-    static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control, UInt64 rbac_version);
+    static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
 private:
