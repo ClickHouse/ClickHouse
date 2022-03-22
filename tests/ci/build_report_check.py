@@ -45,21 +45,18 @@ class BuildResult:
 
 
 def group_by_artifacts(build_urls):
-    groups = {"deb": [], "binary": [], "tgz": [], "rpm": [], "performance": []}
+    groups = {'apk': [],'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'performance': []}
     for url in build_urls:
-        if url.endswith("performance.tgz"):
-            groups["performance"].append(url)
-        elif (
-            url.endswith(".deb")
-            or url.endswith(".buildinfo")
-            or url.endswith(".changes")
-            or url.endswith(".tar.gz")
-        ):
-            groups["deb"].append(url)
-        elif url.endswith(".rpm"):
-            groups["rpm"].append(url)
-        elif url.endswith(".tgz"):
-            groups["tgz"].append(url)
+        if url.endswith('performance.tgz'):
+            groups['performance'].append(url)
+        elif url.endswith('.deb') or url.endswith('.buildinfo') or url.endswith('.changes') or url.endswith('.tar.gz'):
+            groups['deb'].append(url)
+        elif url.endswith('.apk'):
+            groups['apk'].append(url)
+        elif url.endswith('.rpm'):
+            groups['rpm'].append(url)
+        elif url.endswith('.tgz'):
+            groups['tgz'].append(url)
         else:
             groups["binary"].append(url)
     return groups
