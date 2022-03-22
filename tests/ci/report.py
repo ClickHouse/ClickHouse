@@ -95,6 +95,17 @@ HTML_TEST_PART = """
 BASE_HEADERS = ['Test name', 'Test status']
 
 
+class ReportColorTheme:
+    class ReportColor:
+        yellow = '#FFB400'
+        red = '#F00'
+        green = '#0A0'
+        blue = '#00B4FF'
+
+    default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
+    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
+
+
 def _format_header(header, branch_name, branch_url=None):
     result = ' '.join([w.capitalize() for w in header.split(' ')])
     result = result.replace("Clickhouse", "ClickHouse")
@@ -109,14 +120,20 @@ def _format_header(header, branch_name, branch_url=None):
     return result
 
 
-def _get_status_style(status):
+def _get_status_style(status, colortheme=None):
+    ok_statuses = ('OK', 'success', 'PASSED')
+    fail_statuses = ('FAIL', 'failure', 'error', 'FAILED', 'Timeout')
+
+    if colortheme is None:
+        colortheme = ReportColorTheme.default
+
     style = "font-weight: bold;"
-    if status in ('OK', 'success', 'PASSED'):
-        style += 'color: #0A0;'
-    elif status in ('FAIL', 'failure', 'error', 'FAILED', 'Timeout'):
-        style += 'color: #F00;'
+    if status in ok_statuses:
+        style += f'color: {colortheme[0]};'
+    elif status in fail_statuses:
+        style += f'color: {colortheme[1]};'
     else:
-        style += 'color: #FFB400;'
+        style += f'color: {colortheme[2]};'
     return style
 
 
@@ -140,7 +157,7 @@ def _get_html_url(url):
     return ''
 
 
-def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=None, with_raw_logs=False):
+def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=None, with_raw_logs=False, statuscolors=None):
     if additional_urls is None:
         additional_urls = []
 
@@ -168,7 +185,7 @@ def create_test_html_report(header, test_result, raw_log_url, task_url, branch_u
             if is_fail and with_raw_logs and test_logs is not None:
                 row = "<tr class=\"failed\">"
             row += "<td>" + test_name + "</td>"
-            style = _get_status_style(test_status)
+            style = _get_status_style(test_status, colortheme=statuscolors)
 
             # Allow to quickly scroll to the first failure.
             is_fail_id = ""
