@@ -41,6 +41,7 @@ run_query() {
     SET max_block_size = $((table_size / 10));
     SET merge_tree_min_rows_for_concurrent_read = 1;
     SET max_untracked_memory = 0;
+    SET max_size_to_preallocate_for_aggregation = 1e12;
     $query"
 }
 
@@ -57,14 +58,14 @@ check_preallocated_elements() {
     SELECT COUNT(*)
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()
-           AND ProfileEvents['HashTablesPreallocatedElements'] BETWEEN $min AND $max"
+           AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $min AND $max"
 }
 
 check_convertion_to_two_level() {
   $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
   # rows may be distributed in any way including "everything goes to the one particular thread"
   $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
-    SELECT SUM(ProfileEvents['HashTablesInitedAsTwoLevel']) BETWEEN 1 AND $max_threads
+    SELECT SUM(ProfileEvents['AggregationHashTablesInitializedAsTwoLevel']) BETWEEN 1 AND $max_threads
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()"
 }

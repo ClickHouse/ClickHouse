@@ -37,8 +37,8 @@ namespace ProfileEvents
 extern const Event ExternalAggregationWritePart;
 extern const Event ExternalAggregationCompressedBytes;
 extern const Event ExternalAggregationUncompressedBytes;
-extern const Event HashTablesPreallocatedElements;
-extern const Event HashTablesInitedAsTwoLevel;
+extern const Event AggregationPreallocatedElementsInHashTables;
+extern const Event AggregationHashTablesInitializedAsTwoLevel;
 }
 
 namespace
@@ -195,7 +195,7 @@ void initDataVariantsWithSizeHint(
                     /*result_size_bytes*/ 0))
                 method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
             result.init(method_chosen, adjusted);
-            ProfileEvents::increment(ProfileEvents::HashTablesInitedAsTwoLevel, result.isTwoLevel());
+            ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
             return;
         }
     }
@@ -254,7 +254,7 @@ auto constructWithReserveIfPossible(size_t size_hint)
 {
     if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
     {
-        ProfileEvents::increment(ProfileEvents::HashTablesPreallocatedElements, size_hint);
+        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint);
         return std::make_unique<Method>(size_hint);
     }
     else
@@ -274,6 +274,7 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
 }
+
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {

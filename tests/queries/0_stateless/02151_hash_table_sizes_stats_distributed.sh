@@ -62,7 +62,7 @@ check_preallocated_elements() {
     SELECT COUNT(*)
       FROM system.query_log
      WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
-           AND ProfileEvents['HashTablesPreallocatedElements'] BETWEEN $min AND $max
+           AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $min AND $max
   GROUP BY query_id"
 }
 
@@ -70,7 +70,7 @@ check_convertion_to_two_level() {
   $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
   # rows may be distributed in any way including "everything goes to the one particular thread"
   $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
-    SELECT SUM(ProfileEvents['HashTablesInitedAsTwoLevel']) BETWEEN 1 AND $max_threads
+    SELECT SUM(ProfileEvents['AggregationHashTablesInitializedAsTwoLevel']) BETWEEN 1 AND $max_threads
       FROM system.query_log
      WHERE event_date >= yesterday() AND (query_id = {query_id:String} OR initial_query_id = {query_id:String})
   GROUP BY query_id"

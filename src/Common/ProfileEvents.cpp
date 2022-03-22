@@ -284,8 +284,8 @@
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
     \
-    M(HashTablesPreallocatedElements, "How many elements were preallocated in hash tables for aggregation.") \
-    M(HashTablesInitedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
+    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
