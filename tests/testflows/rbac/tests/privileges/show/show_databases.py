@@ -5,6 +5,7 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
+
 @TestSuite
 def dict_privileges_granted_directly(self, node=None):
     """Check that a user is able to execute `USE` and `SHOW CREATE`
@@ -20,10 +21,18 @@ def dict_privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         db_name = f"db_name_{getuid()}"
 
-        Suite(run=check_privilege,
-            examples=Examples("privilege on grant_target_name user_name db_name", [
-                tuple(list(row)+[user_name,user_name,db_name]) for row in check_privilege.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=check_privilege,
+            examples=Examples(
+                "privilege on grant_target_name user_name db_name",
+                [
+                    tuple(list(row) + [user_name, user_name, db_name])
+                    for row in check_privilege.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestSuite
 def dict_privileges_granted_via_role(self, node=None):
@@ -44,39 +53,69 @@ def dict_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege,
-            examples=Examples("privilege on grant_target_name user_name db_name", [
-                tuple(list(row)+[role_name,user_name,db_name]) for row in check_privilege.examples
-            ], args=Args(name="check privilege={privilege}", format_name=True)))
+        Suite(
+            run=check_privilege,
+            examples=Examples(
+                "privilege on grant_target_name user_name db_name",
+                [
+                    tuple(list(row) + [role_name, user_name, db_name])
+                    for row in check_privilege.examples
+                ],
+                args=Args(name="check privilege={privilege}", format_name=True),
+            ),
+        )
+
 
 @TestOutline(Suite)
-@Examples("privilege on",[
-    ("ALL", "*.*"),
-    ("SHOW","*.*"),
-    ("SHOW DATABASES","db"),
-    ("CREATE DATABASE","db"),
-    ("DROP DATABASE","db"),
-])
-def check_privilege(self, privilege, on, grant_target_name, user_name, db_name, node=None):
-    """Run checks for commands that require SHOW DATABASE privilege.
-    """
+@Examples(
+    "privilege on",
+    [
+        ("ALL", "*.*"),
+        ("SHOW", "*.*"),
+        ("SHOW DATABASES", "db"),
+        ("CREATE DATABASE", "db"),
+        ("DROP DATABASE", "db"),
+    ],
+)
+def check_privilege(
+    self, privilege, on, grant_target_name, user_name, db_name, node=None
+):
+    """Run checks for commands that require SHOW DATABASE privilege."""
 
     if node is None:
         node = self.context.node
 
     on = on.replace("db", f"{db_name}")
 
-    Suite(test=show_db)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
-    Suite(test=use)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
-    Suite(test=show_create)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
+    Suite(test=show_db)(
+        privilege=privilege,
+        on=on,
+        grant_target_name=grant_target_name,
+        user_name=user_name,
+        db_name=db_name,
+    )
+    Suite(test=use)(
+        privilege=privilege,
+        on=on,
+        grant_target_name=grant_target_name,
+        user_name=user_name,
+        db_name=db_name,
+    )
+    Suite(test=show_create)(
+        privilege=privilege,
+        on=on,
+        grant_target_name=grant_target_name,
+        user_name=user_name,
+        db_name=db_name,
+    )
+
 
 @TestSuite
 @Requirements(
     RQ_SRS_006_RBAC_ShowDatabases_RequiredPrivilege("1.0"),
 )
 def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=None):
-    """Check that user is only able to see a database in SHOW DATABASES when they have a privilege on that database.
-    """
+    """Check that user is only able to see a database in SHOW DATABASES when they have a privilege on that database."""
     exitcode, message = errors.not_enough_privileges(name=user_name)
 
     if node is None:
@@ -96,8 +135,10 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I check the user doesn't see the database"):
-                output = node.query("SHOW DATABASES", settings = [("user", f"{user_name}")]).output
-                assert output == '', error()
+                output = node.query(
+                    "SHOW DATABASES", settings=[("user", f"{user_name}")]
+                ).output
+                assert output == "", error()
 
         with Scenario("SHOW DATABASES with privilege"):
 
@@ -105,7 +146,11 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with Then("I check the user does see a database"):
-                output = node.query("SHOW DATABASES", settings = [("user", f"{user_name}")], message = f'{db_name}')
+                output = node.query(
+                    "SHOW DATABASES",
+                    settings=[("user", f"{user_name}")],
+                    message=f"{db_name}",
+                )
 
         with Scenario("SHOW DATABASES with revoked privilege"):
 
@@ -113,15 +158,20 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with And(f"I revoke {privilege} on the database"):
-                node.query(f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}")
+                node.query(
+                    f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}"
+                )
 
             with Then("I check the user does not see a database"):
-                output = node.query("SHOW DATABASES", settings = [("user", f"{user_name}")]).output
-                assert output == f'', error()
+                output = node.query(
+                    "SHOW DATABASES", settings=[("user", f"{user_name}")]
+                ).output
+                assert output == f"", error()
 
     finally:
         with Finally("I drop the database"):
             node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
 
 @TestSuite
 @Requirements(
@@ -149,8 +199,12 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then(f"I attempt to USE {db_name}"):
-                node.query(f"USE {db_name}", settings=[("user",user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"USE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
         with Scenario("USE with privilege"):
 
@@ -158,7 +212,7 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with Then(f"I attempt to USE {db_name}"):
-                node.query(f"USE {db_name}", settings=[("user",user_name)])
+                node.query(f"USE {db_name}", settings=[("user", user_name)])
 
         with Scenario("USE with revoked privilege"):
 
@@ -166,15 +220,22 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with And(f"I revoke {privilege} on the database"):
-                node.query(f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}")
+                node.query(
+                    f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}"
+                )
 
             with Then(f"I attempt to USE {db_name}"):
-                node.query(f"USE {db_name}", settings=[("user",user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"USE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
     finally:
         with Finally("I drop the database"):
             node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
 
 @TestSuite
 @Requirements(
@@ -202,8 +263,12 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then(f"I attempt to SHOW CREATE {db_name}"):
-                node.query(f"SHOW CREATE DATABASE {db_name}", settings=[("user",user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"SHOW CREATE DATABASE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
         with Scenario("SHOW CREATE with privilege"):
 
@@ -211,7 +276,9 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with Then(f"I attempt to SHOW CREATE {db_name}"):
-                node.query(f"SHOW CREATE DATABASE {db_name}", settings=[("user",user_name)])
+                node.query(
+                    f"SHOW CREATE DATABASE {db_name}", settings=[("user", user_name)]
+                )
 
         with Scenario("SHOW CREATE with revoked privilege"):
 
@@ -219,26 +286,32 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
             with And(f"I revoke {privilege} on the database"):
-                node.query(f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}")
+                node.query(
+                    f"REVOKE {privilege} ON {db_name}.* FROM {grant_target_name}"
+                )
 
             with Then(f"I attempt to SHOW CREATE {db_name}"):
-                node.query(f"SHOW CREATE DATABASE {db_name}", settings=[("user",user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"SHOW CREATE DATABASE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
     finally:
         with Finally("I drop the database"):
             node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
 
 @TestFeature
 @Name("show databases")
 @Requirements(
     RQ_SRS_006_RBAC_ShowDatabases_Privilege("1.0"),
     RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
+    RQ_SRS_006_RBAC_Privileges_None("1.0"),
 )
 def feature(self, node="clickhouse1"):
-    """Check the RBAC functionality of SHOW DATABASES.
-    """
+    """Check the RBAC functionality of SHOW DATABASES."""
     self.context.node = self.context.cluster.node(node)
 
     Suite(run=dict_privileges_granted_directly, setup=instrument_clickhouse_server_log)
