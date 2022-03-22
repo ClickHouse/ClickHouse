@@ -179,7 +179,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
-    /// For clickhouse-local add progress callback to display progress bar.
+    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL
         || context->getApplicationType() == Context::ApplicationType::CLIENT)
     {
