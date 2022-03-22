@@ -2,6 +2,7 @@
 
 #include <base/logger_useful.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include "Common/StringUtils/StringUtils.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -497,15 +498,35 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, const Block * hint_header)
+Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
+    const arrow::Schema & schema, const std::string & format_name, const Block * hint_header, bool ignore_case)
 {
     ColumnsWithTypeAndName sample_columns;
     std::unordered_set<String> nested_table_names;
     if (hint_header)
         nested_table_names = Nested::getAllTableNames(*hint_header);
+
+    const auto accept_field = [&](const auto & field_name)
+    {
+        if (!hint_header)
+            return false;
+
+        if (hint_header->has(field_name, ignore_case))
+            return true;
+
+        if (ignore_case)
+            return nested_table_names.contains(field_name);
+
+        return std::find_if(
+                   nested_table_names.begin(),
+                   nested_table_names.end(),
+                   [&](const auto & nested_table_name) { return equalsCaseInsensitive(nested_table_name, field_name); })
+            != nested_table_names.end();
+    };
+
     for (const auto & field : schema.fields())
     {
-        if (hint_header && !hint_header->has(field->name()) && !nested_table_names.contains(field->name()))
+        if (!accept_field(field->name()))
             continue;
 
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
@@ -656,8 +677,9 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
 {
     std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, &header);
+    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, &header, case_insensitive_matching);
     auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
+
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)
     {
         const auto & header_column = header.getByPosition(i);
