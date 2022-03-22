@@ -11,7 +11,7 @@ echo "Check typos" | ts
 ./check-typos                 |& tee /test_output/typos_output.txt
 echo "Check whitespaces" | ts
 ./check-whitespaces -n        |& tee /test_output/whitespaces_output.txt
-echo "Check sorkflows" | ts
+echo "Check workflows" | ts
 ./check-workflows             |& tee /test_output/workflows_output.txt
 echo "Check shell scripts with shellcheck" | ts
 ./shellcheck-run.sh           |& tee /test_output/shellcheck_output.txt
