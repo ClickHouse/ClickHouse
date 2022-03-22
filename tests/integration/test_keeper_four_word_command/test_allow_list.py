@@ -3,10 +3,10 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import time
 
-cluster = ClickHouseCluster(__file__, name="test_keeper_4lw_white_list")
-node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config_with_white_list.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/keeper_config_without_white_list.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/keeper_config_with_white_list_all.xml'], stay_alive=True)
+cluster = ClickHouseCluster(__file__, name="test_keeper_4lw_allow_list")
+node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config_with_allow_list.xml'], stay_alive=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/keeper_config_without_allow_list.xml'], stay_alive=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/keeper_config_with_allow_list_all.xml'], stay_alive=True)
 
 from kazoo.client import KazooClient, KazooState
 
@@ -85,7 +85,7 @@ def send_cmd(node_name, command = "ruok"):
         close_keeper_socket(client)
 
 
-def test_white_list(started_cluster):
+def test_allow_list(started_cluster):
     client = None
     try:
         wait_nodes()
