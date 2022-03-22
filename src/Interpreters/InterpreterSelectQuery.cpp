@@ -2654,6 +2654,7 @@ Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
             result_columns[j]->insertRangeFrom(*columns[j], 0, columns[j]->size());
         }
     }
-    return Chunk(result_columns, result_columns[0]->size());
+    const size_t num_rows = result_columns[0]->size();
+    return Chunk(std::move(result_columns), num_rows);
 }
 }
