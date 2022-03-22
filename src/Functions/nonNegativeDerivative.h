@@ -28,7 +28,7 @@ class FunctionNonNegativeDerivativeImpl : public IFunction
 {
 private:
     /** Get interval length in seconds **/
-    static NO_SANITIZE_UNDEFINED Float64 getResultScaling(const std::tuple<IntervalKind::Kind, Int64> interval)
+    static NO_SANITIZE_UNDEFINED Float64 getIntervalLength(const std::tuple<IntervalKind::Kind, Int64> interval)
     {
         auto interval_kind = std::get<0>(interval);
         auto interval_length = std::get<1>(interval);
@@ -66,7 +66,7 @@ private:
         Ts prev_ts{};
 
         bool first_row = true;
-        auto interval_length = getResultScaling(interval);
+        auto interval_length = getIntervalLength(interval);
         auto ts_scale_multiplier = common::exp10_i64(ts_scale);
 
         for (size_t i = 0; i < size; ++i)
@@ -81,6 +81,7 @@ private:
             {
                 result[i] = 0;
                 prev_metric_value = metric[i];
+                prev_ts = timestamp[i];
                 first_row = false;
             }
             else
@@ -89,6 +90,7 @@ private:
                 auto multiply = interval_length * ts_scale_multiplier / (timestamp[i].value - prev_ts.value);
                 result[i] = (cur - prev_metric_value) * multiply;
                 prev_metric_value = cur;
+                prev_ts = timestamp[i];
             }
         }
     }
