@@ -639,7 +639,7 @@ Chunk StorageEmbeddedRocksDB::getByKeysImpl(
 
     size_t num_rows = columns.at(0)->size();
     /// The `output_sample_block` may be different from `sample_block`.
-    /// It may constains subset of columns and types can be different (but should be convertable)
+    /// It may contains subset of columns and types can be different (but should be convertible)
     auto result_columns = getColumnsFromBlock(sample_block, std::move(columns), output_sample_block, null_map);
     return Chunk(std::move(result_columns), num_rows);
 }
