@@ -5,22 +5,28 @@ from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.test_tools import assert_eq_with_retry
 
+
 def fill_nodes(nodes):
     for node in nodes:
         node.query(
-        '''
+            """
             CREATE TABLE test(n UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
             ORDER BY n PARTITION BY n % 10;
-        '''.format(replica=node.name))
+        """.format(
+                replica=node.name
+            )
+        )
+
 
 cluster = ClickHouseCluster(__file__)
-configs =["configs/remote_servers.xml"]
+configs = ["configs/remote_servers.xml"]
 
-node_1 = cluster.add_instance('replica1', with_zookeeper=True, main_configs=configs)
-node_2 = cluster.add_instance('replica2', with_zookeeper=True, main_configs=configs)
-node_3 = cluster.add_instance('replica3', with_zookeeper=True, main_configs=configs)
+node_1 = cluster.add_instance("replica1", with_zookeeper=True, main_configs=configs)
+node_2 = cluster.add_instance("replica2", with_zookeeper=True, main_configs=configs)
+node_3 = cluster.add_instance("replica3", with_zookeeper=True, main_configs=configs)
 nodes = [node_1, node_2, node_3]
+
 
 def fill_table():
     node_1.query("TRUNCATE TABLE test")
@@ -38,6 +44,7 @@ def fill_table():
     node_1.query("INSERT INTO test SELECT number + 800 FROM numbers(200)")
     check_data(499500, 1000)
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -51,11 +58,13 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def check_data(_sum: int, count: int) -> None:
     res = "{}\t{}\n".format(_sum, count)
     assert_eq_with_retry(node_1, "SELECT sum(n), count() FROM test", res)
     assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res)
     assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test", res)
+
 
 def check_after_restoration():
     check_data(1999000, 2000)
@@ -63,14 +72,16 @@ def check_after_restoration():
     for node in nodes:
         node.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
+
 def test_restore_replica_invalid_tables(start_cluster):
     print("Checking the invocation on non-existent and non-replicated tables")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA no_db.i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA system.numbers")
 
+
 def test_restore_replica_sequential(start_cluster):
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client("zoo1")
     fill_table()
 
     print("Deleting root ZK path metadata")
@@ -78,7 +89,9 @@ def test_restore_replica_sequential(start_cluster):
     assert zk.exists("/clickhouse/tables/test") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")
-    node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
+    node_1.query_and_get_error(
+        "INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0"
+    )
 
     print("Restoring replica1")
 
@@ -101,8 +114,9 @@ def test_restore_replica_sequential(start_cluster):
 
     check_after_restoration()
 
+
 def test_restore_replica_parallel(start_cluster):
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client("zoo1")
     fill_table()
 
     print("Deleting root ZK path metadata")
@@ -110,7 +124,9 @@ def test_restore_replica_parallel(start_cluster):
     assert zk.exists("/clickhouse/tables/test") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")
-    node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
+    node_1.query_and_get_error(
+        "INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0"
+    )
 
     print("Restoring replicas in parallel")
 
@@ -126,8 +142,9 @@ def test_restore_replica_parallel(start_cluster):
 
     check_after_restoration()
 
+
 def test_restore_replica_alive_replicas(start_cluster):
-    zk = cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client("zoo1")
     fill_table()
 
     print("Deleting replica2 path, trying to restore replica1")
