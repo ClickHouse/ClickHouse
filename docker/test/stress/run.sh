@@ -235,7 +235,7 @@ zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-serve
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
 # Remove file logical_errors.txt if it's empty
-[ -s /test_output/logical_errors.txt ] || echo rm /test_output/logical_errors.txt
+[ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 # Crash
 zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
@@ -248,7 +248,7 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log* > /test_
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Remove file fatal_messages.txt if it's empty
-[ -s /test_output/logical_errors.txt ] || echo rm /test_output/logical_errors.txt
+[ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
 zgrep -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
@@ -337,7 +337,7 @@ then
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Remove file bc_check_error_messages.txt if it's empty
-    [ -s /test_output/bc_check_error_messages.txt ] || echo rm /test_output/bc_check_error_messages.txt
+    [ -s /test_output/bc_check_error_messages.txt ] || rm /test_output/bc_check_error_messages.txt
 
     # Sanitizer asserts
     zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
@@ -359,7 +359,7 @@ then
         || echo -e 'Backward compatibility check: No logical errors\tOK' >> /test_output/test_results.tsv
 
     # Remove file bc_check_logical_errors.txt if it's empty
-    [ -s /test_output/bc_check_logical_errors.txt ] || echo rm /test_output/bc_check_logical_errors.txt
+    [ -s /test_output/bc_check_logical_errors.txt ] || rm /test_output/bc_check_logical_errors.txt
 
     # Crash
     zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
@@ -373,7 +373,7 @@ then
         || echo -e 'Backward compatibility check: No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
     # Remove file bc_check_fatal_messages.txt if it's empty
-    [ -s /test_output/bc_check_fatal_messages.txt ] || echo rm /test_output/bc_check_fatal_messages.txt
+    [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
 
 else
     echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
