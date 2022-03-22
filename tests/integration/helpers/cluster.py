@@ -31,7 +31,7 @@ try:
     from confluent_kafka.avro.cached_schema_registry_client import \
         CachedSchemaRegistryClient
 except Exception as e:
-    logging.warning(f"Cannot import some modules, some tests may not work:{e}")
+    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
