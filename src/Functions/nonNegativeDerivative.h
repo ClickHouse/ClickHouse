@@ -27,16 +27,33 @@ namespace ErrorCodes
 class FunctionNonNegativeDerivativeImpl : public IFunction
 {
 private:
-    static NO_SANITIZE_UNDEFINED Int64 getResultScaling()
+    /** Get interval length in seconds **/
+    static NO_SANITIZE_UNDEFINED Float64 getResultScaling(const std::tuple<IntervalKind::Kind, Int64> interval)
     {
-        Int64 res = 1;
+        auto interval_kind = std::get<0>(interval);
+        auto interval_length = std::get<1>(interval);
 
-        return res;
+        switch (interval_kind)
+        {
+            case IntervalKind::Week:
+                return interval_length * 604800;
+            case IntervalKind::Day:
+                return interval_length * 86400;
+            case IntervalKind::Hour:
+                return interval_length * 3600;
+            case IntervalKind::Minute:
+                return interval_length * 60;
+            case IntervalKind::Second:
+                return interval_length;
+            default:
+                throw Exception(fmt::format("Interval kind {}: interval length is variadic, only precise intervals accepted",
+                                            IntervalKind(interval_kind).toKeyword()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
     }
 
-    template <typename Src, typename Dst>
+    template <typename Src, typename Dst, typename Ts>
     static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & metric, PaddedPODArray<Dst> & result,
-                                              const PaddedPODArray<DataTypeDateTime64> & timestamp, const UInt32 ts_scale,
+                                              const PaddedPODArray<Ts> & timestamp, const UInt32 ts_scale,
                                               const std::tuple<IntervalKind::Kind, Int64> interval, const NullMap * null_map)
     {
         size_t size = metric.size();
@@ -46,9 +63,11 @@ private:
             return;
 
         Src prev_metric_value{};
-        DateTime64 prev_ts_value{};
+        Ts prev_ts{};
 
-        bool first_row = false;
+        bool first_row = true;
+        auto interval_length = getResultScaling(interval);
+        auto ts_scale_multiplier = common::exp10_i64(ts_scale);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -58,25 +77,25 @@ private:
                 continue;
             }
 
-            if (!first_row)
-            {
-                auto cur = metric[i];
-                /// Overflow is Ok.
-                result[i] = static_cast<Dst>(cur) - prev_metric_value;
-                prev_metric_value = cur;
-            }
-            else
+            if (first_row)
             {
                 result[i] = 0;
                 prev_metric_value = metric[i];
                 first_row = false;
+            }
+            else
+            {
+                auto cur = metric[i];
+                auto multiply = interval_length * ts_scale_multiplier / (timestamp[i].value - prev_ts.value);
+                result[i] = (cur - prev_metric_value) * multiply;
+                prev_metric_value = cur;
             }
         }
     }
 
     /// Result type is same as result of subtraction of argument types.
     template <typename SrcFieldType>
-    using DstFieldType = typename NumberTraits::ResultOfSubtraction<SrcFieldType, SrcFieldType>::Type;
+    using DstFieldType = typename NumberTraits::ResultOfFloatingPointDivision<SrcFieldType, SrcFieldType>::Type;
 
     /// Call polymorphic lambda with tag argument of concrete field type of src_type.
     template <typename F>
@@ -132,16 +151,11 @@ public:
         return true;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return true;
-    }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -191,7 +205,7 @@ public:
         const auto & metric = arguments.at(0);
         const auto & timestamp = arguments.at(1);
 
-        const auto timestamp_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
+        const auto timestamp_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[1].type).getScale();
 
         // Default interval value: INTERVAL 1 SECOND
         const auto interval_params = arguments.size() == 3 ? dispatchForIntervalColumns(arguments.at(2)) : std::tuple<IntervalKind::Kind, Int64>(IntervalKind::Second, 1);
@@ -220,8 +234,8 @@ public:
 
                                   process(assert_cast<const ColumnVector<MetricFieldType> &>(*metric_column).getData(),
                                           assert_cast<ColumnVector<DstFieldType<MetricFieldType>> &>(*res_column).getData(),
-                                          assert_cast<const ColumnVector<decltype(DataTypeDateTime64(timestamp_scale))> &>(*timestamp_column).getData(),
-                                          timestamp_scale, interval_params, null_map);
+                                          assert_cast<const ColumnDecimal<DateTime64> &>(*timestamp_column).getData(), timestamp_scale,
+                                          interval_params, null_map);
                               });
 
         if (null_map_column)
