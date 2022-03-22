@@ -410,52 +410,49 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
 void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock, bool allow_non_strict_checking)
 {
-    bool download_can_continue = false;
+    bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+    bool download_can_continue = !is_last_holder
+        && download_state != State::DOWNLOADED
+        && download_state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
-    if (download_state == State::PARTIALLY_DOWNLOADED
-                || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+    if (!download_can_continue
+        && (download_state == State::PARTIALLY_DOWNLOADED || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
-        bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
-        download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
-
-        if (!download_can_continue)
+        size_t current_downloaded_size = getDownloadedSize(segment_lock);
+        if (current_downloaded_size == 0)
         {
-            size_t current_downloaded_size = getDownloadedSize(segment_lock);
-            if (current_downloaded_size == 0)
-            {
-                download_state = State::SKIP_CACHE;
-                LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
-                cache->remove(key(), offset(), cache_lock, segment_lock);
+            download_state = State::SKIP_CACHE;
+            LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
+            cache->remove(key(), offset(), cache_lock, segment_lock);
 
-                detached = true;
-            }
-            else if (is_last_holder)
-            {
-                /**
-                * Only last holder of current file segment can resize the cell,
-                * because there is an invariant that file segments returned to users
-                * in FileSegmentsHolder represent a contiguous range, so we can resize
-                * it only when nobody needs it.
-                */
-                LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
-                cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
+            detached = true;
+        }
+        else if (is_last_holder)
+        {
+            /**
+            * Only last holder of current file segment can resize the cell,
+            * because there is an invariant that file segments returned to users
+            * in FileSegmentsHolder represent a contiguous range, so we can resize
+            * it only when nobody needs it.
+            */
+            LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
+            cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
 
-                detached = true;
-            }
+            detached = true;
+        }
+
+        if (cache_writer)
+        {
+            cache_writer->finalize();
+            cache_writer.reset();
+            remote_file_reader.reset();
         }
     }
 
-    if (!downloader_id.empty() && downloader_id == getCallerIdImpl(allow_non_strict_checking))
+    if (!downloader_id.empty() && (downloader_id == getCallerIdImpl(allow_non_strict_checking) || is_last_holder))
     {
         LOG_TEST(log, "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
         downloader_id.clear();
-    }
-
-    if (!download_can_continue && cache_writer)
-    {
-        cache_writer->finalize();
-        cache_writer.reset();
-        remote_file_reader.reset();
     }
 
     assertCorrectnessImpl(segment_lock);
