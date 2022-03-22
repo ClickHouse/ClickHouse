@@ -60,7 +60,7 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    Range getRemainingReadRange() const override { return Range{ .left = static_cast<size_t>(offset), .right = read_until_position }; }
+    Range getRemainingReadRange() const override { return Range{ .left = static_cast<size_t>(offset), .right = read_until_position - 1}; }
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
@@ -124,7 +124,7 @@ public:
 
         auto reader = std::make_shared<ReadBufferFromS3>(
                 client_ptr, bucket, key, s3_max_single_read_retries, settings);
-        reader->setRange(next_range->first, next_range->second - 1);
+        reader->setRange(next_range->first, next_range->second);
         return reader;
     }
 
