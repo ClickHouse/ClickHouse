@@ -1022,8 +1022,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout,
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
                                 false), server_pool, socket));
                 });
 
@@ -1045,8 +1045,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
