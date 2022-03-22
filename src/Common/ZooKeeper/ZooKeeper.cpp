@@ -81,6 +81,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
 
+                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, Poco::Net::SocketAddress{host_string}.toString());
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
