@@ -700,8 +700,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
     }
 
-    /// TODO: Investigate more what is missing
     secret = from.secret;
+    name = from.name;
 
     initMisc();
 }
@@ -716,6 +716,9 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
         if (!from.addresses_with_failover.empty())
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
     }
+
+    secret = from.secret;
+    name = from.name;
 
     initMisc();
 }

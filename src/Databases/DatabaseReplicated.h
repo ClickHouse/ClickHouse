@@ -77,10 +77,10 @@ private:
 
     struct 
     {
-        String cluster_username;
+        String cluster_username{"default"};
         String cluster_password;
         String cluster_secret;
-        bool cluster_secure_connection;
+        bool cluster_secure_connection{false};
     } cluster_auth_info;
 
     void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
