@@ -508,10 +508,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     const auto accept_field = [&](const auto & field_name)
     {
-        if (!hint_header)
-            return false;
-
-        if (hint_header->has(field_name, ignore_case))
+        if (!hint_header || hint_header->has(field_name, ignore_case))
             return true;
 
         if (!ignore_case)
