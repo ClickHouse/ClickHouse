@@ -85,11 +85,9 @@ size_t extractMaskNumericImpl(
 {
     size_t ones_count = 0;
     size_t data_index = 0;
-
     size_t mask_size = mask.size();
-    size_t data_size = data.size();
 
-    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
