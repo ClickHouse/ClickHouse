@@ -20,3 +20,11 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE orc_load (iD String, sCorE Int32) ENG
 cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO orc_load FORMAT ORC SETTINGS input_format_orc_case_insensitive_column_matching=true"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM orc_load"
 ${CLICKHOUSE_CLIENT} --query="drop table orc_load"
+
+echo "Arrow"
+DATA_FILE=$CUR_DIR/data_arrow/case_insensitive_column_matching.arrow
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS arrow_load"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_load (iD String, sCorE Int32) ENGINE = Memory"
+cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO arrow_load FORMAT Arrow SETTINGS input_format_arrow_case_insensitive_column_matching=true"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_load"
+${CLICKHOUSE_CLIENT} --query="drop table arrow_load"
