@@ -11,6 +11,7 @@ node2 = cluster.add_instance('nod2', with_zookeeper=True,
 node3 = cluster.add_instance('nod3', with_zookeeper=True,
                                 main_configs=["configs/zookeeper_load_balancing.xml"])
 
+
 def change_balancing(old, new, reload=True):
     line = '<zookeeper_load_balancing>{}<'
     old_line = line.format(old)
@@ -18,6 +19,7 @@ def change_balancing(old, new, reload=True):
     for node in [node1, node2, node3]:
         node.replace_in_config('/etc/clickhouse-server/config.d/zookeeper_load_balancing.xml', old_line, new_line)
         if reload:
+            node.query("select '{}', '{}'".format(old, new))
             node.query('system reload config')
 
 
