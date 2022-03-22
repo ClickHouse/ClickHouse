@@ -514,7 +514,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         if (hint_header->has(field_name, ignore_case))
             return true;
 
-        if (ignore_case)
+        if (!ignore_case)
             return nested_table_names.contains(field_name);
 
         return std::find_if(

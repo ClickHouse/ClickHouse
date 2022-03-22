@@ -74,6 +74,7 @@ struct FormatSettings
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool case_insensitive_column_matching = false;
     } arrow;
 
     struct
