@@ -14,9 +14,9 @@ def override_status(status, check_name, invert=False):
         return "success"
 
     if invert:
-        if status == 'success':
-            return 'error'
-        return 'success'
+        if status == "success":
+            return "error"
+        return "success"
 
     return status
 
@@ -56,6 +56,6 @@ def post_commit_status(gh, sha, check_name, description, state, report_url):
 def post_commit_status_to_file(file_path, description, state, report_url):
     if os.path.exists(file_path):
         raise Exception(f'File "{file_path}" already exists!')
-    with open(file_path, 'w', encoding='utf-8') as f:
-        out = csv.writer(f, delimiter='\t')
+    with open(file_path, "w", encoding="utf-8") as f:
+        out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])

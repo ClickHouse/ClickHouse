@@ -27,7 +27,7 @@ MAX_TIME_SECONDS = 3600
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
-NO_CHANGES_MSG = 'Nothing to run'
+NO_CHANGES_MSG = "Nothing to run"
 
 
 def stringhash(s):
@@ -209,7 +209,9 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params["docker_images_with_versions"]
         self.shuffle_groups = self.params["shuffle_test_groups"]
         self.flaky_check = "flaky check" in self.params["context_name"]
-        self.bugfix_validate_check = "bugfix validate check" in self.params["context_name"]
+        self.bugfix_validate_check = (
+            "bugfix validate check" in self.params["context_name"]
+        )
         # if use_tmpfs is not set we assume it to be true, otherwise check
         self.use_tmpfs = "use_tmpfs" not in self.params or self.params["use_tmpfs"]
         self.disable_net_host = (
@@ -780,7 +782,9 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_impl(self, repo_path, build_path):
         if self.flaky_check or self.bugfix_validate_check:
-            return self.run_flaky_check(repo_path, build_path, should_fail=self.bugfix_validate_check)
+            return self.run_flaky_check(
+                repo_path, build_path, should_fail=self.bugfix_validate_check
+            )
 
         self._install_clickhouse(build_path)
         logging.info(
