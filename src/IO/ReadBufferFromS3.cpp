@@ -42,6 +42,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
+    size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
     : SeekableReadBufferWithSize(nullptr, 0)
@@ -49,9 +50,10 @@ ReadBufferFromS3::ReadBufferFromS3(
     , bucket(bucket_)
     , key(key_)
     , max_single_read_retries(max_single_read_retries_)
+    , offset(offset_)
+    , read_until_position(read_until_position_)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
-    , read_until_position(read_until_position_)
     , restricted_seek(restricted_seek_)
 {
 }
