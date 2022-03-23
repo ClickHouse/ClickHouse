@@ -1,21 +1,19 @@
 #include "ParquetBlockInputFormat.h"
-#include "Common/StringUtils/StringUtils.h"
+#include <boost/algorithm/string/case_conv.hpp>
+
 #if USE_PARQUET
 
-#    include <DataTypes/NestedUtils.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromMemory.h>
-#    include <IO/copyData.h>
-#    include <arrow/api.h>
-#    include <arrow/io/api.h>
-#    include <arrow/status.h>
-#    include <parquet/arrow/reader.h>
-#    include <parquet/file_reader.h>
-#    include "ArrowBufferedStreams.h"
-#    include "ArrowColumnToCHColumn.h"
-
-#    include <base/logger_useful.h>
-
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/copyData.h>
+#include <arrow/api.h>
+#include <arrow/io/api.h>
+#include <arrow/status.h>
+#include <parquet/arrow/reader.h>
+#include <parquet/file_reader.h>
+#include "ArrowBufferedStreams.h"
+#include "ArrowColumnToCHColumn.h"
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -26,12 +24,12 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-#    define THROW_ARROW_NOT_OK(status) \
-        do \
-        { \
-            if (::arrow::Status _s = (status); !_s.ok()) \
-                throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
-        } while (false)
+#define THROW_ARROW_NOT_OK(status)                                     \
+    do                                                                 \
+    {                                                                  \
+        if (::arrow::Status _s = (status); !_s.ok())                   \
+            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+    } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
@@ -140,9 +138,10 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.parquet.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
+    const bool ignore_case = format_settings.parquet.case_insensitive_column_matching;
     std::unordered_set<String> nested_table_names;
     if (format_settings.parquet.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
 
     int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
@@ -153,27 +152,7 @@ void ParquetBlockInputFormat::prepareReader()
         int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
 
-        const bool contains_column = std::invoke(
-            [&]
-            {
-                if (getPort().getHeader().has(name, format_settings.parquet.case_insensitive_column_matching))
-                {
-                    return true;
-                }
-
-                if (!format_settings.parquet.case_insensitive_column_matching)
-                {
-                    return nested_table_names.contains(name);
-                }
-
-                return std::find_if(
-                           nested_table_names.begin(),
-                           nested_table_names.end(),
-                           [&](const auto & nested_table_name) { return equalsCaseInsensitive(nested_table_name, name); })
-                    != nested_table_names.end();
-            });
-
-        if (contains_column)
+        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {
             for (int j = 0; j != indexes_count; ++j)
                 column_indices.push_back(index + j);
@@ -201,9 +180,14 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerInputFormat(
-        "Parquet",
-        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings); });
+            "Parquet",
+            [](ReadBuffer &buf,
+                const Block &sample,
+                const RowInputFormatParams &,
+                const FormatSettings & settings)
+            {
+                return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
+            });
     factory.markFormatAsColumnOriented("Parquet");
 }
 
@@ -211,7 +195,11 @@ void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr) { return std::make_shared<ParquetSchemaReader>(buf, settings); });
+        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        {
+            return std::make_shared<ParquetSchemaReader>(buf, settings);
+        }
+        );
 }
 
 }
@@ -225,9 +213,7 @@ void registerInputFormatParquet(FormatFactory &)
 {
 }
 
-void registerParquetSchemaReader(FormatFactory &)
-{
-}
+void registerParquetSchemaReader(FormatFactory &) {}
 }
 
 #endif
