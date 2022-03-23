@@ -74,7 +74,8 @@ public:
         String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        size_t download_thread_num);
 
     String getName() const override;
 
@@ -105,9 +106,12 @@ private:
     bool with_file_column = false;
     bool with_path_column = false;
     std::shared_ptr<IteratorWrapper> file_iterator;
+    size_t download_thread_num = 1;
 
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
+
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 
 /**

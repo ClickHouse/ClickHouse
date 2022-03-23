@@ -120,7 +120,7 @@ public:
             read_settings,
             false /*use_external_buffer*/,
             next_range->first,
-            next_range->second + 1);
+            next_range->second);
         return reader;
     }
 
