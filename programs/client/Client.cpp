@@ -1047,7 +1047,6 @@ void Client::readArguments(
         * - param arguments for prepared statements.
         * Split these groups before processing.
         */
-
     bool in_external_group = false;
 
     std::string prev_host_arg;
