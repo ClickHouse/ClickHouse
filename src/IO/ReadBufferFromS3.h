@@ -5,15 +5,15 @@
 
 #if USE_AWS_S3
 
-#include <memory>
+#    include <memory>
 
-#include <IO/HTTPCommon.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadSettings.h>
-#include <IO/SeekableReadBuffer.h>
-#include <IO/ParallelReadBuffer.h>
+#    include <IO/HTTPCommon.h>
+#    include <IO/ParallelReadBuffer.h>
+#    include <IO/ReadBuffer.h>
+#    include <IO/ReadSettings.h>
+#    include <IO/SeekableReadBuffer.h>
 
-#include <aws/s3/model/GetObjectResult.h>
+#    include <aws/s3/model/GetObjectResult.h>
 
 namespace Aws::S3
 {
@@ -32,7 +32,9 @@ private:
     String bucket;
     String key;
     UInt64 max_single_read_retries;
+
     off_t offset = 0;
+    off_t read_until_position = 0;
 
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
@@ -47,6 +49,7 @@ public:
         UInt64 max_single_read_retries_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
+        size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false);
 
@@ -60,15 +63,9 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    Range getRemainingReadRange() const override { return Range{ .left = static_cast<size_t>(offset), .right = read_until_position - 1}; }
+    Range getRemainingReadRange() const override { return Range{.left = static_cast<size_t>(offset), .right = read_until_position - 1}; }
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
-
-    void setRange(off_t begin, off_t end)
-    {
-        offset = begin;
-        read_until_position = end;
-    }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
@@ -76,8 +73,6 @@ private:
     ReadSettings read_settings;
 
     bool use_external_buffer;
-
-    off_t read_until_position = 0;
 
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
@@ -95,11 +90,11 @@ public:
         size_t range_step_,
         size_t object_size_,
         UInt64 s3_max_single_read_retries_,
-        const ReadSettings &read_settings)
+        const ReadSettings & read_settings_)
         : client_ptr(client_ptr_)
         , bucket(bucket_)
         , key(key_)
-        , settings(read_settings)
+        , read_settings(read_settings_)
         , range_generator(object_size_, range_step_)
         , range_step(range_step_)
         , object_size(object_size_)
@@ -107,11 +102,6 @@ public:
     {
         assert(range_step > 0);
         assert(range_step < object_size);
-    }
-
-    size_t totalRanges() const
-    {
-        return static_cast<size_t>(round(static_cast<float>(object_size) / range_step));
     }
 
     SeekableReadBufferPtr getReader() override
@@ -123,8 +113,14 @@ public:
         }
 
         auto reader = std::make_shared<ReadBufferFromS3>(
-                client_ptr, bucket, key, s3_max_single_read_retries, settings);
-        reader->setRange(next_range->first, next_range->second);
+            client_ptr,
+            bucket,
+            key,
+            s3_max_single_read_retries,
+            read_settings,
+            false /*use_external_buffer*/,
+            next_range->first,
+            next_range->second + 1);
         return reader;
     }
 
@@ -140,7 +136,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
-    ReadSettings settings;
+    ReadSettings read_settings;
 
     RangeGenerator range_generator;
     size_t range_step;
