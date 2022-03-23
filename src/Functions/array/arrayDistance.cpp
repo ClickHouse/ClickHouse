@@ -1,6 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -10,7 +11,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -19,36 +19,12 @@ template <const int N>
 struct LpDistance
 {
     static inline String name = "L" + std::to_string(N);
-    template <typename X>
-    static void compute(const Eigen::MatrixX<X> & left, const Eigen::MatrixX<X> & right, MutableColumnPtr & column)
+    template <typename L, typename R, typename T>
+    static void compute(const Eigen::MatrixBase<L> & left, const Eigen::MatrixBase<R> & right, PaddedPODArray<T> & array)
     {
-        auto & data = assert_cast<ColumnFloat64 &>(*column).getData();
-        for (auto col : left.colwise())
-        {
-            auto norms = (right.colwise() - col).colwise().template lpNorm<N>();
-            for (auto n : norms)
-            {
-                data.emplace_back(n);
-            }
-        }
-    }
-};
-
-struct L2Distance
-{
-    static inline String name = "L2";
-    template <typename X>
-    static void compute(const Eigen::MatrixX<X> & left, const Eigen::MatrixX<X> & right, MutableColumnPtr & column)
-    {
-        auto & data = assert_cast<ColumnFloat64 &>(*column).getData();
-        for (auto col : left.colwise())
-        {
-            auto norms = (right.colwise() - col).colwise().norm();
-            for (auto n : norms)
-            {
-                data.emplace_back(n);
-            }
-        }
+        auto & norms = (left - right).colwise().template lpNorm<N>();
+        for (auto n : norms)
+            array.emplace_back(n);
     }
 };
 
@@ -60,180 +36,183 @@ struct LinfDistance : LpDistance<Eigen::Infinity>
 struct CosineDistance
 {
     static inline String name = "Cosine";
-    template <typename X>
-    static void compute(const Eigen::MatrixX<X> & left, const Eigen::MatrixX<X> & right, MutableColumnPtr & column)
+    template <typename L, typename R, typename T>
+    static void compute(const Eigen::MatrixBase<L> & left, const Eigen::MatrixBase<R> & right, PaddedPODArray<T> & array)
     {
-        auto & data = assert_cast<ColumnFloat64 &>(*column).getData();
-        auto x = left.colwise().normalized();
-        auto y = right.colwise().normalized();
-        auto & prod = x.cwiseProduct(y).colwise().sum();
-        for (auto p : prod)
-        {
-            data.emplace_back(1.0 - p);
-        }
+        // auto & nx = left.colwise().normalized().eval();
+        // auto & ny = right.colwise().normalized().eval();
+        // auto & dist = 1.0 - x.cwiseProduct(y).colwise().sum().array();
+        auto & prod = left.cwiseProduct(right).colwise().sum();
+        auto & nx = left.colwise().norm();
+        auto & ny = right.colwise().norm();
+        auto & nm = nx.cwiseProduct(ny).cwiseInverse();
+        auto & dist = 1.0 - prod.cwiseProduct(nm).array();
+        for (auto d : dist)
+            array.emplace_back(d);
     }
 };
 
-template <class Label>
+template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    static inline auto name = "array" + Label::name + "Distance";
+    static inline auto name = "array" + Kernel::name + "Distance";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Label>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
-        DataTypePtr first_nested_type = nullptr;
-        for (const auto & argument : arguments)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(argument.type.get());
-            if (!array_type)
-            {
-                throw Exception(
-                    "Arguments of function " + getName() + " must be array. Found " + argument.type->getName() + " instead.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-
-            const auto & nested_type = array_type->getNestedType();
-
-            if (!first_nested_type)
-            {
-                first_nested_type = nested_type;
-            }
-            else if (!nested_type->equals(*first_nested_type))
-            {
-                throw Exception("Arguments of function " + getName() + " must have identical type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-        }
-
-        switch (first_nested_type->getTypeId())
-        {
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt32:
-            case TypeIndex::Int8:
-            case TypeIndex::Int32:
-            case TypeIndex::Float32:
-            case TypeIndex::Float64:
-                break;
-            default:
-                throw Exception(
-                    "Array nested type " + first_nested_type->getName() + ". Support: UInt8, UInt32, Int8, Int32, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        //return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
-        return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeFloat32>();
     }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        auto res_ptr = result_type->createColumn();
-        //auto & res = assert_cast<ColumnFloat64 &>(*res_ptr).getData();
-        const auto & first_col = arguments[0].column;
-        const auto & second_col = arguments[1].column;
-        const auto & nested_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get())->getNestedType();
-        switch (nested_type->getTypeId())
+        const auto & left = arguments[0];
+        const auto & right = arguments[1];
+
+        const auto & col_x = left.column->convertToFullColumnIfConst();
+        const auto & col_y = right.column->convertToFullColumnIfConst();
+        const auto * arr_x = checkAndGetColumn<ColumnArray>(col_x.get());
+        const auto * arr_y = checkAndGetColumn<ColumnArray>(col_y.get());
+        if (!arr_x || !arr_y)
         {
-            case TypeIndex::UInt8:
-                executeDistance<UInt8, float>(first_col, second_col, res_ptr);
-                break;
-            case TypeIndex::UInt32:
-                executeDistance<UInt32, float>(first_col, second_col, res_ptr);
-                break;
-            case TypeIndex::Int8:
-                executeDistance<Int8, float>(first_col, second_col, res_ptr);
-                break;
-            case TypeIndex::Int32:
-                executeDistance<Int32, float>(first_col, second_col, res_ptr);
-                break;
-            case TypeIndex::Float32:
-                executeDistance<Float32, float>(first_col, second_col, res_ptr);
-                break;
-            case TypeIndex::Float64:
-                executeDistance<Float64, double>(first_col, second_col, res_ptr);
-                break;
-            default:
-                throw Exception(
-                    "Array nested type " + nested_type->getName() + ". Support: UInt8, UInt32, Int8, Int32, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Argument of function " + String(name) + " must be array. ", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        return res_ptr;
+        const auto & type_x = checkAndGetDataType<DataTypeArray>(left.type.get())->getNestedType();
+        const auto & type_y = checkAndGetDataType<DataTypeArray>(right.type.get())->getNestedType();
+
+        const auto & common_type = getLeastSupertype(DataTypes{type_x, type_y});
+        switch (common_type->getTypeId())
+        {
+            case TypeIndex::UInt8:
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Float32:
+                return executeWithType<float>(*arr_x, *arr_y, type_x, type_y, result_type);
+            case TypeIndex::UInt64:
+            case TypeIndex::Int64:
+            case TypeIndex::Float64:
+                return executeWithType<double>(*arr_x, *arr_y, type_x, type_y, result_type);
+            default:
+                throw Exception(
+                    "Array nested type " + common_type->getName()
+                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
     }
 
 private:
-    template <typename T, typename X>
-    static void executeDistance(const ColumnPtr & first, const ColumnPtr & second, MutableColumnPtr & column)
+    template <typename MatrixType>
+    static ColumnPtr executeWithType(
+        const ColumnArray & array_x,
+        const ColumnArray & array_y,
+        const DataTypePtr & type_x,
+        const DataTypePtr & type_y,
+        const DataTypePtr & result_type)
     {
-        Eigen::MatrixX<X> mx, my;
-        columnToMatrix<T, X>(first, mx);
-        columnToMatrix<T, X>(second, my);
+        auto result = result_type->createColumn();
+        auto & array = typeid_cast<ColumnFloat32 &>(*result).getData();
+
+        Eigen::MatrixX<MatrixType> mx, my;
+        columnToMatrix(array_x, type_x, mx);
+        columnToMatrix(array_y, type_y, my);
 
         if (mx.rows() && my.rows() && mx.rows() != my.rows())
         {
             throw Exception(
                 "Arguments of function " + String(name) + " have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
-        Label::compute(mx, my, column);
+
+        Kernel::compute(mx, my, array);
+        return result;
     }
 
-    template <typename T, typename X>
-    static void columnToMatrix(const ColumnPtr column, Eigen::MatrixX<X> & mat)
+    template <typename MatrixType>
+    static void columnToMatrix(const ColumnArray & array, const DataTypePtr & nested_type, Eigen::MatrixX<MatrixType> & mat)
     {
-        ColumnPtr offsets;
-        const ColumnVector<T> * vec;
-
-        if (const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column.get()))
+        switch (nested_type->getTypeId())
         {
-            offsets = column_array->getOffsetsPtr();
-            vec = checkAndGetColumn<ColumnVector<T>>(column_array->getData());
+            case TypeIndex::UInt8:
+                fillMatrix<MatrixType, UInt8>(mat, array);
+                break;
+            case TypeIndex::UInt16:
+                fillMatrix<MatrixType, UInt16>(mat, array);
+                break;
+            case TypeIndex::UInt32:
+                fillMatrix<MatrixType, UInt32>(mat, array);
+                break;
+            case TypeIndex::UInt64:
+                fillMatrix<MatrixType, UInt64>(mat, array);
+                break;
+            case TypeIndex::Int8:
+                fillMatrix<MatrixType, Int8>(mat, array);
+                break;
+            case TypeIndex::Int16:
+                fillMatrix<MatrixType, Int16>(mat, array);
+                break;
+            case TypeIndex::Int32:
+                fillMatrix<MatrixType, Int32>(mat, array);
+                break;
+            case TypeIndex::Int64:
+                fillMatrix<MatrixType, Int64>(mat, array);
+                break;
+            case TypeIndex::Float32:
+                fillMatrix<MatrixType, Float32>(mat, array);
+                break;
+            case TypeIndex::Float64:
+                fillMatrix<MatrixType, Float64>(mat, array);
+                break;
+            default:
+                throw Exception(
+                    "Array nested type " + nested_type->getName()
+                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
-        else if (const ColumnArray * const_array = checkAndGetColumnConstData<ColumnArray>(column.get()))
-        {
-            offsets = const_array->getOffsetsPtr();
-            vec = checkAndGetColumn<ColumnVector<T>>(const_array->getData());
-        }
-        else
-        {
-            throw Exception("Argument of function " + String(name) + " must be array. ", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        const auto & off = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets).getData();
-        fillMatrix(mat, vec->getData(), off);
     }
 
-    template <typename T, typename X>
-    static void fillMatrix(Eigen::MatrixX<X> & mat, const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets)
+    // optimize for float/ double
+    template <typename MatrixType, typename DataType, typename std::enable_if<std::is_same<MatrixType, DataType>::value>::type>
+    static void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array)
     {
-        auto row_size = offsets.front();
-        mat.resize(row_size, offsets.size());
+        const auto & vec = typeid_cast<const ColumnVector<DataType> &>(array.getData());
+        const auto & data = vec.getData();
+        const auto & offsets = array.getOffsets();
+        mat = Eigen::Map<const Eigen::MatrixX<MatrixType>>(data.data(), offsets.front(), offsets.size());
+    }
+
+    template <typename MatrixType, typename DataType>
+    static void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array)
+    {
+        const auto & vec = typeid_cast<const ColumnVector<DataType> &>(array.getData());
+        const auto & data = vec.getData();
+        const auto & offsets = array.getOffsets();
+        mat.resize(offsets.front(), offsets.size());
+
         ColumnArray::Offset prev = 0, col = 0;
-        for (auto offset : offsets)
+        for (auto off : offsets)
         {
-            /*
-            if (offset - prev != row_size) {
-                throw Exception("Array must have equal sizes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-            */
-            for (ColumnArray::Offset row = 0; row < offset - prev; ++row)
+            for (ColumnArray::Offset row = 0; row < off - prev; ++row)
             {
-                mat(row, col) = X(data[prev + row]);
+                mat(row, col) = static_cast<MatrixType>(data[prev + row]);
             }
             ++col;
-            prev = offset;
+            prev = off;
         }
     }
 };
 
 void registerFunctionArrayDistance(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionArrayDistance<L2Distance>>();
     factory.registerFunction<FunctionArrayDistance<LpDistance<1>>>();
+    factory.registerFunction<FunctionArrayDistance<LpDistance<2>>>();
     factory.registerFunction<FunctionArrayDistance<LinfDistance>>();
     factory.registerFunction<FunctionArrayDistance<CosineDistance>>();
 }
