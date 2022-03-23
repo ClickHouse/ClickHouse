@@ -92,11 +92,11 @@ public:
     Impl impls[NUM_BUCKETS];
 
 
-    TwoLevelHashTable() {}
+    TwoLevelHashTable() = default;
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
     template <typename Source>
-    TwoLevelHashTable(const Source & src)
+    explicit TwoLevelHashTable(const Source & src)
     {
         typename Source::const_iterator it = src.begin();
 
@@ -117,7 +117,7 @@ public:
     }
 
 
-    class iterator
+    class iterator /// NOLINT
     {
         Self * container{};
         size_t bucket{};
@@ -129,7 +129,7 @@ public:
             : container(container_), bucket(bucket_), current_it(current_it_) {}
 
     public:
-        iterator() {}
+        iterator() = default;
 
         bool operator== (const iterator & rhs) const { return bucket == rhs.bucket && current_it == rhs.current_it; }
         bool operator!= (const iterator & rhs) const { return !(*this == rhs); }
@@ -154,7 +154,7 @@ public:
     };
 
 
-    class const_iterator
+    class const_iterator /// NOLINT
     {
         Self * container{};
         size_t bucket{};
@@ -166,8 +166,8 @@ public:
             : container(container_), bucket(bucket_), current_it(current_it_) {}
 
     public:
-        const_iterator() {}
-        const_iterator(const iterator & rhs) : container(rhs.container), bucket(rhs.bucket), current_it(rhs.current_it) {}
+        const_iterator() = default;
+        const_iterator(const iterator & rhs) : container(rhs.container), bucket(rhs.bucket), current_it(rhs.current_it) {} /// NOLINT
 
         bool operator== (const const_iterator & rhs) const { return bucket == rhs.bucket && current_it == rhs.current_it; }
         bool operator!= (const const_iterator & rhs) const { return !(*this == rhs); }

@@ -39,7 +39,7 @@ public:
         page_size = getPageSize();
     }
 
-    boost::context::stack_context allocate()
+    boost::context::stack_context allocate() const
     {
         size_t num_pages = 1 + (stack_size - 1) / page_size;
         size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
@@ -68,7 +68,7 @@ public:
         return sctx;
     }
 
-    void deallocate(boost::context::stack_context & sctx)
+    void deallocate(boost::context::stack_context & sctx) const
     {
 #if defined(BOOST_USE_VALGRIND)
         VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);

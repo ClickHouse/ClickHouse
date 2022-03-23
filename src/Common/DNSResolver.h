@@ -17,7 +17,7 @@ namespace DB
 class DNSResolver : private boost::noncopyable
 {
 public:
-    typedef std::vector<Poco::Net::IPAddress> IPAddresses;
+    using IPAddresses = std::vector<Poco::Net::IPAddress>;
 
     static DNSResolver & instance();
 

@@ -5,7 +5,7 @@ namespace DB
 
 enum class MsgPackExtensionTypes
 {
-    UUID = 0x02,
+    UUIDType = 0x02,
 };
 
 }

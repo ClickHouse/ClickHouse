@@ -22,7 +22,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeRestartingThread
 {
 public:
-    ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 

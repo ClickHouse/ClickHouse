@@ -98,6 +98,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"revision", std::make_shared<DataTypeUInt32>()},
 
@@ -289,5 +290,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.forwarded_for);
 
     columns[i++]->insert(client_info.quota_key);
+    columns[i++]->insert(client_info.distributed_depth);
 }
 }
