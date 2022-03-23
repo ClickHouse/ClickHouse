@@ -677,6 +677,11 @@ void Client::printChangedSettings() const
 
 static bool queryHasWithClause(const IAST * ast)
 {
+    if (!ast)
+    {
+        return false;
+    }
+
     if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
     {
         return true;
