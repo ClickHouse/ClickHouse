@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_load_balancing.xml')
 
@@ -78,8 +79,11 @@ def test_nearest_hostname(started_cluster):
 
 
 def test_round_robin(started_cluster):
+    pm = PartitionManager()
     try:
-        started_cluster.stop_zookeeper_nodes(["zoo1"])
+        pm._add_rule({"source": node1.ip_address, "destination": cluster.get_instance_ip('zoo1'), "action": 'REJECT --reject-with tcp-reset'})
+        pm._add_rule({"source": node2.ip_address, "destination": cluster.get_instance_ip('zoo1'), "action": 'REJECT --reject-with tcp-reset'})
+        pm._add_rule({"source": node3.ip_address, "destination": cluster.get_instance_ip('zoo1'), "action": 'REJECT --reject-with tcp-reset'})
         change_balancing('random', 'round_robin')
 
         print(str(node1.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED"], privileged=True, user='root')))
@@ -92,5 +96,5 @@ def test_round_robin(started_cluster):
         assert '1' == str(node3.exec_in_container(['bash', '-c', "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l"], privileged=True, user='root')).strip()
 
     finally:
-        started_cluster.start_zookeeper_nodes(["zoo1"])
+        pm.heal_all()
         change_balancing('round_robin', 'random', reload=False)
