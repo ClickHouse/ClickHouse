@@ -69,6 +69,7 @@
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
 #include <Storages/System/StorageSystemRemoteFilesystemCache.h>
+#include <Storages/System/StorageSystemRemoteDataPaths.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -161,6 +162,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards");
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
     attach<StorageSystemRemoteFilesystemCache>(context, system_database, "remote_filesystem_cache");
+    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");

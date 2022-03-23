@@ -62,6 +62,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ScheduleFunc schedule_,
+    const String & blob_name_,
     FileCachePtr cache_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -73,6 +74,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_part_size_multiply_threshold(upload_part_size_multiply_threshold_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , schedule(std::move(schedule_))
+    , blob_name(blob_name_)
     , cache(cache_)
 {
     allocateBuffer();
@@ -92,10 +94,11 @@ void WriteBufferFromS3::nextImpl()
 
     if (cacheEnabled())
     {
-        auto cache_key = cache->hash(key);
+        if (blob_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty blob name");
 
+        auto cache_key = cache->hash(blob_name);
         auto file_segments_holder = cache->setDownloading(cache_key, current_download_offset, size);
-        assert(file_segments_holder.file_segments.back()->range().right - file_segments_holder.file_segments.begin()->range().left + 1 == size);
 
         size_t remaining_size = size;
         for (const auto & file_segment : file_segments_holder.file_segments)
