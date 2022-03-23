@@ -3506,9 +3506,13 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+        /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
+        bool safe_convert_into_custom_type = true;
 
-        if (from_type->equals(*to_type) && !convert_to_ipv6)
+        if (const auto * to_type_custom_name = to_type->getCustomName())
+            safe_convert_into_custom_type = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
+
+        if (from_type->equals(*to_type) && safe_convert_into_custom_type)
         {
             if (isUInt8(from_type))
                 return createUInt8ToUInt8Wrapper(from_type, to_type);
