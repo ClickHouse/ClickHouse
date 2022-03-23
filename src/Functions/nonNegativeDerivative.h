@@ -88,18 +88,16 @@ private:
             {
                 auto cur = metric[i];
                 auto multiply = interval_length * ts_scale_multiplier / (timestamp[i].value - prev_ts.value);
-                result[i] = (cur - prev_metric_value) * multiply;
+                result[i] = cur >= prev_metric_value ? (cur - prev_metric_value) * multiply : 0;
                 prev_metric_value = cur;
                 prev_ts = timestamp[i];
             }
         }
     }
 
-    /// Result type is same as result of subtraction of argument types.
     template <typename SrcFieldType>
     using DstFieldType = typename NumberTraits::ResultOfFloatingPointDivision<SrcFieldType, SrcFieldType>::Type;
 
-    /// Call polymorphic lambda with tag argument of concrete field type of src_type.
     template <typename F>
     void dispatchForSourceType(const IDataType & src_type, F && f) const
     {
