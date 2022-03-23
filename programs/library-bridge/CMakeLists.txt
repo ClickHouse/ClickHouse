@@ -1,3 +1,5 @@
+include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
+
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     library-bridge.cpp
     LibraryInterface.cpp
@@ -22,4 +24,8 @@ target_link_libraries(clickhouse-library-bridge PRIVATE
 
 set_target_properties(clickhouse-library-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
-install(TARGETS clickhouse-library-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+if (INSTALL_STRIPPED_BINARIES)
+    clickhouse_strip_binary(TARGET clickhouse-library-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT} BINARY_PATH ../clickhouse-library-bridge)
+else()
+    install(TARGETS clickhouse-library-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+endif()

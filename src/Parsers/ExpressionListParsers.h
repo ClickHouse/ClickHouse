@@ -207,7 +207,7 @@ private:
     ParserPtr elem_parser;
 
 public:
-    ParserCastExpression(ParserPtr && elem_parser_)
+    explicit ParserCastExpression(ParserPtr && elem_parser_)
         : elem_parser(std::move(elem_parser_))
     {
     }

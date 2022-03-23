@@ -144,11 +144,13 @@ DiskCacheWrapper::readFile(
         }
     }
 
+    auto current_read_settings = settings;
     /// Do not use RemoteFSReadMethod::threadpool for index and mark files.
     /// Here it does not make sense since the files are small.
     /// Note: enabling `threadpool` read requires to call setReadUntilEnd().
-    auto current_read_settings = settings;
     current_read_settings.remote_fs_method = RemoteFSReadMethod::read;
+    /// Disable data cache.
+    current_read_settings.remote_fs_enable_cache = false;
 
     if (metadata->status == DOWNLOADING)
     {
