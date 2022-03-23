@@ -722,7 +722,6 @@ Pipe StorageS3::read(
     }
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
-    // const size_t download_threads_per_stream = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
