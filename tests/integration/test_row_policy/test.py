@@ -814,6 +814,12 @@ def test_some_users_without_policies():
     )
     node.query("DROP POLICY pB ON mydb.filtered_table1")
 
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 AS simple")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV([[0, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
+
     node.query("DROP USER X, Y")
 
 

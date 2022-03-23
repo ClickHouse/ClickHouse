@@ -62,6 +62,7 @@ enum class RowPolicyKind
 {
     PERMISSIVE,
     RESTRICTIVE,
+    SIMPLE,
 
     MAX,
 };

@@ -104,6 +104,11 @@ const RowPolicyKindInfo & RowPolicyKindInfo::get(RowPolicyKind kind_)
             static const auto info = make_info("RESTRICTIVE");
             return info;
         }
+        case RowPolicyKind::SIMPLE:
+        {
+            static const auto info = make_info("SIMPLE");
+            return info;
+        }
         case RowPolicyKind::MAX: break;
     }
     throw Exception("Unknown kind: " + std::to_string(static_cast<size_t>(kind_)), ErrorCodes::LOGICAL_ERROR);
