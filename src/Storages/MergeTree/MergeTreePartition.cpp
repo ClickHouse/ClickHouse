@@ -375,25 +375,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
 
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
 
-/*
-#if USE_ROCKSDB
-    std::unique_ptr<SeekableReadBuffer> file;
-    auto partition_file_path = part_path + "partition.dat";
-    String _;
-    if (metadata_cache)
-    {
-        file = metadata_cache->readOrSet(disk, "partition.dat", _);
-    }
-    else
-    {
-        file = openForReading(disk, partition_file_path);
-    }
-#else
-    file = openForReading(disk, partition_file_path);
-#endif
-*/
     auto file = manager->read("partition.dat");
-
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);

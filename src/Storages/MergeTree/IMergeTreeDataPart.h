@@ -467,7 +467,7 @@ protected:
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Disabled when USE_ROCKSDB is OFF, or use_metadata_cache is set true in merge tree settings
+    /// Disabled when USE_ROCKSDB is OFF or use_metadata_cache is set to false in merge tree settings
     bool use_metadata_cache = false;
 
     mutable PartMetadataManagerPtr metadata_manager;

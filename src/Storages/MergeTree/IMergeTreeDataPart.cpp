@@ -701,9 +701,9 @@ void IMergeTreeDataPart::loadIndexGranularity()
     throw Exception("Method 'loadIndexGranularity' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
+/// Currently we don't cache mark files of part, because cache other meta files is enough to speed up loading.
 void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) const
 {
-    throw Exception("Method 'appendFilesOfIndexGranularity' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IMergeTreeDataPart::loadIndex()
@@ -985,7 +985,6 @@ void IMergeTreeDataPart::loadRowsCount()
 
     auto read_rows_count = [&]()
     {
-        // auto buf = openForReading(volume->getDisk(), path);
         auto buf = metadata_manager->read("count.txt");
         readIntText(rows_count, *buf);
         assertEOF(*buf);
@@ -1201,9 +1200,12 @@ void IMergeTreeDataPart::loadColumns(bool require)
     };
 
     SerializationInfoByName infos(loaded_columns, settings);
-    path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
-    if (volume->getDisk()->exists(path))
-        infos.readJSON(*volume->getDisk()->readFile(path));
+    exists =  metadata_manager->exists(SERIALIZATION_FILE_NAME);
+    if (exists)
+    {
+        auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
+        infos.readJSON(*in);
+    }
 
     setColumns(loaded_columns);
     setSerializationInfos(infos);
@@ -1212,6 +1214,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
 void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 {
     files.push_back("columns.txt");
+    files.push_back(SERIALIZATION_FILE_NAME);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
