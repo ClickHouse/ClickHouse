@@ -12,6 +12,7 @@ TABLE_NAME = "blob_storage_table"
 CONTAINER_NAME = "cont"
 CLUSTER_NAME = "test_cluster"
 
+drop_table_statement = f"DROP TABLE {TABLE_NAME} ON CLUSTER {CLUSTER_NAME} SYNC"
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -47,10 +48,8 @@ def create_table(node, table_name, replica, **additional_settings):
         ORDER BY id
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(create_table_statement)
     assert node.query(f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
-
 
 def get_large_objects_count(blob_container_client, large_size_threshold=100):
     return sum(blob['size'] > large_size_threshold for blob in blob_container_client.list_blobs())
@@ -81,3 +80,4 @@ def test_zero_copy_replication(cluster):
     assert node1.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values1 + "," + values2
 
     assert get_large_objects_count(blob_container_client) == 2
+    node1.query(drop_table_statement)
