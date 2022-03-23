@@ -169,7 +169,7 @@ DiskCacheWrapper::readFile(
                     auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
 
                     WriteSettings write_settings;
-                    write_settings.remote_fs_cache_on_insert = false;
+                    write_settings.remote_fs_cache_on_write_operations = false;
 
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite, write_settings);
                     copyData(*src_buffer, *dst_buffer);
@@ -206,7 +206,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         return DiskDecorator::writeFile(path, buf_size, mode, settings);
 
     WriteSettings current_settings = settings;
-    current_settings.remote_fs_cache_on_insert = false;
+    current_settings.remote_fs_cache_on_write_operations = false;
 
     LOG_TEST(log, "Write file {} to cache", backQuote(path));
 

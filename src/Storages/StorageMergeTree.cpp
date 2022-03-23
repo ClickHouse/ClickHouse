@@ -423,7 +423,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         mutation_file_name = entry.file_name;

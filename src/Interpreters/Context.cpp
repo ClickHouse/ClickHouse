@@ -3203,7 +3203,7 @@ WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
 
-    res.remote_fs_cache_on_insert = settings.remote_fs_cache_on_insert;
+    res.remote_fs_cache_on_write_operations = settings.remote_fs_cache_on_write_operations;
 
     return res;
 }
