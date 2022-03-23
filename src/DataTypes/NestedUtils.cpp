@@ -239,7 +239,7 @@ std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_c
             boost::to_lower(nested_table_name);
 
         if (!nested_table_name.empty())
-            nested_table_names.insert(nested_table_name);
+            nested_table_names.insert(std::move(nested_table_name));
     }
     return nested_table_names;
 }
