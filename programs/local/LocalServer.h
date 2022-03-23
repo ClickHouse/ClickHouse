@@ -31,17 +31,19 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    bool executeMultiQuery(const String & all_queries_text) override;
-
     void connect() override;
+
     void processError(const String & query) const override;
+
     String getName() const override { return "local"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
+
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
+
     void processConfig() override;
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 

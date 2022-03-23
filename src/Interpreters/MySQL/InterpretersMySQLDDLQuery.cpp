@@ -130,6 +130,9 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     child = new_child;
                 }
             }
+
+            if (type_name_upper == "DATE")
+                data_type_function->name = "Date32";
         }
         if (is_nullable)
             data_type = makeASTFunction("Nullable", data_type);
@@ -335,7 +338,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         if (which.isNullable())
             throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (which.isDate() || which.isDateTime() || which.isDateTime64())
+        if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
             /// In any case, date or datetime is always the best partitioning key
             return makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(primary_key.name));

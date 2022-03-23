@@ -44,7 +44,7 @@ public:
     static constexpr auto name = Transform::name;
 
     // non-explicit constructor to allow creating from scale value (or with no scale at all), indispensable in some contexts.
-    TransformDateTime64(UInt32 scale_ = 0)
+    TransformDateTime64(UInt32 scale_ = 0) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 

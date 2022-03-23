@@ -16,7 +16,7 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 
     MergeTreeIndexGranuleHypothesis(
         const String & index_name_,
-        const bool met_);
+        bool met_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -55,7 +55,7 @@ private:
 class MergeTreeIndexHypothesis : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexHypothesis(
+    explicit MergeTreeIndexHypothesis(
         const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}

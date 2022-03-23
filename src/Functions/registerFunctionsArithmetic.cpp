@@ -41,6 +41,7 @@ void registerFunctionBitBoolMaskOr(FunctionFactory & factory);
 void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
 void registerFunctionBitWrapperFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
+void registerFunctionZTest(FunctionFactory & factory);
 
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
@@ -84,6 +85,8 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionBitBoolMaskAnd(factory);
     registerFunctionBitWrapperFunc(factory);
     registerFunctionBitSwapLastTwo(factory);
+
+    registerFunctionZTest(factory);
 }
 
 }

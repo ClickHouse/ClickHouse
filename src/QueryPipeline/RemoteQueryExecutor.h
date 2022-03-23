@@ -83,7 +83,13 @@ public:
     ~RemoteQueryExecutor();
 
     /// Create connection and send query, external tables and scalars.
-    void sendQuery();
+    ///
+    /// @param query_kind - kind of query, usually it is SECONDARY_QUERY,
+    ///                     since this is the queries between servers
+    ///                     (for which this code was written in general).
+    ///                     But clickhouse-benchmark uses the same code,
+    ///                     and it should pass INITIAL_QUERY.
+    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
 
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
