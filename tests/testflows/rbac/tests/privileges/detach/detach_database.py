@@ -2,10 +2,10 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
+
 @TestSuite
 def privilege_granted_directly_or_via_role(self, node=None):
-    """Check that user is only able to execute DETACH DATABASE when they have required privilege, either directly or via role.
-    """
+    """Check that user is only able to execute DETACH DATABASE when they have required privilege, either directly or via role."""
     role_name = f"role_{getuid()}"
     user_name = f"user_{getuid()}"
 
@@ -15,8 +15,12 @@ def privilege_granted_directly_or_via_role(self, node=None):
     with Suite("user with direct privilege"):
         with user(node, user_name):
 
-            with When(f"I run checks that {user_name} is only able to execute DETACH DATABASE with required privileges"):
-                privilege_check(grant_target_name=user_name, user_name=user_name, node=node)
+            with When(
+                f"I run checks that {user_name} is only able to execute DETACH DATABASE with required privileges"
+            ):
+                privilege_check(
+                    grant_target_name=user_name, user_name=user_name, node=node
+                )
 
     with Suite("user with privilege via role"):
         with user(node, user_name), role(node, role_name):
@@ -24,12 +28,16 @@ def privilege_granted_directly_or_via_role(self, node=None):
             with When("I grant the role to the user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
 
-            with And(f"I run checks that {user_name} with {role_name} is only able to execute DETACH DATABASE with required privileges"):
-                privilege_check(grant_target_name=role_name, user_name=user_name, node=node)
+            with And(
+                f"I run checks that {user_name} with {role_name} is only able to execute DETACH DATABASE with required privileges"
+            ):
+                privilege_check(
+                    grant_target_name=role_name, user_name=user_name, node=node
+                )
+
 
 def privilege_check(grant_target_name, user_name, node=None):
-    """Run scenarios to check the user's access with different privileges.
-    """
+    """Run scenarios to check the user's access with different privileges."""
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
     with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
@@ -46,8 +54,12 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
 
             with Then("I attempt to detach the database"):
-                node.query(f"DETACH DATABASE {db_name}", settings = [("user", user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"DETACH DATABASE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
         finally:
             with Finally("I reattach the database", flags=TE):
                 node.query(f"ATTACH DATABASE IF NOT EXISTS {db_name}")
@@ -65,7 +77,7 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"GRANT DROP DATABASE ON {db_name}.* TO {grant_target_name}")
 
             with Then("I attempt to detach a database"):
-                node.query(f"DETACH DATABASE {db_name}", settings = [("user", user_name)])
+                node.query(f"DETACH DATABASE {db_name}", settings=[("user", user_name)])
 
         finally:
             with Finally("I reattach the database", flags=TE):
@@ -84,11 +96,17 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"GRANT DROP DATABASE ON {db_name}.* TO {grant_target_name}")
 
             with And("I revoke the drop database privilege"):
-                node.query(f"REVOKE DROP DATABASE ON {db_name}.* FROM {grant_target_name}")
+                node.query(
+                    f"REVOKE DROP DATABASE ON {db_name}.* FROM {grant_target_name}"
+                )
 
             with Then("I attempt to detach a database"):
-                node.query(f"DETACH DATABASE {db_name}", settings = [("user", user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"DETACH DATABASE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
         finally:
             with Finally("I reattach the database", flags=TE):
@@ -110,8 +128,12 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"REVOKE ALL ON *.* FROM {grant_target_name}")
 
             with Then("I attempt to detach a database"):
-                node.query(f"DETACH DATABASE {db_name}", settings = [("user", user_name)],
-                    exitcode=exitcode, message=message)
+                node.query(
+                    f"DETACH DATABASE {db_name}",
+                    settings=[("user", user_name)],
+                    exitcode=exitcode,
+                    message=message,
+                )
 
         finally:
             with Finally("I reattach the database", flags=TE):
@@ -130,7 +152,7 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"GRANT ALL ON *.* TO {grant_target_name}")
 
             with Then("I attempt to detach a database"):
-                node.query(f"DETACH DATABASE {db_name}", settings = [("user", user_name)])
+                node.query(f"DETACH DATABASE {db_name}", settings=[("user", user_name)])
 
         finally:
             with Finally("I reattach the database", flags=TE):
@@ -138,16 +160,16 @@ def privilege_check(grant_target_name, user_name, node=None):
             with And("I drop the database", flags=TE):
                 node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
+
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_DetachDatabase("1.0"),
     RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
+    RQ_SRS_006_RBAC_Privileges_None("1.0"),
 )
 @Name("detach database")
 def feature(self, node="clickhouse1", stress=None, parallel=None):
-    """Check the RBAC functionality of DETACH DATABASE.
-    """
+    """Check the RBAC functionality of DETACH DATABASE."""
     self.context.node = self.context.cluster.node(node)
 
     if parallel is not None:
@@ -155,5 +177,8 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
     if stress is not None:
         self.context.stress = stress
 
-    with Suite(test=privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log):
+    with Suite(
+        test=privilege_granted_directly_or_via_role,
+        setup=instrument_clickhouse_server_log,
+    ):
         privilege_granted_directly_or_via_role()
