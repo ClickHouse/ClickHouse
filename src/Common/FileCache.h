@@ -43,7 +43,8 @@ public:
 
     virtual void tryRemoveAll() = 0;
 
-    static bool shouldBypassCache();
+    /// If cache can be used as read only. (For merges, for example).
+    static bool isReadOnly();
 
     /// Cache capacity in bytes.
     size_t capacity() const { return max_size; }

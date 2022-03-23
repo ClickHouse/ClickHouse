@@ -124,6 +124,21 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
     size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();
+
+    if (settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
+    {
+        if (download_state == FileSegment::State::DOWNLOADED)
+        {
+            read_type = ReadType::CACHED;
+            return getCacheReadBuffer(range.left);
+        }
+        else
+        {
+            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+            return getRemoteFSReadBuffer(file_segment, read_type);
+        }
+    }
+
     while (true)
     {
         switch (download_state)
@@ -544,8 +559,7 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
 
 bool CachedReadBufferFromRemoteFS::nextImplStep()
 {
-    if (IFileCache::shouldBypassCache())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Using cache when not allowed");
+    assertCacheAllowed();
 
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
@@ -756,6 +770,12 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
     }
 
     return std::nullopt;
+}
+
+void CachedReadBufferFromRemoteFS::assertCacheAllowed() const
+{
+    if (IFileCache::isReadOnly() && !settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache used when not allowed");
 }
 
 String CachedReadBufferFromRemoteFS::getInfoForLog()

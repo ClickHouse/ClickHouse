@@ -50,6 +50,8 @@ private:
 
     bool nextImplStep();
 
+    void assertCacheAllowed() const;
+
     enum class ReadType
     {
         CACHED,
