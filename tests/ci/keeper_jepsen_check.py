@@ -200,10 +200,8 @@ if __name__ == "__main__":
         head = requests.head(build_url)
         counter += 1
         if counter >= 180:
-            post_commit_status(
-                gh, pr_info.sha, CHECK_NAME, "Cannot fetch build to run", "error", ""
-            )
-            raise Exception("Cannot fetch build")
+            logging.warning("Cannot fetch build in 30 minutes, exiting")
+            sys.exit(0)
 
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
