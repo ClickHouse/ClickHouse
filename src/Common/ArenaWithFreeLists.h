@@ -49,7 +49,7 @@ private:
     Block * free_lists[16] {};
 
 public:
-    ArenaWithFreeLists(
+    explicit ArenaWithFreeLists(
         const size_t initial_size = 4096, const size_t growth_factor = 2,
         const size_t linear_growth_threshold = 128 * 1024 * 1024)
         : pool{initial_size, growth_factor, linear_growth_threshold}
@@ -74,7 +74,7 @@ public:
             ASAN_UNPOISON_MEMORY_REGION(free_block_ptr,
                                         std::max(size, sizeof(Block)));
 
-            const auto res = free_block_ptr->data;
+            auto * const res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
             return res;
         }
@@ -93,7 +93,7 @@ public:
 
         /// Insert the released block into the head of the list.
         auto & free_block_ptr = free_lists[list_idx];
-        const auto old_head = free_block_ptr;
+        auto * const old_head = free_block_ptr;
         free_block_ptr = reinterpret_cast<Block *>(ptr);
         free_block_ptr->next = old_head;
 

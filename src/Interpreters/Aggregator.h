@@ -660,7 +660,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: break;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
+            case Type::NAME: (NAME) = std::make_unique<decltype(NAME)::element_type>(); break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -677,7 +677,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
         #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return NAME->data.size() + (without_key != nullptr);
+            case Type::NAME: return (NAME)->data.size() + (without_key != nullptr);
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
         }
@@ -694,7 +694,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::without_key: return 1;
 
             #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: return NAME->data.size();
+            case Type::NAME: return (NAME)->data.size();
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
         }
@@ -753,6 +753,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
@@ -766,6 +767,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
         APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -787,6 +789,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     void convertToTwoLevel();
 
+    /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
         M(key32_two_level)            \
         M(key64_two_level)            \
@@ -1341,7 +1344,7 @@ private:
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
 
 #define M(NAME, IS_TWO_LEVEL) \
-    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
+    template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; } /// NOLINT
 
 APPLY_FOR_AGGREGATED_VARIANTS(M)
 

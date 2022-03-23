@@ -233,7 +233,7 @@ StorageS3Source::StorageS3Source(
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
-    const String compression_hint_,
+    String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
@@ -245,7 +245,7 @@ StorageS3Source::StorageS3Source(
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
     , max_single_read_retries(max_single_read_retries_)
-    , compression_hint(compression_hint_)
+    , compression_hint(std::move(compression_hint_))
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
@@ -622,7 +622,7 @@ bool StorageS3::isColumnOriented() const
 
 Pipe StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -649,13 +649,13 @@ Pipe StorageS3::read(
     if (isColumnOriented())
     {
         columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
     for (size_t i = 0; i < num_streams; ++i)

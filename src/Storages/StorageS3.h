@@ -71,7 +71,7 @@ public:
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
-        const String compression_hint_,
+        String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
         std::shared_ptr<IteratorWrapper> file_iterator_);
@@ -146,7 +146,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
