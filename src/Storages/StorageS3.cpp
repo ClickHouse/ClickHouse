@@ -293,7 +293,6 @@ bool StorageS3Source::initialize()
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    initialized = false;
     return true;
 }
 
@@ -331,7 +330,32 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
         object_size,
         download_buffer_size);
 
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), &IOThreadPool::get(), download_thread_num);
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+        ? CurrentThread::get().getThreadGroup()
+        : MainThreadStatus::getInstance().getThreadGroup();
+
+    ContextPtr query_context
+        = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+
+    auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
+    {
+        if (has_running_group)
+            thread_status.detachQuery(false);
+    };
+
+    auto worker_setup = [query_context = std::move(query_context),
+                         running_group = std::move(running_group)](ThreadStatus & thread_status)
+    {
+        /// Save query context if any, because cache implementation needs it.
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
+
+        /// To be able to pass ProfileEvents.
+        if (running_group)
+            thread_status.attachQuery(running_group);
+    };
+
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), &IOThreadPool::get(), download_thread_num, worker_setup, worker_cleanup);
 }
 
 String StorageS3Source::getName() const
@@ -698,7 +722,7 @@ Pipe StorageS3::read(
     }
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
-    const size_t download_threads_per_stream = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
+    // const size_t download_threads_per_stream = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -716,7 +740,7 @@ Pipe StorageS3::read(
             client_auth.client,
             client_auth.uri.bucket,
             iterator_wrapper,
-            download_threads_per_stream));
+            max_download_threads));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
