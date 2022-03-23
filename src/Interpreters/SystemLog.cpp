@@ -53,7 +53,8 @@ namespace
 
         String getID(char) const override { return "Storage with comment definition"; }
 
-        ASTPtr clone() const override {
+        ASTPtr clone() const override
+        {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
         }
 
