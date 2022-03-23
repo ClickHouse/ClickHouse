@@ -18,7 +18,6 @@ class DataTypeObject : public IDataType
 private:
     String schema_format;
     bool is_nullable;
-    SerializationPtr default_serialization;
 
 public:
     DataTypeObject(const String & schema_format_, bool is_nullable_);

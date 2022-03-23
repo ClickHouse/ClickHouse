@@ -13,7 +13,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntryTask::prepare()
+ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = storage.getSettings();
@@ -23,7 +23,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     if (!source_part)
     {
         LOG_DEBUG(log, "Source part {} for {} is not ready; will try to fetch it instead", source_part_name, entry.new_part_name);
-        return {false, {}};
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = {}
+        };
     }
 
     if (source_part->name != source_part_name)
@@ -33,7 +37,12 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             "Possibly the mutation of this part is not needed and will be skipped. "
             "This shouldn't happen often.",
             source_part_name, source_part->name, entry.new_part_name);
-        return {false, {}};
+
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = {}
+        };
     }
 
     /// TODO - some better heuristic?
@@ -48,7 +57,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-            return {false, {}};
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
         }
     }
 
@@ -65,7 +78,12 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
                 "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
                 entry.new_part_name, replica_to_execute_merge.value());
 
-            return {false, {}};
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
+
         }
     }
 
@@ -98,7 +116,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
                 LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download merged part", entry.new_part_name);
-                return {false, {}};
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = true,
+                    .part_log_writer = {}
+                };
             }
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
@@ -106,7 +128,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             if (!zero_copy_lock)
             {
                 LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
-                return {false, {}};
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = false,
+                    .part_log_writer = {}
+                };
             }
         }
     }
@@ -132,7 +158,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     for (auto & item : future_mutated_part->parts)
         priority += item->getBytesOnDisk();
 
-    return {true, [this] (const ExecutionStatus & execution_status)
+    return {true, true, [this] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
