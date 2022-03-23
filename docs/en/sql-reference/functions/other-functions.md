@@ -2505,7 +2505,6 @@ Result:
 return the enumerated stream paths of data type.
 
 **Syntax**
-
 ``` sql
 enumerateStreams(type_name)
 
