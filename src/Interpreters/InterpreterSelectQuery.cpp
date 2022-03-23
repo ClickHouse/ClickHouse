@@ -375,6 +375,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             table_lock.reset();
             table_id = StorageID::createEmpty();
             metadata_snapshot = nullptr;
+            storage_snapshot = nullptr;
         }
     }
 
