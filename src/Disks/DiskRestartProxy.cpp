@@ -305,6 +305,24 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
+String DiskRestartProxy::getCacheBasePath() const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getCacheBasePath();
+}
+
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePaths(path);
+}
+
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getRemotePathsRecursive(path, paths_map);
+}
+
 void DiskRestartProxy::restart()
 {
     /// Speed up processing unhealthy requests.

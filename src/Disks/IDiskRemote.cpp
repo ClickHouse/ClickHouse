@@ -136,13 +136,15 @@ void IDiskRemote::Metadata::load()
     }
     catch (Exception & e)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
             throw;
 
         if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
             throw;
 
-        throw Exception("Failed to read metadata file", e, ErrorCodes::UNKNOWN_FORMAT);
+        throw Exception("Failed to read metadata file: " + metadata_file_path, e, ErrorCodes::UNKNOWN_FORMAT);
     }
 }
 
@@ -341,13 +343,36 @@ void IDiskRemote::removeMetadataRecursive(const String & path, RemoteFSPathKeepe
     }
 }
 
+std::vector<String> IDiskRemote::getRemotePaths(const String & path) const
+{
+    auto metadata = readMetadata(path);
+
+    std::vector<String> remote_paths;
+    for (const auto & [remote_path, _] : metadata.remote_fs_objects)
+        remote_paths.push_back(remote_path);
+
+    return remote_paths;
+}
+
+void IDiskRemote::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+{
+    if (metadata_disk->isFile(path))
+    {
+        paths_map.emplace_back(path, getRemotePaths(path));
+    }
+    else
+    {
+        for (auto it = iterateDirectory(path); it->isValid(); it->next())
+            IDiskRemote::getRemotePathsRecursive(fs::path(path) / it->name(), paths_map);
+    }
+}
+
 DiskPtr DiskRemoteReservation::getDisk(size_t i) const
 {
     if (i != 0)
         throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
     return disk;
 }
-
 
 void DiskRemoteReservation::update(UInt64 new_size)
 {
@@ -402,7 +427,7 @@ IDiskRemote::IDiskRemote(
 }
 
 
-String IDiskRemote::getCachePath() const
+String IDiskRemote::getCacheBasePath() const
 {
     return cache ? cache->getBasePath() : "";
 }

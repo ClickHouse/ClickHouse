@@ -705,13 +705,28 @@ FileSegmentsHolder LRUFileCache::getAll()
     std::lock_guard cache_lock(mutex);
 
     FileSegments file_segments;
-    for (const auto & [key, offset] : queue)
+
+    for (const auto & [key, cells_by_offset] : files)
     {
-        auto * cell = getCell(key, offset, cache_lock);
-        file_segments.push_back(cell->file_segment);
+        for (const auto & [offset, cell] : cells_by_offset)
+            file_segments.push_back(cell.file_segment);
     }
 
     return FileSegmentsHolder(std::move(file_segments));
+}
+
+std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
+{
+    std::lock_guard cache_lock(mutex);
+
+    std::vector<String> cache_paths;
+    const auto & cells_by_offset = files[key];
+
+    for (const auto & [offset, cell] : cells_by_offset)
+        if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
+            cache_paths.push_back(getPathInLocalCache(key, offset));
+
+    return cache_paths;
 }
 
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
