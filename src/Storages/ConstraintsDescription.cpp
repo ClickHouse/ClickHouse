@@ -198,6 +198,20 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     return *this;
 }
 
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) noexcept
+    : constraints(std::move(other.constraints))
+{
+    update();
+}
+
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) noexcept
+{
+    constraints = std::move(other.constraints);
+    update();
+
+    return *this;
+}
+
 void ConstraintsDescription::update()
 {
     if (constraints.empty())

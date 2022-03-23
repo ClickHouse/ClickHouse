@@ -4,7 +4,7 @@ FROM ubuntu:20.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
+ARG repository="deb https://packages.clickhouse.com/deb stable main"
 ARG version=22.1.1.*
 
 # set non-empty deb_location_url url to create a docker image
@@ -58,7 +58,7 @@ RUN groupadd -r clickhouse --gid=101 \
         wget \
         tzdata \
     && mkdir -p /etc/apt/sources.list.d \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 \
+    && apt-key adv --keyserver keyserver.ubuntu.com --recv 8919F6BD2B48D754 \
     && echo $repository > /etc/apt/sources.list.d/clickhouse.list \
     && if [ -n "$deb_location_url" ]; then \
             echo "installing from custom url with deb packages: $deb_location_url" \

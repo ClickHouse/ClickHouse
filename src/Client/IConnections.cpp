@@ -22,7 +22,7 @@ struct PocoSocketWrapper : public Poco::Net::SocketImpl
     ~PocoSocketWrapper() override { reset(-1); }
 };
 
-void IConnections::DrainCallback::operator()(int fd, Poco::Timespan, const std::string fd_description) const
+void IConnections::DrainCallback::operator()(int fd, Poco::Timespan, const std::string & fd_description) const
 {
     if (!PocoSocketWrapper(fd).poll(drain_timeout, Poco::Net::Socket::SELECT_READ))
     {

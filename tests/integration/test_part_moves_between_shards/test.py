@@ -12,28 +12,32 @@ transient_ch_errors = [23, 32, 210]
 cluster = ClickHouseCluster(__file__)
 
 s0r0 = cluster.add_instance(
-    's0r0',
-    main_configs=['configs/remote_servers.xml', 'configs/merge_tree.xml'],
+    "s0r0",
+    main_configs=["configs/remote_servers.xml", "configs/merge_tree.xml"],
     stay_alive=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 s0r1 = cluster.add_instance(
-    's0r1',
-    main_configs=['configs/remote_servers.xml', 'configs/merge_tree.xml'],
+    "s0r1",
+    main_configs=["configs/remote_servers.xml", "configs/merge_tree.xml"],
     stay_alive=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 s1r0 = cluster.add_instance(
-    's1r0',
-    main_configs=['configs/remote_servers.xml', 'configs/merge_tree.xml'],
+    "s1r0",
+    main_configs=["configs/remote_servers.xml", "configs/merge_tree.xml"],
     stay_alive=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 s1r1 = cluster.add_instance(
-    's1r1',
-    main_configs=['configs/remote_servers.xml', 'configs/merge_tree.xml'],
+    "s1r1",
+    main_configs=["configs/remote_servers.xml", "configs/merge_tree.xml"],
     stay_alive=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -48,12 +52,16 @@ def started_cluster():
 def test_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_move;
             CREATE TABLE test_move(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_move', '{}')
             ORDER BY tuple()
-            """.format(shard_ix, r.name))
+            """.format(
+                    shard_ix, r.name
+                )
+            )
 
     s0r0.query("SYSTEM STOP MERGES test_move")
     s0r1.query("SYSTEM STOP MERGES test_move")
@@ -64,7 +72,9 @@ def test_move(started_cluster):
     assert "2" == s0r0.query("SELECT count() FROM test_move").strip()
     assert "0" == s1r0.query("SELECT count() FROM test_move").strip()
 
-    s0r0.query("ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_move'")
+    s0r0.query(
+        "ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_move'"
+    )
 
     print(s0r0.query("SELECT * FROM system.part_moves_between_shards"))
 
@@ -80,7 +90,9 @@ def test_move(started_cluster):
         assert "1" == n.query("SELECT count() FROM test_move").strip()
 
     # Move part back
-    s1r0.query("ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/test_move'")
+    s1r0.query(
+        "ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/test_move'"
+    )
 
     wait_for_state("DONE", s1r0, "test_move")
 
@@ -94,18 +106,24 @@ def test_move(started_cluster):
 def test_deduplication_while_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_deduplication;
             CREATE TABLE test_deduplication(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_deduplication', '{}')
             ORDER BY tuple()
-            """.format(shard_ix, r.name))
+            """.format(
+                    shard_ix, r.name
+                )
+            )
 
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_deduplication_d;
             CREATE TABLE test_deduplication_d AS test_deduplication
             ENGINE Distributed('test_cluster', '', test_deduplication)
-            """)
+            """
+            )
 
     s0r0.query("SYSTEM STOP MERGES test_deduplication")
     s0r1.query("SYSTEM STOP MERGES test_deduplication")
@@ -118,7 +136,8 @@ def test_deduplication_while_move(started_cluster):
     assert "0" == s1r0.query("SELECT count() FROM test_deduplication").strip()
 
     s0r0.query(
-        "ALTER TABLE test_deduplication MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_deduplication'")
+        "ALTER TABLE test_deduplication MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_deduplication'"
+    )
     s0r0.query("SYSTEM START MERGES test_deduplication")
 
     expected = """
@@ -129,9 +148,29 @@ def test_deduplication_while_move(started_cluster):
     def deduplication_invariant_test():
         n = random.choice(list(started_cluster.instances.values()))
         assert TSV(
-            n.query("SELECT * FROM test_deduplication_d ORDER BY v",
-                    settings={"allow_experimental_query_deduplication": 1})
+            n.query(
+                "SELECT * FROM test_deduplication_d ORDER BY v",
+                settings={"allow_experimental_query_deduplication": 1},
+            )
         ) == TSV(expected)
+
+        # https://github.com/ClickHouse/ClickHouse/issues/34089
+        assert TSV(
+            n.query(
+                "SELECT count() FROM test_deduplication_d",
+                settings={"allow_experimental_query_deduplication": 1},
+            )
+        ) == TSV("2")
+
+        assert TSV(
+            n.query(
+                "SELECT count() FROM test_deduplication_d",
+                settings={
+                    "allow_experimental_query_deduplication": 1,
+                    "allow_experimental_projection_optimization": 1,
+                },
+            )
+        ) == TSV("2")
 
     deduplication_invariant = ConcurrentInvariant(deduplication_invariant_test)
     deduplication_invariant.start()
@@ -144,18 +183,24 @@ def test_deduplication_while_move(started_cluster):
 def test_part_move_step_by_step(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_part_move_step_by_step;
             CREATE TABLE test_part_move_step_by_step(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_part_move_step_by_step', '{}')
             ORDER BY tuple()
-            """.format(shard_ix, r.name))
+            """.format(
+                    shard_ix, r.name
+                )
+            )
 
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_part_move_step_by_step_d;
             CREATE TABLE test_part_move_step_by_step_d AS test_part_move_step_by_step
             ENGINE Distributed('test_cluster', currentDatabase(), test_part_move_step_by_step)
-            """)
+            """
+            )
 
     s0r0.query("SYSTEM STOP MERGES test_part_move_step_by_step")
     s0r1.query("SYSTEM STOP MERGES test_part_move_step_by_step")
@@ -176,8 +221,10 @@ def test_part_move_step_by_step(started_cluster):
         n = random.choice(list(started_cluster.instances.values()))
         try:
             assert TSV(
-                n.query("SELECT * FROM test_part_move_step_by_step_d ORDER BY v",
-                        settings={"allow_experimental_query_deduplication": 1})
+                n.query(
+                    "SELECT * FROM test_part_move_step_by_step_d ORDER BY v",
+                    settings={"allow_experimental_query_deduplication": 1},
+                )
             ) == TSV(expected)
         except QueryRuntimeException as e:
             # ignore transient errors that are caused by us restarting nodes
@@ -191,10 +238,16 @@ def test_part_move_step_by_step(started_cluster):
     s0r1.stop_clickhouse()
 
     s0r0.query(
-        "ALTER TABLE test_part_move_step_by_step MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_part_move_step_by_step'")
+        "ALTER TABLE test_part_move_step_by_step MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_part_move_step_by_step'"
+    )
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
-    wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "SYNC_SOURCE",
+        s0r0,
+        "test_part_move_step_by_step",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -203,10 +256,19 @@ def test_part_move_step_by_step(started_cluster):
     s0r1.start_clickhouse()
 
     # After SYNC_SOURCE step no merges will be assigned.
-    s0r0.query("SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;")
-    s0r1.query("SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;")
+    s0r0.query(
+        "SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;"
+    )
+    s0r1.query(
+        "SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;"
+    )
 
-    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "SYNC_DESTINATION",
+        s0r0,
+        "test_part_move_step_by_step",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -214,7 +276,12 @@ def test_part_move_step_by_step(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_FETCH succeed.
     s1r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state("DESTINATION_FETCH", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "DESTINATION_FETCH",
+        s0r0,
+        "test_part_move_step_by_step",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
@@ -222,14 +289,24 @@ def test_part_move_step_by_step(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_ATTACH succeed.
     s1r1.stop_clickhouse()
     s1r0.start_clickhouse()
-    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "DESTINATION_ATTACH",
+        s0r0,
+        "test_part_move_step_by_step",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in destination shard to let DESTINATION_ATTACH succeed.
     # Stop a source replica to prevent SOURCE_DROP succeeding.
     s0r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state("SOURCE_DROP", s0r1, "test_part_move_step_by_step", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "SOURCE_DROP",
+        s0r1,
+        "test_part_move_step_by_step",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     s0r0.start_clickhouse()
@@ -249,18 +326,24 @@ def test_part_move_step_by_step(started_cluster):
 def test_part_move_step_by_step_kill(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_part_move_step_by_step_kill;
             CREATE TABLE test_part_move_step_by_step_kill(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_part_move_step_by_step_kill', '{}')
             ORDER BY tuple()
-            """.format(shard_ix, r.name))
+            """.format(
+                    shard_ix, r.name
+                )
+            )
 
-            r.query("""
+            r.query(
+                """
             DROP TABLE IF EXISTS test_part_move_step_by_step_kill_d;
             CREATE TABLE test_part_move_step_by_step_kill_d AS test_part_move_step_by_step_kill
             ENGINE Distributed('test_cluster', currentDatabase(), test_part_move_step_by_step_kill)
-            """)
+            """
+            )
 
     s0r0.query("SYSTEM STOP MERGES test_part_move_step_by_step_kill")
     s0r1.query("SYSTEM STOP MERGES test_part_move_step_by_step_kill")
@@ -269,8 +352,14 @@ def test_part_move_step_by_step_kill(started_cluster):
     s0r0.query("INSERT INTO test_part_move_step_by_step_kill VALUES (2)")
     s0r1.query("SYSTEM SYNC REPLICA test_part_move_step_by_step_kill", timeout=20)
 
-    assert "2" == s0r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
-    assert "0" == s1r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    assert (
+        "2"
+        == s0r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    )
+    assert (
+        "0"
+        == s1r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    )
 
     expected = """
 1
@@ -281,10 +370,10 @@ def test_part_move_step_by_step_kill(started_cluster):
         n = random.choice(list(started_cluster.instances.values()))
         try:
             assert TSV(
-                n.query("SELECT * FROM test_part_move_step_by_step_kill_d ORDER BY v",
-                        settings={
-                            "allow_experimental_query_deduplication": 1
-                        })
+                n.query(
+                    "SELECT * FROM test_part_move_step_by_step_kill_d ORDER BY v",
+                    settings={"allow_experimental_query_deduplication": 1},
+                )
             ) == TSV(expected)
         except QueryRuntimeException as e:
             # ignore transient errors that are caused by us restarting nodes
@@ -298,10 +387,16 @@ def test_part_move_step_by_step_kill(started_cluster):
     s0r1.stop_clickhouse()
 
     s0r0.query(
-        "ALTER TABLE test_part_move_step_by_step_kill MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_part_move_step_by_step_kill'")
+        "ALTER TABLE test_part_move_step_by_step_kill MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_part_move_step_by_step_kill'"
+    )
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
-    wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step_kill", "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "SYNC_SOURCE",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -310,11 +405,19 @@ def test_part_move_step_by_step_kill(started_cluster):
     s0r1.start_clickhouse()
 
     # After SYNC_SOURCE step no merges will be assigned.
-    s0r0.query("SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;")
-    s0r1.query("SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;")
+    s0r0.query(
+        "SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;"
+    )
+    s0r1.query(
+        "SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;"
+    )
 
-    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step_kill",
-                   "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "SYNC_DESTINATION",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -322,39 +425,61 @@ def test_part_move_step_by_step_kill(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_FETCH succeed.
     s1r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state("DESTINATION_FETCH", s0r0, "test_part_move_step_by_step_kill",
-                   "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "DESTINATION_FETCH",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        "Some replicas haven\\'t processed event",
+    )
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
     # succeed.
     # Stop the other replica in destination shard to prevent DESTINATION_ATTACH succeed.
     s1r1.stop_clickhouse()
     s1r0.start_clickhouse()
-    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill",
-                   "Some replicas haven\\'t processed event")
+    wait_for_state(
+        "DESTINATION_ATTACH",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        "Some replicas haven\\'t processed event",
+    )
     deduplication_invariant.assert_no_exception()
 
     # Rollback here.
-    s0r0.query("""
+    s0r0.query(
+        """
         KILL PART_MOVE_TO_SHARD
         WHERE task_uuid = (SELECT task_uuid FROM system.part_moves_between_shards WHERE table = 'test_part_move_step_by_step_kill')
-    """)
+    """
+    )
 
-    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill",
-                   assert_exception_msg="Some replicas haven\\'t processed event",
-                   assert_rollback=True)
+    wait_for_state(
+        "DESTINATION_ATTACH",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        assert_exception_msg="Some replicas haven\\'t processed event",
+        assert_rollback=True,
+    )
 
     s1r1.start_clickhouse()
 
-    wait_for_state("CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
+    wait_for_state(
+        "CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True
+    )
     deduplication_invariant.assert_no_exception()
 
     # No hung tasks in replication queue. Would timeout otherwise.
     for instance in started_cluster.instances.values():
         instance.query("SYSTEM SYNC REPLICA test_part_move_step_by_step_kill")
 
-    assert "2" == s0r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
-    assert "0" == s1r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    assert (
+        "2"
+        == s0r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    )
+    assert (
+        "0"
+        == s1r0.query("SELECT count() FROM test_part_move_step_by_step_kill").strip()
+    )
 
     deduplication_invariant.stop_and_assert_no_exception()
 
@@ -368,40 +493,69 @@ def test_move_not_permitted(started_cluster):
     s1r0.start_clickhouse()
 
     for ix, n in enumerate([s0r0, s1r0]):
-        n.query("""
+        n.query(
+            """
         DROP TABLE IF EXISTS not_permitted_columns;
         
         CREATE TABLE not_permitted_columns(v_{ix} UInt64)
         ENGINE ReplicatedMergeTree('/clickhouse/shard_{ix}/tables/not_permitted_columns', 'r')
         ORDER BY tuple();
-        """.format(ix=ix))
+        """.format(
+                ix=ix
+            )
+        )
 
         partition = "date"
         if ix > 0:
             partition = "v"
 
-        n.query("""
+        n.query(
+            """
         DROP TABLE IF EXISTS not_permitted_partition;
         CREATE TABLE not_permitted_partition(date Date, v UInt64)
         ENGINE ReplicatedMergeTree('/clickhouse/shard_{ix}/tables/not_permitted_partition', 'r')
         PARTITION BY ({partition})
         ORDER BY tuple();
-        """.format(ix=ix, partition=partition))
+        """.format(
+                ix=ix, partition=partition
+            )
+        )
 
     s0r0.query("INSERT INTO not_permitted_columns VALUES (1)")
     s0r0.query("INSERT INTO not_permitted_partition VALUES ('2021-09-03', 1)")
 
-    with pytest.raises(QueryRuntimeException, match="DB::Exception: Source and destination are the same"):
-        s0r0.query("ALTER TABLE not_permitted_columns MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/not_permitted_columns'")
+    with pytest.raises(
+        QueryRuntimeException,
+        match="DB::Exception: Source and destination are the same",
+    ):
+        s0r0.query(
+            "ALTER TABLE not_permitted_columns MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/not_permitted_columns'"
+        )
 
-    with pytest.raises(QueryRuntimeException, match="DB::Exception: Table columns structure in ZooKeeper is different from local table structure."):
-        s0r0.query("ALTER TABLE not_permitted_columns MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_columns'")
+    with pytest.raises(
+        QueryRuntimeException,
+        match="DB::Exception: Table columns structure in ZooKeeper is different from local table structure.",
+    ):
+        s0r0.query(
+            "ALTER TABLE not_permitted_columns MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_columns'"
+        )
 
-    with pytest.raises(QueryRuntimeException, match="DB::Exception: Existing table metadata in ZooKeeper differs in partition key expression."):
-        s0r0.query("ALTER TABLE not_permitted_partition MOVE PART '20210903_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_partition'")
+    with pytest.raises(
+        QueryRuntimeException,
+        match="DB::Exception: Existing table metadata in ZooKeeper differs in partition key expression.",
+    ):
+        s0r0.query(
+            "ALTER TABLE not_permitted_partition MOVE PART '20210903_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_partition'"
+        )
 
 
-def wait_for_state(desired_state, instance, test_table, assert_exception_msg=None, assert_rollback=False):
+def wait_for_state(
+    desired_state,
+    instance,
+    test_table,
+    assert_exception_msg=None,
+    assert_rollback=False,
+):
     last_debug_print_time = time.time()
 
     print("Waiting to reach state: {}".format(desired_state))
@@ -411,9 +565,13 @@ def wait_for_state(desired_state, instance, test_table, assert_exception_msg=Non
         print("     and rollback: {}".format(assert_rollback))
 
     while True:
-        tasks = TSV.toMat(instance.query(
-            "SELECT state, num_tries, last_exception, rollback FROM system.part_moves_between_shards WHERE table = '{}'".format(
-                test_table)))
+        tasks = TSV.toMat(
+            instance.query(
+                "SELECT state, num_tries, last_exception, rollback FROM system.part_moves_between_shards WHERE table = '{}'".format(
+                    test_table
+                )
+            )
+        )
         assert len(tasks) == 1, "only one task expected in this test"
 
         if time.time() - last_debug_print_time > 30:
@@ -437,7 +595,11 @@ def wait_for_state(desired_state, instance, test_table, assert_exception_msg=Non
 
             break
         elif state in ["DONE", "CANCELLED"]:
-            raise Exception("Reached terminal state {}, but was waiting for {}".format(state, desired_state))
+            raise Exception(
+                "Reached terminal state {}, but was waiting for {}".format(
+                    state, desired_state
+                )
+            )
 
         time.sleep(0.1)
 
@@ -454,7 +616,7 @@ class ConcurrentInvariant:
 
     def start(self):
         if self.started:
-            raise Exception('invariant thread already started')
+            raise Exception("invariant thread already started")
 
         self.started = True
         self.thread.start()
@@ -485,4 +647,4 @@ class ConcurrentInvariant:
 
     def _assert_started(self):
         if not self.started:
-            raise Exception('invariant thread not started, forgot to call start?')
+            raise Exception("invariant thread not started, forgot to call start?")

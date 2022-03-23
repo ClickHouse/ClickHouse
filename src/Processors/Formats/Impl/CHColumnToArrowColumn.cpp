@@ -658,7 +658,7 @@ namespace DB
                 auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), name, format_name, out_is_column_nullable);
                 nested_fields.push_back(std::make_shared<arrow::Field>(name, nested_arrow_type, *out_is_column_nullable));
             }
-            return arrow::struct_(std::move(nested_fields));
+            return arrow::struct_(nested_fields);
         }
 
         if (column_type->lowCardinality())
