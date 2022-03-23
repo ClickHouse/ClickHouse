@@ -24,7 +24,8 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path);
 
-enum class BlockDeviceType {
+enum class BlockDeviceType
+{
     UNKNOWN = 0, // we were unable to determine device type
     NONROT = 1, // not a rotational device (SSD, NVME, etc)
     ROT = 2 // rotational device (HDD)

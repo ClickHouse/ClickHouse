@@ -14,21 +14,24 @@
 
 uint64_t getAvailableMemoryAmountOrZero()
 {
-    int64_t page_size = getPageSize();
-    if (page_size <= 0)
-        return 0;
-
-#if defined(__FreeBSD__)
+#if defined(_SC_AVPHYS_PAGES) // linux
+    return getPageSize() * sysconf(_SC_AVPHYS_PAGES);
+#elif defined(__FreeBSD__)
     struct vmtotal vmt;
     size_t vmt_size = sizeof(vmt);
-    if (sysctlbyname("vm.vmtotal", &vmt, &vmt_size, NULL, 0) < 0)
-       return 0;
-    uint64_t available_pages = vmt.t_avm;
-#else
-    uint64_t available_pages = sysconf(_SC_AVPHYS_PAGES);
+    if (sysctlbyname("vm.vmtotal", &vmt, &vmt_size, NULL, 0) == 0)
+        return getPageSize() * vmt.t_avm;
+    else
+        return 0;
+#else // darwin
+    unsigned int usermem;
+    size_t len = sizeof(usermem);
+    static int mib[2] = { CTL_HW, HW_USERMEM };
+    if (sysctl(mib, 2, &usermem, &len, NULL, 0) == 0 && len == sizeof(usermem))
+        return usermem;
+    else
+        return 0;
 #endif
-
-    return page_size * available_pages;
 }
 
 
