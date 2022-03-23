@@ -89,7 +89,8 @@ String FileSegment::getCallerId()
 
 String FileSegment::getCallerIdImpl(bool allow_non_strict_checking)
 {
-    if (IFileCache::shouldBypassCache())
+    /// Cache is read only, if it is read operation (which can potentially do cache writes), but there is no query attached.
+    if (IFileCache::isReadOnly())
     {
         /// getCallerId() can be called from completeImpl(), which can be called from complete().
         /// complete() is called from destructor of CachedReadBufferFromRemoteFS when there is no query id anymore.

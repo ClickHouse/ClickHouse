@@ -160,7 +160,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 bool WriteBufferFromS3::cacheEnabled() const
 {
-    return cache && IFileCache::shouldBypassCache() == false;
+    return cache != nullptr;
 }
 
 void WriteBufferFromS3::preFinalize()
