@@ -4,7 +4,6 @@
 #if USE_AWS_S3
 
 #include <Common/isValidUTF8.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <Functions/FunctionsConversion.h>
 
@@ -13,6 +12,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -21,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
 
 #include <IO/ReadBufferFromS3.h>
