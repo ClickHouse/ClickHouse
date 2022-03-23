@@ -45,6 +45,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -554,6 +555,10 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1022,8 +1027,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout,
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
                                 false), server_pool, socket));
                 });
 
@@ -1045,8 +1050,8 @@ if (ThreadFuzzer::instance().isEffective())
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
                                 config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout,
-                                global_context->getSettingsRef().send_timeout, true), server_pool, socket));
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",

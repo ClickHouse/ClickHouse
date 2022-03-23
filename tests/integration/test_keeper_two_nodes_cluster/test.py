@@ -11,10 +11,19 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/enable_keeper2.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
 
 from kazoo.client import KazooClient, KazooState
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -26,8 +35,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def smaller_exception(ex):
-    return '\n'.join(str(ex).split('\n')[0:2])
+    return "\n".join(str(ex).split("\n")[0:2])
+
 
 def wait_node(node):
     for _ in range(100):
@@ -48,15 +59,19 @@ def wait_node(node):
     else:
         raise Exception("Can't wait node", node.name, "to become ready")
 
+
 def wait_nodes():
     for node in [node1, node2]:
         wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
+
 
 def test_read_write_two_nodes(started_cluster):
     try:
@@ -89,6 +104,7 @@ def test_read_write_two_nodes(started_cluster):
         except:
             pass
 
+
 def test_read_write_two_nodes_with_blocade(started_cluster):
     try:
         wait_nodes()
@@ -108,7 +124,6 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
             with pytest.raises(Exception):
                 node2_zk.create("/test_read_write_blocked_node2", b"somedata2")
 
-
         print("Nodes unblocked")
         for i in range(10):
             try:
@@ -117,7 +132,6 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
                 break
             except:
                 time.sleep(0.5)
-
 
         for i in range(100):
             try:
