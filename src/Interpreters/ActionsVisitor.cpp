@@ -81,7 +81,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
     for (size_t i = 0; i < columns_num; ++i)
+    {
         columns[i] = types[i]->createColumn();
+        columns[i]->reserve(collection.size());
+    }
 
     Row tuple_values;
     for (const auto & value : collection)
@@ -120,7 +123,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
             if (i == tuple_size)
                 for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(std::move(tuple_values[i]));
+                    columns[i]->insert(tuple_values[i]);
         }
     }
 
@@ -391,7 +394,7 @@ SetPtr makeExplicitSet(
 
 ScopeStack::Level::~Level() = default;
 ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 class ScopeStack::Index
 {

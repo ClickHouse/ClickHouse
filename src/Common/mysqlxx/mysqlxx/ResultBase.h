@@ -27,7 +27,7 @@ public:
 
     Connection * getConnection() { return conn; }
     MYSQL_FIELDS getFields() { return fields; }
-    unsigned getNumFields() { return num_fields; }
+    unsigned getNumFields() const { return num_fields; }
     MYSQL_RES * getRes() { return res; }
     const Query * getQuery() const { return query; }
 

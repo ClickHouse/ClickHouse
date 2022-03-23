@@ -38,6 +38,13 @@ namespace
         request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
         request_for_session.request->xid = xid;
         request_for_session.request->readImpl(buffer);
+
+        if (!buffer.eof())
+            readIntBinary(request_for_session.time, buffer);
+        else /// backward compatibility
+            request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+
         return request_for_session;
     }
 }
@@ -133,7 +140,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     else
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
@@ -358,7 +365,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 {
     /// Pure local request, just process it with storage
     std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
+    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);

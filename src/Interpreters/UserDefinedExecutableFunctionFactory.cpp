@@ -42,11 +42,12 @@ public:
 
     bool isVariadic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return executable_function->getConfiguration().argument_types.size(); }
+    size_t getNumberOfArguments() const override { return executable_function->getConfiguration().arguments.size(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return true; }
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
@@ -90,7 +91,11 @@ public:
             auto & column_with_type = arguments_copy[i];
             column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
 
-            const auto & argument_type = configuration.argument_types[i];
+            const auto & argument = configuration.arguments[i];
+            column_with_type.name = argument.name;
+
+            const auto & argument_type = argument.type;
+
             if (areTypesEqual(arguments_copy[i].type, argument_type))
                 continue;
 
@@ -101,7 +106,7 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        ColumnWithTypeAndName result(result_type, "result");
+        ColumnWithTypeAndName result(result_type, configuration.result_name);
         Block result_block({result});
 
         Block arguments_block(arguments_copy);

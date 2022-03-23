@@ -56,6 +56,7 @@ void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
+void registerFunctionMinSampleSize(FunctionFactory &);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -118,6 +119,7 @@ void registerFunctions()
     registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
+    registerFunctionMinSampleSize(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

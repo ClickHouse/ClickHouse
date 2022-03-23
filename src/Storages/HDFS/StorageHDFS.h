@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -47,7 +47,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const;
+    bool isColumnOriented() const override;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -117,14 +117,14 @@ public:
 
     static Block getBlockForSource(
         const StorageHDFSPtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const ColumnsDescription & columns_description,
         bool need_path_column,
         bool need_file_column);
 
     HDFSSource(
         StorageHDFSPtr storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
         bool need_path_column_,
@@ -140,7 +140,7 @@ public:
 
 private:
     StorageHDFSPtr storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     UInt64 max_block_size;
     bool need_path_column;
     bool need_file_column;
@@ -150,7 +150,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    /// onCancel and generate can be called concurrently
+    /// onCancel and generate can be called concurrently.
     std::mutex reader_mutex;
     String current_path;
 

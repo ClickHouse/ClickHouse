@@ -24,7 +24,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         if (column_ptrs.empty())
             return;
 
-        const ColumnRawPtrs clearing_hint_columns(getClearingColumns(chunk, column_ptrs));
+        ColumnRawPtrs clearing_hint_columns(getClearingColumns(chunk, column_ptrs));
 
         if (data.type == ClearableSetVariants::Type::EMPTY)
             data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));

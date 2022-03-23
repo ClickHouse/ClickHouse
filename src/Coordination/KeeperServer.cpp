@@ -260,11 +260,12 @@ void KeeperServer::shutdown()
 namespace
 {
 
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, int64_t time, const Coordination::ZooKeeperRequestPtr & request)
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
     request->write(buf);
+    DB::writeIntBinary(time, buf);
     return buf.getBuffer();
 }
 
@@ -283,8 +284,8 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
 {
 
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, request] : requests_for_sessions)
-        entries.push_back(getZooKeeperLogEntry(session_id, request));
+    for (const auto & [session_id, time, request] : requests_for_sessions)
+        entries.push_back(getZooKeeperLogEntry(session_id, time, request));
 
     return raft_instance->append_entries(entries);
 }

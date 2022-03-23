@@ -76,9 +76,11 @@ private:
     bool first_run = true;
     std::chrono::system_clock::time_point previous_update_time;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
+#endif
 
+#if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo;
     std::optional<ReadBufferFromFilePRead> loadavg;
     std::optional<ReadBufferFromFilePRead> proc_stat;

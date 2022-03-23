@@ -611,7 +611,7 @@ template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ColumnsWithTypeAndName arguments = std::move(args);
+    ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)

@@ -15,9 +15,9 @@ namespace ErrorCodes
 
 BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
-        std::move(header),
+        header,
         in_,
-        std::move(params_),
+        params_,
         with_names_,
         with_types_,
         format_settings_,

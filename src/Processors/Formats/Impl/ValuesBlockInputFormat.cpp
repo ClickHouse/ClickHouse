@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
 
 #include <base/logger_useful.h>
 
@@ -105,6 +106,7 @@ Chunk ValuesBlockInputFormat::generate()
         return {};
     }
 
+    finalizeObjectColumns(columns);
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
 }
