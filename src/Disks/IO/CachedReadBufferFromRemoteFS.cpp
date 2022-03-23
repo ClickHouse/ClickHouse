@@ -365,9 +365,14 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
     if (current_file_segment_it == file_segments_holder->file_segments.end())
         return false;
 
-    implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+    file_segment = *current_file_segment_it;
 
-    LOG_TEST(log, "New segment: {}", (*current_file_segment_it)->range().toString());
+    implementation_buffer = getImplementationBuffer(file_segment);
+
+    if (read_type == ReadType::CACHED)
+        file_segment->hit();
+
+    LOG_TEST(log, "New segment: {}", file_segment->range().toString());
     return true;
 }
 
@@ -583,6 +588,9 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
+
+        if (read_type == ReadType::CACHED)
+            (*current_file_segment_it)->hit();
     }
 
     assert(!internal_buffer.empty());

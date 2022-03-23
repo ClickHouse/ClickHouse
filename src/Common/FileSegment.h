@@ -121,6 +121,10 @@ public:
 
     String getInfoForLog() const;
 
+    size_t hits() const { return hits_num; }
+
+    void hit() { ++hits_num; }
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
@@ -162,6 +166,7 @@ private:
     bool detached = false;
 
     std::atomic<bool> is_downloaded{false};
+    std::atomic<size_t> hits_num = 0; /// cache hits.
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

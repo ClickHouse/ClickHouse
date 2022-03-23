@@ -58,10 +58,8 @@ Pipe StorageSystemDisks::read(
 
         String cache_path;
         if (disk_ptr->isRemote())
-        {
-            const auto * remote_disk = assert_cast<IDiskRemote *>(disk_ptr.get());
-            cache_path = remote_disk->getCachePath();
-        }
+            cache_path = disk_ptr->getCacheBasePath();
+
         col_cache_path->insert(cache_path);
     }
 

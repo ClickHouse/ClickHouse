@@ -19,6 +19,8 @@ NamesAndTypesList StorageSystemRemoteFilesystemCache::getNamesAndTypes()
         {"cache_path", std::make_shared<DataTypeString>()},
         {"file_segment_range", std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()})},
         {"size", std::make_shared<DataTypeUInt64>()},
+        {"state", std::make_shared<DataTypeString>()},
+        {"cache_hits", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -44,6 +46,8 @@ void StorageSystemRemoteFilesystemCache::fillData(MutableColumns & res_columns, 
             const auto & range = file_segment->range();
             res_columns[2]->insert(Tuple({range.left, range.right}));
             res_columns[3]->insert(range.size());
+            res_columns[4]->insert(FileSegment::stateToString(file_segment->state()));
+            res_columns[5]->insert(file_segment->hits());
         }
     }
 }
