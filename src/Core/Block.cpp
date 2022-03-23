@@ -13,6 +13,7 @@
 
 #include <iterator>
 #include <base/sort.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -273,7 +274,7 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
 {
     if (case_insensitive)
     {
-        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return equalsCaseInsensitive(column.name, name); });
+        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
         if (found == data.end())
         {
             return nullptr;
@@ -304,7 +305,7 @@ const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool ca
 bool Block::has(const std::string & name, bool case_insensitive) const
 {
     if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return equalsCaseInsensitive(column.name, name); })
+        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
             != data.end();
 
     return index_by_name.end() != index_by_name.find(name);
