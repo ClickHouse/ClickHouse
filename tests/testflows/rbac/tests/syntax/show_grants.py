@@ -4,6 +4,7 @@ from testflows.core import *
 
 from rbac.requirements import *
 
+
 @TestFeature
 @Name("show grants")
 def feature(self, node="clickhouse1"):
@@ -25,13 +26,16 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the user"):
                 node.query(f"DROP USER IF EXISTS {user}")
 
-    with Scenario("I show grants for user", requirements=[
-            RQ_SRS_006_RBAC_Show_Grants_For("1.0")]):
+    with Scenario(
+        "I show grants for user", requirements=[RQ_SRS_006_RBAC_Show_Grants_For("1.0")]
+    ):
         with setup("user0"):
             with When("I run show grants command"):
                 node.query("SHOW GRANTS FOR user0")
 
-    with Scenario("I show grants for current user", requirements=[
-            RQ_SRS_006_RBAC_Show_Grants("1.0")]):
+    with Scenario(
+        "I show grants for current user",
+        requirements=[RQ_SRS_006_RBAC_Show_Grants("1.0")],
+    ):
         with When("I show grants"):
             node.query("SHOW GRANTS")

@@ -7,7 +7,7 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
 
-NAME = 'Run Check (actions)'
+NAME = "Run Check (actions)"
 
 
 def filter_statuses(statuses):
@@ -36,4 +36,9 @@ if __name__ == "__main__":
     url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
     statuses = filter_statuses(list(commit.get_statuses()))
     if NAME in statuses and statuses[NAME].state == "pending":
-        commit.create_status(context=NAME, description="All checks finished", state="success", target_url=url)
+        commit.create_status(
+            context=NAME,
+            description="All checks finished",
+            state="success",
+            target_url=url,
+        )
