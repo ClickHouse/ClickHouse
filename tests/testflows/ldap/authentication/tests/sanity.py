@@ -3,6 +3,7 @@ from testflows.asserts import error
 
 from ldap.authentication.tests.common import add_user_to_ldap, delete_user_from_ldap
 
+
 @TestScenario
 @Name("sanity")
 def scenario(self, server="openldap1"):
@@ -13,7 +14,8 @@ def scenario(self, server="openldap1"):
 
     with When("I search LDAP database"):
         r = self.context.ldap_node.command(
-            "ldapsearch -x -H ldap://localhost -b \"dc=company,dc=com\" -D \"cn=admin,dc=company,dc=com\" -w admin")
+            'ldapsearch -x -H ldap://localhost -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin'
+        )
         assert r.exitcode == 0, error()
 
     with Then("I should find an entry for user1"):
@@ -24,7 +26,8 @@ def scenario(self, server="openldap1"):
 
     with And("I search LDAP database again"):
         r = self.context.ldap_node.command(
-            "ldapsearch -x -H ldap://localhost -b \"dc=company,dc=com\" -D \"cn=admin,dc=company,dc=com\" -w admin")
+            'ldapsearch -x -H ldap://localhost -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin'
+        )
         assert r.exitcode == 0, error()
 
     with Then("I should find an entry for the new user"):
@@ -35,7 +38,8 @@ def scenario(self, server="openldap1"):
 
     with And("I search LDAP database again"):
         r = self.context.ldap_node.command(
-            "ldapsearch -x -H ldap://localhost -b \"dc=company,dc=com\" -D \"cn=admin,dc=company,dc=com\" -w admin")
+            'ldapsearch -x -H ldap://localhost -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin'
+        )
         assert r.exitcode == 0, error()
 
     with Then("I should not find an entry for the deleted user"):

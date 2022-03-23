@@ -125,7 +125,7 @@ public:
         return name;
     }
 
-    virtual ~IFactoryWithAliases() override {}
+    virtual ~IFactoryWithAliases() override = default;
 
 private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator

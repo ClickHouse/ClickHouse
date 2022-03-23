@@ -594,7 +594,6 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    std::lock_guard lock(keeper_stats_mutex);
     keeper_stats.updateLatency(process_time_ms);
 }
 
