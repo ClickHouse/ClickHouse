@@ -9,11 +9,24 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/enable_keeper2.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
+    stay_alive=True,
+)
 
 from kazoo.client import KazooClient, KazooState
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -25,8 +38,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def smaller_exception(ex):
-    return '\n'.join(str(ex).split('\n')[0:2])
+    return "\n".join(str(ex).split("\n")[0:2])
+
 
 def wait_node(node):
     for _ in range(100):
@@ -47,15 +62,19 @@ def wait_node(node):
     else:
         raise Exception("Can't wait node", node.name, "to become ready")
 
+
 def wait_nodes():
     for node in [node1, node2, node3]:
         wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
+
 
 def assert_eq_stats(stat1, stat2):
     assert stat1.version == stat2.version
@@ -66,6 +85,7 @@ def assert_eq_stats(stat1, stat2):
     assert stat1.numChildren == stat2.numChildren
     assert stat1.ctime == stat2.ctime
     assert stat1.mtime == stat2.mtime
+
 
 def test_between_servers(started_cluster):
     try:
