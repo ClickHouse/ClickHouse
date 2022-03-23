@@ -22,6 +22,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_table("TABLE");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_dictionary("DICTIONARY");
+    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_live("LIVE");
+    ParserKeyword s_window("WINDOW");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
 
@@ -40,6 +43,45 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             query = std::make_shared<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
+        }
+        else if (s_materialized.ignore(pos, expected))
+        {
+            if (s_view.ignore(pos, expected))
+            {
+                query = std::make_shared<ASTExistsViewQuery>();
+                query->materialized = true;
+                exists_view = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else if (s_live.ignore(pos, expected))
+        {
+            if (s_view.ignore(pos, expected))
+            {
+                query = std::make_shared<ASTExistsViewQuery>();
+                query->live = true;
+                exists_view = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else if (s_window.ignore(pos, expected))
+        {
+            if (s_view.ignore(pos, expected))
+            {
+                query = std::make_shared<ASTExistsViewQuery>();
+                query->window = true;
+                exists_view = true;
+            }
+            else
+            {
+                return false;
+            }
         }
         else if (s_view.ignore(pos, expected))
         {

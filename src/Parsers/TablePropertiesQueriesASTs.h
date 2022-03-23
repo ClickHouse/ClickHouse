@@ -77,11 +77,21 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
 };
 
 using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
-using ASTExistsViewQuery = ASTQueryWithTableAndOutputImpl<ASTExistsViewQueryIDAndQueryNames>;
 using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
 using ASTShowCreateViewQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateViewQueryIDAndQueryNames>;
 using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
+
+class ASTExistsViewQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsViewQueryIDAndQueryNames>
+{
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXISTS" << " "
+                      << (materialized ? "MATERIALIZED" : (live ? "LIVE" : (window ? "WINDOW" : "")))
+                      << " VIEW " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getTable());
+    }
+};
 
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {

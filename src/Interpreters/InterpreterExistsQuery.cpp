@@ -58,7 +58,19 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
         auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
-        result = table && table->isView();
+        if (exists_query->materialized) {
+            result = table && table->isView() && table->getName() == "MaterializedView";
+        }
+        else if (exists_query->live) {
+            result = table && table->isView() && table->getName() == "LiveView";
+        }
+        else if (exists_query->window) {
+            result = table && table->isView() && table->getName() == "";
+        }
+        else
+        {
+            result = table && table->isView();
+        }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
     {
