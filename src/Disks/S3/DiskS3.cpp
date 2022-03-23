@@ -292,8 +292,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     };
 
     bool cache_on_insert = fs::path(path).extension() != ".tmp"
-        && write_settings.remote_fs_cache_on_insert
-        && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_insert;
+        && write_settings.remote_fs_cache_on_write_operations
+        && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
