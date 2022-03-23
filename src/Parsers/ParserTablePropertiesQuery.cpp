@@ -48,9 +48,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             if (s_view.ignore(pos, expected))
             {
-                query = std::make_shared<ASTExistsViewQuery>();
-                query->materialized = true;
+                auto exists_query = std::make_shared<ASTExistsViewQuery>();
+                exists_query->materialized = true;
                 exists_view = true;
+                query = std::move(exists_query);
             }
             else
             {
@@ -61,9 +62,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             if (s_view.ignore(pos, expected))
             {
-                query = std::make_shared<ASTExistsViewQuery>();
-                query->live = true;
+                auto exists_query = std::make_shared<ASTExistsViewQuery>();
+                exists_query->live = true;
                 exists_view = true;
+                query = std::move(exists_query);
             }
             else
             {
@@ -74,9 +76,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             if (s_view.ignore(pos, expected))
             {
+                auto exists_query = std::make_shared<ASTExistsViewQuery>();
+                exists_query->window = true;
                 query = std::make_shared<ASTExistsViewQuery>();
-                query->window = true;
-                exists_view = true;
+                query = std::move(exists_query);
             }
             else
             {

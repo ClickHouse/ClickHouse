@@ -20,10 +20,6 @@ public:
     UUID uuid = UUIDHelpers::Nil;
     bool temporary{false};
 
-    bool materialized;
-    bool live;
-    bool window;
-
     String getDatabase() const;
     String getTable() const;
 

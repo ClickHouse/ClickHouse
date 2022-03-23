@@ -53,19 +53,22 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             result = DatabaseCatalog::instance().isTableExist({database, exists_query->getTable()}, getContext());
         }
     }
-    else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
+    else if (auto * exists_view_query = query_ptr->as<ASTExistsViewQuery>())
     {
-        String database = getContext()->resolveDatabase(exists_query->getDatabase());
-        getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
-        if (exists_query->materialized) {
+        String database = getContext()->resolveDatabase(exists_view_query->getDatabase());
+        getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_view_query->getTable());
+        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_view_query->getTable()}, getContext());
+        if (exists_view_query->materialized)
+        {
             result = table && table->isView() && table->getName() == "MaterializedView";
         }
-        else if (exists_query->live) {
+        else if (exists_view_query->live)
+        {
             result = table && table->isView() && table->getName() == "LiveView";
         }
-        else if (exists_query->window) {
-            result = table && table->isView() && table->getName() == "";
+        else if (exists_view_query->window)
+        {
+            result = table && table->isView() && table->getName() == "WindowView";
         }
         else
         {

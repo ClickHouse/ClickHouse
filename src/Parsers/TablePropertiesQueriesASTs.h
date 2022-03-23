@@ -84,6 +84,10 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 
 class ASTExistsViewQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsViewQueryIDAndQueryNames>
 {
+public:
+    bool materialized = false;
+    bool live = false;
+    bool window = false;
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
