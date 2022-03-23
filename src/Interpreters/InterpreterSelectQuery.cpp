@@ -1241,10 +1241,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             preliminary_sort();
-
-            // If there is no global subqueries, we can run subqueries only when receive them on server.
-            // if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
-            //     executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
         if (expressions.second_stage || from_aggregation_stage)
@@ -1427,7 +1423,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         }
     }
 
-    // if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
     if (!subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
