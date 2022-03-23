@@ -51,7 +51,7 @@ class AccessControl;
 class SettingsConstraints
 {
 public:
-    SettingsConstraints(const AccessControl & access_control_);
+    explicit SettingsConstraints(const AccessControl & access_control_);
     SettingsConstraints(const SettingsConstraints & src);
     SettingsConstraints & operator=(const SettingsConstraints & src);
     SettingsConstraints(SettingsConstraints && src) noexcept;

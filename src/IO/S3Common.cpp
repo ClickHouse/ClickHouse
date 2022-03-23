@@ -517,7 +517,7 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
+    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
@@ -529,16 +529,17 @@ public:
             static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
             /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-            /// is that this chain uses custom ClientConfiguration.
-
-            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::ProcessCredentialsProvider>());
-
+            /// is that this chain uses custom ClientConfiguration. Also we removed process provider because it's useless in our case.
+            ///
+            /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
+            /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
                 DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
+
+            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+
 
             /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
             const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -601,6 +602,9 @@ public:
         }
 
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
+        /// in chain.
+        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
     }
 };
 

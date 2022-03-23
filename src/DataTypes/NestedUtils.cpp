@@ -30,6 +30,12 @@ namespace Nested
 
 std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
 {
+    if (nested_table_name.empty())
+        return nested_field_name;
+
+    if (nested_field_name.empty())
+        return nested_table_name;
+
     return nested_table_name + "." + nested_field_name;
 }
 

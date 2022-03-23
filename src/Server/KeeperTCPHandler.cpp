@@ -202,25 +202,30 @@ struct SocketInterruptablePollWrapper
 #endif
 };
 
-KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+KeeperTCPHandler::KeeperTCPHandler(
+    const Poco::Util::AbstractConfiguration & config_ref,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+    Poco::Timespan receive_timeout_,
+    Poco::Timespan send_timeout_,
+    const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , server(server_)
     , log(&Poco::Logger::get("KeeperTCPHandler"))
-    , global_context(Context::createCopy(server.context()))
-    , keeper_dispatcher(global_context->getKeeperDispatcher())
+    , keeper_dispatcher(keeper_dispatcher_)
     , operation_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , min_session_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
     , max_session_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
+    , send_timeout(send_timeout_)
+    , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
@@ -289,11 +294,9 @@ void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
     ThreadStatus thread_status;
-    auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
-    auto global_send_timeout = global_context->getSettingsRef().send_timeout;
 
-    socket().setReceiveTimeout(global_receive_timeout);
-    socket().setSendTimeout(global_send_timeout);
+    socket().setReceiveTimeout(receive_timeout);
+    socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());

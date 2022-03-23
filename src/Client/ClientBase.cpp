@@ -36,6 +36,8 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <Client/ClientBaseHelpers.h>
+#include <Client/TestHint.h>
+#include "TestTags.h"
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -645,6 +647,12 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    if (fake_drop)
+    {
+        if (parsed_query->as<ASTDropQuery>())
+            return;
+    }
+
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -1090,10 +1098,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
+            auto metadata = storage->getInMemoryMetadataPtr();
             sendDataFromPipe(
                 storage->read(
                         sample.getNames(),
-                        storage->getInMemoryMetadataPtr(),
+                        storage->getStorageSnapshot(metadata),
                         query_info,
                         global_context,
                         {},
@@ -1483,6 +1492,219 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 }
 
 
+bool ClientBase::executeMultiQuery(const String & all_queries_text)
+{
+    // It makes sense not to base any control flow on this, so that it is
+    // the same in tests and in normal usage. The only difference is that in
+    // normal mode we ignore the test hints.
+    const bool test_mode = config().has("testmode");
+    if (test_mode)
+    {
+        /// disable logs if expects errors
+        TestHint test_hint(test_mode, all_queries_text);
+        if (test_hint.clientError() || test_hint.serverError())
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+    }
+
+    bool echo_query = echo_queries;
+
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
+    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+
+    /// Several queries separated by ';'.
+    /// INSERT data is ended by the end of line, not ';'.
+    /// An exception is VALUES format where we also support semicolon in
+    /// addition to end of line.
+    const char * this_query_begin = all_queries_text.data() + test_tags_length;
+    const char * this_query_end;
+    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+
+    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
+    String query_to_execute;
+    ASTPtr parsed_query;
+    std::optional<Exception> current_exception;
+
+    while (true)
+    {
+        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
+                                           query_to_execute, parsed_query, all_queries_text, current_exception);
+        switch (stage)
+        {
+            case MultiQueryProcessingStage::QUERIES_END:
+            case MultiQueryProcessingStage::PARSING_FAILED:
+            {
+                return true;
+            }
+            case MultiQueryProcessingStage::CONTINUE_PARSING:
+            {
+                continue;
+            }
+            case MultiQueryProcessingStage::PARSING_EXCEPTION:
+            {
+                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+
+                // Try to find test hint for syntax error. We don't know where
+                // the query ends because we failed to parse it, so we consume
+                // the entire line.
+                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
+                if (hint.serverError())
+                {
+                    // Syntax errors are considered as client errors
+                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
+                    current_exception->rethrow();
+                }
+
+                if (hint.clientError() != current_exception->code())
+                {
+                    if (hint.clientError())
+                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
+
+                    current_exception->rethrow();
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = this_query_end;
+                current_exception.reset();
+
+                continue;
+            }
+            case MultiQueryProcessingStage::EXECUTE_QUERY:
+            {
+                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+                if (query_fuzzer_runs)
+                {
+                    if (!processWithFuzzing(full_query))
+                        return false;
+
+                    this_query_begin = this_query_end;
+                    continue;
+                }
+
+                // Now we know for sure where the query ends.
+                // Look for the hint in the text of query + insert data + trailing
+                // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
+                // Use the updated query boundaries we just calculated.
+                TestHint test_hint(test_mode, full_query);
+
+                // Echo all queries if asked; makes for a more readable reference file.
+                echo_query = test_hint.echoQueries().value_or(echo_query);
+
+                try
+                {
+                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                }
+                catch (...)
+                {
+                    // Surprisingly, this is a client error. A server error would
+                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+                    have_error = true;
+                }
+
+                // Check whether the error (or its absence) matches the test hints
+                // (or their absence).
+                bool error_matches_hint = true;
+                if (have_error)
+                {
+                    if (test_hint.serverError())
+                    {
+                        if (!server_exception)
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
+                                       test_hint.serverError(), full_query);
+                        }
+                        else if (server_exception->code() != test_hint.serverError())
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
+                                       test_hint.serverError(), server_exception->code(), full_query);
+                        }
+                    }
+                    if (test_hint.clientError())
+                    {
+                        if (!client_exception)
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
+                                       test_hint.clientError(), full_query);
+                        }
+                        else if (client_exception->code() != test_hint.clientError())
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
+                                       test_hint.clientError(), client_exception->code(), full_query);
+                        }
+                    }
+                    if (!test_hint.clientError() && !test_hint.serverError())
+                    {
+                        // No error was expected but it still occurred. This is the
+                        // default case w/o test hint, doesn't need additional
+                        // diagnostics.
+                        error_matches_hint = false;
+                    }
+                }
+                else
+                {
+                    if (test_hint.clientError())
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                                   "The query succeeded but the client error '{}' was expected (query: {}).\n",
+                                   test_hint.clientError(), full_query);
+                    }
+                    if (test_hint.serverError())
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                                   "The query succeeded but the server error '{}' was expected (query: {}).\n",
+                                   test_hint.serverError(), full_query);
+                    }
+                }
+
+                // If the error is expected, force reconnect and ignore it.
+                if (have_error && error_matches_hint)
+                {
+                    client_exception.reset();
+                    server_exception.reset();
+
+                    have_error = false;
+
+                    if (!connection->checkConnected())
+                        connect();
+                }
+
+                // For INSERTs with inline data: use the end of inline data as
+                // reported by the format parser (it is saved in sendData()).
+                // This allows us to handle queries like:
+                //   insert into t values (1); select 1
+                // , where the inline data is delimited by semicolon and not by a
+                // newline.
+                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
+                {
+                    this_query_end = insert_ast->end;
+                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
+                }
+
+                // Report error.
+                if (have_error)
+                    processError(full_query);
+
+                // Stop processing queries if needed.
+                if (have_error && !ignore_error)
+                    return is_interactive;
+
+                this_query_begin = this_query_end;
+                break;
+            }
+        }
+    }
+}
+
+
 bool ClientBase::processQueryText(const String & text)
 {
     if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
@@ -1754,25 +1976,23 @@ void ClientBase::readArguments(
 
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
-        const char * arg = argv[arg_num];
+        std::string_view arg = argv[arg_num];
 
-        if (arg == "--external"sv)
+        if (arg == "--external")
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
         }
         /// Options with value after equal sign.
-        else if (in_external_group
-            && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
-                || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
-                || 0 == strncmp(arg, "--types=", strlen("--types="))))
+        else if (
+            in_external_group
+            && (arg.starts_with("--file=") || arg.starts_with("--name=") || arg.starts_with("--format=") || arg.starts_with("--structure=")
+                || arg.starts_with("--types=")))
         {
             external_tables_arguments.back().emplace_back(arg);
         }
         /// Options with value after whitespace.
-        else if (in_external_group
-            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
-                || arg == "--structure"sv || arg == "--types"sv))
+        else if (in_external_group && (arg == "--file" || arg == "--name" || arg == "--format" || arg == "--structure" || arg == "--types"))
         {
             if (arg_num + 1 < argc)
             {
@@ -1789,20 +2009,12 @@ void ClientBase::readArguments(
             in_external_group = false;
 
             /// Parameter arg after underline.
-            if (startsWith(arg, "--param_"))
+            if (arg.starts_with("--param_"))
             {
-                const char * param_continuation = arg + strlen("--param_");
-                const char * equal_pos = strchr(param_continuation, '=');
+                auto param_continuation = arg.substr(strlen("--param_"));
+                auto equal_pos = param_continuation.find_first_of('=');
 
-                if (equal_pos == param_continuation)
-                    throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-                if (equal_pos)
-                {
-                    /// param_name=value
-                    query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
-                }
-                else
+                if (equal_pos == std::string::npos)
                 {
                     /// param_name value
                     ++arg_num;
@@ -1811,12 +2023,20 @@ void ClientBase::readArguments(
                     arg = argv[arg_num];
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
+                else
+                {
+                    if (equal_pos == 0)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    /// param_name=value
+                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+                }
             }
-            else if (startsWith(arg, "--host") || startsWith(arg, "-h"))
+            else if (arg.starts_with("--host") || arg.starts_with("-h"))
             {
                 std::string host_arg;
                 /// --host host
-                if (arg == "--host"sv || arg == "-h"sv)
+                if (arg == "--host" || arg == "-h")
                 {
                     ++arg_num;
                     if (arg_num >= argc)
@@ -1843,11 +2063,11 @@ void ClientBase::readArguments(
                     prev_host_arg = host_arg;
                 }
             }
-            else if (startsWith(arg, "--port"))
+            else if (arg.starts_with("--port"))
             {
-                std::string port_arg = arg;
+                auto port_arg = String{arg};
                 /// --port port
-                if (arg == "--port"sv)
+                if (arg == "--port")
                 {
                     port_arg.push_back('=');
                     ++arg_num;
@@ -1872,7 +2092,7 @@ void ClientBase::readArguments(
                     prev_port_arg = port_arg;
                 }
             }
-            else if (arg == "--allow_repeated_settings"sv)
+            else if (arg == "--allow_repeated_settings")
                 allow_repeated_settings = true;
             else
                 common_arguments.emplace_back(arg);
@@ -1966,6 +2186,8 @@ void ClientBase::init(int argc, char ** argv)
 
         ("suggestion_limit", po::value<int>()->default_value(10000),
             "Suggestion limit for how many databases, tables and columns to fetch.")
+
+        ("testmode,T", "enable test hints in comments")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
@@ -2072,6 +2294,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("interactive", true);
     if (options.count("pager"))
         config().setString("pager", options["pager"].as<std::string>());
+    if (options.count("testmode"))
+        config().setBool("testmode", true);
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

@@ -269,7 +269,7 @@ namespace
                             read_settings,
                             headers,
                             ReadWriteBufferFromHTTP::Range{},
-                            context->getRemoteHostFilter(),
+                            &context->getRemoteHostFilter(),
                             delay_initialization,
                             /* use_external_buffer */false,
                             /* skip_url_not_found_error */skip_url_not_found_error),
@@ -394,7 +394,7 @@ std::string IStorageURLBase::getReadMethod() const
 
 std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
     const Names & /*column_names*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -489,27 +489,27 @@ bool IStorageURLBase::isColumnOriented() const
 
 Pipe IStorageURLBase::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
     ColumnsDescription columns_description;
     Block block_for_format;
     if (isColumnOriented())
     {
         columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
     if (urlWithGlobs(uri))
@@ -573,7 +573,7 @@ Pipe IStorageURLBase::read(
 
 Pipe StorageURLWithFailover::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -585,16 +585,16 @@ Pipe StorageURLWithFailover::read(
     if (isColumnOriented())
     {
         columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
-    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
     auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
     uri_info->uri_list_to_read.emplace_back(uri_options);

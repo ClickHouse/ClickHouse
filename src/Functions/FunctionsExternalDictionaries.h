@@ -897,7 +897,9 @@ private:
                 result = std::move(dictionary_get_result_column);
             }
             else
-                result = ColumnNullable::create(std::move(dictionary_get_result_column), std::move(is_key_in_dictionary_column_mutable));
+            {
+                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
+            }
         }
 
         return result;
