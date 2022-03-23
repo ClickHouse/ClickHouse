@@ -13,13 +13,15 @@ using namespace DB;
 namespace local_engine
 {
 
-struct SplitterOptions
+struct SplitOptions
 {
-    size_t buffer_size = 1024 * 8;
+    size_t buffer_size = DEFAULT_BLOCK_SIZE;
     std::string data_file;
     std::string local_tmp_dir;
+    int map_id;
     size_t partition_nums;
-
+    std::string compress_method = "zstd";
+    int compress_level;
 };
 
 class ColumnsBuffer
@@ -39,10 +41,19 @@ private:
 class ShuffleSplitter
 {
 public:
+    static const std::vector<std::string> compress_methods;
     using Ptr = std::unique_ptr<ShuffleSplitter>;
-    Ptr create(SplitterOptions options);
+    static Ptr create(std::string short_name, SplitOptions options_);
+    explicit ShuffleSplitter(SplitOptions && options);
+    virtual ~ShuffleSplitter()
+    {
+        if (!stopped) stop();
+    }
     void split(Block & block);
-    virtual void computeAndCountPartitionId(Block & block);
+    virtual void computeAndCountPartitionId(Block & block) {}
+    std::vector<int64_t> getPartitionLength() {
+        return partition_length;
+    }
     void stop();
 
 private:
@@ -52,16 +63,31 @@ private:
     void spillPartition(size_t partition_id);
     std::string getPartitionTempFile(size_t partition_id);
     void mergePartitionFiles();
+    std::unique_ptr<WriteBuffer> getPartitionWriteBuffer(size_t partition_id);
 
-private:
+protected:
     bool stopped = false;
-    std::vector<IColumn::ColumnIndex> partition_id_;
-    std::vector<int32_t> partition_id_cnt_;
+    std::vector<IColumn::ColumnIndex> partition_ids;
     std::vector<ColumnsBuffer> partition_buffer;
     std::vector<std::unique_ptr<NativeBlockOutputStream>> partition_outputs;
-    std::vector<std::unique_ptr<WriteBufferFromFile>> partition_write_buffers;
-    SplitterOptions options;
-    std::vector<long> partition_length;
+    std::vector<std::unique_ptr<WriteBuffer>> partition_write_buffers;
+    std::vector<std::unique_ptr<WriteBuffer>> partition_cached_write_buffers;
+    SplitOptions options;
+    std::vector<int64_t> partition_length;
 };
 
+class RoundRobinSplitter : public ShuffleSplitter {
+public:
+    static std::unique_ptr<ShuffleSplitter> create(SplitOptions && options);
+
+    RoundRobinSplitter(
+                       SplitOptions options_)
+        : ShuffleSplitter(std::move(options_)) {}
+
+    ~RoundRobinSplitter() override = default;
+    void computeAndCountPartitionId(Block & block) override;
+
+private:
+    int32_t pid_selection_ = 0;
+};
 }

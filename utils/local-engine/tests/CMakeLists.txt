@@ -31,7 +31,7 @@ grep_gtest_sources("${ClickHouse_SOURCE_DIR}/utils/local_engine/tests" local_eng
 
 add_executable(unit_tests_local_engine ${local_engine_gtest_sources} )
 
-add_executable(benchmark_local_engine benchmark_local_engine.cpp)
+add_executable(benchmark_local_engine benchmark_local_engine.cpp gtest_source.cpp)
 
 target_compile_options(unit_tests_local_engine PRIVATE
         -Wno-error

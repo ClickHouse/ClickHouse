@@ -22,6 +22,8 @@
 #include <Common/Logger.h>
 #include <common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Functions/FunctionFactory.h>
+#include <Shuffle/ShuffleSplitter.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -32,8 +34,10 @@ using namespace dbms;
 
 bool inside_main=true;
 DB::ContextMutablePtr global_context;
-// Define another benchmark
+// Define another benchmark+
+
 static void BM_CHColumnToSparkRow(benchmark::State& state) {
+
     for (auto _: state)
     {
         state.PauseTiming();
@@ -46,19 +50,18 @@ static void BM_CHColumnToSparkRow(benchmark::State& state) {
                           .column("l_extendedprice", "FP64")
                           .column("l_discount", "FP64")
                           .column("l_tax", "FP64")
-                          //                      .column("l_returnflag", "String")
-                          //                      .column("l_linestatus", "String")
-                          .column("l_shipdate_new", "FP64")
-                          .column("l_commitdate_new", "FP64")
-                          .column("l_receiptdate_new", "FP64")
-                          //                      .column("l_shipinstruct", "String")
-                          //                      .column("l_shipmode", "String")
-                          //                      .column("l_comment", "String")
+                          .column("l_returnflag", "String")
+                          .column("l_linestatus", "String")
+                          .column("l_shipdate", "Date")
+                          .column("l_commitdate", "Date")
+                          .column("l_receiptdate", "Date")
+                          .column("l_shipinstruct", "String")
+                          .column("l_shipmode", "String")
+                          .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-
-        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        auto plan = plan_builder.readMergeTree("default", "test", "home/saber/Documents/data/mergetree", 1, 10, std::move(schema)).build();
+        dbms::SerializedPlanParser parser(global_context);
         auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
         state.ResumeTiming();
@@ -77,18 +80,29 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
     const auto * type_string = "columns format version: 1\n"
-                         "4 columns:\n"
+                         "15 columns:\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
                          "`l_quantity` Float64\n"
-                         "`l_extendedprice` Float64\n"
-                         "`l_discount` Float64\n"
-                         "`l_shipdate_new` Float64\n";
+                               "`l_extendedprice` Float64\n"
+                               "`l_discount` Float64\n"
+                               "`l_tax` Float64\n"
+                               "`l_returnflag` String\n"
+                         "`l_linestatus` String\n"
+                               "`l_shipdate` Date\n"
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                               "`l_shipinstruct` String\n"
+                               "`l_shipmode` String\n"
+                               "`l_comment` String\n";
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     metadata = local_engine::buildMetaData(names_and_types_list, global_context);
     auto param = DB::MergeTreeData::MergingParams();
     auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                           "tpch-mergetree/lineorder/",
+                                                           "home/saber/Documents/data/mergetree",
                                                            *metadata,
                                                            false,
                                                            global_context,
@@ -102,7 +116,7 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         auto query_info = local_engine::buildQueryInfo(names_and_types_list);
         auto data_parts = custom_merge_tree.getDataPartsVector();
         int min_block = 0;
-        int max_block = state.range(10);
+        int max_block = state.range(0);
         MergeTreeData::DataPartsVector selected_parts;
         std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
                        [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
@@ -120,10 +134,91 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         state.ResumeTiming();
         auto executor = PullingPipelineExecutor(query_pipeline);
         Chunk chunk;
+        int sum =0;
         while(executor.pull(chunk))
         {
-            auto rows = chunk.getNumRows();
+            sum+= chunk.getNumRows();
         }
+    }
+}
+
+static void BM_ShuffleSplitter(benchmark::State& state) {
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
+    ColumnsDescription columns_description;
+    auto int64_type = std::make_shared<DB::DataTypeInt64>();
+    auto int32_type = std::make_shared<DB::DataTypeInt32>();
+    auto double_type = std::make_shared<DB::DataTypeFloat64>();
+    const auto * type_string = "columns format version: 1\n"
+                               "15 columns:\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
+                               "`l_quantity` Float64\n"
+                               "`l_extendedprice` Float64\n"
+                               "`l_discount` Float64\n"
+                               "`l_tax` Float64\n"
+                               "`l_returnflag` String\n"
+                               "`l_linestatus` String\n"
+                               "`l_shipdate` Date\n"
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                               "`l_shipinstruct` String\n"
+                               "`l_shipmode` String\n"
+                               "`l_comment` String\n";
+    auto names_and_types_list = NamesAndTypesList::parse(type_string);
+    metadata = local_engine::buildMetaData(names_and_types_list, global_context);
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = local_engine::buildMergeTreeSettings();
+
+    local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
+                                                           "home/saber/Documents/data/mergetree",
+                                                           *metadata,
+                                                           false,
+                                                           global_context,
+                                                           "",
+                                                           param,
+                                                           std::move(settings));
+    custom_merge_tree.loadDataParts(false);
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        auto query_info = local_engine::buildQueryInfo(names_and_types_list);
+        auto data_parts = custom_merge_tree.getDataPartsVector();
+        int min_block = 0;
+        int max_block = state.range(0);
+        MergeTreeData::DataPartsVector selected_parts;
+        std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+                     [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+        auto query = custom_merge_tree.reader.readFromParts(selected_parts,
+                                                            names_and_types_list.getNames(),
+                                                            metadata,
+                                                            metadata,
+                                                            *query_info,
+                                                            global_context,
+                                                            10000,
+                                                            1);
+        QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+        QueryPipeline query_pipeline;
+        query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        state.ResumeTiming();
+        auto executor = PullingPipelineExecutor(query_pipeline);
+        Block chunk = executor.getHeader();
+        int sum =0;
+        auto root = "/tmp/test_shuffle/"+local_engine::ShuffleSplitter::compress_methods[state.range(1)];
+        local_engine::SplitOptions options{
+            .buffer_size = 8192,
+            .data_file = root+"/data.dat",
+            .local_tmp_dir = root,
+            .map_id = 1,
+            .partition_nums = 4,
+            .compress_method = local_engine::ShuffleSplitter::compress_methods[state.range(1)]
+        };
+        auto splitter = local_engine::ShuffleSplitter::create("round-robin", options);
+        while(executor.pull(chunk))
+        {
+            splitter->split(chunk);
+        }
+        splitter->stop();
     }
 }
 
@@ -541,25 +636,184 @@ static void BM_TestCreateExecute(benchmark::State& state)
         LOG_DEBUG(&Poco::Logger::root(), "create context: {}, create parser: {}, create executor: {}, execute executor: {}", _context, _parser, _executor, _execute);
     }
 }
-//BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-//BENCHMARK(BM_MergeTreeRead)->Arg(11)->Unit(benchmark::kMillisecond)->Iterations(40);
+
+
+int add(int a, int b)
+{
+    return a + b;
+}
+
+
+
+static void BM_TestSum(benchmark::State& state)
+{
+    int cnt = state.range(0);
+    int i = 0;
+    std::vector<int> x;
+    std::vector<int> y;
+    x.reserve(cnt);
+    x.assign(cnt, 2);
+    y.reserve(cnt);
+
+    for (auto _: state)
+    {
+        for(i=0;i<cnt;i++){
+            y[i] = add(x[i], i);
+        }
+    }
+}
+
+
+static void BM_TestSumInline(benchmark::State& state)
+{
+    int cnt = state.range(0);
+    int i = 0;
+    std::vector<int> x;
+    std::vector<int> y;
+    x.reserve(cnt);
+    x.assign(cnt, 2);
+    y.reserve(cnt);
+
+    for (auto _: state)
+    {
+        for(i=0;i<cnt;i++){
+            y[i] =x[i]+i;
+        }
+    }
+}
+
+static void BM_TestPlus(benchmark::State& state)
+{
+    UInt64 rows = state.range(0);
+    auto & factory = FunctionFactory::instance();
+    auto & type_factory = DataTypeFactory::instance();
+    auto plus = factory.get("plus", global_context);
+    auto type = type_factory.get("UInt64");
+    ColumnsWithTypeAndName arguments;
+    arguments.push_back(ColumnWithTypeAndName(type, "x"));
+    arguments.push_back(ColumnWithTypeAndName(type, "y"));
+    auto function = plus->build(arguments);
+
+    ColumnsWithTypeAndName arguments_with_data;
+    Block block;
+    auto x = ColumnWithTypeAndName(type, "x");
+    auto y = ColumnWithTypeAndName(type, "y");
+    MutableColumnPtr mutable_x = x.type->createColumn();
+    MutableColumnPtr mutable_y = y.type->createColumn();
+    mutable_x->reserve(rows);
+    mutable_y->reserve(rows);
+    ColumnVector<UInt64> & column_x = assert_cast<ColumnVector<UInt64> &>(*mutable_x);
+    ColumnVector<UInt64> & column_y = assert_cast<ColumnVector<UInt64> &>(*mutable_y);
+    for (UInt64 i=0; i<rows; i++)
+    {
+        column_x.insertValue(i);
+        column_y.insertValue(i+1);
+    }
+    x.column = std::move(mutable_x);
+    y.column = std::move(mutable_y);
+    block.insert(x);
+    block.insert(y);
+    auto executable_function = function->prepare(arguments);
+    for (auto _: state)
+    {
+        auto result = executable_function->execute(block.getColumnsWithTypeAndName(),
+                                                   type, rows, false);
+    }
+}
+
+static void BM_TestPlusEmbedded(benchmark::State& state)
+{
+    UInt64 rows = state.range(0);
+    auto & factory = FunctionFactory::instance();
+    auto & type_factory = DataTypeFactory::instance();
+    auto plus = factory.get("plus", global_context);
+    auto type = type_factory.get("UInt64");
+    ColumnsWithTypeAndName arguments;
+    arguments.push_back(ColumnWithTypeAndName(type, "x"));
+    arguments.push_back(ColumnWithTypeAndName(type, "y"));
+    auto function = plus->build(arguments);
+    ColumnsWithTypeAndName arguments_with_data;
+    Block block;
+    auto x = ColumnWithTypeAndName(type, "x");
+    auto y = ColumnWithTypeAndName(type, "y");
+    MutableColumnPtr mutable_x = x.type->createColumn();
+    MutableColumnPtr mutable_y = y.type->createColumn();
+    mutable_x->reserve(rows);
+    mutable_y->reserve(rows);
+    ColumnVector<UInt64> & column_x = assert_cast<ColumnVector<UInt64> &>(*mutable_x);
+    ColumnVector<UInt64> & column_y = assert_cast<ColumnVector<UInt64> &>(*mutable_y);
+    for (UInt64 i=0; i<rows; i++)
+    {
+        column_x.insertValue(i);
+        column_y.insertValue(i+1);
+    }
+    x.column = std::move(mutable_x);
+    y.column = std::move(mutable_y);
+    block.insert(x);
+    block.insert(y);
+    CHJIT chjit;
+    auto compiled_function = compileFunction(chjit, *function);
+    std::vector<ColumnData> columns(arguments.size() + 1);
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        auto column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        columns[i] = getColumnData(column.get());
+    }
+    for (auto _: state)
+    {
+        auto result_column = type->createColumn();
+        result_column->reserve(rows);
+        columns[arguments.size()] = getColumnData(result_column.get());
+        compiled_function.compiled_function(rows, columns.data());
+    }
+}
+
+double quantile(const vector<double>&x)
+{
+    double q = 0.8;
+    assert(q >= 0.0 && q <= 1.0);
+    const int n = x.size();
+    double id = (n-1)*q;
+    int lo = floor(id);
+    int hi = ceil(id);
+    double qs = x[lo];
+    double h = (id-lo);
+    return (1.0 - h) * qs + h * x[hi];
+}
+
+
+
+//BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_MergeTreeRead)->Arg(10)->Unit(benchmark::kMillisecond)->Iterations(40);
+BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(10);
+
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(100);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_TestCreateExecute)->Unit(benchmark::kMillisecond)->Iterations(1000);
+
+//BENCHMARK(BM_TestSum)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
+//BENCHMARK(BM_TestSumInline)->Arg(1000000)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(100)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
+//
+//BENCHMARK(BM_TestPlus)->Arg(65505)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(1000)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
+//BENCHMARK(BM_TestPlusEmbedded)->Arg(65505)->Unit(benchmark::kMicrosecond)->Iterations(100)->Repetitions(1000)->ComputeStatistics("80%", quantile)->DisplayAggregatesOnly();
+
+
+
 int main(int argc, char** argv) {
-    local_engine::Logger::initConsoleLogger();
+//    local_engine::Logger::initConsoleLogger();
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setConfig(dbms::SerializedPlanParser::config);
-    auto path = MERGETREE_DATA(/);
+    auto path = "/";
     global_context->setPath(path);
+    SerializedPlanParser::global_context = global_context;
     dbms::SerializedPlanParser::initFunctionEnv();
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
