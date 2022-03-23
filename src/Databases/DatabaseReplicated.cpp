@@ -90,7 +90,7 @@ DatabaseReplicated::DatabaseReplicated(
         zookeeper_path = "/" + zookeeper_path;
 
     if (!db_settings.collection_name.value.empty())
-        fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());    
+        fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 }
 
 String DatabaseReplicated::getFullReplicaName() const
@@ -219,7 +219,7 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
 
     if (!config_ref.has(config_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
-    
+
     cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
     cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
     cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");

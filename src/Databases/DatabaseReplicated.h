@@ -75,7 +75,7 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
-    struct 
+    struct
     {
         String cluster_username{"default"};
         String cluster_password;
