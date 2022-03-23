@@ -14,6 +14,7 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 mkdir -p build/build_docker
 cd build/build_docker
 rm -f CMakeCache.txt
+
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
