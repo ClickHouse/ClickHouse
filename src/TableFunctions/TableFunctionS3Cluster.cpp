@@ -82,6 +82,21 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
 ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr context) const
 {
+    if (configuration.structure == "auto")
+    {
+        return StorageS3::getTableStructureFromData(
+            configuration.format,
+            S3::URI(Poco::URI(configuration.url)),
+            configuration.access_key_id,
+            configuration.secret_access_key,
+            context->getSettingsRef().s3_max_connections,
+            context->getSettingsRef().s3_max_single_read_retries,
+            configuration.compression_method,
+            false,
+            std::nullopt,
+            context);
+    }
+
     return parseColumnsListFromString(configuration.structure, context);
 }
 
