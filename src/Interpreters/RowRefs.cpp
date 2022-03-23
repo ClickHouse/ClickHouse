@@ -60,7 +60,7 @@ class SortedLookupVector : public SortedLookupVectorBase
     {
         ALWAYS_INLINE bool operator()(const Entry & lhs, const Entry & rhs) const
         {
-            return lhs.value > rhs.value;
+            return lhs.value < rhs.value;
         }
     };
 
