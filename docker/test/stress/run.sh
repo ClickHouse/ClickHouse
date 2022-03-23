@@ -248,7 +248,7 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log* > /test_
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Remove file fatal_messages.txt if it's empty
-[ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
+[ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
 zgrep -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
