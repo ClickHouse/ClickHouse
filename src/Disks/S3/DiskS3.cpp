@@ -18,9 +18,9 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
