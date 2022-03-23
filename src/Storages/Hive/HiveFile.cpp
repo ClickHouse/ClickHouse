@@ -31,7 +31,7 @@ namespace ErrorCodes
 #define THROW_ARROW_NOT_OK(status)                                     \
     do                                                                 \
     {                                                                  \
-        if (::arrow::Status _s = (status); !_s.ok())                   \
+        if (const ::arrow::Status & _s = (status); !_s.ok())                   \
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
