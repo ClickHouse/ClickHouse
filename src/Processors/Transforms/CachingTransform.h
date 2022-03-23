@@ -10,20 +10,20 @@ namespace DB
 class CachingTransform : public ISimpleTransform
 {
 public:
-    CachingTransform(const Block & header_, LRUCache<CacheKey, Data, CacheKeyHasher> & cache_, ASTPtr query_ptr_)
-        : ISimpleTransform(header_, header_, false)
-        , cache(cache_)
-        , query_ptr(query_ptr_)
-        , header(header_)
+    CachingTransform(const Block & header, LRUCache<CacheKey, Data, CacheKeyHasher> & cache, ASTPtr query_ptr)
+        : ISimpleTransform(header, header, false)
+        , data(std::move(cache.getOrSet(CacheKey{query_ptr, header}, [&]
+                            {
+                                return std::make_shared<Data>(header, Chunks{});
+                            }).first))
     {}
     String getName() const override { return "CachingTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;
 private:
-    LRUCache<CacheKey, Data, CacheKeyHasher> & cache;
-    ASTPtr query_ptr;
-    Block header;
+    std::shared_ptr<Data> data;
+
 };
 
 }
