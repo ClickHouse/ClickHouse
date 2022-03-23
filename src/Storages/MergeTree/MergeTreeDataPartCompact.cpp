@@ -192,9 +192,4 @@ MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
     removeIfNeeded();
 }
 
-/// We don't cache mark file, because cache other metadata files is enough to speed up loading.
-void MergeTreeDataPartCompact::appendFilesOfIndexGranularity(Strings& /* files */) const
-{
-}
-
 }
