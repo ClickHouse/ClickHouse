@@ -9,1699 +9,1782 @@ from testflows.core import Requirement
 Heading = Specification.Heading
 
 RQ_SRS008_AES_Functions = Requirement(
-    name='RQ.SRS008.AES.Functions',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [AES] encryption functions to encrypt and decrypt data.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [AES] encryption functions to encrypt and decrypt data.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.1.1')
+    num="4.1.1",
+)
 
 RQ_SRS008_AES_Functions_Compatibility_MySQL = Requirement(
-    name='RQ.SRS008.AES.Functions.Compatibility.MySQL',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Compatibility.MySQL",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support [AES] encryption functions compatible with [MySQL 5.7].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support [AES] encryption functions compatible with [MySQL 5.7].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.2.1')
+    num="4.2.1",
+)
 
 RQ_SRS008_AES_Functions_Compatibility_Dictionaries = Requirement(
-    name='RQ.SRS008.AES.Functions.Compatibility.Dictionaries',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Compatibility.Dictionaries",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support encryption and decryption of data accessed on remote\n'
-        '[MySQL] servers using [MySQL Dictionary].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support encryption and decryption of data accessed on remote\n"
+        "[MySQL] servers using [MySQL Dictionary].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.2.2')
+    num="4.2.2",
+)
 
 RQ_SRS008_AES_Functions_Compatibility_Engine_Database_MySQL = Requirement(
-    name='RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Database Engine],\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Database Engine],\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.2.3')
+    num="4.2.3",
+)
 
 RQ_SRS008_AES_Functions_Compatibility_Engine_Table_MySQL = Requirement(
-    name='RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Engine].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Engine].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.2.4')
+    num="4.2.4",
+)
 
 RQ_SRS008_AES_Functions_Compatibility_TableFunction_MySQL = Requirement(
-    name='RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Function].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support encryption and decryption of data accessed using [MySQL Table Function].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.2.5')
+    num="4.2.5",
+)
 
 RQ_SRS008_AES_Functions_DifferentModes = Requirement(
-    name='RQ.SRS008.AES.Functions.DifferentModes',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.DifferentModes",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL allow different modes to be supported in a single SQL statement\n'
-        'using explicit function parameters.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL allow different modes to be supported in a single SQL statement\n"
+        "using explicit function parameters.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.3.1')
+    num="4.3.1",
+)
 
 RQ_SRS008_AES_Functions_DataFromMultipleSources = Requirement(
-    name='RQ.SRS008.AES.Functions.DataFromMultipleSources',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.DataFromMultipleSources",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support handling encryption and decryption of data from multiple sources\n'
-        'in the `SELECT` statement, including [ClickHouse] [MergeTree] table as well as [MySQL Dictionary],\n'
-        '[MySQL Database Engine], [MySQL Table Engine], and [MySQL Table Function]\n'
-        'with possibly different encryption schemes.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support handling encryption and decryption of data from multiple sources\n"
+        "in the `SELECT` statement, including [ClickHouse] [MergeTree] table as well as [MySQL Dictionary],\n"
+        "[MySQL Database Engine], [MySQL Table Engine], and [MySQL Table Function]\n"
+        "with possibly different encryption schemes.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.4.1')
+    num="4.4.1",
+)
 
 RQ_SRS008_AES_Functions_SuppressOutputOfSensitiveValues = Requirement(
-    name='RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL suppress output of [AES] `string` and `key` parameters to the system log,\n'
-        'error log, and `query_log` table to prevent leakage of sensitive values.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL suppress output of [AES] `string` and `key` parameters to the system log,\n"
+        "error log, and `query_log` table to prevent leakage of sensitive values.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.5.1')
+    num="4.5.1",
+)
 
 RQ_SRS008_AES_Functions_InvalidParameters = Requirement(
-    name='RQ.SRS008.AES.Functions.InvalidParameters',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.InvalidParameters",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when parameters are invalid.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when parameters are invalid.\n" "\n"
+    ),
     link=None,
     level=3,
-    num='4.6.1')
+    num="4.6.1",
+)
 
 RQ_SRS008_AES_Functions_Mismatched_Key = Requirement(
-    name='RQ.SRS008.AES.Functions.Mismatched.Key',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Mismatched.Key",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
-    description=(
-        '[ClickHouse] SHALL return garbage for mismatched keys.\n'
-        '\n'
-        ),
+    description=("[ClickHouse] SHALL return garbage for mismatched keys.\n" "\n"),
     link=None,
     level=3,
-    num='4.7.1')
+    num="4.7.1",
+)
 
 RQ_SRS008_AES_Functions_Mismatched_IV = Requirement(
-    name='RQ.SRS008.AES.Functions.Mismatched.IV',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Mismatched.IV",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return garbage for mismatched initialization vector for the modes that use it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return garbage for mismatched initialization vector for the modes that use it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.7.2')
+    num="4.7.2",
+)
 
 RQ_SRS008_AES_Functions_Mismatched_AAD = Requirement(
-    name='RQ.SRS008.AES.Functions.Mismatched.AAD',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Mismatched.AAD",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return garbage for mismatched additional authentication data for the modes that use it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return garbage for mismatched additional authentication data for the modes that use it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.7.3')
+    num="4.7.3",
+)
 
 RQ_SRS008_AES_Functions_Mismatched_Mode = Requirement(
-    name='RQ.SRS008.AES.Functions.Mismatched.Mode',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Mismatched.Mode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error or garbage for mismatched mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error or garbage for mismatched mode.\n" "\n"
+    ),
     link=None,
     level=3,
-    num='4.7.4')
+    num="4.7.4",
+)
 
 RQ_SRS008_AES_Functions_Check_Performance = Requirement(
-    name='RQ.SRS008.AES.Functions.Check.Performance',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Check.Performance",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
-    description=(
-        'Performance of [AES] encryption functions SHALL be measured.\n'
-        '\n'
-        ),
+    description=("Performance of [AES] encryption functions SHALL be measured.\n" "\n"),
     link=None,
     level=3,
-    num='4.8.1')
+    num="4.8.1",
+)
 
 RQ_SRS008_AES_Function_Check_Performance_BestCase = Requirement(
-    name='RQ.SRS008.AES.Function.Check.Performance.BestCase',
-    version='1.0',
+    name="RQ.SRS008.AES.Function.Check.Performance.BestCase",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'Performance of [AES] encryption functions SHALL be checked for the best case\n'
-        'scenario where there is one key, one initialization vector, and one large stream of data.\n'
-        '\n'
-        ),
+        "Performance of [AES] encryption functions SHALL be checked for the best case\n"
+        "scenario where there is one key, one initialization vector, and one large stream of data.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.8.2')
+    num="4.8.2",
+)
 
 RQ_SRS008_AES_Function_Check_Performance_WorstCase = Requirement(
-    name='RQ.SRS008.AES.Function.Check.Performance.WorstCase',
-    version='1.0',
+    name="RQ.SRS008.AES.Function.Check.Performance.WorstCase",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'Performance of [AES] encryption functions SHALL be checked for the worst case\n'
-        'where there are `N` keys, `N` initialization vectors and `N` very small streams of data.\n'
-        '\n'
-        ),
+        "Performance of [AES] encryption functions SHALL be checked for the worst case\n"
+        "where there are `N` keys, `N` initialization vectors and `N` very small streams of data.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.8.3')
+    num="4.8.3",
+)
 
 RQ_SRS008_AES_Functions_Check_Compression = Requirement(
-    name='RQ.SRS008.AES.Functions.Check.Compression',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Check.Compression",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'Effect of [AES] encryption on column compression SHALL be measured.\n'
-        '\n'
-        ),
+        "Effect of [AES] encryption on column compression SHALL be measured.\n" "\n"
+    ),
     link=None,
     level=3,
-    num='4.8.4')
+    num="4.8.4",
+)
 
 RQ_SRS008_AES_Functions_Check_Compression_LowCardinality = Requirement(
-    name='RQ.SRS008.AES.Functions.Check.Compression.LowCardinality',
-    version='1.0',
+    name="RQ.SRS008.AES.Functions.Check.Compression.LowCardinality",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        'Effect of [AES] encryption on the compression of a column with [LowCardinality] data type\n'
-        'SHALL be measured.\n'
-        '\n'
-        ),
+        "Effect of [AES] encryption on the compression of a column with [LowCardinality] data type\n"
+        "SHALL be measured.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.8.5')
+    num="4.8.5",
+)
 
 RQ_SRS008_AES_Encrypt_Function = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `encrypt` function to encrypt data using [AES].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `encrypt` function to encrypt data using [AES].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.1')
+    num="4.9.1",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Syntax = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Syntax',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Syntax",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following syntax for the `encrypt` function\n'
-        '\n'
-        '```sql\n'
-        'encrypt(mode, plaintext, key, [iv, aad])\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following syntax for the `encrypt` function\n"
+        "\n"
+        "```sql\n"
+        "encrypt(mode, plaintext, key, [iv, aad])\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.2')
+    num="4.9.2",
+)
 
 RQ_SRS008_AES_Encrypt_Function_NIST_TestVectors = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] `encrypt` function output SHALL produce output that matches [NIST test vectors].\n'
-        '\n'
-        ),
+        "[ClickHouse] `encrypt` function output SHALL produce output that matches [NIST test vectors].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.3')
+    num="4.9.3",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_PlainText = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText',
-    version='2.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText",
+    version="2.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,\n'
-        '`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as\n'
-        'the second parameter to the `encrypt` function that SHALL specify the data to be encrypted.\n'
-        '\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,\n"
+        "`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as\n"
+        "the second parameter to the `encrypt` function that SHALL specify the data to be encrypted.\n"
+        "\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.4')
+    num="4.9.4",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_Key = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.Key',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.Key",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n'
-        'as the  parameter to the `encrypt` function that SHALL specify the encryption key.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n"
+        "as the  parameter to the `encrypt` function that SHALL specify the encryption key.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.5')
+    num="4.9.5",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_Mode = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n'
-        'to the `encrypt` function that SHALL specify encryption key length and block encryption mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n"
+        "to the `encrypt` function that SHALL specify encryption key length and block encryption mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.6')
+    num="4.9.6",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n'
-        'of the `encrypt` function where\n'
-        'the `key_length` SHALL specifies the length of the key and SHALL accept\n'
-        '`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n'
-        'mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n'
-        '[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n"
+        "of the `encrypt` function where\n"
+        "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
+        "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n"
+        "[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.7')
+    num="4.9.7",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Value_Invalid = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `encrypt`\n'
-        'function is not valid with the exception where such a mode is supported by the underlying\n'
-        '[OpenSSL] implementation.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `encrypt`\n"
+        "function is not valid with the exception where such a mode is supported by the underlying\n"
+        "[OpenSSL] implementation.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.8')
+    num="4.9.8",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Values = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n'
-        'of the `encrypt` function:\n'
-        '\n'
-        '* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n'
-        '* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n'
-        '* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n'
-        '* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n'
-        '* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n'
-        '* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n'
-        '* `aes-128-gcm` that SHALL use [GCM] block mode encryption with 128 bit key\n'
-        '   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '* `aes-192-gcm` that SHALL use [GCM] block mode encryption with 192 bit key\n'
-        '   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '* `aes-256-gcm` that SHALL use [GCM] block mode encryption with 256 bit key\n'
-        '   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '*  `aes-128-ctr` that SHALL use [CTR] block mode encryption with 128 bit key\n'
-        '*  `aes-192-ctr` that SHALL use [CTR] block mode encryption with 192 bit key\n'
-        '*  `aes-256-ctr` that SHALL use [CTR] block mode encryption with 256 bit key\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
+        "of the `encrypt` function:\n"
+        "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
+        "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
+        "* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n"
+        "* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n"
+        "* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n"
+        "* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n"
+        "* `aes-128-gcm` that SHALL use [GCM] block mode encryption with 128 bit key\n"
+        "   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "* `aes-192-gcm` that SHALL use [GCM] block mode encryption with 192 bit key\n"
+        "   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "* `aes-256-gcm` that SHALL use [GCM] block mode encryption with 256 bit key\n"
+        "   and [AEAD] 16-byte tag is appended to the resulting ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "*  `aes-128-ctr` that SHALL use [CTR] block mode encryption with 128 bit key\n"
+        "*  `aes-192-ctr` that SHALL use [CTR] block mode encryption with 192 bit key\n"
+        "*  `aes-256-ctr` that SHALL use [CTR] block mode encryption with 256 bit key\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.9')
+    num="4.9.9",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_InitializationVector = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n'
-        'parameter to the `encrypt` function that SHALL specify the initialization vector for block modes that require\n'
-        'it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n"
+        "parameter to the `encrypt` function that SHALL specify the initialization vector for block modes that require\n"
+        "it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.10')
+    num="4.9.10",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_AdditionalAuthenticatedData = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth\n'
-        'parameter to the `encrypt` function that SHALL specify the additional authenticated data\n'
-        'for block modes that require it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth\n"
+        "parameter to the `encrypt` function that SHALL specify the additional authenticated data\n"
+        "for block modes that require it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.11')
+    num="4.9.11",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Parameters_ReturnValue = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return the encrypted value of the data\n'
-        'using `String` data type as the result of `encrypt` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return the encrypted value of the data\n"
+        "using `String` data type as the result of `encrypt` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.12')
+    num="4.9.12",
+)
 
 RQ_SRS008_AES_Encrypt_Function_Key_Length_InvalidLengthError = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `key` length is not exact for the `encrypt` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `key` length is not exact for the `encrypt` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.13')
+    num="4.9.13",
+)
 
 RQ_SRS008_AES_Encrypt_Function_InitializationVector_Length_InvalidLengthError = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` length is specified and not of the exact size for the `encrypt` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` length is specified and not of the exact size for the `encrypt` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.14')
+    num="4.9.14",
+)
 
 RQ_SRS008_AES_Encrypt_Function_InitializationVector_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` is specified for the `encrypt` function for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` is specified for the `encrypt` function for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.15')
+    num="4.9.15",
+)
 
 RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `aad` is specified for the `encrypt` function for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `aad` is specified for the `encrypt` function for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.16')
+    num="4.9.16",
+)
 
 RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_Length = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `encrypt` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `encrypt` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.17')
+    num="4.9.17",
+)
 
 RQ_SRS008_AES_Encrypt_Function_NonGCMMode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values\n'
-        'when using non-GCM modes\n'
-        '\n'
-        '* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n'
-        '* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n'
-        '* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n'
-        '* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb1` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cfb1` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb1` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb8` mode and `key` is not 16 bytes and if specified `iv` is not 16 bytes\n'
-        '* `aes-192-cfb8` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb8` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb128` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cfb128` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb128` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-ofb` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-ofb` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-ofb` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-ctr` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes\n'
-        '* `aes-192-ctr` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes\n'
-        '* `aes-256-ctr` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values\n"
+        "when using non-GCM modes\n"
+        "\n"
+        "* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n"
+        "* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n"
+        "* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n"
+        "* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb1` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cfb1` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb1` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb8` mode and `key` is not 16 bytes and if specified `iv` is not 16 bytes\n"
+        "* `aes-192-cfb8` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb8` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb128` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cfb128` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb128` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-ofb` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-ofb` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-ofb` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-ctr` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes\n"
+        "* `aes-192-ctr` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes\n"
+        "* `aes-256-ctr` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.18')
+    num="4.9.18",
+)
 
 RQ_SRS008_AES_Encrypt_Function_GCMMode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values\n'
-        'when using GCM modes\n'
-        '\n'
-        '* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified\n'
-        '* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified\n'
-        '* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values\n"
+        "when using GCM modes\n"
+        "\n"
+        "* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified\n"
+        "* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified\n"
+        "* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.9.19')
+    num="4.9.19",
+)
 
 RQ_SRS008_AES_Decrypt_Function = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `decrypt` function to decrypt data using [AES].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `decrypt` function to decrypt data using [AES].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.1')
+    num="4.10.1",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Syntax = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Syntax',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Syntax",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following syntax for the `decrypt` function\n'
-        '\n'
-        '```sql\n'
-        'decrypt(mode, ciphertext, key, [iv, aad])\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following syntax for the `decrypt` function\n"
+        "\n"
+        "```sql\n"
+        "decrypt(mode, ciphertext, key, [iv, aad])\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.2')
+    num="4.10.2",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_CipherText = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `ciphertext` accepting `FixedString` or `String` data types as\n'
-        'the second parameter to the `decrypt` function that SHALL specify the data to be decrypted.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `ciphertext` accepting `FixedString` or `String` data types as\n"
+        "the second parameter to the `decrypt` function that SHALL specify the data to be decrypted.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.3')
+    num="4.10.3",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_Key = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.Key',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.Key",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n'
-        'as the third parameter to the `decrypt` function that SHALL specify the encryption key.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n"
+        "as the third parameter to the `decrypt` function that SHALL specify the encryption key.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.4')
+    num="4.10.4",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_Mode = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n'
-        'to the `decrypt` function that SHALL specify encryption key length and block encryption mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n"
+        "to the `decrypt` function that SHALL specify encryption key length and block encryption mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.5')
+    num="4.10.5",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n'
-        'of the `decrypt` function where\n'
-        'the `key_length` SHALL specifies the length of the key and SHALL accept\n'
-        '`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n'
-        'mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n'
-        '[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n"
+        "of the `decrypt` function where\n"
+        "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
+        "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n"
+        "[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.6')
+    num="4.10.6",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Value_Invalid = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `decrypt`\n'
-        'function is not valid with the exception where such a mode is supported by the underlying\n'
-        '[OpenSSL] implementation.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `decrypt`\n"
+        "function is not valid with the exception where such a mode is supported by the underlying\n"
+        "[OpenSSL] implementation.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.7')
+    num="4.10.7",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Values = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n'
-        'of the `decrypt` function:\n'
-        '\n'
-        '* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n'
-        '* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n'
-        '* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n'
-        '* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n'
-        '* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n'
-        '* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n'
-        '* `aes-128-gcm` that SHALL use [GCM] block mode encryption with 128 bit key\n'
-        '   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '* `aes-192-gcm` that SHALL use [GCM] block mode encryption with 192 bit key\n'
-        '   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '* `aes-256-gcm` that SHALL use [GCM] block mode encryption with 256 bit key\n'
-        '   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n'
-        '   the [RFC5116]\n'
-        '*  `aes-128-ctr` that SHALL use [CTR] block mode encryption with 128 bit key\n'
-        '*  `aes-192-ctr` that SHALL use [CTR] block mode encryption with 192 bit key\n'
-        '*  `aes-256-ctr` that SHALL use [CTR] block mode encryption with 256 bit key\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
+        "of the `decrypt` function:\n"
+        "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
+        "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
+        "* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n"
+        "* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n"
+        "* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n"
+        "* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n"
+        "* `aes-128-gcm` that SHALL use [GCM] block mode encryption with 128 bit key\n"
+        "   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "* `aes-192-gcm` that SHALL use [GCM] block mode encryption with 192 bit key\n"
+        "   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "* `aes-256-gcm` that SHALL use [GCM] block mode encryption with 256 bit key\n"
+        "   and [AEAD] 16-byte tag is expected present at the end of the ciphertext according to\n"
+        "   the [RFC5116]\n"
+        "*  `aes-128-ctr` that SHALL use [CTR] block mode encryption with 128 bit key\n"
+        "*  `aes-192-ctr` that SHALL use [CTR] block mode encryption with 192 bit key\n"
+        "*  `aes-256-ctr` that SHALL use [CTR] block mode encryption with 256 bit key\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.8')
+    num="4.10.8",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_InitializationVector = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n'
-        'parameter to the `decrypt` function that SHALL specify the initialization vector for block modes that require\n'
-        'it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n"
+        "parameter to the `decrypt` function that SHALL specify the initialization vector for block modes that require\n"
+        "it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.9')
+    num="4.10.9",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_AdditionalAuthenticatedData = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth\n'
-        'parameter to the `decrypt` function that SHALL specify the additional authenticated data\n'
-        'for block modes that require it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth\n"
+        "parameter to the `decrypt` function that SHALL specify the additional authenticated data\n"
+        "for block modes that require it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.10')
+    num="4.10.10",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Parameters_ReturnValue = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return the decrypted value of the data\n'
-        'using `String` data type as the result of `decrypt` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return the decrypted value of the data\n"
+        "using `String` data type as the result of `decrypt` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.11')
+    num="4.10.11",
+)
 
 RQ_SRS008_AES_Decrypt_Function_Key_Length_InvalidLengthError = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `key` length is not exact for the `decrypt` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `key` length is not exact for the `decrypt` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.12')
+    num="4.10.12",
+)
 
 RQ_SRS008_AES_Decrypt_Function_InitializationVector_Length_InvalidLengthError = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` is specified and the length is not exact for the `decrypt` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` is specified and the length is not exact for the `decrypt` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.13')
+    num="4.10.13",
+)
 
 RQ_SRS008_AES_Decrypt_Function_InitializationVector_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` is specified for the `decrypt` function\n'
-        'for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` is specified for the `decrypt` function\n"
+        "for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.14')
+    num="4.10.14",
+)
 
 RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `aad` is specified for the `decrypt` function\n'
-        'for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `aad` is specified for the `decrypt` function\n"
+        "for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.15')
+    num="4.10.15",
+)
 
 RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_Length = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `decrypt` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `decrypt` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.16')
+    num="4.10.16",
+)
 
 RQ_SRS008_AES_Decrypt_Function_NonGCMMode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values\n'
-        'when using non-GCM modes\n'
-        '\n'
-        '* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n'
-        '* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n'
-        '* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n'
-        '* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb1` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cfb1` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb1` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb8` mode and `key` is not 16 bytes and if specified `iv` is not 16 bytes\n'
-        '* `aes-192-cfb8` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb8` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-cfb128` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-cfb128` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-cfb128` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-ofb` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-192-ofb` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-256-ofb` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n'
-        '* `aes-128-ctr` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes\n'
-        '* `aes-192-ctr` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes\n'
-        '* `aes-256-ctr` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values\n"
+        "when using non-GCM modes\n"
+        "\n"
+        "* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n"
+        "* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n"
+        "* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n"
+        "* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb1` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cfb1` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb1` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb8` mode and `key` is not 16 bytes and if specified `iv` is not 16 bytes\n"
+        "* `aes-192-cfb8` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb8` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-cfb128` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-cfb128` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-cfb128` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-ofb` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-192-ofb` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-256-ofb` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
+        "* `aes-128-ctr` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes\n"
+        "* `aes-192-ctr` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes\n"
+        "* `aes-256-ctr` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.17')
+    num="4.10.17",
+)
 
 RQ_SRS008_AES_Decrypt_Function_GCMMode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values\n'
-        'when using GCM modes\n'
-        '\n'
-        '* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified\n'
-        '* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified\n'
-        '* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values\n"
+        "when using GCM modes\n"
+        "\n"
+        "* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified\n"
+        "* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified\n"
+        "* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.10.18')
+    num="4.10.18",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `aes_encrypt_mysql` function to encrypt data using [AES].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `aes_encrypt_mysql` function to encrypt data using [AES].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.1')
+    num="4.11.1",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Syntax = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following syntax for the `aes_encrypt_mysql` function\n'
-        '\n'
-        '```sql\n'
-        'aes_encrypt_mysql(mode, plaintext, key, [iv])\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following syntax for the `aes_encrypt_mysql` function\n"
+        "\n"
+        "```sql\n"
+        "aes_encrypt_mysql(mode, plaintext, key, [iv])\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.2')
+    num="4.11.2",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText',
-    version='2.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText",
+    version="2.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,\n'
-        '`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as\n'
-        'the second parameter to the `aes_encrypt_mysql` function that SHALL specify the data to be encrypted.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `plaintext` with `String`, `FixedString`, `Nullable(String)`,\n"
+        "`Nullable(FixedString)`, `LowCardinality(String)`, or `LowCardinality(FixedString(N))` data types as\n"
+        "the second parameter to the `aes_encrypt_mysql` function that SHALL specify the data to be encrypted.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.3')
+    num="4.11.3",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Key = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n'
-        'as the third parameter to the `aes_encrypt_mysql` function that SHALL specify the encryption key.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n"
+        "as the third parameter to the `aes_encrypt_mysql` function that SHALL specify the encryption key.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.4')
+    num="4.11.4",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n'
-        'to the `aes_encrypt_mysql` function that SHALL specify encryption key length and block encryption mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n"
+        "to the `aes_encrypt_mysql` function that SHALL specify encryption key length and block encryption mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.5')
+    num="4.11.5",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n'
-        'of the `aes_encrypt_mysql` function where\n'
-        'the `key_length` SHALL specifies the length of the key and SHALL accept\n'
-        '`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n'
-        'mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n"
+        "of the `aes_encrypt_mysql` function where\n"
+        "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
+        "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.6')
+    num="4.11.6",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_Invalid = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_encrypt_mysql`\n'
-        'function is not valid with the exception where such a mode is supported by the underlying\n'
-        '[OpenSSL] implementation.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_encrypt_mysql`\n"
+        "function is not valid with the exception where such a mode is supported by the underlying\n"
+        "[OpenSSL] implementation.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.7')
+    num="4.11.7",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n'
-        'of the `aes_encrypt_mysql` function:\n'
-        '\n'
-        '* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n'
-        '* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n'
-        '* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n'
-        '* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n'
-        '* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n'
-        '* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
+        "of the `aes_encrypt_mysql` function:\n"
+        "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
+        "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
+        "* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n"
+        "* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n"
+        "* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n"
+        "* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.8')
+    num="4.11.8",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values_GCM_Error = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if any of the following [GCM] modes are specified as the value \n'
-        'for the `mode` parameter of the `aes_encrypt_mysql` function\n'
-        '\n'
-        '* `aes-128-gcm`\n'
-        '* `aes-192-gcm`\n'
-        '* `aes-256-gcm`\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if any of the following [GCM] modes are specified as the value \n"
+        "for the `mode` parameter of the `aes_encrypt_mysql` function\n"
+        "\n"
+        "* `aes-128-gcm`\n"
+        "* `aes-192-gcm`\n"
+        "* `aes-256-gcm`\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.9')
+    num="4.11.9",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values_CTR_Error = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if any of the following [CTR] modes are specified as the value \n'
-        'for the `mode` parameter of the `aes_encrypt_mysql` function\n'
-        '\n'
-        '* `aes-128-ctr`\n'
-        '* `aes-192-ctr`\n'
-        '* `aes-256-ctr`\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if any of the following [CTR] modes are specified as the value \n"
+        "for the `mode` parameter of the `aes_encrypt_mysql` function\n"
+        "\n"
+        "* `aes-128-ctr`\n"
+        "* `aes-192-ctr`\n"
+        "* `aes-256-ctr`\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.10')
+    num="4.11.10",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_InitializationVector = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n'
-        'parameter to the `aes_encrypt_mysql` function that SHALL specify the initialization vector for block modes that require\n'
-        'it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n"
+        "parameter to the `aes_encrypt_mysql` function that SHALL specify the initialization vector for block modes that require\n"
+        "it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.11')
+    num="4.11.11",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_ReturnValue = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return the encrypted value of the data\n'
-        'using `String` data type as the result of `aes_encrypt_mysql` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return the encrypted value of the data\n"
+        "using `String` data type as the result of `aes_encrypt_mysql` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.12')
+    num="4.11.12",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooShortError = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `key` length is less than the minimum for the `aes_encrypt_mysql`\n'
-        'function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `key` length is less than the minimum for the `aes_encrypt_mysql`\n"
+        "function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.13')
+    num="4.11.13",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooLong = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL use folding algorithm specified below if the `key` length is longer than required\n'
-        'for the `aes_encrypt_mysql` function for a given block mode.\n'
-        '\n'
-        '```python\n'
-        'def fold_key(key, cipher_key_size):\n'
-        '    key = list(key) if not isinstance(key, (list, tuple)) else key\n'
-        '\t  folded_key = key[:cipher_key_size]\n'
-        '\t  for i in range(cipher_key_size, len(key)):\n'
-        '\t\t    print(i % cipher_key_size, i)\n'
-        '\t\t    folded_key[i % cipher_key_size] ^= key[i]\n'
-        '\t  return folded_key\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL use folding algorithm specified below if the `key` length is longer than required\n"
+        "for the `aes_encrypt_mysql` function for a given block mode.\n"
+        "\n"
+        "```python\n"
+        "def fold_key(key, cipher_key_size):\n"
+        "    key = list(key) if not isinstance(key, (list, tuple)) else key\n"
+        "\t  folded_key = key[:cipher_key_size]\n"
+        "\t  for i in range(cipher_key_size, len(key)):\n"
+        "\t\t    print(i % cipher_key_size, i)\n"
+        "\t\t    folded_key[i % cipher_key_size] ^= key[i]\n"
+        "\t  return folded_key\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.14')
+    num="4.11.14",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_Length_TooShortError = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` length is specified and is less than the minimum\n'
-        'that is required for the `aes_encrypt_mysql` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` length is specified and is less than the minimum\n"
+        "that is required for the `aes_encrypt_mysql` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.15')
+    num="4.11.15",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_Length_TooLong = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL use the first `N` bytes that are required if the `iv` is specified and\n'
-        'its length is longer than required for the `aes_encrypt_mysql` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL use the first `N` bytes that are required if the `iv` is specified and\n"
+        "its length is longer than required for the `aes_encrypt_mysql` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.16')
+    num="4.11.16",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_encrypt_mysql`\n'
-        'function for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_encrypt_mysql`\n"
+        "function for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.17')
+    num="4.11.17",
+)
 
 RQ_SRS008_AES_MySQL_Encrypt_Function_Mode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `aes_encrypt_mysql` function is called with the following parameter values\n'
-        '\n'
-        '* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n'
-        '* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n'
-        '* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n'
-        '* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb1` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb1` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb1` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb8` mode and `key` is less than 16 bytes and if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb8` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb8` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb128` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb128` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb128` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-ofb` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-ofb` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-ofb` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `aes_encrypt_mysql` function is called with the following parameter values\n"
+        "\n"
+        "* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n"
+        "* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n"
+        "* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n"
+        "* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb1` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb1` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb1` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb8` mode and `key` is less than 16 bytes and if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb8` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb8` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb128` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb128` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb128` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-ofb` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-ofb` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-ofb` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.11.18')
+    num="4.11.18",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `aes_decrypt_mysql` function to decrypt data using [AES].\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `aes_decrypt_mysql` function to decrypt data using [AES].\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.1')
+    num="4.12.1",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Syntax = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following syntax for the `aes_decrypt_mysql` function\n'
-        '\n'
-        '```sql\n'
-        'aes_decrypt_mysql(mode, ciphertext, key, [iv])\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following syntax for the `aes_decrypt_mysql` function\n"
+        "\n"
+        "```sql\n"
+        "aes_decrypt_mysql(mode, ciphertext, key, [iv])\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.2')
+    num="4.12.2",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_CipherText = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `ciphertext` accepting any data type as\n'
-        'the second parameter to the `aes_decrypt_mysql` function that SHALL specify the data to be decrypted.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `ciphertext` accepting any data type as\n"
+        "the second parameter to the `aes_decrypt_mysql` function that SHALL specify the data to be decrypted.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.3')
+    num="4.12.3",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Key = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n'
-        'as the third parameter to the `aes_decrypt_mysql` function that SHALL specify the encryption key.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `key` with `String` or `FixedString` data types\n"
+        "as the third parameter to the `aes_decrypt_mysql` function that SHALL specify the encryption key.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.4')
+    num="4.12.4",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n'
-        'to the `aes_decrypt_mysql` function that SHALL specify encryption key length and block encryption mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the first parameter\n"
+        "to the `aes_decrypt_mysql` function that SHALL specify encryption key length and block encryption mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.5')
+    num="4.12.5",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n'
-        'of the `aes_decrypt_mysql` function where\n'
-        'the `key_length` SHALL specifies the length of the key and SHALL accept\n'
-        '`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n'
-        'mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter\n"
+        "of the `aes_decrypt_mysql` function where\n"
+        "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
+        "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.6')
+    num="4.12.6",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_Value_Invalid = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_decrypt_mysql`\n'
-        'function is not valid with the exception where such a mode is supported by the underlying\n'
-        '[OpenSSL] implementation.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_decrypt_mysql`\n"
+        "function is not valid with the exception where such a mode is supported by the underlying\n"
+        "[OpenSSL] implementation.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.7')
+    num="4.12.7",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_Values = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n'
-        'of the `aes_decrypt_mysql` function:\n'
-        '\n'
-        '* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n'
-        '* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n'
-        '* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n'
-        '* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n'
-        '* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n'
-        '* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n'
-        '* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n'
-        '* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n'
-        '* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
+        "of the `aes_decrypt_mysql` function:\n"
+        "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
+        "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
+        "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
+        "* `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key\n"
+        "* `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key\n"
+        "* `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key\n"
+        "* `aes-128-ofb` that SHALL use [OFB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ofb` that SHALL use [OFB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ofb` that SHALL use [OFB] block mode encryption with 256 bit key\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.8')
+    num="4.12.8",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_Values_GCM_Error = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if any of the following [GCM] modes are specified as the value \n'
-        'for the `mode` parameter of the `aes_decrypt_mysql` function\n'
-        '\n'
-        '* `aes-128-gcm`\n'
-        '* `aes-192-gcm`\n'
-        '* `aes-256-gcm`\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if any of the following [GCM] modes are specified as the value \n"
+        "for the `mode` parameter of the `aes_decrypt_mysql` function\n"
+        "\n"
+        "* `aes-128-gcm`\n"
+        "* `aes-192-gcm`\n"
+        "* `aes-256-gcm`\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.9')
+    num="4.12.9",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_Values_CTR_Error = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if any of the following [CTR] modes are specified as the value \n'
-        'for the `mode` parameter of the `aes_decrypt_mysql` function\n'
-        '\n'
-        '* `aes-128-ctr`\n'
-        '* `aes-192-ctr`\n'
-        '* `aes-256-ctr`\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if any of the following [CTR] modes are specified as the value \n"
+        "for the `mode` parameter of the `aes_decrypt_mysql` function\n"
+        "\n"
+        "* `aes-128-ctr`\n"
+        "* `aes-192-ctr`\n"
+        "* `aes-256-ctr`\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.10')
+    num="4.12.10",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_InitializationVector = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n'
-        'parameter to the `aes_decrypt_mysql` function that SHALL specify the initialization vector for block modes that require\n'
-        'it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth\n"
+        "parameter to the `aes_decrypt_mysql` function that SHALL specify the initialization vector for block modes that require\n"
+        "it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.11')
+    num="4.12.11",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_ReturnValue = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return the decrypted value of the data\n'
-        'using `String` data type as the result of `aes_decrypt_mysql` function.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return the decrypted value of the data\n"
+        "using `String` data type as the result of `aes_decrypt_mysql` function.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.12')
+    num="4.12.12",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Key_Length_TooShortError = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `key` length is less than the minimum for the `aes_decrypt_mysql`\n'
-        'function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `key` length is less than the minimum for the `aes_decrypt_mysql`\n"
+        "function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.13')
+    num="4.12.13",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Key_Length_TooLong = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL use folding algorithm specified below if the `key` length is longer than required\n'
-        'for the `aes_decrypt_mysql` function for a given block mode.\n'
-        '\n'
-        '```python\n'
-        'def fold_key(key, cipher_key_size):\n'
-        '    key = list(key) if not isinstance(key, (list, tuple)) else key\n'
-        '\t  folded_key = key[:cipher_key_size]\n'
-        '\t  for i in range(cipher_key_size, len(key)):\n'
-        '\t\t    print(i % cipher_key_size, i)\n'
-        '\t\t    folded_key[i % cipher_key_size] ^= key[i]\n'
-        '\t  return folded_key\n'
-        '```\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL use folding algorithm specified below if the `key` length is longer than required\n"
+        "for the `aes_decrypt_mysql` function for a given block mode.\n"
+        "\n"
+        "```python\n"
+        "def fold_key(key, cipher_key_size):\n"
+        "    key = list(key) if not isinstance(key, (list, tuple)) else key\n"
+        "\t  folded_key = key[:cipher_key_size]\n"
+        "\t  for i in range(cipher_key_size, len(key)):\n"
+        "\t\t    print(i % cipher_key_size, i)\n"
+        "\t\t    folded_key[i % cipher_key_size] ^= key[i]\n"
+        "\t  return folded_key\n"
+        "```\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.14')
+    num="4.12.14",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_InitializationVector_Length_TooShortError = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` length is specified and is less than the minimum\n'
-        'that is required for the `aes_decrypt_mysql` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` length is specified and is less than the minimum\n"
+        "that is required for the `aes_decrypt_mysql` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.15')
+    num="4.12.15",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_InitializationVector_Length_TooLong = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL use the first `N` bytes that are required if the `iv` is specified and\n'
-        'its length is longer than required for the `aes_decrypt_mysql` function for a given block mode.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL use the first `N` bytes that are required if the `iv` is specified and\n"
+        "its length is longer than required for the `aes_decrypt_mysql` function for a given block mode.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.16')
+    num="4.12.16",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_InitializationVector_NotValidForMode = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_decrypt_mysql`\n'
-        'function for a mode that does not need it.\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_decrypt_mysql`\n"
+        "function for a mode that does not need it.\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.17')
+    num="4.12.17",
+)
 
 RQ_SRS008_AES_MySQL_Decrypt_Function_Mode_KeyAndInitializationVector_Length = Requirement(
-    name='RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length',
-    version='1.0',
+    name="RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length",
+    version="1.0",
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error when the `aes_decrypt_mysql` function is called with the following parameter values\n'
-        '\n'
-        '* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n'
-        '* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n'
-        '* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n'
-        '* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb1` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb1` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb1` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb8` mode and `key` is less than 16 bytes and if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb8` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb8` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-cfb128` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-cfb128` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-cfb128` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-128-ofb` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-192-ofb` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n'
-        '* `aes-256-ofb` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n'
-        '\n'
-        ),
+        "[ClickHouse] SHALL return an error when the `aes_decrypt_mysql` function is called with the following parameter values\n"
+        "\n"
+        "* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n"
+        "* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n"
+        "* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n"
+        "* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb1` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb1` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb1` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb8` mode and `key` is less than 16 bytes and if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb8` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb8` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-cfb128` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-cfb128` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-cfb128` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-128-ofb` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-192-ofb` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
+        "* `aes-256-ofb` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
+        "\n"
+    ),
     link=None,
     level=3,
-    num='4.12.18')
+    num="4.12.18",
+)
 
 SRS_008_ClickHouse_AES_Encryption_Functions = Specification(
-    name='SRS-008 ClickHouse AES Encryption Functions', 
+    name="SRS-008 ClickHouse AES Encryption Functions",
     description=None,
     author=None,
-    date=None, 
-    status=None, 
+    date=None,
+    status=None,
     approved_by=None,
     approved_date=None,
     approved_version=None,
@@ -1713,118 +1796,408 @@ SRS_008_ClickHouse_AES_Encryption_Functions = Specification(
     parent=None,
     children=None,
     headings=(
-        Heading(name='Revision History', level=1, num='1'),
-        Heading(name='Introduction', level=1, num='2'),
-        Heading(name='Terminology', level=1, num='3'),
-        Heading(name='AES', level=2, num='3.1'),
-        Heading(name='AEAD', level=2, num='3.2'),
-        Heading(name='Requirements', level=1, num='4'),
-        Heading(name='Generic', level=2, num='4.1'),
-        Heading(name='RQ.SRS008.AES.Functions', level=3, num='4.1.1'),
-        Heading(name='Compatibility', level=2, num='4.2'),
-        Heading(name='RQ.SRS008.AES.Functions.Compatibility.MySQL', level=3, num='4.2.1'),
-        Heading(name='RQ.SRS008.AES.Functions.Compatibility.Dictionaries', level=3, num='4.2.2'),
-        Heading(name='RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL', level=3, num='4.2.3'),
-        Heading(name='RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL', level=3, num='4.2.4'),
-        Heading(name='RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL', level=3, num='4.2.5'),
-        Heading(name='Different Modes', level=2, num='4.3'),
-        Heading(name='RQ.SRS008.AES.Functions.DifferentModes', level=3, num='4.3.1'),
-        Heading(name='Multiple Sources', level=2, num='4.4'),
-        Heading(name='RQ.SRS008.AES.Functions.DataFromMultipleSources', level=3, num='4.4.1'),
-        Heading(name='Suppressing Sensitive Values', level=2, num='4.5'),
-        Heading(name='RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues', level=3, num='4.5.1'),
-        Heading(name='Invalid Parameters', level=2, num='4.6'),
-        Heading(name='RQ.SRS008.AES.Functions.InvalidParameters', level=3, num='4.6.1'),
-        Heading(name='Mismatched Values', level=2, num='4.7'),
-        Heading(name='RQ.SRS008.AES.Functions.Mismatched.Key', level=3, num='4.7.1'),
-        Heading(name='RQ.SRS008.AES.Functions.Mismatched.IV', level=3, num='4.7.2'),
-        Heading(name='RQ.SRS008.AES.Functions.Mismatched.AAD', level=3, num='4.7.3'),
-        Heading(name='RQ.SRS008.AES.Functions.Mismatched.Mode', level=3, num='4.7.4'),
-        Heading(name='Performance', level=2, num='4.8'),
-        Heading(name='RQ.SRS008.AES.Functions.Check.Performance', level=3, num='4.8.1'),
-        Heading(name='RQ.SRS008.AES.Function.Check.Performance.BestCase', level=3, num='4.8.2'),
-        Heading(name='RQ.SRS008.AES.Function.Check.Performance.WorstCase', level=3, num='4.8.3'),
-        Heading(name='RQ.SRS008.AES.Functions.Check.Compression', level=3, num='4.8.4'),
-        Heading(name='RQ.SRS008.AES.Functions.Check.Compression.LowCardinality', level=3, num='4.8.5'),
-        Heading(name='Encrypt Function', level=2, num='4.9'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function', level=3, num='4.9.1'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Syntax', level=3, num='4.9.2'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors', level=3, num='4.9.3'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText', level=3, num='4.9.4'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.Key', level=3, num='4.9.5'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode', level=3, num='4.9.6'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat', level=3, num='4.9.7'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid', level=3, num='4.9.8'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values', level=3, num='4.9.9'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector', level=3, num='4.9.10'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData', level=3, num='4.9.11'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue', level=3, num='4.9.12'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError', level=3, num='4.9.13'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError', level=3, num='4.9.14'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode', level=3, num='4.9.15'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode', level=3, num='4.9.16'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length', level=3, num='4.9.17'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length', level=3, num='4.9.18'),
-        Heading(name='RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length', level=3, num='4.9.19'),
-        Heading(name='Decrypt Function', level=2, num='4.10'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function', level=3, num='4.10.1'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Syntax', level=3, num='4.10.2'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText', level=3, num='4.10.3'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.Key', level=3, num='4.10.4'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode', level=3, num='4.10.5'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat', level=3, num='4.10.6'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid', level=3, num='4.10.7'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values', level=3, num='4.10.8'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector', level=3, num='4.10.9'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData', level=3, num='4.10.10'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue', level=3, num='4.10.11'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError', level=3, num='4.10.12'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError', level=3, num='4.10.13'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode', level=3, num='4.10.14'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode', level=3, num='4.10.15'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length', level=3, num='4.10.16'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length', level=3, num='4.10.17'),
-        Heading(name='RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length', level=3, num='4.10.18'),
-        Heading(name='MySQL Encrypt Function', level=2, num='4.11'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function', level=3, num='4.11.1'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax', level=3, num='4.11.2'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText', level=3, num='4.11.3'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key', level=3, num='4.11.4'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode', level=3, num='4.11.5'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat', level=3, num='4.11.6'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid', level=3, num='4.11.7'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values', level=3, num='4.11.8'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error', level=3, num='4.11.9'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error', level=3, num='4.11.10'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector', level=3, num='4.11.11'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue', level=3, num='4.11.12'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError', level=3, num='4.11.13'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong', level=3, num='4.11.14'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError', level=3, num='4.11.15'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong', level=3, num='4.11.16'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode', level=3, num='4.11.17'),
-        Heading(name='RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length', level=3, num='4.11.18'),
-        Heading(name='MySQL Decrypt Function', level=2, num='4.12'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function', level=3, num='4.12.1'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax', level=3, num='4.12.2'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText', level=3, num='4.12.3'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key', level=3, num='4.12.4'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode', level=3, num='4.12.5'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat', level=3, num='4.12.6'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid', level=3, num='4.12.7'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values', level=3, num='4.12.8'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error', level=3, num='4.12.9'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error', level=3, num='4.12.10'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector', level=3, num='4.12.11'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue', level=3, num='4.12.12'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError', level=3, num='4.12.13'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong', level=3, num='4.12.14'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError', level=3, num='4.12.15'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong', level=3, num='4.12.16'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode', level=3, num='4.12.17'),
-        Heading(name='RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length', level=3, num='4.12.18'),
-        Heading(name='References', level=1, num='5'),
+        Heading(name="Revision History", level=1, num="1"),
+        Heading(name="Introduction", level=1, num="2"),
+        Heading(name="Terminology", level=1, num="3"),
+        Heading(name="AES", level=2, num="3.1"),
+        Heading(name="AEAD", level=2, num="3.2"),
+        Heading(name="Requirements", level=1, num="4"),
+        Heading(name="Generic", level=2, num="4.1"),
+        Heading(name="RQ.SRS008.AES.Functions", level=3, num="4.1.1"),
+        Heading(name="Compatibility", level=2, num="4.2"),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Compatibility.MySQL", level=3, num="4.2.1"
         ),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Compatibility.Dictionaries",
+            level=3,
+            num="4.2.2",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Compatibility.Engine.Database.MySQL",
+            level=3,
+            num="4.2.3",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Compatibility.Engine.Table.MySQL",
+            level=3,
+            num="4.2.4",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Compatibility.TableFunction.MySQL",
+            level=3,
+            num="4.2.5",
+        ),
+        Heading(name="Different Modes", level=2, num="4.3"),
+        Heading(name="RQ.SRS008.AES.Functions.DifferentModes", level=3, num="4.3.1"),
+        Heading(name="Multiple Sources", level=2, num="4.4"),
+        Heading(
+            name="RQ.SRS008.AES.Functions.DataFromMultipleSources", level=3, num="4.4.1"
+        ),
+        Heading(name="Suppressing Sensitive Values", level=2, num="4.5"),
+        Heading(
+            name="RQ.SRS008.AES.Functions.SuppressOutputOfSensitiveValues",
+            level=3,
+            num="4.5.1",
+        ),
+        Heading(name="Invalid Parameters", level=2, num="4.6"),
+        Heading(name="RQ.SRS008.AES.Functions.InvalidParameters", level=3, num="4.6.1"),
+        Heading(name="Mismatched Values", level=2, num="4.7"),
+        Heading(name="RQ.SRS008.AES.Functions.Mismatched.Key", level=3, num="4.7.1"),
+        Heading(name="RQ.SRS008.AES.Functions.Mismatched.IV", level=3, num="4.7.2"),
+        Heading(name="RQ.SRS008.AES.Functions.Mismatched.AAD", level=3, num="4.7.3"),
+        Heading(name="RQ.SRS008.AES.Functions.Mismatched.Mode", level=3, num="4.7.4"),
+        Heading(name="Performance", level=2, num="4.8"),
+        Heading(name="RQ.SRS008.AES.Functions.Check.Performance", level=3, num="4.8.1"),
+        Heading(
+            name="RQ.SRS008.AES.Function.Check.Performance.BestCase",
+            level=3,
+            num="4.8.2",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Function.Check.Performance.WorstCase",
+            level=3,
+            num="4.8.3",
+        ),
+        Heading(name="RQ.SRS008.AES.Functions.Check.Compression", level=3, num="4.8.4"),
+        Heading(
+            name="RQ.SRS008.AES.Functions.Check.Compression.LowCardinality",
+            level=3,
+            num="4.8.5",
+        ),
+        Heading(name="Encrypt Function", level=2, num="4.9"),
+        Heading(name="RQ.SRS008.AES.Encrypt.Function", level=3, num="4.9.1"),
+        Heading(name="RQ.SRS008.AES.Encrypt.Function.Syntax", level=3, num="4.9.2"),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors", level=3, num="4.9.3"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText",
+            level=3,
+            num="4.9.4",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.Key", level=3, num="4.9.5"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode", level=3, num="4.9.6"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat",
+            level=3,
+            num="4.9.7",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid",
+            level=3,
+            num="4.9.8",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Values",
+            level=3,
+            num="4.9.9",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.InitializationVector",
+            level=3,
+            num="4.9.10",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData",
+            level=3,
+            num="4.9.11",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue",
+            level=3,
+            num="4.9.12",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError",
+            level=3,
+            num="4.9.13",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError",
+            level=3,
+            num="4.9.14",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode",
+            level=3,
+            num="4.9.15",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode",
+            level=3,
+            num="4.9.16",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length",
+            level=3,
+            num="4.9.17",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.9.18",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.9.19",
+        ),
+        Heading(name="Decrypt Function", level=2, num="4.10"),
+        Heading(name="RQ.SRS008.AES.Decrypt.Function", level=3, num="4.10.1"),
+        Heading(name="RQ.SRS008.AES.Decrypt.Function.Syntax", level=3, num="4.10.2"),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText",
+            level=3,
+            num="4.10.3",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.Key", level=3, num="4.10.4"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode", level=3, num="4.10.5"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat",
+            level=3,
+            num="4.10.6",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid",
+            level=3,
+            num="4.10.7",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Values",
+            level=3,
+            num="4.10.8",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.InitializationVector",
+            level=3,
+            num="4.10.9",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData",
+            level=3,
+            num="4.10.10",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue",
+            level=3,
+            num="4.10.11",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError",
+            level=3,
+            num="4.10.12",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError",
+            level=3,
+            num="4.10.13",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode",
+            level=3,
+            num="4.10.14",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode",
+            level=3,
+            num="4.10.15",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length",
+            level=3,
+            num="4.10.16",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.10.17",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.10.18",
+        ),
+        Heading(name="MySQL Encrypt Function", level=2, num="4.11"),
+        Heading(name="RQ.SRS008.AES.MySQL.Encrypt.Function", level=3, num="4.11.1"),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Syntax", level=3, num="4.11.2"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText",
+            level=3,
+            num="4.11.3",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Key",
+            level=3,
+            num="4.11.4",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode",
+            level=3,
+            num="4.11.5",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.ValuesFormat",
+            level=3,
+            num="4.11.6",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid",
+            level=3,
+            num="4.11.7",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values",
+            level=3,
+            num="4.11.8",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.GCM.Error",
+            level=3,
+            num="4.11.9",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Values.CTR.Error",
+            level=3,
+            num="4.11.10",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.InitializationVector",
+            level=3,
+            num="4.11.11",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.ReturnValue",
+            level=3,
+            num="4.11.12",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooShortError",
+            level=3,
+            num="4.11.13",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Key.Length.TooLong",
+            level=3,
+            num="4.11.14",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooShortError",
+            level=3,
+            num="4.11.15",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.Length.TooLong",
+            level=3,
+            num="4.11.16",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.InitializationVector.NotValidForMode",
+            level=3,
+            num="4.11.17",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Encrypt.Function.Mode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.11.18",
+        ),
+        Heading(name="MySQL Decrypt Function", level=2, num="4.12"),
+        Heading(name="RQ.SRS008.AES.MySQL.Decrypt.Function", level=3, num="4.12.1"),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Syntax", level=3, num="4.12.2"
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText",
+            level=3,
+            num="4.12.3",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Key",
+            level=3,
+            num="4.12.4",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode",
+            level=3,
+            num="4.12.5",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.ValuesFormat",
+            level=3,
+            num="4.12.6",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid",
+            level=3,
+            num="4.12.7",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values",
+            level=3,
+            num="4.12.8",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.GCM.Error",
+            level=3,
+            num="4.12.9",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Values.CTR.Error",
+            level=3,
+            num="4.12.10",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.InitializationVector",
+            level=3,
+            num="4.12.11",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.ReturnValue",
+            level=3,
+            num="4.12.12",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooShortError",
+            level=3,
+            num="4.12.13",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Key.Length.TooLong",
+            level=3,
+            num="4.12.14",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooShortError",
+            level=3,
+            num="4.12.15",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.Length.TooLong",
+            level=3,
+            num="4.12.16",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.InitializationVector.NotValidForMode",
+            level=3,
+            num="4.12.17",
+        ),
+        Heading(
+            name="RQ.SRS008.AES.MySQL.Decrypt.Function.Mode.KeyAndInitializationVector.Length",
+            level=3,
+            num="4.12.18",
+        ),
+        Heading(name="References", level=1, num="5"),
+    ),
     requirements=(
         RQ_SRS008_AES_Functions,
         RQ_SRS008_AES_Functions_Compatibility_MySQL,
@@ -1918,8 +2291,8 @@ SRS_008_ClickHouse_AES_Encryption_Functions = Specification(
         RQ_SRS008_AES_MySQL_Decrypt_Function_InitializationVector_Length_TooLong,
         RQ_SRS008_AES_MySQL_Decrypt_Function_InitializationVector_NotValidForMode,
         RQ_SRS008_AES_MySQL_Decrypt_Function_Mode_KeyAndInitializationVector_Length,
-        ),
-    content='''
+    ),
+    content="""
 # SRS-008 ClickHouse AES Encryption Functions
 # Software Requirements Specification
 
@@ -2892,4 +3265,5 @@ version: 1.0
 [Revision history]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/aes_encryption/requirements/requirements.md
 [Git]: https://git-scm.com/
 [NIST test vectors]: https://csrc.nist.gov/Projects/Cryptographic-Algorithm-Validation-Program
-''')
+""",
+)
