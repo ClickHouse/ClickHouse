@@ -20,7 +20,7 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
     {
         {"disk_name", std::make_shared<DataTypeString>()},
         {"path", std::make_shared<DataTypeString>()},
-        {"cache_dir", std::make_shared<DataTypeString>()},
+        {"cache_base_path", std::make_shared<DataTypeString>()},
         {"local_path", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},

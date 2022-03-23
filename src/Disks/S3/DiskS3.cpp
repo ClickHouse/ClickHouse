@@ -46,8 +46,6 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 
-#include <Common/FileCache.h>
-#include <Common/hex.h>
 namespace DB
 {
 

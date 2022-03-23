@@ -723,8 +723,10 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     const auto & cells_by_offset = files[key];
 
     for (const auto & [offset, cell] : cells_by_offset)
+    {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
             cache_paths.push_back(getPathInLocalCache(key, offset));
+    }
 
     return cache_paths;
 }
