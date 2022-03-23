@@ -35,7 +35,7 @@ class JSONDataParser
 public:
     using Element = typename ParserImpl::Element;
 
-    void readJSON(String & s, ReadBuffer & buf)
+    static void readJSON(String & s, ReadBuffer & buf)
     {
         readJSONObjectPossiblyInvalid(s, buf);
     }
