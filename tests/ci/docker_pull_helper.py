@@ -8,23 +8,27 @@ import logging
 
 from typing import Optional
 
+
 class DockerImage:
-    def __init__(self, name, version : Optional[str] = None):
+    def __init__(self, name, version: Optional[str] = None):
         self.name = name
         if version is None:
-            self.version = 'latest'
+            self.version = "latest"
         else:
             self.version = version
 
     def __str__(self):
         return f"{self.name}:{self.version}"
 
-def get_images_with_versions(reports_path, required_image, pull=True, version : Optional[str] = None):
+
+def get_images_with_versions(
+    reports_path, required_image, pull=True, version: Optional[str] = None
+):
     images_path = None
     for root, _, files in os.walk(reports_path):
         for f in files:
-            if f == 'changed_images.json':
-                images_path = os.path.join(root, 'changed_images.json')
+            if f == "changed_images.json":
+                images_path = os.path.join(root, "changed_images.json")
                 break
 
     if not images_path:
@@ -34,7 +38,7 @@ def get_images_with_versions(reports_path, required_image, pull=True, version : 
 
     if images_path is not None and os.path.exists(images_path):
         logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
+        with open(images_path, "r", encoding="utf-8") as images_fd:
             images = json.load(images_fd)
             logging.info("Got images %s", images)
     else:
@@ -52,15 +56,22 @@ def get_images_with_versions(reports_path, required_image, pull=True, version : 
             for i in range(10):
                 try:
                     logging.info("Pulling image %s", docker_image)
-                    latest_error = subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
+                    latest_error = subprocess.check_output(
+                        f"docker pull {docker_image}",
+                        stderr=subprocess.STDOUT,
+                        shell=True,
+                    )
                     break
                 except Exception as ex:
                     time.sleep(i * 3)
                     logging.info("Got execption pulling docker %s", ex)
             else:
-                raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image} because of {latest_error}")
+                raise Exception(
+                    f"Cannot pull dockerhub for image docker pull {docker_image} because of {latest_error}"
+                )
 
     return docker_images
+
 
 def get_image_with_version(reports_path, image, pull=True, version=None):
     return get_images_with_versions(reports_path, [image], pull, version=version)[0]
