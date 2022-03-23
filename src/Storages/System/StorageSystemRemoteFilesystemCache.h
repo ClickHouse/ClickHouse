@@ -7,19 +7,24 @@ namespace DB
 {
 
 /**
- *  SELECT
- *      cache_path,
- *      local_path,
- *      remote_path
- *  FROM
- *  (
- *      SELECT
- *          arrayJoin(cache_paths) AS cache_path,
- *          local_path,
- *          remote_path
- *      FROM system.remote_data_paths
- *  ) AS data_paths
- *  INNER JOIN system.remote_filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+ * SELECT
+ *     cache_path,
+ *     cache_hits,
+ *     remote_path,
+ *     local_path,
+ *     file_segment_range,
+ *     size,
+ *     state
+ * FROM
+ * (
+ *     SELECT
+ *         arrayJoin(cache_paths) AS cache_path,
+ *         local_path,
+ *         remote_path
+ *     FROM system.remote_data_paths
+ * ) AS data_paths
+ * INNER JOIN system.remote_filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path
+ * FORMAT Vertical
  */
 
 class StorageSystemRemoteFilesystemCache final : public shared_ptr_helper<StorageSystemRemoteFilesystemCache>,

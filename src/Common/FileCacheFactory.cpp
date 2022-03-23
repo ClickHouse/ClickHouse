@@ -24,8 +24,8 @@ FileCacheFactory::CacheByBasePath FileCacheFactory::getAll()
 const FileCacheSettings & FileCacheFactory::getSettings(const std::string & cache_base_path)
 {
     std::lock_guard lock(mutex);
-    auto * cache_data = getImpl(cache_base_path, lock);
 
+    auto * cache_data = getImpl(cache_base_path, lock);
     if (cache_data)
         return cache_data->settings;
 
@@ -43,6 +43,7 @@ FileCacheFactory::CacheData * FileCacheFactory::getImpl(const std::string & cach
 FileCachePtr FileCacheFactory::get(const std::string & cache_base_path)
 {
     std::lock_guard lock(mutex);
+
     auto * cache_data = getImpl(cache_base_path, lock);
     if (cache_data)
         return cache_data->cache;
@@ -54,6 +55,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & cache_base_path, const FileCacheSettings & file_cache_settings)
 {
     std::lock_guard lock(mutex);
+
     auto * cache_data = getImpl(cache_base_path, lock);
     if (cache_data)
         return cache_data->cache;

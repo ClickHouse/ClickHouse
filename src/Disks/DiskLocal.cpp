@@ -318,16 +318,10 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
     fs::path meta_path = fs::path(disk_path) / path;
-    std::cerr << "Disk local: " << meta_path << "\n";
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
-    {
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    }
     else
-    {
-        std::cerr << "\n\n\n iterating Fail\n\n";
         return std::make_unique<DiskLocalDirectoryIterator>();
-    }
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
