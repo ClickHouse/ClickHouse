@@ -37,8 +37,8 @@ namespace
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;
-        else if (query.roles)
-            policy.to_roles = *query.roles;
+        else if (query.to_roles)
+            policy.to_roles = *query.to_roles;
     }
 }
 
@@ -61,8 +61,8 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::optional<RolesOrUsersSet> roles_from_query;
-    if (query.roles)
-        roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+    if (query.to_roles)
+        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
 
     if (query.alter)
     {

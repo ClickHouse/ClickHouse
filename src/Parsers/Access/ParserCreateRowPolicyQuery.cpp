@@ -243,13 +243,21 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String cluster = std::exchange(names->cluster, "");
 
     String new_short_name;
-    std::optional<RowPolicyKind> kind;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters;
+    std::optional<RowPolicyKind> kind;
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
 
     while (true)
     {
         if (alter && (names->full_names.size() == 1) && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
             continue;
+
+        std::vector<std::pair<RowPolicyFilterType, ASTPtr>> new_filters;
+        if (parseForClauses(pos, expected, alter, new_filters))
+        {
+            insertAtEnd(filters, std::move(new_filters));
+            continue;
+        }
 
         if (!kind)
         {
@@ -261,24 +269,14 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             }
         }
 
-        std::vector<std::pair<RowPolicyFilterType, ASTPtr>> new_filters;
-        if (parseForClauses(pos, expected, alter, new_filters))
-        {
-            insertAtEnd(filters, std::move(new_filters));
+        if (!to_roles && parseToRoles(pos, expected, attach_mode, to_roles))
             continue;
-        }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
         break;
     }
-
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
-
-    if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
@@ -291,9 +289,9 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->new_short_name = std::move(new_short_name);
-    query->kind = kind;
     query->filters = std::move(filters);
-    query->roles = std::move(roles);
+    query->kind = kind;
+    query->to_roles = std::move(to_roles);
 
     return true;
 }

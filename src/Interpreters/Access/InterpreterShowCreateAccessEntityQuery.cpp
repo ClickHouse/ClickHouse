@@ -190,9 +190,6 @@ namespace
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
-        if (policy.getKind() != RowPolicyKind::PERMISSIVE)
-            query->kind = policy.getKind();
-
         for (auto type : collections::range(RowPolicyFilterType::MAX))
         {
             const auto & filter = policy.filters[static_cast<size_t>(type)];
@@ -204,12 +201,15 @@ namespace
             }
         }
 
+        if (policy.getKind() != RowPolicyKind::PERMISSIVE)
+            query->kind = policy.getKind();
+
         if (!policy.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = policy.to_roles.toAST();
+                query->to_roles = policy.to_roles.toAST();
             else
-                query->roles = policy.to_roles.toASTWithNames(*access_control);
+                query->to_roles = policy.to_roles.toASTWithNames(*access_control);
         }
 
         return query;

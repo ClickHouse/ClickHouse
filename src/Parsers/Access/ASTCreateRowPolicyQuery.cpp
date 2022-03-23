@@ -156,20 +156,20 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, settings);
 
+    formatForClauses(filters, alter, settings);
+
     if (kind)
         formatAsKind(*kind, settings);
 
-    formatForClauses(filters, alter, settings);
-
-    if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, settings);
+    if (to_roles)
+        formatToRoles(*to_roles, settings);
 }
 
 
 void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
-    if (roles)
-        roles->replaceCurrentUserTag(current_user_name);
+    if (to_roles)
+        to_roles->replaceCurrentUserTag(current_user_name);
 }
 
 void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const

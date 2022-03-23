@@ -39,10 +39,10 @@ public:
     std::shared_ptr<ASTRowPolicyNames> names;
     String new_short_name;
 
-    std::optional<RowPolicyKind> kind;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters; /// `nullptr` means set to NONE.
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    std::optional<RowPolicyKind> kind;
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;
