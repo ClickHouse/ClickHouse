@@ -132,7 +132,7 @@ size_t extractMaskNumericImpl(
 
     if constexpr (column_is_short)
     {
-        if (i != mask_size || data_index != data_size)
+        if (data_index != data_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
     }
     
