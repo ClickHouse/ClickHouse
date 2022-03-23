@@ -66,7 +66,13 @@ public:
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
 
-    String getCachePath() const;
+    String getCacheBasePath() const final override;
+
+    /// Returnes a list of paths because for Log family engines
+    /// there might be multiple files in remote fs for single clickhouse file.
+    std::vector<String> getRemotePaths(const String & path) const final override;
+
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads

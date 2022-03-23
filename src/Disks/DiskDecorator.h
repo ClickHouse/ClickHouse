@@ -72,6 +72,9 @@ public:
     void shutdown() override;
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+    String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 

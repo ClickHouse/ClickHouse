@@ -56,6 +56,8 @@ public:
 
     const String & getBasePath() const { return cache_base_path; }
 
+    virtual std::vector<String> tryGetCachePaths(const Key & key) = 0;
+
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
      * return list of cached non-overlapping non-empty
@@ -130,6 +132,8 @@ public:
     void remove(const Key & key) override;
 
     void tryRemoveAll() override;
+
+    std::vector<String> tryGetCachePaths(const Key & key) override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
