@@ -54,7 +54,7 @@ def test_create():
         )
         assert (
             instance.query("SHOW CREATE ROW POLICY p ON mydb.mytable")
-            == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
+            == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 PERMISSIVE TO u1, u2\n"
         )
         assert (
             instance.query("SHOW CREATE QUOTA q")

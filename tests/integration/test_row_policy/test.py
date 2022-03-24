@@ -560,69 +560,69 @@ def test_dcl_introspection():
 
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table1")
-        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table2")
-        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table3")
-        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.local")
-        == "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 PERMISSIVE TO default\n"
     )
 
     assert node.query("SHOW CREATE POLICY default") == TSV(
         [
-            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 PERMISSIVE TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES ON mydb.filtered_table1") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
+            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES ON mydb.*") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another",
-            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
+            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 PERMISSIVE TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another",
-            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
+            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 PERMISSIVE TO another",
+            "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 PERMISSIVE TO default",
         ]
     )
 
     expected_access = (
-        "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another\n"
-        "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another\n"
-        "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another\n"
-        "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another\n"
-        "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
-        "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default\n"
-        "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
-        "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
+        "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 PERMISSIVE TO another\n"
+        "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 PERMISSIVE TO another\n"
+        "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 PERMISSIVE TO another\n"
+        "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 PERMISSIVE TO another\n"
+        "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 PERMISSIVE TO default\n"
+        "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) PERMISSIVE TO default\n"
+        "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 PERMISSIVE TO default\n"
+        "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 PERMISSIVE TO default\n"
     )
     assert expected_access in node.query("SHOW ACCESS")
 
@@ -639,15 +639,15 @@ def test_dcl_introspection():
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table1")
-        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING 1 PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table2")
-        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING 1 PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table3")
-        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING 1 TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING 1 PERMISSIVE TO default\n"
     )
 
     copy_policy_xml("no_rows.xml")
@@ -663,15 +663,15 @@ def test_dcl_introspection():
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table1")
-        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING NULL TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING NULL PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table2")
-        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING NULL TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING NULL PERMISSIVE TO default\n"
     )
     assert (
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table3")
-        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING NULL TO default\n"
+        == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING NULL PERMISSIVE TO default\n"
     )
 
     copy_policy_xml("no_filters.xml")
@@ -698,7 +698,7 @@ def test_dcl_management():
     assert node.query("SHOW POLICIES ON mydb.filtered_table1") == "pB\n"
     assert (
         node.query("SHOW CREATE POLICY pB ON mydb.filtered_table1")
-        == "CREATE ROW POLICY pB ON mydb.filtered_table1 FOR SELECT USING a > b TO default\n"
+        == "CREATE ROW POLICY pB ON mydb.filtered_table1 FOR SELECT USING a > b PERMISSIVE TO default\n"
     )
 
     node.query("DROP POLICY pB ON mydb.filtered_table1")
@@ -833,10 +833,10 @@ def test_tags_with_db_and_table_names():
 
     assert node.query("SHOW CREATE POLICIES default") == TSV(
         [
-            "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
-            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
-            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default",
+            "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 PERMISSIVE TO default",
+            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 PERMISSIVE TO default",
         ]
     )
 

@@ -29,12 +29,11 @@ namespace
         });
     }
 
-    bool parseAsKind(IParserBase::Pos & pos, Expected & expected, RowPolicyKind & kind)
+    bool parseKind(IParserBase::Pos & pos, Expected & expected, RowPolicyKind & kind)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"AS"}.ignore(pos, expected))
-                return false;
+            ParserKeyword{"AS"}.ignore(pos, expected);
 
             for (auto current_kind : collections::range(RowPolicyKind::MAX))
             {
@@ -262,7 +261,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!kind)
         {
             RowPolicyKind new_kind;
-            if (parseAsKind(pos, expected, new_kind))
+            if (parseKind(pos, expected, new_kind))
             {
                 kind = new_kind;
                 continue;

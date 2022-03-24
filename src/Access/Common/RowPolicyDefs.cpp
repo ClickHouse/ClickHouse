@@ -80,7 +80,7 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
 
 String toString(RowPolicyKind kind)
 {
-    return RowPolicyKindInfo::get(kind).raw_name;
+    return RowPolicyKindInfo::get(kind).upper_name;
 }
 
 const RowPolicyKindInfo & RowPolicyKindInfo::get(RowPolicyKind kind_)

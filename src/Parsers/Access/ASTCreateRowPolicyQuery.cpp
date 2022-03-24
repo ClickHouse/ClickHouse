@@ -20,10 +20,10 @@ namespace
     }
 
 
-    void formatAsKind(RowPolicyKind kind, const IAST::FormatSettings & settings)
+    void formatKind(RowPolicyKind kind, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
-                      << RowPolicyKindInfo::get(kind).name;
+        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << RowPolicyKindInfo::get(kind).upper_name
+                      << (settings.hilite ? IAST::hilite_none : "");
     }
 
 
@@ -159,7 +159,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     formatForClauses(filters, alter, settings);
 
     if (kind)
-        formatAsKind(*kind, settings);
+        formatKind(*kind, settings);
 
     if (to_roles)
         formatToRoles(*to_roles, settings);

@@ -71,8 +71,8 @@ String toString(RowPolicyKind kind);
 
 struct RowPolicyKindInfo
 {
-    const char * const raw_name;
-    const String name;    /// Lowercased with underscores, e.g. "permissive".
+    const char * const upper_name; /// Uppercased, e.g. "PERMISSIVE".
+    const String name;             /// Lowercased, e.g. "permissive".
     static const RowPolicyKindInfo & get(RowPolicyKind kind);
 };
 

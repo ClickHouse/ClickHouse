@@ -201,8 +201,7 @@ namespace
             }
         }
 
-        if (policy.getKind() != RowPolicyKind::PERMISSIVE)
-            query->kind = policy.getKind();
+        query->kind = policy.getKind();
 
         if (!policy.to_roles.empty())
         {
