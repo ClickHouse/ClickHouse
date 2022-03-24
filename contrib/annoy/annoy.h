@@ -13,7 +13,6 @@ class Annoy {
   std::vector<Point> FindKNN(const Point& x, size_t k) const;
  private:
   std::shared_ptr<const std::vector<Point>> points_;
-  std::shared_ptr<Node> tree_;
-  // std::vector<std::shared_ptr<Node>> trees_;
+  std::vector<std::shared_ptr<Node>> trees_;
   int dim_;
 };
