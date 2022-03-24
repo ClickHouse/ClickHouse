@@ -77,8 +77,7 @@ public:
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
+UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     /// Read-only part
 
@@ -164,6 +163,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
+
+    std::vector<String> getRemotePaths(const String &) const override { return {}; }
+
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
 
     /// Create part
 

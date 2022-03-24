@@ -205,16 +205,13 @@ public:
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
 
-    virtual String getCacheBasePath() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheBasePath() not implemented fro disk: {}`", getType());
-    }
+    virtual String getCacheBasePath() const { return ""; }
 
-    /// Returnes a list of paths because for Log family engines
-    /// there might be multiple files in remote fs for single clickhouse file.
+    /// Returns a list of paths because for Log family engines there might be
+    /// multiple files in remote fs for single clickhouse file.
     virtual std::vector<String> getRemotePaths(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented fro disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -222,7 +219,7 @@ public:
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented fro disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
 
     struct RemoveRequest
