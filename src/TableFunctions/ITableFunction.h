@@ -74,6 +74,7 @@ private:
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
 
     virtual const char * getStorageTypeName() const = 0;
+
     virtual AccessType getSourceAccessType() const;
 };
 
