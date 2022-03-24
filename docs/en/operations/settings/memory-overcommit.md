@@ -8,7 +8,7 @@ When memory overcommit is enabled and memory limit is reached ClickHouse will se
 When memory limit is reached any query will wait some time during atempt to allocate new memory.
 If selected query is killed and memory is freed within waiting timeout, query will continue execution after waiting, otherwise it'll be killed too.
 
-Selection of query to stop is performed by either global or user overcommit trackers depending on what memory limit is reached.
+Selection of query to stop or kill is performed by either global or user overcommit trackers depending on what memory limit is reached.
 
 ## User overcommit tracker
 
