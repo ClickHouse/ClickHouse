@@ -1237,16 +1237,16 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    auto [block, row_num] = mapped->findAsof(left_asof_key, i);
-                    if (block)
+                    auto row_ref = mapped->findAsof(left_asof_key, i);
+                    if (row_ref.block)
                     {
                         setUsed<need_filter>(filter, i);
                         if constexpr (multiple_disjuncts)
-                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(block, row_num, 0);
+                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(row_ref.block, row_ref.row_num, 0);
                         else
                             used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
 
-                        added_columns.appendFromBlock<jf.add_missing>(*block, row_num);
+                        added_columns.appendFromBlock<jf.add_missing>(*row_ref.block, row_ref.row_num);
                     }
                     else
                         addNotFoundRow<jf.add_missing, jf.need_replication>(added_columns, current_offset);
