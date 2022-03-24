@@ -23,7 +23,7 @@ void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
 
 bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 {
-    // NOTE: DO NOT CHANGE THE ORDER OF LOCKS
+    // NOTE: Do not change the order of locks
     //
     // global_mutex must be acquired before overcommit_m, because
     // method OvercommitTracker::unsubscribe(MemoryTracker *) is
