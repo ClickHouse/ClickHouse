@@ -2,7 +2,7 @@ import os
 import logging
 import ast
 
-from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID
+from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_URL
 from report import ReportColorTheme, create_test_html_report
 
 
@@ -66,7 +66,7 @@ def upload_results(
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{commit_sha}"
 
-    task_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    task_url = GITHUB_RUN_URL
 
     if additional_urls:
         raw_log_url = additional_urls[0]
