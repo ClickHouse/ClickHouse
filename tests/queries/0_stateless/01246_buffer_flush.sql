@@ -12,7 +12,7 @@ create table buffer_01256 as system.numbers Engine=Buffer(currentDatabase(), dat
 insert into buffer_01256 select * from system.numbers limit 5;
 select count() from data_01256;
 -- sleep 2 (min time) + 1 (round up) + bias (1) = 4
-select sleepEachRow(2) from numbers(2) FORMAT Null;
+select sleepEachRow(2) from numbers(2) SETTINGS max_block_size=1 FORMAT Null;
 select count() from data_01256;
 drop table buffer_01256;
 
@@ -25,7 +25,7 @@ create table buffer_01256 as system.numbers Engine=Buffer(currentDatabase(), dat
 insert into buffer_01256 select * from system.numbers limit 5;
 select count() from data_01256;
 -- sleep 2 (min time) + 1 (round up) + bias (1) = 4
-select sleepEachRow(2) from numbers(2) FORMAT Null;
+select sleepEachRow(2) from numbers(2) SETTINGS max_block_size=1 FORMAT Null;
 select count() from data_01256;
 drop table buffer_01256;
 
