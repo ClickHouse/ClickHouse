@@ -355,7 +355,8 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
             thread_status.attachQuery(running_group);
     };
 
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), &IOThreadPool::get(), download_thread_num, worker_setup, worker_cleanup);
+    return std::make_unique<ParallelReadBuffer>(
+        std::move(factory), &IOThreadPool::get(), download_thread_num, std::move(worker_setup), std::move(worker_cleanup));
 }
 
 String StorageS3Source::getName() const
