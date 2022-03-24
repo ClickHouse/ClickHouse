@@ -35,13 +35,13 @@ enum class BlockDeviceType
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & deviceId);
+BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id);
 
 // Get size of read-ahead in bytes for specified block device
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & deviceId);
+UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id);
 
 /// Returns mount point of filesystem where absolute_path (must exist) is located
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
