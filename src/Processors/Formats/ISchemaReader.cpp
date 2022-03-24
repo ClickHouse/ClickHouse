@@ -20,6 +20,13 @@ IRowSchemaReader::IRowSchemaReader(
     {
         /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
         boost::split(column_names, format_settings.column_names_for_schema_inference, boost::is_any_of(","));
+        for (size_t i = 0 ; i < column_names.size() ; ++i)
+        {
+            std::string col_name_trimmed = column_names[i];
+            boost::trim(col_name_trimmed);
+            if (!col_name.empty())
+                column_names[i] = col_name_trimmed;
+        }
     }
 }
 
