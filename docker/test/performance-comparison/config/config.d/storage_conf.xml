@@ -1,0 +1,31 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <type>s3</type>
+                <path>s3_disk/</path>
+                <endpoint>http://localhost:11111/test/perf_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <request_timeout_ms>20000</request_timeout_ms>
+            </s3_disk>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache/</path>
+                <max_size>1Gi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3_cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>
