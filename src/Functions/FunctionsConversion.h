@@ -2706,13 +2706,10 @@ private:
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
     }
 
-    WrapperType createUInt8ToUInt8Wrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
+    WrapperType createUInt8ToBoolWrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
     {
         return [from_type, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
         {
-            if (isBool(from_type) || !isBool(to_type))
-                return arguments.front().column;
-
             /// Special case when we convert UInt8 column to Bool column.
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
@@ -3509,15 +3506,19 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+        if (isUInt8(from_type) && isBool(to_type))
+            return createUInt8ToBoolWrapper(from_type, to_type);
 
-        if (from_type->equals(*to_type) && !convert_to_ipv6)
-        {
-            if (isUInt8(from_type))
-                return createUInt8ToUInt8Wrapper(from_type, to_type);
+        /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
+        bool safe_convert_custom_types = true;
 
+        if (const auto * to_type_custom_name = to_type->getCustomName())
+            safe_convert_custom_types = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
+        else if (const auto * from_type_custom_name = from_type->getCustomName())
+            safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
+
+        if (from_type->equals(*to_type) && safe_convert_custom_types)
             return createIdentityWrapper(from_type);
-        }
         else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
