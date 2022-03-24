@@ -1129,7 +1129,12 @@ def produce_alter_move(node, name):
     "name,engine,use_metadata_cache",
     [
         pytest.param("concurrently_altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param("concurrently_altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
+        pytest.param(
+            "concurrently_altering_mt",
+            "MergeTree()",
+            "true",
+            id="mt_use_metadata_cache",
+        ),
         pytest.param(
             "concurrently_altering_replicated_mt",
             "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",
