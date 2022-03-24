@@ -94,7 +94,7 @@ def _check_exception(exception, expected_tries=3):
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def started_cluster(request):
-    cluster = ClickHouseCluster(__file__, request.param, request.param)
+    cluster = ClickHouseCluster(__file__, request.param)
     cluster.__with_ssl_config = request.param == "configs_secure"
     main_configs = []
     main_configs += [os.path.join(request.param, "config.d/remote_servers.xml")]
@@ -103,6 +103,7 @@ def started_cluster(request):
         main_configs += [os.path.join(request.param, "server.key")]
         main_configs += [os.path.join(request.param, "dhparam.pem")]
         main_configs += [os.path.join(request.param, "config.d/ssl_conf.xml")]
+
     user_configs = [os.path.join(request.param, "users.d/set_distributed_defaults.xml")]
     for name in NODES:
         NODES[name] = cluster.add_instance(
