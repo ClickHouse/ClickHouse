@@ -67,7 +67,7 @@ public:
         size_t allocatedBytes() const;
 
         bool isFinalized() const;
-        const DataTypePtr & getLeastCommonType() const { return least_common_type; }
+        const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
@@ -102,8 +102,26 @@ public:
         friend class ColumnObject;
 
     private:
+        class LeastCommonType
+        {
+        public:
+            LeastCommonType() = default;
+            explicit LeastCommonType(DataTypePtr type_);
+
+            const DataTypePtr & get() const { return type; }
+            const DataTypePtr & getBase() const { return base_type; }
+            size_t getNumberOfDimensions() const { return num_dimensions; }
+
+        private:
+            DataTypePtr type;
+            DataTypePtr base_type;
+            size_t num_dimensions = 0;
+        };
+
+        void addNewColumnPart(DataTypePtr type);
+
         /// Current least common type of all values inserted to this subcolumn.
-        DataTypePtr least_common_type;
+        LeastCommonType least_common_type;
 
         /// If true then common type type of subcolumn is Nullable
         /// and default values are NULLs.

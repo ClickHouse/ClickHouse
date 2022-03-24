@@ -4,9 +4,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', main_configs=['configs/global_overcommit_tracker.xml'])
+node = cluster.add_instance(
+    "node", main_configs=["configs/global_overcommit_tracker.xml"]
+)
 
-@pytest.fixture(scope='module', autouse=True)
+
+@pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
@@ -14,8 +17,10 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-TEST_QUERY_A = 'SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=1'
-TEST_QUERY_B = 'SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=2'
+
+TEST_QUERY_A = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=1"
+TEST_QUERY_B = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=2"
+
 
 def test_overcommited_is_killed():
     node.query("CREATE USER A")
@@ -40,7 +45,9 @@ def test_overcommited_is_killed():
         if err == "":
             finished = True
 
-    assert overcommited_killed and finished, "no overcommited task was killed or all tasks are killed"
+    assert (
+        overcommited_killed and finished
+    ), "no overcommited task was killed or all tasks are killed"
 
     node.query("DROP USER IF EXISTS A")
     node.query("DROP USER IF EXISTS B")

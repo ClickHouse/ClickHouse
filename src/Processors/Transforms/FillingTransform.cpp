@@ -34,16 +34,16 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
-    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut)
+    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     switch (kind)
     {
-        #define DECLARE_CASE(NAME) \
+#define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
-            return [step, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<T>(field), step, date_lut); };
+            return [step, scale, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<T>(field), step, date_lut, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
-        #undef DECLARE_CASE
+#undef DECLARE_CASE
     }
     __builtin_unreachable();
 }
@@ -92,7 +92,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             Int64 avg_seconds = get<Int64>(descr.fill_step) * descr.step_kind->toAvgSeconds();
             if (avg_seconds < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Value of step is to low ({} seconds). Must be >= 1 day", avg_seconds);
+                                "Value of step is to low ({} seconds). Must be >= 1 day", avg_seconds);
         }
 
         if (which.isDate())
@@ -108,25 +108,23 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 
             switch (*descr.step_kind)
             {
-                #define DECLARE_CASE(NAME) \
+#define DECLARE_CASE(NAME) \
                 case IntervalKind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = get<DecimalField<DateTime64>>(field); \
-                        auto components = DecimalUtils::splitWithScaleMultiplier(field_decimal.getValue(), field_decimal.getScaleMultiplier()); \
-                        auto res = Add##NAME##sImpl::execute(components, step, time_zone); \
-                        auto res_decimal = decimalFromComponentsWithMultiplier<DateTime64>(res, field_decimal.getScaleMultiplier()); \
-                        field = DecimalField(res_decimal, field_decimal.getScale()); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, field_decimal.getScale()); \
+                        field = DecimalField(res, field_decimal.getScale()); \
                     }; \
                     break;
 
                 FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
-                #undef DECLARE_CASE
+#undef DECLARE_CASE
             }
         }
         else
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
+                            "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
     }
     else
     {
@@ -176,14 +174,14 @@ FillingTransform::FillingTransform(
 
         if (!tryConvertFields(descr, type))
             throw Exception("Incompatible types of WITH FILL expression values with column type "
-                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
         if (type->isValueRepresentedByUnsignedInteger() &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
-                (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
+             (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
             throw Exception("WITH FILL bound values cannot be negative for unsigned type "
-                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
     }
 
@@ -254,7 +252,7 @@ void FillingTransform::transform(Chunk & chunk)
     MutableColumns res_other_columns;
 
     auto init_columns_by_positions = [](const Columns & old_columns, Columns & new_columns,
-        MutableColumns & new_mutable_columns, const Positions & positions)
+                                        MutableColumns & new_mutable_columns, const Positions & positions)
     {
         for (size_t pos : positions)
         {

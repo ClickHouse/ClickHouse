@@ -253,6 +253,29 @@ void ColumnObject::Subcolumn::insert(Field field)
     insert(std::move(field), std::move(info));
 }
 
+void ColumnObject::Subcolumn::addNewColumnPart(DataTypePtr type)
+{
+    auto serialization = type->getSerialization(ISerialization::Kind::SPARSE);
+    data.push_back(type->createColumn(*serialization));
+    least_common_type = LeastCommonType{std::move(type)};
+}
+
+static bool isConversionRequiredBetweenIntegers(const IDataType & lhs, const IDataType & rhs)
+{
+    /// If both of types are signed/unsigned integers and size of left field type
+    /// is less than right type, we don't need to convert field,
+    /// because all integer fields are stored in Int64/UInt64.
+
+    WhichDataType which_lhs(lhs);
+    WhichDataType which_rhs(rhs);
+
+    bool is_native_int = which_lhs.isNativeInt() && which_rhs.isNativeInt();
+    bool is_native_uint = which_lhs.isNativeUInt() && which_rhs.isNativeUInt();
+
+    return (is_native_int || is_native_uint)
+        && lhs.getSizeOfValueInMemory() <= rhs.getSizeOfValueInMemory();
+}
+
 void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 {
     auto base_type = std::move(info.scalar_type);
@@ -263,10 +286,10 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         return;
     }
 
-    auto column_dim = getNumberOfDimensions(*least_common_type);
+    auto column_dim = least_common_type.getNumberOfDimensions();
     auto value_dim = info.num_dimensions;
 
-    if (isNothing(least_common_type))
+    if (isNothing(least_common_type.get()))
         column_dim = value_dim;
 
     if (field.isNull())
@@ -284,29 +307,26 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (!is_nullable && info.have_nulls)
         field = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault(), value_dim), std::move(field));
 
-    auto value_type = createArrayOfType(base_type, value_dim);
     bool type_changed = false;
+    const auto & least_common_base_type = least_common_type.getBase();
 
     if (data.empty())
     {
-        auto serialization = value_type->getSerialization(ISerialization::Kind::SPARSE);
-        data.push_back(value_type->createColumn(*serialization));
-        least_common_type = value_type;
+        addNewColumnPart(createArrayOfType(std::move(base_type), value_dim));
     }
-    else if (!least_common_type->equals(*value_type))
+    else if (!least_common_base_type->equals(*base_type) && !isNothing(base_type))
     {
-        value_type = getLeastSupertype(DataTypes{value_type, least_common_type}, true);
-        type_changed = true;
-        if (!least_common_type->equals(*value_type))
+        if (!isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
         {
-            auto serialization = value_type->getSerialization(ISerialization::Kind::SPARSE);
-            data.push_back(value_type->createColumn(*serialization));
-            least_common_type = value_type;
+            base_type = getLeastSupertype(DataTypes{std::move(base_type), least_common_base_type}, true);
+            type_changed = true;
+            if (!least_common_base_type->equals(*base_type))
+                addNewColumnPart(createArrayOfType(std::move(base_type), value_dim));
         }
     }
 
     if (type_changed || info.need_convert)
-        field = convertFieldToTypeOrThrow(field, *value_type);
+        field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
     data.back()->insert(field);
 }
@@ -316,28 +336,24 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
     assert(src.isFinalized());
 
     const auto & src_column = src.data.back();
-    const auto & src_type = src.least_common_type;
+    const auto & src_type = src.least_common_type.get();
 
     if (data.empty())
     {
-        least_common_type = src_type;
-        data.push_back(src_type->createColumn());
+        addNewColumnPart(src.least_common_type.get());
         data.back()->insertRangeFrom(*src_column, start, length);
     }
-    else if (least_common_type->equals(*src_type))
+    else if (least_common_type.get()->equals(*src_type))
     {
         data.back()->insertRangeFrom(*src_column, start, length);
     }
     else
     {
-        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type, src_type}, true);
+        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src_type}, true);
         auto casted_column = castColumn({src_column, src_type, ""}, new_least_common_type);
 
-        if (!least_common_type->equals(*new_least_common_type))
-        {
-            least_common_type = new_least_common_type;
-            data.push_back(least_common_type->createColumn());
-        }
+        if (!least_common_type.get()->equals(*new_least_common_type))
+            addNewColumnPart(std::move(new_least_common_type));
 
         data.back()->insertRangeFrom(*casted_column, start, length);
     }
@@ -360,7 +376,7 @@ void ColumnObject::Subcolumn::finalize()
         return;
     }
 
-    const auto & to_type = least_common_type;
+    const auto & to_type = least_common_type.get();
     auto result_column = to_type->createColumn();
 
     if (num_of_defaults_in_prefix)
@@ -462,7 +478,7 @@ ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues(const
         scalar_type = makeNullable(scalar_type);
 
     Subcolumn new_subcolumn;
-    new_subcolumn.least_common_type = createArrayOfType(scalar_type, field_info.num_dimensions);
+    new_subcolumn.least_common_type = LeastCommonType{createArrayOfType(scalar_type, field_info.num_dimensions)};
     new_subcolumn.is_nullable = is_nullable;
     new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
     new_subcolumn.data.reserve(data.size());
@@ -490,6 +506,13 @@ const ColumnPtr & ColumnObject::Subcolumn::getFinalizedColumnPtr() const
 {
     assert(isFinalized());
     return data[0];
+}
+
+ColumnObject::Subcolumn::LeastCommonType::LeastCommonType(DataTypePtr type_)
+    : type(std::move(type_))
+    , base_type(getBaseTypeOfArray(type))
+    , num_dimensions(DB::getNumberOfDimensions(*type))
+{
 }
 
 ColumnObject::ColumnObject(bool is_nullable_)
