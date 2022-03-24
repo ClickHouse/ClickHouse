@@ -32,7 +32,7 @@ public:
     ///
     /// Current value is just enough for all tests in our CI. It's not selected in some special
     /// way. We will have 40 pages with 4KB page size.
-    static constexpr size_t default_stack_size = 192 * 1024; /// 64KB was not enough for tests
+    static constexpr size_t default_stack_size = 256 * 1024; /// 64KB was not enough for tests
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
