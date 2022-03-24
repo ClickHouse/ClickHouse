@@ -75,7 +75,6 @@ private:
 
     template <typename Reader>
     void deserializeHiveTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader, const FormatSettings & settings) const;
-    
 };
 
 }
