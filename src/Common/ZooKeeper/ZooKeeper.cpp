@@ -5,15 +5,15 @@
 
 #include <functional>
 #include <filesystem>
-#include <pcg-random/pcg_random.hpp>
 
-#include <base/logger_useful.h>
 #include <base/find_symbols.h>
-#include <Common/randomSeed.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
+#include <Common/isLocalAddress.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/DNS.h>
 
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
@@ -48,7 +48,7 @@ static void check(Coordination::Error code, const std::string & path)
 
 
 void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-                     int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
+                     int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
 {
     log = &Poco::Logger::get("ZooKeeper");
     hosts = hosts_;
@@ -57,6 +57,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
     implementation = implementation_;
+    get_priority_load_balancing = get_priority_load_balancing_;
 
     if (implementation == "zookeeper")
     {
@@ -66,14 +67,13 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         Coordination::ZooKeeper::Nodes nodes;
         nodes.reserve(hosts.size());
 
-        Strings shuffled_hosts = hosts;
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        pcg64 generator(randomSeed());
-        std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
+        std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
 
         bool dns_error = false;
-        for (auto & host_string : shuffled_hosts)
+        for (auto & host : shuffled_hosts)
         {
+            auto & host_string = host.host;
             try
             {
                 bool secure = bool(startsWith(host_string, "secure://"));
@@ -81,6 +81,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
 
+                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, Poco::Net::SocketAddress{host_string}.toString());
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
@@ -154,23 +155,47 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
     }
 }
 
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
+{
+    std::function<size_t(size_t index)> get_priority = get_priority_load_balancing.getPriorityFunc(get_priority_load_balancing.load_balancing, 0, hosts.size());
+    std::vector<ShuffleHost> shuffle_hosts;
+    for (size_t i = 0; i < hosts.size(); ++i)
+    {
+        ShuffleHost shuffle_host;
+        shuffle_host.host = hosts[i];
+        if (get_priority)
+            shuffle_host.priority = get_priority(i);
+        shuffle_host.randomize();
+        shuffle_hosts.emplace_back(shuffle_host);
+    }
+
+    std::sort(
+        shuffle_hosts.begin(), shuffle_hosts.end(),
+        [](const ShuffleHost & lhs, const ShuffleHost & rhs)
+        {
+            return ShuffleHost::compare(lhs, rhs);
+        });
+
+    return shuffle_hosts;
+}
+
 ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
                      int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+                     std::shared_ptr<DB::ZooKeeperLog> zk_log_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
 {
     zk_log = std::move(zk_log_);
     Strings hosts_strings;
     splitInto<','>(hosts_strings, hosts_string);
 
-    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_, get_priority_load_balancing_);
 }
 
 ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
                      int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+                     std::shared_ptr<DB::ZooKeeperLog> zk_log_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
 {
     zk_log = std::move(zk_log_);
-    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_, get_priority_load_balancing_);
 }
 
 struct ZooKeeperArgs
@@ -213,6 +238,15 @@ struct ZooKeeperArgs
             {
                 implementation = config.getString(config_name + "." + key);
             }
+            else if (key == "zookeeper_load_balancing")
+            {
+                String load_balancing_str = config.getString(config_name + "." + key);
+                /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
+                auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+                if (!load_balancing)
+                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
+                get_priority_load_balancing.load_balancing = *load_balancing;
+            }
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
         }
@@ -224,6 +258,15 @@ struct ZooKeeperArgs
             if (chroot.back() == '/')
                 chroot.pop_back();
         }
+
+        /// init get_priority_load_balancing
+        get_priority_load_balancing.hostname_differences.resize(hosts.size());
+        const String & local_hostname = getFQDNOrHostName();
+        for (size_t i = 0; i < hosts.size(); ++i)
+        {
+            const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
+            get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
+        }
     }
 
     Strings hosts;
@@ -232,13 +275,14 @@ struct ZooKeeperArgs
     int operation_timeout_ms;
     std::string chroot;
     std::string implementation;
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
+    init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.get_priority_load_balancing);
 }
 
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
@@ -249,8 +293,11 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     if (args.implementation == implementation && implementation == "testkeeper")
         return false;
 
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
+    if (args.get_priority_load_balancing != get_priority_load_balancing)
+        return true;
+
+    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.get_priority_load_balancing)
+        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, args.get_priority_load_balancing);
 }
 
 
@@ -757,7 +804,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation, zk_log);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation, zk_log, get_priority_load_balancing);
 }
 
 
