@@ -43,7 +43,7 @@ String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule es
 /// - For JSON escaping rule we can use JSON parser to parse a single field
 ///   and then convert JSON type of this field to ClickHouse type.
 /// - For CSV escaping rule we can do the next:
-///    - If the field is an unquoted string, then we try to parse it as s number,
+///    - If the field is an unquoted string, then we try to parse it as a number,
 ///      and if we cannot, treat it as a String.
 ///    - If the field is a string in quotes, then we try to use some
 ///      tweaks and heuristics to determine the type inside quotes, and if we can't or
