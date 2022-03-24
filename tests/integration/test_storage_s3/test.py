@@ -517,7 +517,7 @@ def test_put_get_with_globs(started_cluster):
         # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
     ],
 )
-def test_multipart_put(started_cluster, maybe_auth, positive):
+def test_multipart(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = (

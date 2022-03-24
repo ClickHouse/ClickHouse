@@ -24,6 +24,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -33,8 +34,6 @@
 #    include <base/logger_useful.h>
 
 #    include <fstream>
-#include <aws/s3/S3Client.h>  // Y_IGNORE
-#include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 namespace
 {

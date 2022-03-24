@@ -5,15 +5,15 @@
 
 #if USE_AWS_S3
 
-#    include <memory>
+#include <memory>
 
-#    include <IO/HTTPCommon.h>
-#    include <IO/ParallelReadBuffer.h>
-#    include <IO/ReadBuffer.h>
-#    include <IO/ReadSettings.h>
-#    include <IO/SeekableReadBuffer.h>
+#include <IO/HTTPCommon.h>
+#include <IO/ParallelReadBuffer.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadSettings.h>
+#include <IO/SeekableReadBuffer.h>
 
-#    include <aws/s3/model/GetObjectResult.h>
+#include <aws/s3/model/GetObjectResult.h>
 
 namespace Aws::S3
 {
@@ -104,33 +104,11 @@ public:
         assert(range_step < object_size);
     }
 
-    SeekableReadBufferPtr getReader() override
-    {
-        const auto next_range = range_generator.nextRange();
-        if (!next_range)
-        {
-            return nullptr;
-        }
+    SeekableReadBufferPtr getReader() override;
 
-        auto reader = std::make_shared<ReadBufferFromS3>(
-            client_ptr,
-            bucket,
-            key,
-            s3_max_single_read_retries,
-            read_settings,
-            false /*use_external_buffer*/,
-            next_range->first,
-            next_range->second);
-        return reader;
-    }
+    off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    off_t seek(off_t off, [[maybe_unused]] int whence) override
-    {
-        range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
-        return off;
-    }
-
-    std::optional<size_t> getTotalSize() override { return object_size; }
+    std::optional<size_t> getTotalSize() override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
