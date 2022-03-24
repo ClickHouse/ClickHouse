@@ -1,17 +1,22 @@
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/WriteBuffer.h>
-#include <IO/Operators.h>
+#include <stack>
+
+#include <Common/JSONBuilder.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <stack>
+
+#include <IO/Operators.h>
+#include <IO/WriteBuffer.h>
+
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Common/JSONBuilder.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 
 namespace DB
 {
