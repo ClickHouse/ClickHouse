@@ -2325,12 +2325,14 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!ident_p.parse(pos, ident, expected))
         return false;
 
-    if (!as.ignore(pos, expected))
-        return false;
-
     ASTPtr expr;
-    if (!element_p.parse(pos, expr, expected))
-        return false;
+    if (as.ignore(pos, expected))
+    {
+        if (!element_p.parse(pos, expr, expected))
+            return false;
+    }
+    else
+        expr = ident;
 
     auto elem = std::make_shared<ASTInterpolateElement>();
     elem->column = ident;

@@ -11,6 +11,8 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 
 namespace DB
@@ -250,12 +252,32 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (s_interpolate.ignore(pos, expected))
             {
-                if (!open_bracket.ignore(pos, expected))
-                    return false;
-                if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                    return false;
-                if (!close_bracket.ignore(pos, expected))
-                    return false;
+                if (open_bracket.ignore(pos, expected))
+                {
+                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                } else
+                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
+
+                if (interpolate_expression_list->children.empty())
+                {
+                    std::unordered_map<std::string, ASTPtr> columns;
+                    for (const auto & elem : select_expression_list->children)
+                        columns[elem->getColumnName()] = elem;
+                    for (const auto & elem : order_expression_list->children)
+                        if (elem->as<ASTOrderByElement>()->with_fill)
+                            columns.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+
+                    for (const auto & [column, ast] : columns)
+                    {
+                        auto elem = std::make_shared<ASTInterpolateElement>();
+                        elem->column = ast;
+                        elem->expr = ast;
+                        interpolate_expression_list->children.push_back(elem);
+                    }
+                }
             }
         }
     }

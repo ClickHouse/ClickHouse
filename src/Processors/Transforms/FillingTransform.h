@@ -14,13 +14,13 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & sort_description_, const InterpolateDescription & interpolate_description_, bool on_totals_);
+    FillingTransform(const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_, bool on_totals_);
 
     String getName() const override { return "FillingTransform"; }
 
     Status prepare() override;
 
-    static Block transformHeader(Block header, const SortDescription & sort_description/*, const InterpolateDescription & interpolate_description_*/);
+    static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
     void transform(Chunk & Chunk) override;
@@ -29,7 +29,7 @@ private:
     void setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & other_columns) const;
 
     const SortDescription sort_description; /// Contains only columns with WITH FILL.
-    const InterpolateDescription interpolate_description; /// Contains INTERPOLATE columns
+    const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
     const bool on_totals; /// FillingTransform does nothing on totals.
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.

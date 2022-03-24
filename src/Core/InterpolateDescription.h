@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <unordered_map>
 #include <memory>
 #include <cstddef>
 #include <string>
@@ -11,60 +11,26 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
-class Collator;
 
 namespace DB
 {
 
-namespace JSONBuilder
-{
-    class JSONMap;
-    class IItem;
-    using ItemPtr = std::unique_ptr<IItem>;
-}
-
-class Block;
-
-
 /// Interpolate description
-struct InterpolateColumnDescription
+struct InterpolateDescription
 {
-    using Signature = ExecutableFunctionExpression::Signature;
+    explicit InterpolateDescription(ExpressionActionsPtr actions);
 
-    ColumnWithTypeAndName column;
     ExpressionActionsPtr actions;
+    std::set<std::string> columns_full_set; /// columns to add to row
+    std::unordered_map<std::string, NameAndTypePair> required_columns_map; /// input columns
+    std::unordered_map<std::string, size_t> result_columns_map; /// result block column name -> block column index
 
-    explicit InterpolateColumnDescription(const ColumnWithTypeAndName & column_, ExpressionActionsPtr actions_) :
-        column(column_), actions(actions_) {}
-
-    bool operator == (const InterpolateColumnDescription & other) const
-    {
-        return column == other.column;
-    }
-
-    bool operator != (const InterpolateColumnDescription & other) const
-    {
-        return !(*this == other);
-    }
-
-    void interpolate(Field & field) const;
-
-    std::string dump() const
-    {
-        return fmt::format("{}", column.name);
-    }
-
-    void explain(JSONBuilder::JSONMap & map, const Block & header) const;
+    /// filled externally in transform
+    std::unordered_map<size_t, NameAndTypePair> input_map; /// row index -> column name type
+    std::unordered_map<size_t, size_t> output_map; /// result block column index -> row index
+    std::unordered_map<size_t, DataTypePtr> reset_map; /// row index -> column type, columns not filled by fill or interpolate
 };
 
-/// Description of interpolation for several columns.
-using InterpolateDescription = std::vector<InterpolateColumnDescription>;
-
-/// Outputs user-readable description into `out`.
-void dumpInterpolateDescription(const InterpolateDescription & description, const Block & header, WriteBuffer & out);
-
-std::string dumpInterpolateDescription(const InterpolateDescription & description);
-
-JSONBuilder::ItemPtr explainInterpolateDescription(const InterpolateDescription & description, const Block & header);
+using InterpolateDescriptionPtr = std::shared_ptr<InterpolateDescription>;
 
 }

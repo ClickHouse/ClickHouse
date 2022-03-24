@@ -140,7 +140,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, const InterpolateDescription & interpolate_description_, bool on_totals_)
+        const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_, bool on_totals_)
         : ISimpleTransform(header_, transformHeader(header_, sort_description_/*, interpolate_description_*/), true)
         , sort_description(sort_description_)
         , interpolate_description(interpolate_description_)
@@ -154,6 +154,19 @@ FillingTransform::FillingTransform(
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
+        if (interpolate_description && interpolate_description->columns_full_set.count(sort_description[i].column_name))
+        {
+            if (interpolate_description->result_columns_map.find(sort_description[i].column_name) !=
+                interpolate_description->result_columns_map.end())
+                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
+                        sort_description[i].column_name);
+
+            if (const auto & p = interpolate_description->required_columns_map.find(sort_description[i].column_name);
+                p != interpolate_description->required_columns_map.end())
+                    interpolate_description->input_map[fill_column_positions.size()] = p->second;
+        }
+
         size_t block_position = header_.getPositionByName(sort_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
@@ -174,41 +187,40 @@ FillingTransform::FillingTransform(
         }
     }
 
-    for (const auto & descr : interpolate_description)
-    {
-        size_t block_position = header_.getPositionByName(descr.column.name);
-        is_fill_column[block_position] = true;
-        fill_column_positions.push_back(block_position);
-
-        /// Check column-expression compatibility
-        auto column = descr.column;
-        auto exp_type = descr.actions->getActionsDAG().getResultColumns()[0].type;
-        auto exp_column = exp_type->createColumn();
-        exp_column->insertDefault();
-
-        try
-        {
-            if (auto exp_field = (*exp_column)[0]; convertFieldToType(exp_field, *column.type).isNull())
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Incompatible types of INTERPOLATE expression type {} with column '{}' of type {}",
-                        exp_type->getName(), column.name, column.type->getName());
-        }
-        catch (const Exception &)
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "Incompatible types of INTERPOLATE expression type {} with column '{}' of type {}",
-                    exp_type->getName(), column.name, column.type->getName());
-        }
-    }
-
     std::set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
         if (!unique_positions.insert(pos).second)
             throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
-    for (size_t i = 0; i < header_.columns(); ++i)
-        if (!is_fill_column[i])
-            other_column_positions.push_back(i);
+    size_t idx = 0;
+    for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
+    {
+        if (!is_fill_column[idx])
+        {
+            if (interpolate_description && interpolate_description->columns_full_set.count(column.name))
+            {
+                if (
+                    const auto & p = interpolate_description->required_columns_map.find(column.name);
+                    p != interpolate_description->required_columns_map.end()
+                )
+                    interpolate_description->input_map[fill_column_positions.size()] = p->second;
+
+                if (
+                    const auto & p = interpolate_description->result_columns_map.find(column.name);
+                    p != interpolate_description->result_columns_map.end()
+                )
+                    interpolate_description->output_map[p->second] = fill_column_positions.size();
+                else
+                    interpolate_description->reset_map[fill_column_positions.size()] = column.type;
+
+                is_fill_column[idx] = true;
+                fill_column_positions.push_back(idx);
+            }
+            else
+                other_column_positions.push_back(idx);
+        }
+        ++idx;
+    }
 }
 
 IProcessor::Status FillingTransform::prepare()
@@ -217,8 +229,8 @@ IProcessor::Status FillingTransform::prepare()
     {
         should_insert_first = next_row < filling_row || first;
 
-        for (size_t i = 0, size = filling_row.sort.size(); i < size; ++i)
-            next_row.sort[i] = filling_row.getFillDescription(i).fill_to;
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+            next_row[i] = filling_row.getFillDescription(i).fill_to;
 
         if (first || filling_row < next_row)
         {
@@ -277,9 +289,11 @@ void FillingTransform::transform(Chunk & chunk)
     init_columns_by_positions(old_columns, old_fill_columns, res_fill_columns, fill_column_positions);
     init_columns_by_positions(old_columns, old_other_columns, res_other_columns, other_column_positions);
 
+    bool first_block = first;
+
     if (first)
     {
-        for (size_t i = 0; i < filling_row.sort.size(); ++i)
+        for (size_t i = 0; i < filling_row.size(); ++i)
         {
             auto current_value = (*old_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
@@ -300,7 +314,8 @@ void FillingTransform::transform(Chunk & chunk)
     {
         should_insert_first = next_row < filling_row;
 
-        for (size_t i = 0; i < filling_row.sort.size(); ++i)
+        size_t i = 0;
+        for (; i < filling_row.size(); ++i)
         {
             auto current_value = (*old_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
@@ -311,28 +326,25 @@ void FillingTransform::transform(Chunk & chunk)
                 next_row[i] = fill_to;
         }
 
+        if (row_ind > 0)
+            for (; i < filling_row.row_size(); ++i)
+                filling_row[i] = (*old_fill_columns[i])[row_ind-1];
+
         /// A case, when at previous step row was initialized from defaults 'fill_from' values
         ///  and probably we need to insert it to block.
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
-        /// Update interpolate fields
-        for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
-            filling_row.getInterpolateDescription(i - filling_row.sort.size()).interpolate(next_row[i]);
-
         /// Insert generated filling row to block, while it is less than current row in block.
-        while (filling_row.next(next_row))
+        if (first_block)
         {
-            /// Update interpolate fields
-            for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
-                filling_row.getInterpolateDescription(i - filling_row.sort.size()).interpolate(next_row[i]);
-
-            insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
+            first_block = false;
+            while (filling_row.next(next_row))
+                insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
         }
-
-        /// Reset interpolate fields
-        for (size_t i = filling_row.sort.size(); i < filling_row.size(); ++i)
-            next_row[i] = (*old_fill_columns[i])[row_ind];
+        else
+            for (filling_row.interpolate(); filling_row.next(next_row); filling_row.interpolate())
+                insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
         copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
