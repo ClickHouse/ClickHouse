@@ -83,12 +83,12 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & deviceId)
+BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 {
 #if defined(__linux__)
     try
     {
-        ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/rotational");
+        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
         int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
@@ -105,12 +105,12 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & deviceId)
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & deviceId)
+UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 {
 #if defined(__linux__)
     try
     {
-        ReadBufferFromFile in("/sys/dev/block/" + deviceId + "/queue/read_ahead_kb");
+        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/read_ahead_kb");
         int read_ahead_kb;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;

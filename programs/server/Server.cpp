@@ -535,7 +535,7 @@ static int readNumber(const String & path)
     return result;
 }
 
-static void sanityChecks(Server* server)
+static void sanityChecks(Server * server)
 {
     std::string data_path = getCanonicalPath(server->config().getString("path", DBMS_DEFAULT_PATH));
     std::string logs_path = server->config().getString("logger.log", "");
