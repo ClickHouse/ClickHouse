@@ -204,6 +204,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
+clickhouse-client --query "select * from format('Values', '(map())')"
+
 stop
 start
 
