@@ -48,3 +48,6 @@
 #define ENABLE_IPV6
 #define USE_OPENSSL
 #define USE_THREADS_POSIX
+
+#define HAVE_BOOL_T 1 
+#define HAVE_STDBOOL_H 1
