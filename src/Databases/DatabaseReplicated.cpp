@@ -208,7 +208,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         /*priority=*/1,
-        getDatabaseName(),
+        database_name,
         cluster_auth_info.cluster_secret);
 }
 
