@@ -388,15 +388,8 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
-    // Add explicit description to the scan node of pipeline.
-    if (ReadFromMergeTree::READ_FROM_MERGETREE_NAME == step.getName())
-    {
-        settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << " " << step.getStepDescription() << ")\n";
-    }
-    else
-    {
-        settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
-    }
+    settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
+
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)
