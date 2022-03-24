@@ -28,6 +28,7 @@ using FunctionKostikConsistentHash = FunctionConsistentHashImpl<KostikConsistent
 void registerFunctionKostikConsistentHash(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionKostikConsistentHash>();
+    factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");
 }
 
 }
