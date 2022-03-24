@@ -284,6 +284,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     }
 
     JoinCommon::convertToFullColumnsInplace(right_table_keys);
+    JoinCommon::convertToFullColumnsInplace(sample_block_with_columns_to_add);
     initRightBlockStructure(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
