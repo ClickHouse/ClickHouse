@@ -94,9 +94,14 @@ StoragePtr TableFunctionHDFSCluster::executeImpl(
     else
     {
         storage = StorageHDFSCluster::create(
-            cluster_name, uri, StorageID(getDatabaseName(), table_name),
-            format, getActualTableStructure(context), ConstraintsDescription{},
-            compression_method);
+            cluster_name,
+            uri,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            compression_method
+        );
     }
 
     storage->startup();

@@ -19,6 +19,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/HDFSCommon.h>
 #include <Storages/HDFS/StorageHDFSCluster.h>
 
 #include <memory>
@@ -41,10 +42,24 @@ StorageHDFSCluster::StorageHDFSCluster(
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
+    StorageHDFS::checkHDFSURL(uri_);
+
+    String path = uri_.substr(uri_.find('/', uri_.find("//") + 2));
+    is_path_with_globs = path.find_first_of("*?{") != std::string::npos;
+
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
+    storage_metadata.setComment(comment);
 }
 
 /// The code executes on initiator
