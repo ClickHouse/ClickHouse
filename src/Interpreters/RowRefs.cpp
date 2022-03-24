@@ -1,6 +1,5 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Common/RadixSort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -45,52 +44,38 @@ class SortedLookupVector : public SortedLookupVectorBase
 {
     struct Entry
     {
-        TKey value;
-        uint32_t row_ref_index;
+        /// We don't store a RowRef and instead keep it's members separately (and return a tuple) to reduce the memory usage.
+        /// For example, for sizeof(T) == 4 => sizeof(Entry) == 16 (while before it would be 20). Then when you put it into a vector, the effect is even greater
+        decltype(RowRef::block) block;
+        decltype(RowRef::row_num) row_num;
+        TKey asof_value;
 
         Entry() = delete;
-        Entry(TKey value_, uint32_t row_ref_index_)
-            : value(value_)
-            , row_ref_index(row_ref_index_)
-        { }
+        Entry(TKey v, const Block * b, size_t r) : block(b), row_num(r), asof_value(v) { }
 
-    };
-
-    struct LessEntryOperator
-    {
-        ALWAYS_INLINE bool operator()(const Entry & lhs, const Entry & rhs) const
-        {
-            return lhs.value < rhs.value;
-        }
+        bool operator<(const Entry & other) const { return asof_value < other.asof_value; }
     };
 
     struct GreaterEntryOperator
     {
-        ALWAYS_INLINE bool operator()(const Entry & lhs, const Entry & rhs) const
-        {
-            return lhs.value > rhs.value;
-        }
+        bool operator()(Entry const & a, Entry const & b) const { return a.asof_value > b.asof_value; }
     };
 
 
 public:
+    using Base = std::vector<Entry>;
     using Keys = std::vector<TKey>;
-    using Entries = PaddedPODArray<Entry>;
-    using RowRefs = PaddedPODArray<RowRef>;
-
-    static constexpr bool is_descending = (inequality == ASOF::Inequality::Greater || inequality == ASOF::Inequality::GreaterOrEquals);
-    static constexpr bool is_strict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
+    static constexpr bool isDescending = (inequality == ASOF::Inequality::Greater || inequality == ASOF::Inequality::GreaterOrEquals);
+    static constexpr bool isStrict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
 
     void insert(const IColumn & asof_column, const Block * block, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
-        TKey key = column.getElement(row_num);
+        TKey k = column.getElement(row_num);
 
         assert(!sorted.load(std::memory_order_acquire));
-
-        entries.emplace_back(key, row_refs.size());
-        row_refs.emplace_back(RowRef(block, row_num));
+        array.emplace_back(k, block, row_num);
     }
 
     /// Unrolled version of upper_bound and lower_bound
@@ -99,30 +84,30 @@ public:
     /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
     size_t boundSearch(TKey value)
     {
-        size_t size = entries.size();
+        size_t size = array.size();
         size_t low = 0;
 
         /// This is a single binary search iteration as a macro to unroll. Takes into account the inequality:
-        /// is_strict -> Equal values are not requested
-        /// is_descending -> The vector is sorted in reverse (for greater or greaterOrEquals)
+        /// isStrict -> Equal values are not requested
+        /// isDescending -> The vector is sorted in reverse (for greater or greaterOrEquals)
 #define BOUND_ITERATION \
     { \
         size_t half = size / 2; \
         size_t other_half = size - half; \
         size_t probe = low + half; \
         size_t other_low = low + other_half; \
-        TKey & v = entries[probe].value; \
+        TKey v = array[probe].asof_value; \
         size = half; \
-        if constexpr (is_descending) \
+        if constexpr (isDescending) \
         { \
-            if constexpr (is_strict) \
+            if constexpr (isStrict) \
                 low = value <= v ? other_low : low; \
             else \
                 low = value < v ? other_low : low; \
         } \
         else \
         { \
-            if constexpr (is_strict) \
+            if constexpr (isStrict) \
                 low = value >= v ? other_low : low; \
             else \
                 low = value > v ? other_low : low; \
@@ -145,7 +130,7 @@ public:
         return low;
     }
 
-    RowRef findAsof(const IColumn & asof_column, size_t row_num) override
+    std::tuple<decltype(RowRef::block), decltype(RowRef::row_num)> findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -154,11 +139,8 @@ public:
         TKey k = column.getElement(row_num);
 
         size_t pos = boundSearch(k);
-        if (pos != entries.size())
-        {
-            size_t row_ref_index = entries[pos].row_ref_index;
-            return row_refs[row_ref_index];
-        }
+        if (pos != array.size())
+            return std::make_tuple(array[pos].block, array[pos].row_num);
 
         return {nullptr, 0};
     }
@@ -166,8 +148,7 @@ public:
 private:
     std::atomic<bool> sorted = false;
     mutable std::mutex lock;
-    Entries entries;
-    RowRefs row_refs;
+    Base array;
 
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
@@ -179,37 +160,12 @@ private:
         if (!sorted.load(std::memory_order_acquire))
         {
             std::lock_guard<std::mutex> l(lock);
-
             if (!sorted.load(std::memory_order_relaxed))
             {
-                if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
-                {
-                    if (likely(entries.size() > 256))
-                    {
-                        struct RadixSortTraits : RadixSortNumTraits<TKey>
-                        {
-                            using Element = Entry;
-                            using Result = Element;
-
-                            static TKey & extractKey(Element & elem) { return elem.value; }
-                            static Element extractResult(Element & elem) { return elem; }
-                        };
-
-                        if constexpr (is_descending)
-                            RadixSort<RadixSortTraits>::executeLSD(entries.data(), entries.size(), true);
-                        else
-                            RadixSort<RadixSortTraits>::executeLSD(entries.data(), entries.size(), false);
-
-                        sorted.store(true, std::memory_order_release);
-                        return;
-                    }
-                }
-
-                if constexpr (is_descending)
-                    ::sort(entries.begin(), entries.end(), GreaterEntryOperator());
+                if constexpr (isDescending)
+                    ::sort(array.begin(), array.end(), GreaterEntryOperator());
                 else
-                    ::sort(entries.begin(), entries.end(), LessEntryOperator());
-
+                    ::sort(array.begin(), array.end());
                 sorted.store(true, std::memory_order_release);
             }
         }
