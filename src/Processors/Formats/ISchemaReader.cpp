@@ -1,6 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -10,9 +11,16 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_)
-    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_)
+IRowSchemaReader::IRowSchemaReader(
+    ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_, const DataTypes & default_types_)
+    : ISchemaReader(in_)
+    , max_rows_to_read(format_settings.max_rows_to_read_for_schema_inference), default_type(default_type_), default_types(default_types_)
 {
+    if (!format_settings.column_names_for_schema_inference.empty())
+    {
+        /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
+        boost::split(column_names, format_settings.column_names_for_schema_inference, boost::is_any_of(","));
+    }
 }
 
 NamesAndTypesList IRowSchemaReader::readSchema()
@@ -43,6 +51,8 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             {
                 if (default_type)
                     data_types[i] = default_type;
+                else if (!default_types.empty() && i < default_types.size() && default_types[i])
+                    data_types[i] = default_types[i];
                 else
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
@@ -74,14 +84,16 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         /// Check that we could determine the type of this column.
         if (!data_types[i])
         {
-            if (!default_type)
+            if (default_type)
+                data_types[i] = default_type;
+            else if (!default_types.empty() && i < default_types.size() && default_types[i])
+                data_types[i] = default_types[i];
+            else
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
                     "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
                     max_rows_to_read);
-
-            data_types[i] = default_type;
         }
         result.emplace_back(column_names[i], data_types[i]);
     }

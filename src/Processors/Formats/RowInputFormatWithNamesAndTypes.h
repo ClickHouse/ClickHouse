@@ -124,7 +124,7 @@ class FormatWithNamesAndTypesSchemaReader : public IRowSchemaReader
 public:
     FormatWithNamesAndTypesSchemaReader(
         ReadBuffer & in,
-        size_t max_rows_to_read_,
+        const FormatSettings & format_settings,
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,

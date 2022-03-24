@@ -1366,6 +1366,7 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     /// - Tuples: (...)
     /// - Maps: {...}
     /// - NULL
+    /// - Bool: true/false
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
@@ -1393,6 +1394,16 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
             assertStringCaseInsensitive("an", buf);
             s.append("NaN");
         }
+    }
+    else if (checkCharCaseInsensitive('t', buf))
+    {
+        assertStringCaseInsensitive("rue", buf);
+        s.append("true");
+    }
+    else if (checkCharCaseInsensitive('f', buf))
+    {
+        assertStringCaseInsensitive("alse", buf);
+        s.append("false");
     }
     else
     {

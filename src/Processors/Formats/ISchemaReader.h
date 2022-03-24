@@ -27,12 +27,14 @@ protected:
 /// Base class for schema inference for formats that read data row by row.
 /// It reads data row by row (up to max_rows_to_read), determines types of columns
 /// for each row and compare them with types from the previous rows. If some column
-/// contains values with different types in different rows, the default type will be
-/// used for this column or the exception will be thrown (if default type is not set).
+/// contains values with different types in different rows, the default type
+/// (from argument default_type_) will be used for this column or the exception
+/// will be thrown (if default type is not set). If different columns have different
+/// default types, you can provide them by default_types_ argument.
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_ = nullptr, const DataTypes & default_types_ = {});
     NamesAndTypesList readSchema() override;
 
 protected:
@@ -47,6 +49,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
+    DataTypes default_types;
     std::vector<String> column_names;
 };
 
