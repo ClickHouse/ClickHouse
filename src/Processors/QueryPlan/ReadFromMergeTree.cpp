@@ -45,8 +45,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const std::string ReadFromMergeTree::READ_FROM_MERGETREE_NAME = "ReadFromMergeTree";
-
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();

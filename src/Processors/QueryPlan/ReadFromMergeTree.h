@@ -100,8 +100,8 @@ public:
         bool enable_parallel_reading
     );
 
-    static const std::string READ_FROM_MERGETREE_NAME;
-    String getName() const override { return READ_FROM_MERGETREE_NAME; }
+    static constexpr auto name = "ReadFromMergeTree";
+    String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
