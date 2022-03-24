@@ -68,7 +68,7 @@ using Node = typename ColumnObject::SubcolumnsTree::Node;
 /// Finds a subcolumn from the same Nested type as @entry and inserts
 /// an array with default values with consistent sizes as in Nested type.
 bool tryInsertDefaultFromNested(
-    std::shared_ptr<Node> entry, const ColumnObject::SubcolumnsTree & subcolumns)
+    const std::shared_ptr<Node> & entry, const ColumnObject::SubcolumnsTree & subcolumns)
 {
     if (!entry->path.hasNested())
         return false;
@@ -134,8 +134,13 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
 
     String buf;
     reader(buf);
+    std::optional<ParseResult> result;
 
-    auto result = parser.parse(buf.data(), buf.size());
+    {
+        auto parser = parsers_pool.get([] { return new Parser; });
+        result = parser->parse(buf.data(), buf.size());
+    }
+
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse object");
 
@@ -205,7 +210,7 @@ void SerializationObject<Parser>::deserializeTextQuoted(IColumn & column, ReadBu
 template <typename Parser>
 void SerializationObject<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    deserializeTextImpl(column, [&](String & s) { parser.readJSON(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { Parser::readJSON(s, istr); });
 }
 
 template <typename Parser>

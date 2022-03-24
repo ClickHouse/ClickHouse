@@ -36,6 +36,9 @@ public:
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
+    /// This database can contain tables to backup.
+    bool hasTablesToBackup() const override { return true; }
+
 protected:
     virtual void commitAlterTable(
         const StorageID & table_id,
