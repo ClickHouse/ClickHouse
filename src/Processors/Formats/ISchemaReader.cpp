@@ -93,7 +93,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         {
             if (default_type)
                 data_types[i] = default_type;
-            else if (!default_types.empty() && i < default_types.size() && default_types[i])
+            else if (i < default_types.size() && default_types[i])
                 data_types[i] = default_types[i];
             else
                 throw Exception(
