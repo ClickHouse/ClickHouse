@@ -3,7 +3,7 @@
 Memory overcommit is an experimental technique intended to allow to set more flexible memory limits for queries.
 
 The idea of this technique is to introduce settings which can represent guaranteed amount of memory a query can use.
-When memory overcommit is enabled and memory limit is reached ClickHouse will select the most overcommit query and try to free memory by killing this query.
+When memory overcommit is enabled and the memory limit is reached ClickHouse will select the most overcommitted query and try to free memory by killing this query.
 
 When memory limit is reached any query will wait some time during atempt to allocate new memory.
 If selected query is killed and memory is freed within waiting timeout, query will continue execution after waiting, otherwise it'll be killed too.
