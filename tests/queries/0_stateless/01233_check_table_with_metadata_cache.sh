@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # Tag no-fasttest: setting use_metadata_cache=true is not supported in fasttest, because clickhouse binary in fasttest is build without RocksDB.
 # To suppress Warning messages from CHECK TABLE
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
