@@ -1,4 +1,7 @@
 #include <Disks/HDFS/DiskHDFS.h>
+
+#if USE_HDFS
+
 #include <Disks/DiskLocal.h>
 #include <Disks/RemoteDisksCommon.h>
 
@@ -62,7 +65,7 @@ DiskHDFS::DiskHDFS(
     SettingsPtr settings_,
     DiskPtr metadata_disk_,
     const Poco::Util::AbstractConfiguration & config_)
-    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_disk_, "DiskHDFS", settings_->thread_pool_size)
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_disk_, nullptr, "DiskHDFS", settings_->thread_pool_size)
     , config(config_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
@@ -73,13 +76,13 @@ DiskHDFS::DiskHDFS(
 
 std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
-    auto metadata = readMeta(path);
+    auto metadata = readMetadata(path);
 
     LOG_TEST(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(path, config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(path, config, remote_fs_root_path, metadata, read_settings);
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
@@ -87,8 +90,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 
 std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    auto metadata = readOrCreateMetaForWriting(path, mode);
-
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
     auto hdfs_path = remote_fs_root_path + file_name;
@@ -100,10 +101,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
                                                              config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
+    auto create_metadata_callback = [this, path, mode, file_name] (size_t count)
+    {
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [file_name, count] (Metadata & metadata) { metadata.addObject(file_name, count); return true; });
+    };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
-                                                                                std::move(metadata),
-                                                                                file_name);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(create_metadata_callback), path);
 }
 
 
@@ -179,3 +182,4 @@ void registerDiskHDFS(DiskFactory & factory)
 }
 
 }
+#endif

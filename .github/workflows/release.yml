@@ -23,8 +23,8 @@ jobs:
       uses: actions/checkout@v2
     - name: Download packages and push to Artifactory
       run: |
-        rm -rf "$TEMP_PATH" && mkdir -p "$REPO_COPY"
-        cp -r "$GITHUB_WORKSPACE" "$REPO_COPY"
+        rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
+        cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
         cd "$REPO_COPY"
         python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
           --commit '${{ github.sha }}' --all
@@ -32,7 +32,7 @@ jobs:
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{runner.temp}}/release_packages/*
+        file: ${{runner.temp}}/push_to_artifactory/*
         overwrite: true
         tag: ${{ github.ref }}
         file_glob: true

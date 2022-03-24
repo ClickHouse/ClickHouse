@@ -84,7 +84,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_center = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_center = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_center)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -94,7 +98,7 @@ public:
                 getName());
         const auto & data_center = col_center->getData();
 
-        const auto * col_degrees = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
+        const auto * col_degrees = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
         if (!col_degrees)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -105,7 +109,7 @@ public:
         const auto & data_degrees = col_degrees->getData();
 
 
-        const auto * col_point = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
+        const auto * col_point = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
         if (!col_point)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

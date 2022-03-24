@@ -33,7 +33,7 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
     /// let's make the threshold significantly lower.
     /// It is impractical for user to have complex data types with this depth.
-    static constexpr size_t data_type_max_parse_depth = 200;
+    static constexpr size_t data_type_max_parse_depth = 150;
 
     ParserDataType parser;
     ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
@@ -213,6 +213,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
+    registerDataTypeObject(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

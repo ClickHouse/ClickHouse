@@ -195,33 +195,24 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
         }
 
-        auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority), query_kind);
-
-        increaseQueryKindAmount(query_kind);
-
-        res = std::make_shared<Entry>(*this, process_it);
-
-        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
-
-        process_it->setUserProcessList(&user_process_list);
-
-        /// Track memory usage for all simultaneously running queries from single user.
-        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-        user_process_list.user_memory_tracker.setDescription("(for user)");
+        auto user_process_list_it = user_to_queries.find(client_info.current_user);
+        if (user_process_list_it == user_to_queries.end())
+            user_process_list_it = user_to_queries.emplace(client_info.current_user, this).first;
+        ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
-        if (auto thread_group = CurrentThread::getGroup())
+        auto thread_group = CurrentThread::getGroup();
+        if (thread_group)
         {
             std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-            thread_group->query = process_it->query;
-            thread_group->normalized_query_hash = normalizedQueryHash<false>(process_it->query);
+            thread_group->query = query_;
+            thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
+            thread_group->memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
 
             if (query_context->hasTraceCollector())
             {
@@ -236,9 +227,24 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
             ///  since allocation and deallocation could happen in different threads
-
-            process_it->thread_group = std::move(thread_group);
         }
+
+        auto process_it = processes.emplace(processes.end(),
+            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind);
+
+        increaseQueryKindAmount(query_kind);
+
+        res = std::make_shared<Entry>(*this, process_it);
+
+        process_it->setUserProcessList(&user_process_list);
+
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+
+        /// Track memory usage for all simultaneously running queries from single user.
+        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setDescription("(for user)");
+        user_process_list.user_overcommit_tracker.setMaxWaitTime(settings.memory_usage_overcommit_max_wait_microseconds);
 
         if (!user_process_list.user_throttler)
         {
@@ -268,9 +274,6 @@ ProcessListEntry::~ProcessListEntry()
 
     const QueryStatus * process_list_element_ptr = &*it;
 
-    /// This removes the memory_tracker of one request.
-    parent.processes.erase(it);
-
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
@@ -290,6 +293,9 @@ ProcessListEntry::~ProcessListEntry()
             found = true;
         }
     }
+
+    /// This removes the memory_tracker of one request.
+    parent.processes.erase(it);
 
     if (!found)
     {
@@ -312,10 +318,16 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, IAST::QueryKind query_kind_)
+    ContextPtr context_,
+    const String & query_,
+    const ClientInfo & client_info_,
+    QueryPriorities::Handle && priority_handle_,
+    ThreadGroupStatusPtr && thread_group_,
+    IAST::QueryKind query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
+    , thread_group(std::move(thread_group_))
     , priority_handle(std::move(priority_handle_))
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
@@ -328,6 +340,14 @@ QueryStatus::QueryStatus(
 QueryStatus::~QueryStatus()
 {
     assert(executors.empty());
+
+    if (auto * memory_tracker = getMemoryTracker())
+    {
+        if (user_process_list)
+            user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+        if (auto shared_context = getContext())
+            shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+    }
 }
 
 CancellationCode QueryStatus::cancelQuery(bool)
@@ -481,7 +501,11 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
-ProcessListForUser::ProcessListForUser() = default;
+ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
+    : user_overcommit_tracker(global_process_list, this)
+{
+    user_memory_tracker.setOvercommitTracker(&user_overcommit_tracker);
+}
 
 
 ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) const

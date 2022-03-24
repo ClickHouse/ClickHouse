@@ -1326,7 +1326,7 @@ If a query from the same user with the same ‘query_id’ already exists at thi
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
 
 ## replace_running_query_max_wait_ms {#replace-running-query-max-wait-ms}
 
@@ -1380,7 +1380,7 @@ load_balancing = nearest_hostname
 
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
-For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
+For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
@@ -1802,6 +1802,48 @@ By default, deduplication is not performed for materialized views but is done up
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
 At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
+
+## insert_deduplication_token {#insert_deduplication_token}
+
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+For example, by providing a unique value for the setting in each INSERT statement,
+user can avoid the same inserted data being deduplicated.
+
+Possilbe values:
+
+-  Any string
+
+Default value: empty string (disabled)
+
+`insert_deduplication_token` is used for deduplication _only_ when not empty.
+
+Example:
+
+```sql
+CREATE TABLE test_table
+( A Int64 )
+ENGINE = MergeTree
+ORDER BY A
+SETTINGS non_replicated_deduplication_window = 100;
+
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
+
+-- the next insert won't be deduplicated because insert_deduplication_token is different
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
+
+-- the next insert will be deduplicated because insert_deduplication_token 
+-- is the same as one of the previous
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
+
+SELECT * FROM test_table
+
+┌─A─┐
+│ 1 │
+└───┘
+┌─A─┐
+│ 1 │
+└───┘
+```
 
 ## max_network_bytes {#settings-max-network-bytes}
 
@@ -3247,6 +3289,19 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
+
+## max_insert_delayed_streams_for_parallel_write {#max-insert-delayed-streams-for-parallel-write}
+
+The maximum number of streams (columns) to delay final part flush.
+
+It makes difference only if underlying storage supports parallel write (i.e. S3), otherwise it will not give any benefit.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled.
+
+Default value: `1000` for S3 and `0` otherwise.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 

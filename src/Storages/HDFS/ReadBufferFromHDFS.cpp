@@ -184,6 +184,11 @@ off_t ReadBufferFromHDFS::getPosition()
     return impl->getPosition() - available();
 }
 
+size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
+{
+    return impl->getPosition();
+}
+
 }
 
 #endif
