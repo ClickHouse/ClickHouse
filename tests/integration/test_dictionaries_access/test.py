@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance')
+instance = cluster.add_instance("instance")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -41,7 +41,9 @@ drop_query = "DROP DICTIONARY test_dict"
 
 def test_create():
     assert instance.query("SHOW GRANTS FOR mira") == ""
-    assert "Not enough privileges" in instance.query_and_get_error(create_query, user="mira")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        create_query, user="mira"
+    )
 
     instance.query("GRANT CREATE DICTIONARY ON *.* TO mira")
     instance.query(create_query, user="mira")
@@ -49,7 +51,9 @@ def test_create():
 
     instance.query("REVOKE CREATE DICTIONARY ON *.* FROM mira")
     assert instance.query("SHOW GRANTS FOR mira") == ""
-    assert "Not enough privileges" in instance.query_and_get_error(create_query, user="mira")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        create_query, user="mira"
+    )
 
     instance.query("GRANT CREATE DICTIONARY ON default.* TO mira")
     instance.query(create_query, user="mira")
@@ -57,7 +61,9 @@ def test_create():
 
     instance.query("REVOKE CREATE DICTIONARY ON default.* FROM mira")
     assert instance.query("SHOW GRANTS FOR mira") == ""
-    assert "Not enough privileges" in instance.query_and_get_error(create_query, user="mira")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        create_query, user="mira"
+    )
 
     instance.query("GRANT CREATE DICTIONARY ON default.test_dict TO mira")
     instance.query(create_query, user="mira")
@@ -67,7 +73,9 @@ def test_drop():
     instance.query(create_query)
 
     assert instance.query("SHOW GRANTS FOR mira") == ""
-    assert "Not enough privileges" in instance.query_and_get_error(drop_query, user="mira")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        drop_query, user="mira"
+    )
 
     instance.query("GRANT DROP DICTIONARY ON *.* TO mira")
     instance.query(drop_query, user="mira")
@@ -79,14 +87,18 @@ def test_dictget():
 
     dictget_query = "SELECT dictGet('default.test_dict', 'y', toUInt64(5))"
     instance.query(dictget_query) == "6\n"
-    assert "Not enough privileges" in instance.query_and_get_error(dictget_query, user='mira')
+    assert "Not enough privileges" in instance.query_and_get_error(
+        dictget_query, user="mira"
+    )
 
     instance.query("GRANT dictGet ON default.test_dict TO mira")
-    instance.query(dictget_query, user='mira') == "6\n"
+    instance.query(dictget_query, user="mira") == "6\n"
 
     dictget_query = "SELECT dictGet('default.test_dict', 'y', toUInt64(1))"
     instance.query(dictget_query) == "0\n"
-    instance.query(dictget_query, user='mira') == "0\n"
+    instance.query(dictget_query, user="mira") == "0\n"
 
     instance.query("REVOKE dictGet ON *.* FROM mira")
-    assert "Not enough privileges" in instance.query_and_get_error(dictget_query, user='mira')
+    assert "Not enough privileges" in instance.query_and_get_error(
+        dictget_query, user="mira"
+    )

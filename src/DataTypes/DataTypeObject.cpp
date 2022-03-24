@@ -19,7 +19,6 @@ namespace ErrorCodes
 DataTypeObject::DataTypeObject(const String & schema_format_, bool is_nullable_)
     : schema_format(Poco::toLower(schema_format_))
     , is_nullable(is_nullable_)
-    , default_serialization(getObjectSerialization(schema_format))
 {
 }
 
@@ -32,7 +31,7 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetDefaultSerialization() const
 {
-    return default_serialization;
+    return getObjectSerialization(schema_format);
 }
 
 String DataTypeObject::doGetName() const
