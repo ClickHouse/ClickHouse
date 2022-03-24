@@ -124,7 +124,8 @@ public:
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
         {
-            to_read_block.erase(name_type.name);
+            if (to_read_block.has(name_type.name))
+                to_read_block.erase(name_type.name);
         }
 
         /// Initialize format settings

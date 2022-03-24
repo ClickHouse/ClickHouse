@@ -751,7 +751,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.convert_query_to_cnf)
         converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (converted_to_cnf && settings.optimize_using_constraints)
+    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
     {
         optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
             tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
