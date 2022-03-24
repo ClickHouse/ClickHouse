@@ -54,7 +54,7 @@ private:
                 return interval_length * 0.000000001;
             default:
                 throw Exception(fmt::format("Interval kind {}: interval length is variadic, only precise intervals accepted",
-                                            IntervalKind(interval_kind).toKeyword()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                                            IntervalKind(interval_kind).toKeyword()), DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -137,7 +137,7 @@ private:
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
-            throw Exception("First argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("First argument for function " + getName() + " must have numeric type.", DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 public:
@@ -188,17 +188,17 @@ public:
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
             throw Exception("Illegal value" + interval_column.name + "for function nonNegativeDerivative, INTERVAL expected",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
             throw Exception("Illegal value " + interval_column.name + "for function nonNegativeDerivative, INTERVAL expected",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
             throw Exception("Value for column " + interval_column.name + "for function nonNegativeDerivative must be positive",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                            DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         return {interval_type->getKind(), num_units};
     }
