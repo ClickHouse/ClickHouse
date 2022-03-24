@@ -82,7 +82,7 @@
                 });
             }
         });
-    })(document, window, "yandex_metrika_callbacks2");
+    })(document, window, "");
 
     var beforePrint = function() {
         var details = document.getElementsByTagName("details");
