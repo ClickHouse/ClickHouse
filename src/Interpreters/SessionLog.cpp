@@ -77,7 +77,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
 
 NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
-    const auto event_type = std::make_shared<DataTypeEnum8>(
+    auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"LoginFailure",           static_cast<Int8>(SESSION_LOGIN_FAILURE)},
@@ -86,7 +86,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         });
 
 #define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
-    const auto identified_with_column = std::make_shared<DataTypeEnum8>(
+    auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_PASSWORD),
@@ -98,7 +98,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
 
-    const auto interface_type_column = std::make_shared<DataTypeEnum8>(
+    auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"TCP",                    static_cast<Int8>(Interface::TCP)},
@@ -108,9 +108,9 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)}
         });
 
-    const auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    const auto settings_type_column = std::make_shared<DataTypeArray>(
+    auto settings_type_column = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(
             DataTypes({
                 // setting name

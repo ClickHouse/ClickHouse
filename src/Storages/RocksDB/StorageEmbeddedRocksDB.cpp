@@ -240,7 +240,7 @@ public:
             WriteBufferFromString wb(serialized_keys[rows_processed]);
             key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
-            slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
+            slices_keys[rows_processed] = serialized_keys[rows_processed];
 
             ++it;
             ++rows_processed;
@@ -432,19 +432,19 @@ void StorageEmbeddedRocksDB::initDB()
 
 Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     FieldVectorPtr keys;
     bool all_scan = false;
 
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto primary_key_data_type = sample_block.getByName(primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)

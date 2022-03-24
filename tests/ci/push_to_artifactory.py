@@ -4,23 +4,12 @@ import argparse
 import logging
 import os
 import re
-from typing import Tuple
+from typing import List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
-
-
-# Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str):
-    if string.startswith(prefix):
-        return string[len(prefix) :]  # noqa: ignore E203, false positive
-    return string
-
-
-def removesuffix(string: str, suffix: str):
-    if string.endswith(suffix):
-        return string[: -len(suffix)]
-    return string
+from env_helper import RUNNER_TEMP
+from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
 # Necessary ENV variables
@@ -31,7 +20,7 @@ def getenv(name: str, default: str = None):
     raise KeyError(f"Necessary {name} environment is not set")
 
 
-TEMP_PATH = getenv("TEMP_PATH", ".")
+TEMP_PATH = os.path.join(RUNNER_TEMP, "push_to_artifactory")
 # One of the following ENVs is necessary
 JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
@@ -44,7 +33,6 @@ class Packages:
         ("clickhouse-common-static", "amd64"),
         ("clickhouse-common-static-dbg", "amd64"),
         ("clickhouse-server", "all"),
-        ("clickhouse-test", "all"),
     )
 
     def __init__(self, version: str):
@@ -58,11 +46,11 @@ class Packages:
             for name, arch in self.packages
         )
 
-        self.tgz = tuple("{}-{}.tgz".format(name, version) for name, _ in self.packages)
+        self.tgz = tuple(f"{name}-{version}.tgz" for name, _ in self.packages)
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:
-            raise ValueError("{} not in {}".format(deb_pkg, self.deb))
+            raise ValueError(f"{deb_pkg} not in {self.deb}")
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
     @staticmethod
@@ -124,7 +112,7 @@ class S3:
 
 class Release:
     def __init__(self, name: str):
-        r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
+        r = re.compile(TAG_REGEXP)
         # Automatically remove refs/tags/ if full refname passed here
         name = removeprefix(name, "refs/tags/")
         if not r.match(name):
@@ -212,15 +200,6 @@ class Artifactory:
         return self.__path_helper("_tgz", package_file)
 
 
-def commit(name: str):
-    r = re.compile(r"^([0-9]|[a-f]){40}$")
-    if not r.match(name):
-        raise argparse.ArgumentTypeError(
-            "commit hash should contain exactly 40 hex characters"
-        )
-    return name
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -275,15 +254,21 @@ def parse_args() -> argparse.Namespace:
         default="https://clickhousedb.jfrog.io/artifactory",
         help="SaaS Artifactory url",
     )
+    parser.add_argument("--artifactory", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "-n",
         "--no-artifactory",
-        action="store_true",
+        action="store_false",
+        dest="artifactory",
+        default=argparse.SUPPRESS,
         help="do not push packages to artifactory",
     )
+    parser.add_argument("--force-download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-force-download",
-        action="store_true",
+        action="store_false",
+        dest="force_download",
+        default=argparse.SUPPRESS,
         help="do not download packages again if they exist already",
     )
 
@@ -298,45 +283,48 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_deb(s3: S3, art_client: Artifactory):
+def process_deb(s3: S3, art_clients: List[Artifactory]):
     s3.download_deb()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_deb(s3.packages)
 
 
-def process_rpm(s3: S3, art_client: Artifactory):
+def process_rpm(s3: S3, art_clients: List[Artifactory]):
     s3.download_rpm()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_rpm(s3.packages)
 
 
-def process_tgz(s3: S3, art_client: Artifactory):
+def process_tgz(s3: S3, art_clients: List[Artifactory]):
     s3.download_tgz()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_tgz(s3.packages)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
+    os.makedirs(TEMP_PATH, exist_ok=True)
     s3 = S3(
         args.bucket_name,
         args.pull_request,
         args.commit,
         args.check_name,
         args.release.version,
-        not args.no_force_download,
+        args.force_download,
     )
-    art_client = None
-    if not args.no_artifactory:
-        art_client = Artifactory(args.artifactory_url, args.release.type)
+    art_clients = []
+    if args.artifactory:
+        art_clients.append(Artifactory(args.artifactory_url, args.release.type))
+        if args.release.type == "lts":
+            art_clients.append(Artifactory(args.artifactory_url, "stable"))
 
     if args.deb:
-        process_deb(s3, art_client)
+        process_deb(s3, art_clients)
     if args.rpm:
-        process_rpm(s3, art_client)
+        process_rpm(s3, art_clients)
     if args.tgz:
-        process_tgz(s3, art_client)
+        process_tgz(s3, art_clients)
 
 
 if __name__ == "__main__":

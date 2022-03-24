@@ -150,9 +150,14 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
+    const Settings & settings = context->getSettingsRef();
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
-    std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition> partitions;
-    String block_dedup_token;
+
+    using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
+    DelayedPartitions partitions;
+
+    size_t streams = 0;
+    bool support_parallel_write = false;
 
     for (auto & current_block : part_blocks)
     {
@@ -171,10 +176,12 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
         if (deduplicate)
         {
+            String block_dedup_token;
+
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
 
-            const String & dedup_token = context->getSettingsRef().insert_deduplication_token;
+            const String & dedup_token = settings.insert_deduplication_token;
             if (!dedup_token.empty())
             {
                 /// multiple blocks can be inserted within the same insert query
@@ -182,6 +189,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
                 block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
                 ++chunk_dedup_seqnum;
             }
+
             block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
@@ -191,6 +199,24 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         }
 
         UInt64 elapsed_ns = watch.elapsed();
+
+        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
+            max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
+
+        /// In case of too much columns/parts in block, flush explicitly.
+        streams += temp_part.streams.size();
+        if (streams > max_insert_delayed_streams_for_parallel_write)
+        {
+            finishDelayedChunk(zookeeper);
+            delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
+            delayed_chunk->partitions = std::move(partitions);
+            finishDelayedChunk(zookeeper);
+
+            streams = 0;
+            support_parallel_write = false;
+            partitions = DelayedPartitions{};
+        }
 
         partitions.emplace_back(ReplicatedMergeTreeSink::DelayedChunk::Partition{
             .temp_part = std::move(temp_part),
@@ -207,7 +233,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
-    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+    if (!settings.deduplicate_blocks_in_dependent_materialized_views)
         finishDelayedChunk(zookeeper);
 }
 

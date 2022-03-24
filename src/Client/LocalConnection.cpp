@@ -6,6 +6,8 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Core/Protocol.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -18,10 +20,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
+    , send_profile_events(send_profile_events_)
+    , server_display_name(server_display_name_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -58,6 +62,11 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
+void LocalConnection::getProfileEvents(Block & block)
+{
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, block, last_sent_snapshots);
+}
+
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
@@ -77,17 +86,22 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
-    CurrentThread::QueryScope query_scope_holder(query_context);
 
     state.reset();
     state.emplace();
 
     state->query_id = query_id;
     state->query = query;
+    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
+    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
 
     if (send_progress)
         state->after_send_progress.restart();
+
+    if (send_profile_events)
+        state->after_send_profile_events.restart();
 
     next_packet_type.reset();
 
@@ -161,11 +175,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (state->pushing_async_executor)
     {
-        state->pushing_async_executor->push(std::move(block));
+        state->pushing_async_executor->push(block);
     }
     else if (state->pushing_executor)
     {
-        state->pushing_executor->push(std::move(block));
+        state->pushing_executor->push(block);
     }
 }
 
@@ -228,6 +242,16 @@ bool LocalConnection::poll(size_t)
         {
             state->after_send_progress.restart();
             next_packet_type = Protocol::Server::Progress;
+            return true;
+        }
+
+        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+        {
+            Block block;
+            state->after_send_profile_events.restart();
+            next_packet_type = Protocol::Server::ProfileEvents;
+            getProfileEvents(block);
+            state->block.emplace(std::move(block));
             return true;
         }
 
@@ -459,9 +483,14 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)
+ServerConnectionPtr LocalConnection::createConnection(
+    const ConnectionParameters &,
+    ContextPtr current_context,
+    bool send_progress,
+    bool send_profile_events,
+    const String & server_display_name)
 {
-    return std::make_unique<LocalConnection>(current_context, send_progress);
+    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
 }
 
 

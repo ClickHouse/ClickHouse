@@ -7,7 +7,8 @@ namespace DB
 // Use template to disable implicit casting for certain overloaded types such as Field, which leads
 // to overload resolution ambiguity.
 class Field;
-template <typename T, typename U = std::enable_if_t<std::is_same_v<T, Field>>>
+template <typename T>
+requires std::is_same_v<T, Field>
 std::ostream & operator<<(std::ostream & stream, const T & what);
 
 struct NameAndTypePair;

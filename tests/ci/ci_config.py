@@ -14,7 +14,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -45,7 +45,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": True,
+            "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -231,7 +231,6 @@ CI_CONFIG = {
         },
         "Stateful tests (aarch64, actions)": {
             "required_build": "package_aarch64",
-            "force_tests": True,
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
@@ -259,7 +258,6 @@ CI_CONFIG = {
         },
         "Stateless tests (aarch64, actions)": {
             "required_build": "package_aarch64",
-            "force_tests": True,
         },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
@@ -268,6 +266,9 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Stateless tests (release, DatabaseReplicated, actions)": {
+            "required_build": "package_release",
+        },
+        "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
         },
         "Stress test (address, actions)": {
@@ -346,6 +347,9 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Stateless tests flaky check (address, actions)": {
+            "required_build": "package_asan",
+        },
+        "Stateless tests bugfix validate check (address, actions)": {
             "required_build": "package_asan",
         },
         "ClickHouse Keeper Jepsen (actions)": {

@@ -57,6 +57,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
@@ -262,7 +263,13 @@ namespace
 
     IntervalKind strToIntervalKind(const String& interval_str)
     {
-        if (interval_str == "Second")
+        if (interval_str == "Nanosecond")
+            return IntervalKind::Nanosecond;
+        else if (interval_str == "Microsecond")
+            return IntervalKind::Microsecond;
+        else if (interval_str == "Millisecond")
+            return IntervalKind::Millisecond;
+        else if (interval_str == "Second")
             return IntervalKind::Second;
         else if (interval_str == "Minute")
             return IntervalKind::Minute;
@@ -307,6 +314,12 @@ namespace
     {
         switch (kind)
         {
+            case IntervalKind::Nanosecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            case IntervalKind::Microsecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            case IntervalKind::Millisecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: { \
         return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
@@ -639,10 +652,43 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
             "The first argument of time window function should not be a constant value.",
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
+    ToIdentifierMatcher::Data query_data;
+    query_data.window_id_name = window_id_name;
+    query_data.window_id_alias = window_id_alias;
+    ToIdentifierMatcher::Visitor to_identifier_visitor(query_data);
+
+    ReplaceFunctionNowData time_now_data;
+    ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
+    ReplaceFunctionWindowMatcher::Data func_hop_data;
+    ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
+
+    DropTableIdentifierMatcher::Data drop_table_identifier_data;
+    DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
+
+    auto visit = [&](const IAST * ast)
+    {
+        auto node = ast->clone();
+        QueryNormalizer(normalizer_data).visit(node);
+        /// now() -> ____timestamp
+        if (is_time_column_func_now)
+        {
+            time_now_visitor.visit(node);
+            function_now_timezone = time_now_data.now_timezone;
+        }
+        drop_table_identifier_visitor.visit(node);
+        /// tumble/hop -> windowID
+        func_window_visitor.visit(node);
+        to_identifier_visitor.visit(node);
+        node->setAlias("");
+        return node;
+    };
+
     auto new_storage = std::make_shared<ASTStorage>();
     /// storage != nullptr in case create window view with ENGINE syntax
     if (storage)
     {
+        new_storage->set(new_storage->engine, storage->engine->clone());
+
         if (storage->ttl_table)
             throw Exception(
                 ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
@@ -654,46 +700,14 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                 "The ENGINE of WindowView must be MergeTree family of table engines "
                 "including the engines with replication support");
 
-        ToIdentifierMatcher::Data query_data;
-        query_data.window_id_name = window_id_name;
-        query_data.window_id_alias = window_id_alias;
-        ToIdentifierMatcher::Visitor to_identifier_visitor(query_data);
-
-        ReplaceFunctionNowData time_now_data;
-        ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
-        ReplaceFunctionWindowMatcher::Data func_hop_data;
-        ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
-
-        DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
-
-        new_storage->set(new_storage->engine, storage->engine->clone());
-
-        auto visit = [&](const IAST * ast, IAST *& field)
-        {
-            if (ast)
-            {
-                auto node = ast->clone();
-                QueryNormalizer(normalizer_data).visit(node);
-                /// now() -> ____timestamp
-                if (is_time_column_func_now)
-                {
-                    time_now_visitor.visit(node);
-                    function_now_timezone = time_now_data.now_timezone;
-                }
-                drop_table_identifier_visitor.visit(node);
-                /// tumble/hop -> windowID
-                func_window_visitor.visit(node);
-                to_identifier_visitor.visit(node);
-                node->setAlias("");
-                new_storage->set(field, node);
-            }
-        };
-
-        visit(storage->partition_by, new_storage->partition_by);
-        visit(storage->primary_key, new_storage->primary_key);
-        visit(storage->order_by, new_storage->order_by);
-        visit(storage->sample_by, new_storage->sample_by);
+        if (storage->partition_by)
+            new_storage->set(new_storage->partition_by, visit(storage->partition_by));
+        if (storage->primary_key)
+            new_storage->set(new_storage->primary_key, visit(storage->primary_key));
+        if (storage->order_by)
+            new_storage->set(new_storage->order_by, visit(storage->order_by));
+        if (storage->sample_by)
+            new_storage->set(new_storage->sample_by, visit(storage->sample_by));
 
         if (storage->settings)
             new_storage->set(new_storage->settings, storage->settings->clone());
@@ -702,8 +716,21 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     {
         new_storage->set(new_storage->engine, makeASTFunction("AggregatingMergeTree"));
 
-        new_storage->set(new_storage->order_by, std::make_shared<ASTIdentifier>(window_id_column_name));
-        new_storage->set(new_storage->primary_key, std::make_shared<ASTIdentifier>(window_id_column_name));
+        if (inner_select_query->groupBy()->children.size() == 1) //GROUP BY windowID
+        {
+            auto node = visit(inner_select_query->groupBy()->children[0].get());
+            new_storage->set(new_storage->order_by, std::make_shared<ASTIdentifier>(node->getColumnName()));
+        }
+        else
+        {
+            auto group_by_function = makeASTFunction("tuple");
+            for (auto & child : inner_select_query->groupBy()->children)
+            {
+                auto node = visit(child.get());
+                group_by_function->arguments->children.push_back(std::make_shared<ASTIdentifier>(node->getColumnName()));
+            }
+            new_storage->set(new_storage->order_by, group_by_function);
+        }
     }
 
     auto new_columns = std::make_shared<ASTColumns>();
@@ -724,6 +751,12 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
+        case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Millisecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -759,6 +792,13 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
+        case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Millisecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \

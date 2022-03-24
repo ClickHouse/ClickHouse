@@ -1,3 +1,4 @@
+set group_by_two_level_threshold = 100000;
 set enable_positional_arguments = 1;
 
 drop table if exists test;

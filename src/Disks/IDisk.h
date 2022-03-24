@@ -158,14 +158,14 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) = 0;
@@ -248,6 +248,10 @@ public:
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
 
+    /// Whether this disk support parallel write
+    /// Overrode in remote fs disks.
+    virtual bool supportParallelWrite() const { return false; }
+
     virtual bool isReadOnly() const { return false; }
 
     /// Check if disk is broken. Broken disks will have 0 space and not be used.
@@ -277,27 +281,33 @@ public:
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
-    /// Open the local file for read and return ReadBufferFromFileBase object.
-    /// Overridden in IDiskRemote.
-    /// Used for work with custom metadata.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const;
+    /// Quite leaky abstraction. Some disks can use additional disk to store
+    /// some parts of metadata. In general case we have only one disk itself and
+    /// return pointer to it.
+    ///
+    /// Actually it's a part of IDiskRemote implementation but we have so
+    /// complex hierarchy of disks (with decorators), so we cannot even
+    /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
+    virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
 
-    /// Open the local file for write and return WriteBufferFromFileBase object.
-    /// Overridden in IDiskRemote.
-    /// Used for work with custom metadata.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode);
-
-    virtual void removeMetaFileIfExists(const String & path);
+    /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
+    /// it will return mapping for each required path: path -> metadata as string.
+    /// Only for IDiskRemote.
+    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & /* paths */) const { return {}; }
 
     /// Return reference count for remote FS.
-    /// Overridden in IDiskRemote.
+    /// You can ask -- why we have zero and what does it mean? For some unknown reason
+    /// the decision was made to take 0 as "no references exist", but only file itself left.
+    /// With normal file system we will get 1 in this case:
+    /// $ stat clickhouse
+    ///  File: clickhouse
+    ///  Size: 3014014920      Blocks: 5886760    IO Block: 4096   regular file
+    ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
+    /// Why we have always zero by default? Because normal filesystem
+    /// manages hardlinks by itself. So you can always remove hardlink and all
+    /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
+
 
 protected:
     friend class DiskDecorator;
@@ -348,7 +358,7 @@ public:
     virtual UInt64 getSize() const = 0;
 
     /// Get i-th disk where reservation take place.
-    virtual DiskPtr getDisk(size_t i = 0) const = 0;
+    virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
     virtual Disks getDisks() const = 0;

@@ -37,5 +37,5 @@ $CLICKHOUSE_CLIENT --query="""
 				('upyachka', 'a'), ('test', 'b'), ('foo', 'c'),
 				('bar', 'd'))
 		ORDER BY Payload LIMIT 1 BY Phrase
-	) ORDER BY Payload, Payload
+	) ORDER BY Payload, Phrase
 	"""
