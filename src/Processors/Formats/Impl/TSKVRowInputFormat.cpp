@@ -280,7 +280,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
 }
 void registerTSKVSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<TSKVSchemaReader>(buf, settings);
     });

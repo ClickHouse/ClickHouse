@@ -49,9 +49,10 @@ String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule es
 ///      expression inside quotes as a constant expression, and if it fails or
 ///      the result is a number (we don't parse numbers in quotes) we treat it as a String.
 /// - For TSV and TSVRaw we treat each field as a String (TODO: try to use some tweaks and heuristics here)
-DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context = nullptr);
-DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context = nullptr);
+DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule);
+DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule);
 
 DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escaping_rule);
+DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::EscapingRule> & escaping_rules);
 
 }

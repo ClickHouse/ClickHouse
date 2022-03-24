@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -26,11 +27,13 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
+#include <boost/algorithm/string.hpp>
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
@@ -328,12 +331,17 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::string & format_name,
     bool is_nullable,
     std::unordered_map<String, std::shared_ptr<ColumnWithTypeAndName>> & dictionary_values,
-    bool read_ints_as_dates)
+    bool read_ints_as_dates,
+    bool allow_null_type,
+    bool skip_columns_with_unsupported_types,
+    bool & skipped)
 {
     if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
         && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
     {
-        auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates);
+        auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
+        if (skipped)
+            return {};
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
@@ -378,7 +386,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::MAP:
         {
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
-            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
@@ -390,7 +401,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::LIST:
         {
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
-            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
@@ -415,7 +428,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
-                auto element = readColumnFromArrowColumn(nested_arrow_column, arrow_struct_type->field(i)->name(), format_name, false, dictionary_values, read_ints_as_dates);
+                auto element = readColumnFromArrowColumn(nested_arrow_column, arrow_struct_type->field(i)->name(), format_name, false, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
+                if (skipped)
+                    return {};
                 tuple_elements.emplace_back(std::move(element.column));
                 tuple_types.emplace_back(std::move(element.type));
                 tuple_names.emplace_back(std::move(element.name));
@@ -438,7 +453,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     dict_array.emplace_back(dict_chunk.dictionary());
                 }
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
-                auto dict_column = readColumnFromArrowColumn(arrow_dict_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+                auto dict_column = readColumnFromArrowColumn(arrow_dict_column, column_name, format_name, false, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
 
                 /// We should convert read column to ColumnUnique.
                 auto tmp_lc_column = DataTypeLowCardinality(dict_column.type).createColumn();
@@ -468,9 +483,33 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 #    undef DISPATCH
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
+        case arrow::Type::NA:
+        {
+            if (allow_null_type)
+            {
+                auto type = std::make_shared<DataTypeNothing>();
+                auto column = ColumnNothing::create(arrow_column->length());
+                return {std::move(column), type, column_name};
+            }
+            [[fallthrough]];
+        }
         default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE,
-                    "Unsupported {} type '{}' of an input column '{}'.", format_name, arrow_column->type()->name(), column_name);
+        {
+            if (skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "Unsupported {} type '{}' of an input column '{}'. If it happens during schema inference and you want to skip columns with "
+                "unsupported types, you can enable setting input_format_{}_skip_columns_with_unsupported_types_in_schema_inference",
+                format_name,
+                arrow_column->type()->name(),
+                column_name,
+                boost::algorithm::to_lower_copy(format_name));
+        }
     }
 }
 
@@ -484,7 +523,8 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, const Block * hint_header)
+
+Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name, bool skip_columns_with_unsupported_types, const Block * hint_header)
 {
     ColumnsWithTypeAndName sample_columns;
     std::unordered_set<String> nested_table_names;
@@ -508,9 +548,10 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema,
         arrow::ArrayVector array_vector = {arrow_array};
         auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
         std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
-        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values, false);
-
-        sample_columns.emplace_back(std::move(sample_column));
+        bool skipped = false;
+        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values, false, false, skip_columns_with_unsupported_types, skipped);
+        if (!skipped)
+            sample_columns.emplace_back(std::move(sample_column));
     }
     return Block(std::move(sample_columns));
 }
@@ -544,6 +585,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.rows());
     std::unordered_map<String, BlockPtr> nested_tables;
+    bool skipped = false;
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
@@ -558,7 +600,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
                 if (!nested_tables.contains(nested_table_name))
                 {
                     std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[nested_table_name];
-                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(arrow_column, nested_table_name, format_name, false, dictionary_values, true)};
+                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(arrow_column, nested_table_name, format_name, false, dictionary_values, true, true, false, skipped)};
                     Block block(cols);
                     nested_tables[nested_table_name] = std::make_shared<Block>(Nested::flatten(block));
                 }
@@ -586,7 +628,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
         if (read_from_nested)
             column = nested_tables[nested_table_name]->getByName(header_column.name);
         else
-            column = readColumnFromArrowColumn(arrow_column, header_column.name, format_name, false, dictionary_values, true);
+            column = readColumnFromArrowColumn(arrow_column, header_column.name, format_name, false, dictionary_values, true, true, false, skipped);
 
         try
         {
