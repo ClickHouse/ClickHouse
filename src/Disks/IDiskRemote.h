@@ -68,8 +68,6 @@ public:
 
     String getCacheBasePath() const final override;
 
-    /// Returnes a list of paths because for Log family engines
-    /// there might be multiple files in remote fs for single clickhouse file.
     std::vector<String> getRemotePaths(const String & path) const final override;
 
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;

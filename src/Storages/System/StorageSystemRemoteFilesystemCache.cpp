@@ -17,10 +17,12 @@ NamesAndTypesList StorageSystemRemoteFilesystemCache::getNamesAndTypes()
     return {
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"cache_path", std::make_shared<DataTypeString>()},
-        {"file_segment_range", std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()})},
+        {"file_segment_range_begin", std::make_shared<DataTypeUInt64>()},
+        {"file_segment_range_end", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeUInt64>()},
         {"state", std::make_shared<DataTypeString>()},
         {"cache_hits", std::make_shared<DataTypeUInt64>()},
+        {"references", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -44,10 +46,12 @@ void StorageSystemRemoteFilesystemCache::fillData(MutableColumns & res_columns, 
             res_columns[1]->insert(cache->getPathInLocalCache(file_segment->key(), file_segment->offset()));
 
             const auto & range = file_segment->range();
-            res_columns[2]->insert(Tuple({range.left, range.right}));
-            res_columns[3]->insert(range.size());
-            res_columns[4]->insert(FileSegment::stateToString(file_segment->state()));
-            res_columns[5]->insert(file_segment->hits());
+            res_columns[2]->insert(range.left);
+            res_columns[3]->insert(range.right);
+            res_columns[4]->insert(range.size());
+            res_columns[5]->insert(FileSegment::stateToString(file_segment->state()));
+            res_columns[6]->insert(file_segment->hits());
+            res_columns[7]->insert(file_segment.use_count());
         }
     }
 }
