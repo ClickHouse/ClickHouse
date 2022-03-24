@@ -7,57 +7,22 @@
 namespace DB
 {
 
-void dumpInterpolateDescription(const InterpolateDescription & description, const Block & /*header*/, WriteBuffer & out)
-{
-    bool first = true;
-
-    for (const auto & desc : description)
+    InterpolateDescription::InterpolateDescription(ExpressionActionsPtr actions_)
+        : actions(actions_)
     {
-        if (!first)
-            out << ", ";
-        first = false;
+        for (const auto & name_type : actions->getRequiredColumnsWithTypes())
+        {
+            columns_full_set.insert(name_type.name);
+            required_columns_map[name_type.name] = name_type;
+        }
 
-        if (desc.column.name.empty())
-            out << "?";
-        else
-            out << desc.column.name;
+        const Block & res_block = actions->getSampleBlock();
+        size_t idx = 0;
+        for (const ColumnWithTypeAndName & column : res_block)
+        {
+            columns_full_set.insert(column.name);
+            result_columns_map[column.name] = idx++;
+        }
     }
-}
-
-void InterpolateColumnDescription::interpolate(Field & field) const
-{
-    if (field.isNull())
-        return;
-    Block expr_columns;
-    Field column_field = convertFieldToType(field, *column.type.get());
-    expr_columns.insert({column.type->createColumnConst(1, column_field), column.type, column.name});
-    actions->execute(expr_columns);
-    field = convertFieldToType((*expr_columns.getByPosition(0).column)[0], *column.type.get());
-}
-
-void InterpolateColumnDescription::explain(JSONBuilder::JSONMap & map, const Block & /*header*/) const
-{
-    map.add("Column", column.name);
-}
-
-std::string dumpInterpolateDescription(const InterpolateDescription & description)
-{
-    WriteBufferFromOwnString wb;
-    dumpInterpolateDescription(description, Block{}, wb);
-    return wb.str();
-}
-
-JSONBuilder::ItemPtr explainInterpolateDescription(const InterpolateDescription & description, const Block & header)
-{
-    auto json_array = std::make_unique<JSONBuilder::JSONArray>();
-    for (const auto & descr : description)
-    {
-        auto json_map = std::make_unique<JSONBuilder::JSONMap>();
-        descr.explain(*json_map, header);
-        json_array->add(std::move(json_map));
-    }
-
-    return json_array;
-}
 
 }

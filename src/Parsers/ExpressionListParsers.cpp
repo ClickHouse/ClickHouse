@@ -759,7 +759,7 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserInterpolateElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserInterpolateElement>(), std::make_unique<ParserToken>(TokenType::Comma), true)
         .parse(pos, node, expected);
 }
 
