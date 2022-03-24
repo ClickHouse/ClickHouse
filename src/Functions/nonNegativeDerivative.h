@@ -45,6 +45,12 @@ private:
                 return interval_length * 60;
             case IntervalKind::Second:
                 return interval_length;
+            case IntervalKind::Millisecond:
+                return interval_length * 0.001;
+            case IntervalKind::Microsecond:
+                return interval_length * 0.000001;
+            case IntervalKind::Nanosecond:
+                return interval_length * 0.000000001;
             default:
                 throw Exception(fmt::format("Interval kind {}: interval length is variadic, only precise intervals accepted",
                                             IntervalKind(interval_kind).toKeyword()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
