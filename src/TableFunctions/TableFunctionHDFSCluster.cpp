@@ -68,6 +68,9 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
+    if (structure == "auto")
+        return StorageHDFS::getTableStructureFromData(format, uri, compression_method, context);
+
     return parseColumnsListFromString(structure, context);
 }
 
@@ -94,6 +97,7 @@ StoragePtr TableFunctionHDFSCluster::executeImpl(
     else
     {
         storage = StorageHDFSCluster::create(
+            context,
             cluster_name,
             uri,
             StorageID(getDatabaseName(), table_name),

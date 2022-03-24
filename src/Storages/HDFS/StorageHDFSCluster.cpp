@@ -2,6 +2,8 @@
 
 #if USE_HDFS
 
+#include <Storages/HDFS/StorageHDFSCluster.h>
+
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,17 +12,20 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+
 #include <QueryPipeline/narrowBlockInputStreams.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+
+#include <Processors/Sources/RemoteSource.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFSCommon.h>
-#include <Storages/HDFS/StorageHDFSCluster.h>
 
 #include <memory>
 
@@ -29,6 +34,7 @@ namespace DB
 {
 
 StorageHDFSCluster::StorageHDFSCluster(
+    ContextPtr context_,
     String cluster_name_,
     const String & uri_,
     const StorageID & table_id_,
@@ -43,10 +49,10 @@ StorageHDFSCluster::StorageHDFSCluster(
     , compression_method(compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
-    StorageHDFS::checkHDFSURL(uri_);
+    checkHDFSURL(uri_);
 
     String path = uri_.substr(uri_.find('/', uri_.find("//") + 2));
-    is_path_with_globs = path.find_first_of("*?{") != std::string::npos;
+    const bool is_path_with_globs = path.find_first_of("*?{") != std::string::npos;
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -59,7 +65,6 @@ StorageHDFSCluster::StorageHDFSCluster(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
 }
 
 /// The code executes on initiator
