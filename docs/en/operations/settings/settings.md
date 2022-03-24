@@ -4226,7 +4226,7 @@ Default value: `0`.
 
 ## memory_usage_overcommit_max_wait_microseconds
 
-Maximum time thread will wait for memory to be freed in the case of memory overcommit on user level.
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 
