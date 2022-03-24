@@ -429,6 +429,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
     if (checkStringCaseInsensitive("NULL", buf))
         return std::make_shared<DataTypeNothing>();
 
+    /// Number
     Float64 tmp;
     if (tryReadFloatText(tmp, buf))
         return std::make_shared<DataTypeFloat64>();
