@@ -119,7 +119,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                         pos, columns.size());
 
     const auto & column = columns[--pos];
-    if (typeid_cast<const ASTIdentifier *>(column.get()))
+    if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
     }
