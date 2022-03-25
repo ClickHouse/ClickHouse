@@ -7,8 +7,6 @@
 #include <fmt/core.h>
 #include <Poco/URI.h>
 #include <base/logger_useful.h>
-#include <parquet/arrow/reader.h>
-#include <arrow/adapters/orc/adapter.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
