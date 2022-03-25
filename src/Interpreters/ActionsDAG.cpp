@@ -1527,6 +1527,20 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     return res;
 }
 
+ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const SortDescription & sort_description) const
+{
+    std::unordered_set<const Node *> split_nodes;
+    for (const auto & sort_column : sort_description)
+    {
+        const auto * node = tryFindInIndex(sort_column.column_name);
+        if (node)
+            split_nodes.insert(node);
+    }
+    auto res = split(split_nodes);
+    res.second->project_input = project_input;
+    return res;
+}
+
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
     const auto * node = tryFindInIndex(column_name);

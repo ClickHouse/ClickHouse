@@ -1,11 +1,12 @@
+#include <stdexcept>
+#include <IO/Operators.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/FinishSortingTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <IO/Operators.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -86,6 +87,19 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted (each port) by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_mode = DataStream::SortMode::Stream;
+}
+
+void SortingStep::updateInputStream(const DataStream & input_stream)
+{
+    input_streams.clear();
+    input_streams.emplace_back(input_stream);
+}
+
+void SortingStep::updateOutputStream(Block result_header)
+{
+    if (input_streams.size() != 1)
+        throw std::runtime_error{"wasted"};
+    output_stream = createOutputStream(input_streams.at(0), result_header, getDataStreamTraits());
 }
 
 void SortingStep::updateLimit(size_t limit_)

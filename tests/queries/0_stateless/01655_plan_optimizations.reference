@@ -142,3 +142,15 @@ Filter
 Filter
 2	3
 2	3
+> function calculation should be done after sorting and limit (if possible)
+> the whole Expression node could be moved after Sorting
+Expression
+Limit
+Expression
+Sorting
+> Expression should be divided into two subnodes and only one of them could be moved after Sorting
+Expression
+Limit
+Expression
+Sorting
+Expression
