@@ -429,7 +429,6 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 assert(file_segment->getDownloadOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
                 file_segment->write(implementation_buffer->buffer().begin(), current_predownload_size, current_offset);
-                assert(std::next(current_file_segment_it) == file_segments_holder->file_segments.end() || file_segment->getDownloadOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
 
                 current_offset += current_predownload_size;
 
