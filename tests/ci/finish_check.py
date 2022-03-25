@@ -2,7 +2,7 @@
 import logging
 from github import Github
 
-from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID
+from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    url = GITHUB_RUN_URL
     statuses = filter_statuses(list(commit.get_statuses()))
     if NAME in statuses and statuses[NAME].state == "pending":
         commit.create_status(
