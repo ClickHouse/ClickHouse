@@ -23,7 +23,7 @@ void swapSortingAndUnnecessaryCalculation(QueryPlan::Node * parent_node, Actions
 
     sorting_step->updateInputStream(child_node->children.at(0)->step->getOutputStream());
     auto input_header = child_step->getInputStreams().at(0).header;
-    sorting_step->updateOutputStream(input_header);
+    sorting_step->updateOutputStream(std::move(input_header));
     parent_step = std::make_unique<ExpressionStep>(child_step->getOutputStream(), std::move(actions));
 }
 
@@ -45,12 +45,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-
     const auto & expression = expression_step->getExpression();
-
-    for (auto sc : sort_columns)
-        LOG_TRACE(&Poco::Logger::get("Optimizer"), "sort_columns: {}", fmt::join(sort_columns, ", "));
-
     auto split_actions = expression->splitActionsBySortingDescription(sort_columns);
     LOG_TRACE(&Poco::Logger::get("Optimizer"), "source: {}", expression->dumpDAG());
     LOG_TRACE(&Poco::Logger::get("Optimizer"), "first: {}", split_actions.first->dumpDAG());
@@ -69,11 +64,10 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     // Sorting -> Expression
     auto & node = nodes.emplace_back();
-
     node.children.swap(child_node->children);
     child_node->children.emplace_back(&node);
-
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(), std::move(split_actions.first));
+
     // Sorting (parent_node) -> UnnecessaryCalculations (child_node) -> NecessaryCalculations (node)
     swapSortingAndUnnecessaryCalculation(parent_node, std::move(split_actions.second));
     // UnnecessaryCalculations (child_node) -> Sorting (parent_node) -> NecessaryCalculations (node)
