@@ -156,7 +156,8 @@ protected:
     NamesAndTypesList index_names_and_types;
     MinMaxIndexPtr minmax_idx;
     std::vector<MinMaxIndexPtr> sub_minmax_idxes;
-    std::set<int> skip_splits; // skip splits for this file after applying minmax index (if any)
+    /// Skip splits for this file after applying minmax index (if any)
+    std::set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 };
 
