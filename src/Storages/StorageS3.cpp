@@ -660,14 +660,8 @@ Pipe StorageS3::read(
     Block block_for_format;
     if (isColumnOriented())
     {
-        auto fetch_columns = column_names;
-        fetch_columns.erase(std::remove_if(fetch_columns.begin(), fetch_columns.end(),
-                              [](const String & col){return col == "_path" || col == "_file"; }));
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
-
         columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
