@@ -25,7 +25,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 #include <memory>
 
@@ -51,9 +51,6 @@ StorageHDFSCluster::StorageHDFSCluster(
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
-    String path = uri_.substr(uri_.find('/', uri_.find("//") + 2));
-    const bool is_path_with_globs = path.find_first_of("*?{") != std::string::npos;
-
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
@@ -65,6 +62,7 @@ StorageHDFSCluster::StorageHDFSCluster(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 /// The code executes on initiator
