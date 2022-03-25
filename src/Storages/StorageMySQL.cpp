@@ -75,17 +75,17 @@ StorageMySQL::StorageMySQL(
 
 Pipe StorageMySQL::read(
     const Names & column_names_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned)
 {
-    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
-        metadata_snapshot->getColumns().getOrdinary(),
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         remote_database_name,
         remote_table_name,
@@ -95,7 +95,7 @@ Pipe StorageMySQL::read(
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
         WhichDataType which(column_data.type);
         /// Convert enum to string.

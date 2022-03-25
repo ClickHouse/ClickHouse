@@ -130,6 +130,7 @@ private:
     static String getCallerIdImpl(bool allow_non_strict_checking = false);
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
+    String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     const Range segment_range;
 

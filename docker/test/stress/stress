@@ -47,7 +47,8 @@ def get_options(i):
     return ' '.join(options)
 
 
-def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
+def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit, backward_compatibility_check):
+    backward_compatibility_check_option = '--backward-compatibility-check' if backward_compatibility_check else ''
     global_time_limit_option = ''
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
@@ -56,7 +57,7 @@ def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_t
     pipes = []
     for i in range(0, len(output_paths)):
         f = open(output_paths[i], 'w')
-        full_command = "{} {} {} {}".format(cmd, get_options(i), global_time_limit_option, skip_tests_option)
+        full_command = "{} {} {} {} {}".format(cmd, get_options(i), global_time_limit_option, skip_tests_option, backward_compatibility_check_option)
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
@@ -168,6 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
+    parser.add_argument('--backward-compatibility-check', action='store_true')
     parser.add_argument('--hung-check', action='store_true', default=False)
     # make sense only for hung check
     parser.add_argument('--drop-databases', action='store_true', default=False)
@@ -176,7 +178,7 @@ if __name__ == "__main__":
     if args.drop_databases and not args.hung_check:
         raise Exception("--drop-databases only used in hung check (--hung-check)")
     func_pipes = []
-    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit)
+    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit, args.backward_compatibility_check)
 
     logging.info("Will wait functests to finish")
     while True:

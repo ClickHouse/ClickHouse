@@ -22,7 +22,7 @@ public:
         size_t preferred_block_size_bytes_,
         size_t preferred_max_column_in_block_size_bytes_,
         const MergeTreeData & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
