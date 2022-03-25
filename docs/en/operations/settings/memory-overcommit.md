@@ -6,7 +6,7 @@ The idea of this technique is to introduce settings which can represent guarante
 When memory overcommit is enabled and the memory limit is reached ClickHouse will select the most overcommitted query and try to free memory by killing this query.
 
 When memory limit is reached any query will wait some time during atempt to allocate new memory.
-If selected query is killed and memory is freed within waiting timeout, query will continue execution after waiting, otherwise it'll be killed too.
+If timeout is passed and memory is freed, the query continues execution. Otherwise an exception will be thrown and the query is killed.
 
 Selection of query to stop or kill is performed by either global or user overcommit trackers depending on what memory limit is reached.
 
