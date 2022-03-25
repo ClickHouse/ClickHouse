@@ -35,55 +35,22 @@ if(MKL_FOUND)
 
   find_package(LAPACK REQUIRED)
   target_link_libraries(_diskann PRIVATE ${LAPACK_LIBRARIES})
-
-  # set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${MKL_LINKER_FLAGS}")
-  # link_directories("${MKL_ROOT}/lib/intel64")
-  # target_link_libraries(_diskann PRIVATE ${MKL_LIBRARIES})
-
-#   add_library(_mkl_core_file SHARED IMPORTED)
-#   set_property(TARGET _mkl_core_file PROPERTY IMPORTED_LOCATION ${mkl_core_file})
-
-#   add_library(_mkl_intel_ilp64_file SHARED IMPORTED)
-#   set_property(TARGET _mkl_intel_ilp64_file PROPERTY IMPORTED_LOCATION ${mkl_intel_ilp64_file})
-
-#   add_library(_mkl_intel_thread_file SHARED IMPORTED)
-#   set_property(TARGET _mkl_intel_thread_file PROPERTY IMPORTED_LOCATION ${mkl_intel_thread_file})
-
-#   target_link_libraries(_diskann PRIVATE _mkl_core_file _mkl_intel_ilp64_file _mkl_intel_thread_file)
 else()
-  message("MKL not found!")
-
-  find_package(BLAS REQUIRED)
-  target_link_libraries(_diskann PRIVATE ${BLAS_LIBRARIES})
-
-  find_package(LAPACK REQUIRED)
-  target_link_libraries(_diskann PRIVATE ${LAPACK_LIBRARIES})
+  message(FATAL_ERROR "MKL not found!")
 endif()
 
+# OpenMP dependancy
 find_package(OpenMP REQUIRED)
 target_link_libraries(_diskann PRIVATE OpenMP::OpenMP_C)
 target_link_libraries(_diskann PRIVATE OpenMP::OpenMP_CXX)
 
+# Boost dependancy
 target_link_libraries(_diskann PRIVATE boost::headers_only)
 
+# gperftools dependancy
 target_link_libraries(_diskann PRIVATE ch_contrib::gperftools)
 
+# aiolib dependancy
 target_include_directories(_diskann SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/aio/include")
-
-# add_library(aiolib SHARED IMPORTED)
-# set_target_properties(aiolib
-#     PROPERTIES IMPORTED_LOCATION ${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/libaio.so
-# )
-# target_link_libraries(_diskann PRIVATE aiolib)
-
-# find_package(AIO)
-# if(HAVE_AIO)
-#     target_include_directories(_diskann PUBLIC ${LIBAIO_INCLUDE_DIR})
-#     target_link_libraries(_diskann PRIVATE ${LIBAIO_LIBRARIES})
-# else()
-#     message(FATAL_ERROR "AIO Not found!")
-# endif()
-
-#arget_link_libraries(_diskann PRIVATE mkl_intel_ilp64 mkl_intel_thread mkl_core iomp5 pthread m dl aio)
 
 add_library(ch_contrib::diskann ALIAS _diskann)
