@@ -5,10 +5,11 @@
 #include <IO/BrotliWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 namespace local_engine
 {
-void ShuffleSplitter::split(Block & block)
+void ShuffleSplitter::split(DB::Block & block)
 {
     computeAndCountPartitionId(block);
     splitBlockByPartition(block);
@@ -28,16 +29,16 @@ void ShuffleSplitter::stop()
     mergePartitionFiles();
     stopped = true;
 }
-void ShuffleSplitter::splitBlockByPartition(Block & block)
+void ShuffleSplitter::splitBlockByPartition(DB::Block & block)
 {
-    IColumn::Selector selector;
+    DB::IColumn::Selector selector;
     buildSelector(block.rows(), selector);
-    std::vector<Block> partitions;
+    std::vector<DB::Block> partitions;
     for (size_t i = 0; i < options.partition_nums; ++i)
         partitions.emplace_back(block.cloneEmpty());
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        MutableColumns scattered = block.getByPosition(col).column->scatter(options.partition_nums, selector);
+        DB::MutableColumns scattered = block.getByPosition(col).column->scatter(options.partition_nums, selector);
         for (size_t i = 0; i < options.partition_nums; ++i)
             partitions[i].getByPosition(col).column = std::move(scattered[i]);
     }
@@ -80,10 +81,10 @@ void ShuffleSplitter::init()
     }
 }
 
-void ShuffleSplitter::buildSelector(size_t row_nums, IColumn::Selector & selector)
+void ShuffleSplitter::buildSelector(size_t row_nums, DB::IColumn::Selector & selector)
 {
     assert(!partition_ids.empty() && "partition ids is empty");
-    selector = IColumn::Selector(row_nums);
+    selector = DB::IColumn::Selector(row_nums);
     selector.assign(partition_ids.begin(), partition_ids.end());
 }
 
@@ -93,22 +94,22 @@ void ShuffleSplitter::spillPartition(size_t partition_id)
     {
         partition_write_buffers[partition_id]
             = getPartitionWriteBuffer(partition_id);
-        partition_outputs[partition_id] = std::make_unique<NativeBlockOutputStream>(
+        partition_outputs[partition_id] = std::make_unique<DB::NativeBlockOutputStream>(
             *partition_write_buffers[partition_id], 0, partition_buffer[partition_id].getHeader());
     }
-    Block result = partition_buffer[partition_id].releaseColumns();
+    DB::Block result = partition_buffer[partition_id].releaseColumns();
     partition_outputs[partition_id]->write(result);
 }
 void ShuffleSplitter::mergePartitionFiles()
 {
-    WriteBufferFromFile data_write_buffer = WriteBufferFromFile(options.data_file);
+    DB::WriteBufferFromFile data_write_buffer = DB::WriteBufferFromFile(options.data_file);
     std::string buffer;
     int buffer_size = 1024 * 1024;
     buffer.reserve(buffer_size);
     for (size_t i = 0; i < options.partition_nums; ++i)
     {
         auto file = getPartitionTempFile(i);
-        ReadBufferFromFile reader = ReadBufferFromFile(file);
+        DB::ReadBufferFromFile reader = DB::ReadBufferFromFile(file);
         partition_length[i] = 0;
         while (reader.next())
         {
@@ -142,15 +143,15 @@ std::string ShuffleSplitter::getPartitionTempFile(size_t partition_id)
     if (!std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
     return std::filesystem::path(dir)/std::to_string(partition_id);
 }
-std::unique_ptr<WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t partition_id)
+std::unique_ptr<DB::WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t partition_id)
 {
     auto file = getPartitionTempFile(partition_id);
     if (partition_cached_write_buffers[partition_id] == nullptr)
-        partition_cached_write_buffers[partition_id] = std::make_unique<WriteBufferFromFile>(file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_APPEND);
+        partition_cached_write_buffers[partition_id] = std::make_unique<DB::WriteBufferFromFile>(file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_APPEND);
     if (!options.compress_method.empty() && std::find(compress_methods.begin(), compress_methods.end(), options.compress_method) != compress_methods.end())
     {
-        auto codec = CompressionCodecFactory::instance().get(options.compress_method, {});
-        return std::make_unique<CompressedWriteBuffer>(*partition_cached_write_buffers[partition_id], codec);
+        auto codec = DB::CompressionCodecFactory::instance().get(options.compress_method, {});
+        return std::make_unique<DB::CompressedWriteBuffer>(*partition_cached_write_buffers[partition_id], codec);
     }
 //    if (options.compress_method == "zstd")
 //    {
@@ -175,8 +176,18 @@ std::unique_ptr<WriteBuffer> ShuffleSplitter::getPartitionWriteBuffer(size_t par
 }
 
 const std::vector<std::string> ShuffleSplitter::compress_methods = {"", "ZSTD", "LZ4"};
+void ShuffleSplitter::writeIndexFile()
+{
+    auto index_file = options.data_file + ".index";
+    auto writer = std::make_unique<DB::WriteBufferFromFile>(index_file, DBMS_DEFAULT_BUFFER_SIZE, O_CREAT | O_WRONLY | O_TRUNC);
+    for (auto len : partition_length)
+    {
+        DB::writeIntText(len, *writer);
+        DB::writeChar('\n', *writer);
+    }
+}
 
-void ColumnsBuffer::add(Block & block, int start, int end)
+void ColumnsBuffer::add(DB::Block & block, int start, int end)
 {
     if (header.columns() == 0)
         header = block.cloneEmpty();
@@ -200,17 +211,17 @@ size_t ColumnsBuffer::size() const
     return accumulated_columns.at(0)->size();
 }
 
-Block ColumnsBuffer::releaseColumns()
+DB::Block ColumnsBuffer::releaseColumns()
 {
-    Columns res(std::make_move_iterator(accumulated_columns.begin()), std::make_move_iterator(accumulated_columns.end()));
+    DB::Columns res(std::make_move_iterator(accumulated_columns.begin()), std::make_move_iterator(accumulated_columns.end()));
     accumulated_columns.clear();
     return header.cloneWithColumns(res);
 }
-Block ColumnsBuffer::getHeader()
+DB::Block ColumnsBuffer::getHeader()
 {
     return header;
 }
-void RoundRobinSplitter::computeAndCountPartitionId(Block & block)
+void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
 {
     partition_ids.resize(block.rows());
     for (auto & pid : partition_ids)

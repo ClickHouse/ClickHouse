@@ -8,7 +8,7 @@
 
 
 
-using namespace DB;
+//using namespace DB;
 
 namespace local_engine
 {
@@ -27,14 +27,14 @@ struct SplitOptions
 class ColumnsBuffer
 {
 public:
-    void add(Block & columns, int start, int end);
+    void add(DB::Block & columns, int start, int end);
     size_t size() const;
-    Block releaseColumns();
-    Block getHeader();
+    DB::Block releaseColumns();
+    DB::Block getHeader();
 
 private:
-    MutableColumns accumulated_columns;
-    Block header;
+    DB::MutableColumns accumulated_columns;
+    DB::Block header;
 };
 
 
@@ -49,29 +49,30 @@ public:
     {
         if (!stopped) stop();
     }
-    void split(Block & block);
-    virtual void computeAndCountPartitionId(Block & block) {}
+    void split(DB::Block & block);
+    virtual void computeAndCountPartitionId(DB::Block & block) {}
     std::vector<int64_t> getPartitionLength() {
         return partition_length;
     }
+    void writeIndexFile();
     void stop();
 
 private:
     void init();
-    void splitBlockByPartition(Block & block);
-    void buildSelector(size_t row_nums, IColumn::Selector & selector);
+    void splitBlockByPartition(DB::Block & block);
+    void buildSelector(size_t row_nums, DB::IColumn::Selector & selector);
     void spillPartition(size_t partition_id);
     std::string getPartitionTempFile(size_t partition_id);
     void mergePartitionFiles();
-    std::unique_ptr<WriteBuffer> getPartitionWriteBuffer(size_t partition_id);
+    std::unique_ptr<DB::WriteBuffer> getPartitionWriteBuffer(size_t partition_id);
 
 protected:
     bool stopped = false;
-    std::vector<IColumn::ColumnIndex> partition_ids;
+    std::vector<DB::IColumn::ColumnIndex> partition_ids;
     std::vector<ColumnsBuffer> partition_buffer;
-    std::vector<std::unique_ptr<NativeBlockOutputStream>> partition_outputs;
-    std::vector<std::unique_ptr<WriteBuffer>> partition_write_buffers;
-    std::vector<std::unique_ptr<WriteBuffer>> partition_cached_write_buffers;
+    std::vector<std::unique_ptr<DB::NativeBlockOutputStream>> partition_outputs;
+    std::vector<std::unique_ptr<DB::WriteBuffer>> partition_write_buffers;
+    std::vector<std::unique_ptr<DB::WriteBuffer>> partition_cached_write_buffers;
     SplitOptions options;
     std::vector<int64_t> partition_length;
 };
@@ -80,12 +81,11 @@ class RoundRobinSplitter : public ShuffleSplitter {
 public:
     static std::unique_ptr<ShuffleSplitter> create(SplitOptions && options);
 
-    RoundRobinSplitter(
-                       SplitOptions options_)
+    RoundRobinSplitter(SplitOptions options_)
         : ShuffleSplitter(std::move(options_)) {}
 
     ~RoundRobinSplitter() override = default;
-    void computeAndCountPartitionId(Block & block) override;
+    void computeAndCountPartitionId(DB::Block & block) override;
 
 private:
     int32_t pid_selection_ = 0;

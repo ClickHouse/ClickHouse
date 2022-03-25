@@ -24,6 +24,7 @@
 #include <Common/Stopwatch.h>
 #include <Functions/FunctionFactory.h>
 #include <Shuffle/ShuffleSplitter.h>
+#include <Shuffle/ShuffleReader.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -216,9 +217,31 @@ static void BM_ShuffleSplitter(benchmark::State& state) {
         auto splitter = local_engine::ShuffleSplitter::create("round-robin", options);
         while(executor.pull(chunk))
         {
+            sum += chunk.rows();
             splitter->split(chunk);
         }
         splitter->stop();
+        splitter->writeIndexFile();
+        std::cout << sum <<"\n";
+    }
+}
+
+static void BM_ShuffleReader(benchmark::State& state)
+{
+    for (auto _: state)
+    {
+        auto read_buffer = std::make_unique<ReadBufferFromFile>("/tmp/test_shuffle/ZSTD/data.dat");
+//        read_buffer->seek(357841655, SEEK_SET);
+        auto shuffle_reader = local_engine::ShuffleReader(std::move(read_buffer), true);
+        Block* block;
+        int sum = 0;
+        do
+        {
+            block = shuffle_reader.read();
+            sum += block->rows();
+        }
+        while(block->columns() != 0);
+        std::cout << "total rows:" << sum << std::endl;
     }
 }
 
@@ -784,9 +807,9 @@ double quantile(const vector<double>&x)
 
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
-//BENCHMARK(BM_MergeTreeRead)->Arg(10)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(10);
-
+BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
+//BENCHMARK(BM_ShuffleReader)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SimpleAggregate)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);

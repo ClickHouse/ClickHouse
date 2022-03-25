@@ -3,6 +3,7 @@
 #include "jni_common.h"
 #include <Parser/SerializedPlanParser.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Shuffle/ShuffleReader.h>
 #include <numeric>
 
 bool inside_main = true;
@@ -23,6 +24,7 @@ static jclass spark_row_info_class;
 static jmethodID spark_row_info_constructor;
 static jclass ch_column_batch_class;
 
+
 jint JNI_OnLoad(JavaVM * vm, void * reserved)
 {
     JNIEnv * env;
@@ -39,7 +41,9 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     spark_row_info_class = CreateGlobalClassReference(env, "Lcom/intel/oap/row/SparkRowInfo;");
     spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJ)V");
 
-    ch_column_batch_class = CreateGlobalClassReference(env, "Lcom/intel/oap/vectorized/CHColumnVector");
+    ch_column_batch_class = CreateGlobalClassReference(env, "Lcom/intel/oap/vectorized/CHColumnVector;");
+    local_engine::ShuffleReader::input_stream_class = CreateGlobalClassReference(env, "Ljava/io/InputStream;");
+    local_engine::ShuffleReader::input_stream_read = env->GetMethodID(local_engine::ShuffleReader::input_stream_class, "read", "([B)I");
 
     return JNI_VERSION_1_8;
 }
@@ -55,6 +59,7 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(unsupportedoperation_exception_class);
     env->DeleteGlobalRef(illegal_access_exception_class);
     env->DeleteGlobalRef(illegal_argument_exception_class);
+    env->DeleteGlobalRef(local_engine::ShuffleReader::input_stream_class);
 }
 //static SharedContextHolder shared_context;
 
@@ -141,32 +146,30 @@ void Java_com_intel_oap_vectorized_ExpressionEvaluatorJniWrapper_nativeSetMetric
 }
 
 // CHColumnBatch
+//
+//jlong getCHColumnVectorBlockAddress(JNIEnv * env, jobject obj)
+//{
+//    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
+//    return env->GetLongField(obj,fid);
+//}
+//
+//jint getCHColumnVectorPosition(JNIEnv * env, jobject obj)
+//{
+//    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
+//    return env->GetIntField(obj,fid);
+//}
 
-jlong getCHColumnVectorBlockAddress(JNIEnv * env, jobject obj)
+ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * env, jobject obj, jlong block_address, jint column_position)
 {
-    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
-    return env->GetLongField(obj,fid);
+    Block * block = reinterpret_cast<Block *>(block_address);
+    return block->getByPosition(column_position);
 }
 
-jint getCHColumnVectorPosition(JNIEnv * env, jobject obj)
-{
-    jfieldID fid = env->GetFieldID(ch_column_batch_class,"blockAddress","L");
-    return env->GetIntField(obj,fid);
-}
 
-ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * env, jobject obj)
+jboolean Java_com_intel_oap_vectorized_CHColumnVector_nativeHasNull(JNIEnv * env, jobject obj, jlong block_address, jint column_position)
 {
-    Block * block = reinterpret_cast<Block *>(getCHColumnVectorBlockAddress(env, obj));
-    int position = getCHColumnVectorPosition(env, obj);
-    return block->getByPosition(position);
-}
-
-
-jboolean Java_com_intel_oap_vectorized_CHColumnVector_hasNull(JNIEnv * env, jobject obj)
-{
-    Block * block = reinterpret_cast<Block *>(getCHColumnVectorBlockAddress(env, obj));
-    int position = getCHColumnVectorPosition(env, obj);
-    auto col = block->getByPosition(position);
+    Block * block = reinterpret_cast<Block *>(block_address);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     if (!col.column->isNullable())
     {
         return false;
@@ -179,9 +182,9 @@ jboolean Java_com_intel_oap_vectorized_CHColumnVector_hasNull(JNIEnv * env, jobj
     }
 }
 
-jint Java_com_intel_oap_vectorized_CHColumnVector_numNulls(JNIEnv * env, jobject obj)
+jint Java_com_intel_oap_vectorized_CHColumnVector_nativeNumNulls(JNIEnv * env, jobject obj, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     if (!col.column->isNullable())
     {
         return 0;
@@ -194,50 +197,50 @@ jint Java_com_intel_oap_vectorized_CHColumnVector_numNulls(JNIEnv * env, jobject
 }
 
 
-jboolean Java_com_intel_oap_vectorized_CHColumnVector_isNullAt(JNIEnv * env, jobject obj, jint row_id)
+jboolean Java_com_intel_oap_vectorized_CHColumnVector_nativeIsNullAt(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->isNullAt(row_id);
 }
 
-jboolean Java_com_intel_oap_vectorized_CHColumnVector_getBoolean(JNIEnv * env, jobject obj, jint row_id)
+jboolean Java_com_intel_oap_vectorized_CHColumnVector_nativeGetBoolean(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->getBool(row_id);
 }
 
-jbyte Java_com_intel_oap_vectorized_CHColumnVector_getByte(JNIEnv * env, jobject obj, jint row_id)
+jbyte Java_com_intel_oap_vectorized_CHColumnVector_nativeGetByte(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return reinterpret_cast<const jbyte*>(col.column->getDataAt(row_id).data)[0];}
 
-jshort Java_com_intel_oap_vectorized_CHColumnVector_getShort(JNIEnv * env, jobject obj, jint row_id)
+jshort Java_com_intel_oap_vectorized_CHColumnVector_nativeGetShort(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return reinterpret_cast<const jshort*>(col.column->getDataAt(row_id).data)[0];
 }
 
-jint Java_com_intel_oap_vectorized_CHColumnVector_getInt(JNIEnv * env, jobject obj, jint row_id)
+jint Java_com_intel_oap_vectorized_CHColumnVector_nativeGetInt(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return reinterpret_cast<const jint*>(col.column->getDataAt(row_id).data)[0];
 }
 
-jlong Java_com_intel_oap_vectorized_CHColumnVector_getLong(JNIEnv * env, jobject obj, jint row_id)
+jlong Java_com_intel_oap_vectorized_CHColumnVector_nativeGetLong(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->getInt(row_id);
 }
 
-jfloat Java_com_intel_oap_vectorized_CHColumnVector_getFloat(JNIEnv * env, jobject obj, jint row_id)
+jfloat Java_com_intel_oap_vectorized_CHColumnVector_nativeGetFloat(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->getFloat32(row_id);
 }
 
-jdouble Java_com_intel_oap_vectorized_CHColumnVector_getDouble(JNIEnv * env, jobject obj, jint row_id)
+jdouble Java_com_intel_oap_vectorized_CHColumnVector_nativeGetDouble(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    auto col = getColumnFromColumnVector(env, obj);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
     return col.column->getFloat64(row_id);
 }
 
@@ -310,6 +313,32 @@ jlong Java_com_intel_oap_vectorized_CHNativeBlock_nativeTotalBytes(JNIEnv * env,
     return block->bytes();
 }
 
+jlong Java_com_intel_oap_vectorized_CHStreamReader_createNativeShuffleReader(JNIEnv * env, jclass clazz, jobject input_stream)
+{
+    auto input = env->NewGlobalRef(input_stream);
+    auto read_buffer = std::make_unique<local_engine::ReadBufferFromJavaInputStream>(input);
+    auto * shuffle_reader = new local_engine::ShuffleReader(std::move(read_buffer), true);
+    return reinterpret_cast<jlong>(shuffle_reader);
+}
+
+jlong Java_com_intel_oap_vectorized_CHStreamReader_nativeNext(JNIEnv * env, jobject obj, jlong shuffle_reader)
+{
+    local_engine::ShuffleReader::env = env;
+    local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
+    Block* block = reader->read();
+    local_engine::ShuffleReader::env = nullptr;
+    return reinterpret_cast<jlong>(block);
+}
+
+
+void Java_com_intel_oap_vectorized_CHStreamReader_nativeClose(JNIEnv * env, jobject obj, jlong shuffle_reader)
+{
+    local_engine::ShuffleReader::env = env;
+    local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
+    delete reader;
+//    env->DeleteGlobalRef(reader->in->java_in);
+    local_engine::ShuffleReader::env = nullptr;
+}
 #ifdef __cplusplus
 }
 #endif
