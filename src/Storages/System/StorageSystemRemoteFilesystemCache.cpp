@@ -37,7 +37,7 @@ void StorageSystemRemoteFilesystemCache::fillData(MutableColumns & res_columns, 
 
     for (const auto & [cache_base_path, cache_data] : caches)
     {
-        auto & cache = cache_data.cache;
+        const auto & cache = cache_data.cache;
         auto holder = cache->getAll();
 
         for (const auto & file_segment : holder.file_segments)
