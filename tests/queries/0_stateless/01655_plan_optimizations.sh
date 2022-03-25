@@ -196,3 +196,13 @@ $CLICKHOUSE_CLIENT -q "
     select a, b from (
         select number + 1 as a, number + 2 as b from numbers(2) union all select number + 1 as b, number + 2 as a from numbers(2)
     ) where a != 1 settings enable_optimize_predicate_expression = 0"
+
+echo "> function calculation should be done after sorting and limit (if possible)"
+echo "> the whole Expression node could be moved after Sorting"
+$CLICKHOUSE_CLIENT -q "
+    explain select sipHash64(number) from numbers(100) order by number limit 5" |
+    sed 's/ //g' | grep -o "^ *\(Expression\|Limit\|Sorting\)"
+echo "> Expression should be divided into two subnodes and only one of them could be moved after Sorting"
+$CLICKHOUSE_CLIENT -q "
+    explain select sipHash64(number) from numbers(100) order by number + 1 limit 5" |
+    sed 's/ //g' | grep -o "^ *\(Expression\|Limit\|Sorting\)"

@@ -7,6 +7,8 @@
 
 #include "config_core.h"
 
+#include <Core/SortDescription.h>
+
 namespace DB
 {
 
@@ -273,6 +275,9 @@ public:
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
+
+    ///
+    SplitResult splitActionsBySortingDescription(const SortDescription & sort_description) const;
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
