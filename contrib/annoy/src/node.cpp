@@ -1,6 +1,8 @@
-#include "node.h"
-#include "point.h"
-#include "settings.h"
+#include "annoy/node.h"
+#include "annoy/point.h"
+#include "settings.cpp"
+
+namespace Annoy {
 
 const double EPS = 1e-5;
 
@@ -44,3 +46,5 @@ void Node::GenerateLine(InnerData& inner_node_data, const std::vector<size_t>& i
   inner_node_data.div_line_point = ((*points)[indexes[i1]] + (*points)[indexes[i2]]) * 0.5;
   inner_node_data.div_line_norm = (*points)[indexes[i2]] - (*points)[indexes[i1]];
 }
+
+};

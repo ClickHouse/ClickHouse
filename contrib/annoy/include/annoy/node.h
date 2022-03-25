@@ -5,6 +5,7 @@
 #include <variant>
 #include <vector>
 
+namespace Annoy {
 
 struct Node {
   using Point = std::vector<double>;
@@ -34,4 +35,6 @@ struct Node {
 
  private:
   void GenerateLine(InnerData& inner_node_data, const std::vector<size_t>& indexes);
+};
+
 };

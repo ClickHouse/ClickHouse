@@ -1,16 +1,17 @@
-cmake_minimum_required(VERSION 3.14)
-
-add_library(SpotifyAnnoy INTERFACE)
-
-set(SPOTIFY_ANNOY_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/sporify-annoy")
+set(SPOTIFY_ANNOY_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/spotify-annoy")
 set(SPOTIFY_ANNOY_SOURCE_DIR "${SPOTIFY_ANNOY_PROJECT_DIR}/src")
-set(SPOTIFY_ANNOY_INCLUDE_DIR ${SPOTIFY_ANNOY_PROJECT_DIR}/include/annoy)
+set(SPOTIFY_ANNOY_INCLUDE_DIR ${SPOTIFY_ANNOY_PROJECT_DIR}/include)
 
-file(MAKE_DIRECTORY ${SPOTIFY_ANNOY_INCLUDE_DIR})
-foreach (HEADER annoylib.h kissrandom.h mman.h)
-    file(COPY ${SPOTIFY_ANNOY_PROJECT_DIR}/src/${HEADER} DESTINATION ${SPOTIFY_ANNOY_INCLUDE_DIR})
-endforeach()
+set(SPOTIFY_ANNOY_HEADERS 
+    ${SPOTIFY_ANNOY_SOURCE_DIR}/annoylib.h
+    ${SPOTIFY_ANNOY_SOURCE_DIR}/kissrandom.h
+)
 
-target_include_directories(SpotifyAnnoy INTERFACE include/)
+set(SPOTIFY_ANNOY_SRC
+    ${SPOTIFY_ANNOY_SOURCE_DIR}/mman.h
+)
 
-add_library(ch::contrib::spotify-annoy ALIAS SpotifyAnnoy)
+add_library(_spotify_annoy ${SPOTIFY_ANNOY_SRC})
+target_include_directories(_spotify_annoy SYSTEM PUBLIC ${SPOTIFY_ANNOY_SOURCE_DIR})
+
+add_library(ch_contrib::spotify-annoy ALIAS _spotify_annoy)
