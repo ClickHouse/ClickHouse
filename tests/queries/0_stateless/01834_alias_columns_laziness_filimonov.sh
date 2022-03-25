@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 drop table if exists aliases_lazyness;
 create table aliases_lazyness (x UInt32, y ALIAS sleepEachRow(0.1)) Engine=MergeTree ORDER BY x;
-insert into aliases_lazyness(x) select * from numbers(40);
+insert into aliases_lazyness(x) select * from numbers(40) settings max_block_size=1;
 "
 
 # In very old ClickHouse versions alias column was calculated for every row.
@@ -18,7 +18,7 @@ insert into aliases_lazyness(x) select * from numbers(40);
 
 i=0 retries=300
 while [[ $i -lt $retries ]]; do
-    timeout 1 ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM aliases_lazyness WHERE x = 1 FORMAT Null" && break
+    timeout 1 ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM aliases_lazyness WHERE x = 1 settings max_block_size=1 FORMAT Null" && break
     ((++i))
 done
 

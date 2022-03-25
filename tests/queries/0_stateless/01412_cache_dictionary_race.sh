@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race, no-parallel, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,7 +39,7 @@ function drop_create_table_thread()
     )
     ENGINE MergeTree() ORDER BY tuple();
     INSERT INTO ordinary_db.table_for_dict_real SELECT number, number, toString(number) from numbers(2);
-    CREATE VIEW ordinary_db.view_for_dict AS SELECT key_column, second_column, third_column from ordinary_db.table_for_dict_real WHERE sleepEachRow(1) == 0;
+    CREATE VIEW ordinary_db.view_for_dict AS SELECT key_column, second_column, third_column from ordinary_db.table_for_dict_real WHERE sleepEachRow(1) == 0 SETTINGS max_block_size=1;
 "
     sleep 10
 

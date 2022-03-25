@@ -42,7 +42,7 @@ SYSTEM STOP REPLICATION QUEUES execute_on_single_replica_r2;
 OPTIMIZE TABLE execute_on_single_replica_r1 FINAL SETTINGS replication_alter_partitions_sync=0;
 
 /* if we will check immediately we can find the log entry unchecked */
-SELECT * FROM numbers(4) where sleepEachRow(1);
+SELECT * FROM numbers(4) where sleepEachRow(1) SETTINGS max_block_size=1;
 
 SELECT '****************************';
 SELECT '*** timeout not exceeded, r1 waits for r2';
@@ -61,7 +61,7 @@ ORDER BY table
 FORMAT Vertical;
 
 /* we have execute_merges_on_single_replica_time_threshold exceeded */
-SELECT * FROM numbers(10) where sleepEachRow(1);
+SELECT * FROM numbers(10) where sleepEachRow(1) SETTINGS max_block_size=1;
 
 SELECT '****************************';
 SELECT '*** timeout exceeded, r1 failed to get the merged part from r2 and did the merge by its own';

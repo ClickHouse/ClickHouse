@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
+# Tags: no-replicated-database, no-parallel, no-fasttest, no-random-settings
 # Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -10,7 +10,7 @@ set -o pipefail
 
 # This is needed to keep at least one running query for user for the time of test.
 # (1k http queries takes ~1 second, let's run for 5x more to avoid flaps)
-${CLICKHOUSE_CLIENT} --format Null -n <<<'SELECT sleepEachRow(1) FROM numbers(5)' &
+${CLICKHOUSE_CLIENT} --format Null -n <<<'SELECT sleepEachRow(1) FROM numbers(5) SETTINGS max_block_size=1' &
 
 # ignore "yes: standard output: Broken pipe"
 yes 'SELECT 1' 2>/dev/null | {

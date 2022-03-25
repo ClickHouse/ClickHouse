@@ -42,7 +42,7 @@ function execute_tcp_one_session()
 # --max_block_size=1 to make it killable (check the state each 1 second, 1 row)
 # (the test takes ~40 seconds in debug build, so 60 seconds is ok)
 query_id=$$-$RANDOM-$SECONDS
-${CLICKHOUSE_CLIENT} --user=test_01541 --max_block_size=1 --format Null --query_id $query_id -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
+${CLICKHOUSE_CLIENT} --user=test_01541 --max_block_size=1 --format Null --query_id $query_id -q 'SELECT sleepEachRow(1) FROM numbers(600) SETTINGS max_block_size=1' &
 # trap
 sleep_query_pid=$!
 function cleanup()

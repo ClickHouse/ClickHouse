@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel
+# Tags: long, zookeeper, no-parallel, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE alter_mt (key UInt64, value String) ENG
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO alter_mt SELECT number, toString(number) FROM numbers(5)"
 
-$CLICKHOUSE_CLIENT --query "SELECT count(distinct concat(value, '_')) FROM alter_mt WHERE not sleepEachRow(2)" &
+$CLICKHOUSE_CLIENT --query "SELECT count(distinct concat(value, '_')) FROM alter_mt WHERE not sleepEachRow(2) SETTINGS max_block_size=1" &
 
 # to be sure that select took all required locks
 sleep 2

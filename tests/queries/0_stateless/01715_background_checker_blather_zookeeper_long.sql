@@ -1,4 +1,4 @@
--- Tags: long, zookeeper
+-- Tags: long, zookeeper, no-random-settings
 
 DROP TABLE IF EXISTS i20203_1;
 DROP TABLE IF EXISTS i20203_2;
@@ -18,7 +18,7 @@ DETACH TABLE i20203_1;
 ATTACH TABLE i20203_2;
 
 -- sleep 10 seconds
-SELECT number from numbers(10) where sleepEachRow(1) Format Null;
+SELECT number from numbers(10) where sleepEachRow(1) SETTINGS max_block_size=1 Format Null;
 
 SELECT num_tries < 50
 FROM system.replication_queue
