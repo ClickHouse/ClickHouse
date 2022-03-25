@@ -557,7 +557,9 @@ def test_insert_select_schema_inference(started_cluster):
 def test_virtual_column(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
-    table_function = (f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')")
+    table_function = (
+        f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
+    )
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
