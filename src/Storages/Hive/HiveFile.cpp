@@ -147,7 +147,7 @@ void HiveOrcFile::prepareColumnMapping()
 
 bool HiveOrcFile::hasMinMaxIndex() const
 {
-    return !storage_settings->enable_orc_file_minmax_index;
+    return storage_settings->enable_orc_file_minmax_index;
 }
 
 
@@ -198,7 +198,7 @@ void HiveOrcFile::loadMinMaxIndex()
 
 bool HiveOrcFile::hasSubMinMaxIndex() const
 {
-    return !storage_settings->enable_orc_stripe_minmax_index;
+    return storage_settings->enable_orc_stripe_minmax_index;
 }
 
 
@@ -228,7 +228,7 @@ void HiveOrcFile::loadSubMinMaxIndex()
 
 bool HiveParquetFile::hasSubMinMaxIndex() const
 {
-    return !storage_settings->enable_parquet_rowgroup_minmax_index;
+    return storage_settings->enable_parquet_rowgroup_minmax_index;
 }
 
 void HiveParquetFile::prepareReader()
