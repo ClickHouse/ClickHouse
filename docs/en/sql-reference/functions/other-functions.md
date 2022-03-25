@@ -2500,23 +2500,23 @@ Result:
 └──────────────────────────┘
 ```
 
-## enumerateStreams {#enumerateStreams}
+## getTypeSerializationStreams {#getTypeSerializationStreams}
 
-return the enumerated stream paths of data type.
+return the serialization streams of data type.
 
 **Syntax**
 ``` sql
-enumerateStreams(type_name)
+getTypeSerializationStreams(type_name)
 
-enumerateStreams(arg)
+getTypeSerializationStreams(column)
 ```
 
 **Arguments**
-- `type_name` - Name of data type to enumerate its stream paths. [String](../../sql-reference/data-types/string.md#string).
-- `arg`       - any column which has a data type
+- `type_name` - Name of data type to get its serialization paths. [String](../../sql-reference/data-types/string.md#string).
+- `column`       - any column which has a data type
 
 **Returned value**
-- List of enumerated stream paths.
+- List of serialization streams;
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2527,13 +2527,13 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 Query:
 
 ``` sql
-SELECT enumerateStreams('Array(Array(Int8))')
+SELECT getTypeSerializationStreams('Array(Array(Int8))')
 ```
 
 Result:
 
 ``` text
-┌─enumerateStreams('Array(Array(Int8))')───────────────────────────────────────────────────┐
-│ ['{ArraySizes}','{ArrayElements, ArraySizes}','{ArrayElements, ArrayElements, Regular}'] │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────getTypeSerializationStreams('Array(Array(Int8))')─────────────────────────────┐
+│ ['{ArraySizes}','{ArrayElements, ArraySizes}','{ArrayElements, ArrayElements, Regular}']            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
