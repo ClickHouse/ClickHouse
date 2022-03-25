@@ -1459,7 +1459,7 @@
 "xor"
 "xxHash32"
 "xxHash64"
-"yandexConsistentHash"
+"kostikConsistentHash"
 "YEAR"
 "yearweek"
 "yesterday"

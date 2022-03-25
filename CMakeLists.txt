@@ -266,7 +266,7 @@ if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
 endif ()
 
 # Allows to build stripped binary in a separate directory
-if (OBJCOPY_PATH AND READELF_PATH)
+if (OBJCOPY_PATH AND STRIP_PATH)
     option(INSTALL_STRIPPED_BINARIES "Build stripped binaries with debug info in separate directory" OFF)
     if (INSTALL_STRIPPED_BINARIES)
         set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
