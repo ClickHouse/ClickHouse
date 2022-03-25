@@ -11,7 +11,7 @@ from env_helper import (
     TEMP_PATH,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    GITHUB_RUN_URL,
 )
 from report import create_build_html_report
 from s3_helper import S3Helper
@@ -180,9 +180,7 @@ if __name__ == "__main__":
         branch_name = "PR #{}".format(pr_info.number)
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_info.number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{pr_info.sha}"
-    task_url = (
-        f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID or '0'}"
-    )
+    task_url = GITHUB_RUN_URL
     report = create_build_html_report(
         build_check_name,
         build_results,
