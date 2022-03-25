@@ -1382,5 +1382,6 @@ def test_virtual_columns(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     name = "test_table"
 
+    instance.query("insert into table function s3(s3_parquet, format='Parquet') select 1, 'kek' settings s3_truncate_on_insert=1")
     result = instance.query("SELECT _path FROM s3(s3_parquet, format='Parquet')")
     assert result.strip() == "root/test_parquet"

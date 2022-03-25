@@ -661,8 +661,12 @@ Pipe StorageS3::read(
     if (isColumnOriented())
     {
         auto fetch_columns = column_names;
-        fetch_columns.erase(std::remove_if(fetch_columns.begin(), fetch_columns.end(),
-                              [](const String & col){return col == "_path" || col == "_file"; }));
+        const auto & virtuals = getVirtuals();
+        std::erase_if(
+            fetch_columns,
+            [&](const String & col)
+            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
