@@ -114,12 +114,12 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
 
     const auto message = fmt::format(
         "The signature of table function {} could be the following:\n" \
-        " - url\n"
+        " - url\n" \
         " - url, format\n" \
         " - url, format, structure\n" \
         " - url, access_key_id, secret_access_key\n" \
         " - url, format, structure, compression_method\n" \
-        " - url, access_key_id, secret_access_key, format\n"
+        " - url, access_key_id, secret_access_key, format\n" \
         " - url, access_key_id, secret_access_key, format, structure\n" \
         " - url, access_key_id, secret_access_key, format, structure, compression_method",
         getName());
