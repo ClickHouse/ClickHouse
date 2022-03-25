@@ -24,7 +24,7 @@ IRowSchemaReader::IRowSchemaReader(
         {
             std::string col_name_trimmed = column_names[i];
             boost::trim(col_name_trimmed);
-            if (!col_name.empty())
+            if (!col_name_trimmed.empty())
                 column_names[i] = col_name_trimmed;
         }
     }
