@@ -454,7 +454,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     const ParsedTemplateFormatString & row_format_,
     std::string row_between_delimiter,
     const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_, nullptr, getDefaultDataTypeForEscapingRules(row_format_.escaping_rules))
+    : IRowSchemaReader(buf, format_settings_, getDefaultDataTypeForEscapingRules(row_format_.escaping_rules))
     , buf(in_)
     , format(format_)
     , row_format(row_format_)

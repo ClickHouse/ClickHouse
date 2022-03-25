@@ -34,7 +34,10 @@ protected:
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_ = nullptr, const DataTypes & default_types_ = {});
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
+
     NamesAndTypesList readSchema() override;
 
 protected:
