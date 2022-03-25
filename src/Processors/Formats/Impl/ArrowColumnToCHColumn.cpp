@@ -684,7 +684,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
 {
     std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, &header, case_insensitive_matching);
+    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, false, &header, case_insensitive_matching);
     auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
 
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)

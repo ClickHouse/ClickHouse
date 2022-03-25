@@ -12,22 +12,33 @@ namespace ErrorCodes
 }
 
 IRowSchemaReader::IRowSchemaReader(
-    ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_, const DataTypes & default_types_)
+    ReadBuffer & in_, const FormatSettings & format_settings)
     : ISchemaReader(in_)
-    , max_rows_to_read(format_settings.max_rows_to_read_for_schema_inference), default_type(default_type_), default_types(default_types_)
+    , max_rows_to_read(format_settings.max_rows_to_read_for_schema_inference)
 {
     if (!format_settings.column_names_for_schema_inference.empty())
     {
         /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
         boost::split(column_names, format_settings.column_names_for_schema_inference, boost::is_any_of(","));
-        for (size_t i = 0 ; i < column_names.size() ; ++i)
+        for (auto & column_name : column_names)
         {
-            std::string col_name_trimmed = column_names[i];
-            boost::trim(col_name_trimmed);
+            std::string col_name_trimmed = boost::trim_copy(column_name);
             if (!col_name_trimmed.empty())
-                column_names[i] = col_name_trimmed;
+                column_name = col_name_trimmed;
         }
     }
+}
+
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_)
+    : IRowSchemaReader(in_, format_settings)
+{
+    default_type = default_type_;
+}
+
+IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_)
+    : IRowSchemaReader(in_, format_settings)
+{
+    default_types = default_types_;
 }
 
 NamesAndTypesList IRowSchemaReader::readSchema()
@@ -63,7 +74,11 @@ NamesAndTypesList IRowSchemaReader::readSchema()
                 else
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}", new_data_types[i]->getName(), i + 1, row, data_types[i]->getName());
+                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}",
+                        new_data_types[i]->getName(),
+                        i + 1,
+                        row,
+                        data_types[i]->getName());
             }
         }
     }
@@ -146,7 +161,11 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
                 else
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}", type->getName(), name, row, new_type->getName());
+                        "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}",
+                        type->getName(),
+                        name,
+                        row,
+                        new_type->getName());
             }
         }
     }
