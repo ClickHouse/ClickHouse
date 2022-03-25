@@ -11,6 +11,7 @@ import re
 
 from github import Github
 
+from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -88,9 +89,9 @@ if __name__ == "__main__":
     else:
         pr_link = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_info.number}"
 
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-    docker_env += ' -e CHPC_ADD_REPORT_LINKS="<a href={}>Job (actions)</a> <a href={}>Tested commit</a>"'.format(
-        task_url, pr_link
+    docker_env += (
+        f' -e CHPC_ADD_REPORT_LINKS="<a href={GITHUB_RUN_URL}>'
+        f'Job (actions)</a> <a href={pr_link}>Tested commit</a>"'
     )
 
     if "RUN_BY_HASH_TOTAL" in os.environ:
@@ -199,7 +200,7 @@ if __name__ == "__main__":
         status = "failure"
         message = "No message in report."
 
-    report_url = task_url
+    report_url = GITHUB_RUN_URL
 
     if paths["runlog.log"]:
         report_url = paths["runlog.log"]
