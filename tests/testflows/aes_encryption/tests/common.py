@@ -107,39 +107,51 @@ plaintexts = [
     ("Decimal32", "reinterpretAsFixedString(toDecimal32(2, 4))"),
     ("Decimal64", "reinterpretAsFixedString(toDecimal64(2, 4))"),
     ("Decimal128", "reinterpretAsFixedString(toDecimal128(2, 4))"),
-    ("UUID", "reinterpretAsFixedString(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))"),
+    (
+        "UUID",
+        "reinterpretAsFixedString(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))",
+    ),
     ("Date", "reinterpretAsFixedString(toDate('2020-01-01'))"),
     ("DateTime", "reinterpretAsFixedString(toDateTime('2020-01-01 20:01:02'))"),
-    ("DateTime64", "reinterpretAsFixedString(toDateTime64('2020-01-01 20:01:02.123', 3))"),
+    (
+        "DateTime64",
+        "reinterpretAsFixedString(toDateTime64('2020-01-01 20:01:02.123', 3))",
+    ),
     ("LowCardinality", "toLowCardinality('1')"),
     ("LowCardinalityFixedString", "toLowCardinality(toFixedString('1',2))"),
-    #("Array", "[1,2]"), - not supported
-    #("Tuple", "(1,'a')") - not supported
+    # ("Array", "[1,2]"), - not supported
+    # ("Tuple", "(1,'a')") - not supported
     ("NULL", "reinterpretAsFixedString(toDateOrNull('foo'))"),
     ("NullableString", "toNullable('1')"),
     ("NullableStringNull", "toNullable(NULL)"),
     ("NullableFixedString", "toNullable(toFixedString('1',2))"),
     ("NullableFixedStringNull", "toNullable(toFixedString(NULL,2))"),
     ("IPv4", "reinterpretAsFixedString(toIPv4('171.225.130.45'))"),
-    ("IPv6", "reinterpretAsFixedString(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'))"),
+    (
+        "IPv6",
+        "reinterpretAsFixedString(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'))",
+    ),
     ("Enum8", r"reinterpretAsFixedString(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))"),
     ("Enum16", r"reinterpretAsFixedString(CAST('a', 'Enum16(\'a\' = 1, \'b\' = 2)'))"),
 ]
 
 _hex = hex
 
+
 def hex(s):
-    """Convert string to hex.
-    """
+    """Convert string to hex."""
     if isinstance(s, str):
-        return "".join(['%X' % ord(c) for c in s])
+        return "".join(["%X" % ord(c) for c in s])
     if isinstance(s, bytes):
-        return "".join(['%X' % c for c in s])
+        return "".join(["%X" % c for c in s])
     return _hex(s)
+
 
 def getuid():
     if current().subtype == TestSubType.Example:
-        testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+        testname = (
+            f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+        )
     else:
         testname = f"{basename(current().name).replace(' ', '_').replace(',','')}"
-    return testname + "_" + str(uuid.uuid1()).replace('-', '_')
+    return testname + "_" + str(uuid.uuid1()).replace("-", "_")
