@@ -17,8 +17,8 @@
         <url_with_headers>
             <headers>
                 <header>
-                    <name>test_header</name>
-                    <value>test_header_clickhouse</value>
+                    <name>X-ClickHouse-Format</name>
+                    <value>JSONEachRow</value>
                 </header>
             </headers>
         </url_with_headers>
