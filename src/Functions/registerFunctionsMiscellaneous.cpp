@@ -80,7 +80,7 @@ void registerFunctionInitialQueryID(FunctionFactory &);
 void registerFunctionServerUUID(FunctionFactory &);
 void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
-void registerFunctionEnumerateStreams(FunctionFactory &);
+void registerFunctionGetTypeSerializationStreams(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -167,7 +167,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionServerUUID(factory);
     registerFunctionZooKeeperSessionUptime(factory);
     registerFunctionGetOSKernelVersion(factory);
-    registerFunctionEnumerateStreams(factory);
+    registerFunctionGetTypeSerializationStreams(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
