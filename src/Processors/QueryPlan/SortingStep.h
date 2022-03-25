@@ -49,7 +49,7 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    void updateInputStream(const DataStream & input_stream);
+    void updateInputStream(DataStream input_stream);
     void updateOutputStream(Block result_header);
 
     SortDescription getSortDescription() const { return result_description; }

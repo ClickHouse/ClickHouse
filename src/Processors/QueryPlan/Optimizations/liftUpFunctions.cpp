@@ -42,11 +42,14 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (!sorting_step || !expression_step)
         return 0;
 
-    const auto & sort_columns = sorting_step->getSortDescription();
+    NameSet sort_columns;
+    for (const auto & col : sorting_step->getSortDescription())
+        sort_columns.insert(col.column_name);
+
     const auto & expression = expression_step->getExpression();
 
     for (auto sc : sort_columns)
-        LOG_TRACE(&Poco::Logger::get("Optimizer"), "sort_columns: {}", sc.column_name);
+        LOG_TRACE(&Poco::Logger::get("Optimizer"), "sort_columns: {}", fmt::join(sort_columns, ", "));
 
     auto split_actions = expression->splitActionsBySortingDescription(sort_columns);
     LOG_TRACE(&Poco::Logger::get("Optimizer"), "source: {}", expression->dumpDAG());

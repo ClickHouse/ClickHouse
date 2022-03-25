@@ -89,17 +89,15 @@ SortingStep::SortingStep(
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void SortingStep::updateInputStream(const DataStream & input_stream)
+void SortingStep::updateInputStream(DataStream input_stream)
 {
     input_streams.clear();
-    input_streams.emplace_back(input_stream);
+    input_streams.push_back(std::move(input_stream));
 }
 
 void SortingStep::updateOutputStream(Block result_header)
 {
-    if (input_streams.size() != 1)
-        throw std::runtime_error{"wasted"};
-    output_stream = createOutputStream(input_streams.at(0), result_header, getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), std::move(result_header), getDataStreamTraits());
 }
 
 void SortingStep::updateLimit(size_t limit_)
