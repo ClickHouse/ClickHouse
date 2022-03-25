@@ -57,6 +57,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
@@ -262,7 +263,13 @@ namespace
 
     IntervalKind strToIntervalKind(const String& interval_str)
     {
-        if (interval_str == "Second")
+        if (interval_str == "Nanosecond")
+            return IntervalKind::Nanosecond;
+        else if (interval_str == "Microsecond")
+            return IntervalKind::Microsecond;
+        else if (interval_str == "Millisecond")
+            return IntervalKind::Millisecond;
+        else if (interval_str == "Second")
             return IntervalKind::Second;
         else if (interval_str == "Minute")
             return IntervalKind::Minute;
@@ -307,6 +314,12 @@ namespace
     {
         switch (kind)
         {
+            case IntervalKind::Nanosecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            case IntervalKind::Microsecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            case IntervalKind::Millisecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: { \
         return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
@@ -738,6 +751,12 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
+        case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Millisecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -773,6 +792,13 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
+        case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+        case IntervalKind::Millisecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \

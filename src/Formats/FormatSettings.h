@@ -32,7 +32,6 @@ struct FormatSettings
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
-    bool use_lowercase_column_name = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
@@ -78,6 +77,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
     } arrow;
 
     struct
@@ -142,6 +142,7 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
     } parquet;
 
     struct Pretty
@@ -224,6 +225,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
     } orc;
 
     /// For capnProto format we should determine how to
