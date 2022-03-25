@@ -248,6 +248,10 @@ public:
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
 
+    /// Whether this disk support parallel write
+    /// Overrode in remote fs disks.
+    virtual bool supportParallelWrite() const { return false; }
+
     virtual bool isReadOnly() const { return false; }
 
     /// Check if disk is broken. Broken disks will have 0 space and not be used.

@@ -569,6 +569,14 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper
         string_utils)
 
+    if (TARGET ch_contrib::simdjson)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
+    endif()
+
+    if(TARGET ch_contrib::rapidjson)
+        target_include_directories(unit_tests_dbms PRIVATE ch_contrib::rapidjson)
+    endif()
+
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()

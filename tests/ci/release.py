@@ -100,10 +100,10 @@ class Release:
             if self.release_type in self.BIG:
                 # Checkout to the commit, it will provide the correct current version
                 if with_prestable:
-                    logging.info("Skipping prestable stage")
-                else:
                     with self.prestable():
                         logging.info("Prestable part of the releasing is done")
+                else:
+                    logging.info("Skipping prestable stage")
 
                 with self.testing():
                     logging.info("Testing part of the releasing is done")

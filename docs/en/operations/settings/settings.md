@@ -3290,6 +3290,19 @@ Possible values:
 
 Default value: `16`.
 
+## max_insert_delayed_streams_for_parallel_write {#max-insert-delayed-streams-for-parallel-write}
+
+The maximum number of streams (columns) to delay final part flush.
+
+It makes difference only if underlying storage supports parallel write (i.e. S3), otherwise it will not give any benefit.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled.
+
+Default value: `1000` for S3 and `0` otherwise.
+
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
 Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).

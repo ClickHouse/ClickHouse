@@ -12,6 +12,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
 
 #include <IO/ReadBufferFromS3.h>
@@ -374,6 +376,16 @@ static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & clien
     return false;
 }
 
+// TODO: common thread pool for IO must be used instead after PR #35150
+static ThreadPool & getThreadPoolStorageS3()
+{
+    constexpr size_t pool_size = 100;
+    constexpr size_t queue_size = 1000000;
+    static ThreadPool pool(pool_size, pool_size, queue_size);
+    return pool;
+}
+
+
 class StorageS3Sink : public SinkToStorage
 {
 public:
@@ -398,7 +410,7 @@ public:
             std::make_unique<WriteBufferFromS3>(
                 client, bucket, key, min_upload_part_size,
                 upload_part_size_multiply_factor, upload_part_size_multiply_parts_count_threshold,
-                max_single_part_upload_size), compression_method, 3);
+                max_single_part_upload_size, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, threadPoolCallbackRunner(getThreadPoolStorageS3())), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
@@ -622,7 +634,7 @@ bool StorageS3::isColumnOriented() const
 
 Pipe StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -649,13 +661,13 @@ Pipe StorageS3::read(
     if (isColumnOriented())
     {
         columns_description = ColumnsDescription{
-            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-        block_for_format = metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        columns_description = metadata_snapshot->getColumns();
-        block_for_format = metadata_snapshot->getSampleBlock();
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
     }
 
     for (size_t i = 0; i < num_streams; ++i)

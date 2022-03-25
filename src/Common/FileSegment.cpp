@@ -194,7 +194,7 @@ void FileSegment::write(const char * from, size_t size)
     {
         std::lock_guard segment_lock(mutex);
 
-        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLog());
+        LOG_ERROR(log, "Failed to write to cache. File segment info: {}", getInfoForLogImpl(segment_lock));
 
         download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
@@ -405,7 +405,11 @@ void FileSegment::completeImpl(bool allow_non_strict_checking)
 String FileSegment::getInfoForLog() const
 {
     std::lock_guard segment_lock(mutex);
+    return getInfoForLogImpl(segment_lock);
+}
 
+String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const
+{
     WriteBufferFromOwnString info;
     info << "File segment: " << range().toString() << ", ";
     info << "state: " << download_state << ", ";
