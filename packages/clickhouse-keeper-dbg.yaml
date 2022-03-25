@@ -19,8 +19,8 @@ description: |
     This package contains the debugging symbols for clickhouse-keeper.
 
 contents:
-- src: root/usr/lib/debug/clickhouse-keeper.debug
-  dst: /usr/lib/debug/clickhouse-keeper.debug
+- src: root/usr/lib/debug/usr/bin/clickhouse-keeper.debug
+  dst: /usr/lib/debug/usr/bin/clickhouse-keeper.debug
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-keeper-dbg/AUTHORS
