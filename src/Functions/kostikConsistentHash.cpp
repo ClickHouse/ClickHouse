@@ -7,9 +7,9 @@ namespace DB
 {
 
 /// An O(1) time and space consistent hash algorithm by Konstantin Oblakov
-struct YandexConsistentHashImpl
+struct KostikConsistentHashImpl
 {
-    static constexpr auto name = "yandexConsistentHash";
+    static constexpr auto name = "kostikConsistentHash";
 
     using HashType = UInt64;
     /// Actually it supports UInt64, but it is efficient only if n <= 32768
@@ -23,12 +23,12 @@ struct YandexConsistentHashImpl
     }
 };
 
-using FunctionYandexConsistentHash = FunctionConsistentHashImpl<YandexConsistentHashImpl>;
+using FunctionKostikConsistentHash = FunctionConsistentHashImpl<KostikConsistentHashImpl>;
 
-void registerFunctionYandexConsistentHash(FunctionFactory & factory)
+void registerFunctionKostikConsistentHash(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionYandexConsistentHash>();
+    factory.registerFunction<FunctionKostikConsistentHash>();
+    factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");
 }
 
 }
-
