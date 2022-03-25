@@ -25,6 +25,8 @@ class StorageS3Cluster : public shared_ptr_helper<StorageS3Cluster>, public ISto
 public:
     std::string getName() const override { return "S3Cluster"; }
 
+    bool isRemote() const override { return true; }
+
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
         ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 

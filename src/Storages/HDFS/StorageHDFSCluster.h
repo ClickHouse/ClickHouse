@@ -24,6 +24,8 @@ class StorageHDFSCluster : public shared_ptr_helper<StorageHDFSCluster>, public 
 public:
     std::string getName() const override { return "HDFSCluster"; }
 
+    bool isRemote() const override { return true; }
+
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
         ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 

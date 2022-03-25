@@ -44,6 +44,11 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override
+    {
+        is_stopped = true;
+    }
+
     void resetParser() override;
 
 protected:
@@ -79,6 +84,8 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
+
+    std::atomic<int> is_stopped{0};
 };
 
 }

@@ -36,6 +36,8 @@ public:
         return true;
     }
 
+    bool isRemote() const override { return true; }
+
     Pipe read(
         const Names & column_names_,
         const StorageSnapshotPtr & metadata_snapshot_,

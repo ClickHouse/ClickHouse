@@ -234,16 +234,30 @@ public:
                 }
                 return Chunk(std::move(columns), num_rows);
             }
-            reader.reset();
-            pipeline.reset();
-            read_buf.reset();
+
+            {
+                std::lock_guard lock(reader_mutex);
+                reader.reset();
+                pipeline.reset();
+                read_buf.reset();
+            }
         }
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->cancel();
     }
 
 private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    /// onCancel and generate can be called concurrently
+    std::mutex reader_mutex;
+
     SourcesInfoPtr source_info;
     String hdfs_namenode_url;
     String format;
