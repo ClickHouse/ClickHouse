@@ -3,13 +3,14 @@
 #include <map>
 #include <set>
 
-#include "annoy.h"
-#include "settings.h"
-#include "point.h"
+#include "annoy/annoy.h"
+#include "annoy/point.h"
 
+#include "settings.cpp"
+
+namespace Annoy {
 
 Annoy::Annoy(const std::vector<Point>& points) : points_(std::make_shared<const std::vector<Point>>(points)), trees_(NUM_OF_TREES) {
-  assert(!points.empty());
   std::srand(std::time(nullptr));
   std::vector<size_t> indexes(points_->size());
   for (int i = 0; i < points_->size(); ++i) {
@@ -54,3 +55,5 @@ std::vector<Point> Annoy::FindKNN(const Point& x, size_t k) const {
   }
   return result;
 }
+
+};

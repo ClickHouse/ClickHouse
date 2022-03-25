@@ -5,6 +5,8 @@
 
 #include "node.h"
 
+namespace Annoy {
+
 class Annoy {
   using Point = std::vector<double>;
  public:
@@ -15,4 +17,6 @@ class Annoy {
   std::shared_ptr<const std::vector<Point>> points_;
   std::vector<std::shared_ptr<Node>> trees_;
   int dim_;
+};
+
 };

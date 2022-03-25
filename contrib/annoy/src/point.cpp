@@ -1,4 +1,6 @@
-#include "point.h"
+#include "annoy/point.h"
+
+namespace Annoy {
 
 double ScalarMul(const Point& first, const Point& second) {
   double sum = 0.;
@@ -31,3 +33,5 @@ Point operator*(const Point& point, double k) {
   }
   return result;
 }
+
+};
