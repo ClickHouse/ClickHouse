@@ -125,7 +125,7 @@ class FindResultImpl : public FindResultImplBase, public FindResultImplOffsetBas
 
 public:
     FindResultImpl()
-        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0)
+        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0), value(nullptr)
     {}
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
