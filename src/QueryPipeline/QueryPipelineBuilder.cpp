@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
@@ -323,7 +324,14 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     right->pipe.dropExtremes();
 
     left->pipe.collected_processors = collected_processors;
-    right->pipe.collected_processors = collected_processors;
+    if (auto * step = typeid_cast<ExpressionStep*>(right->pipe.processors.back()->getQueryPlanStep()))
+    {
+        right->pipe.collected_processors = step->getProcessors();
+    }
+    else
+    {
+        right->pipe.collected_processors = collected_processors;
+    }
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;

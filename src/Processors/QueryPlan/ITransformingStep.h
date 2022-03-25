@@ -57,6 +57,9 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    /// Used to inject new created processors.
+    Processors* getProcessors() { return &processors; }
+
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
