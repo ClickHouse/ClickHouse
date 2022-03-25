@@ -15,13 +15,13 @@ namespace
 {
 
 /// Enumerate stream paths of data type.
-class FunctionEnumerateStreams : public IFunction
+class FunctionGetTypeSerializationStreams : public IFunction
 {
 public:
-    static constexpr auto name = "enumerateStreams";
+    static constexpr auto name = "getTypeSerializationStreams";
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionEnumerateStreams>();
+        return std::make_shared<FunctionGetTypeSerializationStreams>();
     }
 
     String getName() const override
@@ -79,9 +79,9 @@ private:
 
 }
 
-void registerFunctionEnumerateStreams(FunctionFactory & factory)
+void registerFunctionGetTypeSerializationStreams(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionEnumerateStreams>();
+    factory.registerFunction<FunctionGetTypeSerializationStreams>();
 }
 
 }
