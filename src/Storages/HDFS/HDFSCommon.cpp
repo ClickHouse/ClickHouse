@@ -126,10 +126,13 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
     if (!libhdfs3_conf.empty())
     {
-        const String config_path = config.getString("config-file", "config.xml");
-        const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-        if (std::filesystem::path{libhdfs3_conf}.is_relative() && std::filesystem::exists(config_dir / libhdfs3_conf))
-            libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config.getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
 
         setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
     }
