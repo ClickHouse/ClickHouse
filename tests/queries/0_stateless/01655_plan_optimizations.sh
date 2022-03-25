@@ -202,7 +202,7 @@ echo "> the whole Expression node could be moved after Sorting"
 $CLICKHOUSE_CLIENT -q "
     explain select sipHash64(number) from numbers(100) order by number limit 5" |
     sed 's/ //g' | grep -o "^ *\(Expression\|Limit\|Sorting\)"
-echo "> Expression should be divided into two subnodes and only one of them could be moved after Sorting"
+echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
 $CLICKHOUSE_CLIENT -q "
     explain select sipHash64(number) from numbers(100) order by number + 1 limit 5" |
     sed 's/ //g' | grep -o "^ *\(Expression\|Limit\|Sorting\)"
