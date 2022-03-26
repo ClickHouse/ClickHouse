@@ -13,6 +13,8 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , picked_tracker(nullptr)
     , cancelation_state(QueryCancelationState::NONE)
     , global_mutex(global_mutex_)
+    , freed_momory(0)
+    , required_memory(0)
 {}
 
 void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
@@ -21,7 +23,7 @@ void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
     max_wait_time = wait_time * 1us;
 }
 
-bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
+bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 {
     // NOTE: Do not change the order of locks
     //
@@ -48,18 +50,31 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
     }
     if (picked_tracker == tracker)
         return true;
+    required_memory += amount;
     bool timeout = !cv.wait_for(lk, max_wait_time, [this]()
     {
-        return cancelation_state == QueryCancelationState::NONE;
+        return freed_momory >= required_memory || cancelation_state == QueryCancelationState::NONE;
     });
     if (timeout)
         LOG_DEBUG(getLogger(), "Need to stop query because reached waiting timeout");
     else
         LOG_DEBUG(getLogger(), "Memory freed within timeout");
+    required_memory -= amount;
     return timeout;
 }
 
-void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
+void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
+{
+    std::lock_guard guard(overcommit_m);
+    if (cancelation_state != QueryCancelationState::NONE)
+    {
+        freed_momory += amount;
+        if (freed_momory >= required_memory)
+            cv.notify_all();
+    }
+}
+
+void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
@@ -68,6 +83,7 @@ void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
 
         picked_tracker = nullptr;
         cancelation_state = QueryCancelationState::NONE;
+        freed_momory = 0;
         cv.notify_all();
     }
 }
