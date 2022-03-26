@@ -159,29 +159,37 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
     {
         auto object = field.getObject();
         DataTypePtr value_type;
-        bool is_map = true;
+        bool is_object = false;
         for (const auto key_value_pair : object)
         {
             auto type = getDataTypeFromJSONFieldImpl(key_value_pair.second);
-            if (!type || isObject(type))
+            if (!type)
+                continue;
+
+            if (isObject(type))
             {
-                is_map = false;
+                is_object = true;
                 break;
             }
 
-            if (value_type && value_type->getName() != type->getName())
+            if (!value_type)
             {
-                is_map = false;
+                value_type = type;
+            }
+            else if (!value_type->equals(*type))
+            {
+                is_object = true;
                 break;
             }
-
-            value_type = type;
         }
 
-        if (is_map && value_type)
+        if (is_object)
+            return std::make_shared<DataTypeObject>("json", false);
+
+        if (value_type)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
 
-        return std::make_shared<DataTypeObject>("json", false);
+        return nullptr;
     }
 
     throw Exception{ErrorCodes::INCORRECT_DATA, "Unexpected JSON type"};
