@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
@@ -128,7 +129,6 @@ struct ProjectionCandidate
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
     SortDescription group_by_elements_order_descr;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
@@ -162,6 +162,8 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+    /// Make subquery_for_sets reusable across different interpreters.
+    std::shared_ptr<SubqueriesForSets> subquery_for_sets;
 
     /// Cached value of ExpressionAnalysisResult::has_window
     bool has_window = false;
