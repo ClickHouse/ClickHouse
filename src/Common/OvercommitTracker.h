@@ -45,9 +45,11 @@ struct OvercommitTracker : boost::noncopyable
 {
     void setMaxWaitTime(UInt64 wait_time);
 
-    bool needToStopQuery(MemoryTracker * tracker);
+    bool needToStopQuery(MemoryTracker * tracker, Int64 amount);
 
-    void unsubscribe(MemoryTracker * tracker);
+    void tryContinueQueryExecutionAfterFree(Int64 amount);
+
+    void onQueryStop(MemoryTracker * tracker);
 
     virtual ~OvercommitTracker() = default;
 
@@ -95,6 +97,8 @@ private:
     // require this mutex to be locked, because they read list (or sublist)
     // of queries.
     std::mutex & global_mutex;
+    Int64 freed_momory;
+    Int64 required_memory;
 };
 
 namespace DB

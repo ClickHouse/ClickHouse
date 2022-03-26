@@ -344,9 +344,9 @@ QueryStatus::~QueryStatus()
     if (auto * memory_tracker = getMemoryTracker())
     {
         if (user_process_list)
-            user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+            user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
         if (auto shared_context = getContext())
-            shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
     }
 }
 
