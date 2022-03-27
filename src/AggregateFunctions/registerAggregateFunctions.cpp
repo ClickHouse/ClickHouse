@@ -21,6 +21,8 @@ class GraphIsTreeGeneral;
 extern template void registerGraphAggregateFunction<GraphIsTreeGeneral>(AggregateFunctionFactory & factory);
 class GraphComponentsCountGeneral;
 extern template void registerGraphAggregateFunction<GraphComponentsCountGeneral>(AggregateFunctionFactory & factory);
+class GraphProbabilityConnected;
+extern template void registerGraphAggregateFunction<GraphProbabilityConnected>(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGraphDiameter(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
@@ -97,6 +99,7 @@ void registerAggregateFunctions()
         registerGraphAggregateFunction<GraphDiameterGeneral>(factory);
         registerGraphAggregateFunction<GraphIsTreeGeneral>(factory);
         registerGraphAggregateFunction<GraphComponentsCountGeneral>(factory);
+        registerGraphAggregateFunction<GraphProbabilityConnected>(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
