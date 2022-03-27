@@ -12,9 +12,13 @@ AggregateFunctionPtr createGraphOperation(
 {
     assertBinary(name, argument_types);
 
-    if (GraphOperation::ExpectsFromToInput) {
-        if (parameters.size() != 2) {
-            throw Exception("Aggregate function " + name + " requires 2 parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (GraphOperation::kExpectedParameters != 0) {
+        if (parameters.size() != GraphOperation::kExpectedParameters) {
+            throw Exception(
+                "Aggregate function " + name +
+                " requires " + std::to_string(GraphOperation::kExpectedParameters) + " parameters",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+            );
         }
     } else {
         assertNoParameters(name, parameters);

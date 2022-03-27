@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class EdgeDistanceGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, true>
+class EdgeDistanceGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, 2>
 {
 public:
-    using GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, true>::GraphOperationGeneral;
+    using GraphOperationGeneral<BidirectionalGraphGenericData, EdgeDistanceGeneral, 2>::GraphOperationGeneral;
 
     static constexpr const char* name = "edgeDistance";
 

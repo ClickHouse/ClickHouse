@@ -118,7 +118,7 @@ void BidirectionalGraphGenericData::add(const IColumn ** columns, size_t row_num
     StringRef value = columns[1]->serializeValueIntoArena(row_num, *arena, begin);
     graph[key].push_back(value);
     graph[value].push_back(key);
-    edges_count += 2;
+    ++edges_count;
 }
 
 bool isTree(StringRef root, StringRef parent, const BidirectionalGraphGenericData& data, HashSet<StringRef>& visited) {
@@ -141,7 +141,7 @@ bool BidirectionalGraphGenericData::isTree() const {
     return true;
   }
   HashSet<StringRef> visited;
-  return ::DB::isTree(graph.begin()->getKey(), graph.begin()->getKey(), *this, visited);
+  return ::DB::isTree(graph.begin()->getKey(), graph.begin()->getKey(), *this, visited) && visited.size() == graph.size();
 }
 
 void visitComponent(StringRef root, StringRef parent, const BidirectionalGraphGenericData& data, HashSet<StringRef>& visited) {

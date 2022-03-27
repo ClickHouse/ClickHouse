@@ -33,15 +33,15 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
     size_t componentsCount() const;
 };
 
-template<typename Data, typename OpType, bool ExpectsFromTo = false>
+template<typename Data, typename OpType, size_t ExpectedParameters = 0>
 class GraphOperationGeneral
-    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType, ExpectsFromTo>>
+    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType, ExpectedParameters>>
 {
 public:
-    static constexpr bool ExpectsFromToInput = ExpectsFromTo;
+    static constexpr size_t kExpectedParameters = ExpectedParameters;
 
     GraphOperationGeneral(const DataTypePtr & data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphOperationGeneral>(
+        : IAggregateFunctionDataHelper<Data, GraphOperationGeneral>(
             {data_type_}, parameters_) {
     }
 
