@@ -26,7 +26,8 @@ protected:
     void transform(Chunk & Chunk) override;
 
 private:
-    void setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & other_columns) const;
+    void setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns) const;
+    void saveLastRow(const MutableColumns & fill_columns, const MutableColumns & interpolate_columns, const MutableColumns & other_columns);
 
     const SortDescription sort_description; /// Contains only columns with WITH FILL.
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
@@ -37,9 +38,12 @@ private:
 
     using Positions = std::vector<size_t>;
     Positions fill_column_positions;
+    Positions interpolate_column_positions;
     Positions other_column_positions;
     bool first = true;
     bool generate_suffix = false;
+
+    Columns last_row;
 
     /// Determines should we insert filling row before start generating next rows.
     bool should_insert_first = false;

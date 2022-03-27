@@ -7,6 +7,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
+#include <DataTypes/IDataType.h>
 
 class Collator;
 
@@ -24,6 +25,8 @@ class Block;
 
 struct FillColumnDescription
 {
+    DataTypePtr type;
+
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
@@ -50,14 +53,14 @@ struct SortColumnDescription
     explicit SortColumnDescription(
             size_t column_number_, int direction_ = 1, int nulls_direction_ = 1,
             const std::shared_ptr<Collator> & collator_ = nullptr,
-            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = FillColumnDescription{})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
             , with_fill(with_fill_), fill_description(fill_description_) {}
 
     explicit SortColumnDescription(
             const std::string & column_name_, int direction_ = 1, int nulls_direction_ = 1,
             const std::shared_ptr<Collator> & collator_ = nullptr,
-            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = FillColumnDescription{})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
             , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
 
