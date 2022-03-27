@@ -427,24 +427,36 @@ def test_named_collection(started_cluster):
 
 @pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
 def test_named_collection_secure(started_cluster):
-    client = get_meili_secure_client(started_cluster)
-    table = client.index("new_table")
+    client_secure = get_meili_secure_client(started_cluster)
+    client_free = get_meili_client(started_cluster)
+    table_secure = client_secure.index("new_table")
+    table_free = client_free.index("new_table")
+    
     data = []
     for i in range(0, 100):
         data.append({'id': i, 'data': hex(i * i)})
 
-    push_data(client, table, data)
+    push_data(client_secure, table_secure, data)
+    push_data(client_free, table_free, data)
 
     node = started_cluster.instances['meili']
     node.query(
-        "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure, key='password')")
+        "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure )")
 
     node.query(
-        "CREATE TABLE wrong_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure )")
+        "CREATE TABLE wrong_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password )")
+
+    node.query(
+        "CREATE TABLE combine_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password, password=\"password\" )")
 
     assert node.query("SELECT COUNT() FROM simple_meili_table") == '100\n'
     assert node.query("SELECT sum(id) FROM simple_meili_table") == str(sum(range(0, 100))) + '\n'
     assert node.query("SELECT data FROM simple_meili_table WHERE id = 42") == hex(42 * 42) + '\n'
+
+    assert node.query("SELECT COUNT() FROM combine_meili_table") == '100\n'
+    assert node.query("SELECT sum(id) FROM combine_meili_table") == str(sum(range(0, 100))) + '\n'
+    assert node.query("SELECT data FROM combine_meili_table WHERE id = 42") == hex(42 * 42) + '\n'
+
 
     error = node.query_and_get_error("SELECT COUNT() FROM wrong_meili_table")
     assert("MEILISEARCH_EXCEPTION" in error)
@@ -457,7 +469,10 @@ def test_named_collection_secure(started_cluster):
 
     node.query("DROP TABLE simple_meili_table")
     node.query("DROP TABLE wrong_meili_table")
-    table.delete()
+    node.query("DROP TABLE combine_meili_table")
+    table_secure.delete()
+    table_free.delete()
+
 
 @pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
 def test_table_function(started_cluster):

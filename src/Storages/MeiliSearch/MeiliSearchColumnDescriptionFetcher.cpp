@@ -1,11 +1,14 @@
 #include <memory>
+#include <string>
 #include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
 #include <base/JSON.h>
-#include "DataTypes/DataTypeArray.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "DataTypes/DataTypeString.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "DataTypes/Serializations/ISerialization.h"
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <IO/ReadHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -25,12 +28,9 @@ void MeiliSearchColumnDescriptionFetcher::addParam(const String & key, const Str
     query_params[key] = val;
 }
 
-bool isDouble(const std::string & val)
+bool checkIfInteger(const String & s)
 {
-    std::istringstream iss(val);
-    double f;
-    iss >> std::noskipws >> f;
-    return iss.eof() && !iss.fail() && static_cast<Int64>(f) != f;
+    return s.find('.') == String::npos;
 }
 
 DataTypePtr parseTypeOfField(JSON ptr)
@@ -53,19 +53,15 @@ DataTypePtr parseTypeOfField(JSON ptr)
         DataTypePtr res = std::make_shared<DataTypeNullable>(res);
         return res;
     }
-    if (isDouble(ptr.toString()))
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
     if (ptr.isNumber())
     {
-        return std::make_shared<DataTypeInt64>();
+        if (checkIfInteger(ptr.toString()))
+        {
+            return std::make_shared<DataTypeInt64>();
+        }
+        return std::make_shared<DataTypeFloat64>();
     }
-    if (ptr.isObject())
-    {
-        return std::make_shared<DataTypeString>();
-    }
-    throw Exception(ErrorCodes::UNSUPPORTED_MEILISEARCH_TYPE, "Can't recognize type of some fields");
+    return std::make_shared<DataTypeString>();
 }
 
 ColumnsDescription MeiliSearchColumnDescriptionFetcher::fetchColumnsDescription() const
