@@ -28,7 +28,14 @@ CURLcode MeiliSearchConnection::execQuery(std::string_view url, std::string_view
 
     headers_list = nullptr;
     headers_list = curl_slist_append(headers_list, "Content-Type: application/json");
-    headers_list = curl_slist_append(headers_list, config.key.c_str());
+
+    String full_key;
+
+    if (!config.key.empty())
+    {
+        full_key = config.key_prefix + config.key;
+        headers_list = curl_slist_append(headers_list, full_key.c_str());
+    }
 
     handle = curl_easy_init();
     curl_easy_setopt(handle, CURLOPT_URL, url.data());

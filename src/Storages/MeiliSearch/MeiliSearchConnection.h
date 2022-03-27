@@ -10,14 +10,15 @@ namespace DB
 {
 struct MeiliSearchConfiguration
 {
+    inline const static String key_prefix = "Authorization: Bearer ";
+
     String key;
     String index;
     String connection_string;
 
-    MeiliSearchConfiguration(const String & url_, const String & index_, const String & key_) : index{index_}
+    MeiliSearchConfiguration(const String & url_, const String & index_, const String & key_) : key{key_}, index{index_}
     {
         connection_string = url_ + "/indexes/" + index_ + "/";
-        key = "Authorization: Bearer " + key_;
     }
 };
 

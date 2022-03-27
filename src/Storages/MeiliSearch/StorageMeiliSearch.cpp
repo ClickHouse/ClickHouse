@@ -126,48 +126,33 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
         auto [common_configuration, storage_specific_args] = named_collection.value();
+
         String url = common_configuration.addresses_expr;
         String index = common_configuration.table;
         String key = common_configuration.password;
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "url")
-            {
-                if (!url.empty())
-                    throw Exception(
-                        "2 times given 'url' value, old = " + url + " new = " + arg_value->as<ASTLiteral>()->value.safeGet<String>(),
-                        ErrorCodes::BAD_ARGUMENTS);
-                url = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            }
-            else if (arg_name == "key" || arg_name == "password")
-            {
-                if (!key.empty())
-                    throw Exception(
-                        "2 times given 'key' value, old = " + key + " new = " + arg_value->as<ASTLiteral>()->value.safeGet<String>(),
-                        ErrorCodes::BAD_ARGUMENTS);
-                key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            }
-            else
-                throw Exception("Unexpected key-value argument", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         if (url.empty() || index.empty())
         {
-            throw Exception("Storage MeiliSearch requires 3 parameters: {url, index, [key]}", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")", ErrorCodes::BAD_ARGUMENTS);
         }
+
         return MeiliSearchConfiguration(url, index, key);
     }
     else
     {
-        if (engine_args.size() != 3)
+        if (engine_args.size() < 2 || 3 < engine_args.size())
         {
             throw Exception(
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key')",
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String index = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        String key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        String key;
+        if (engine_args.size() == 3)
+            key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         return MeiliSearchConfiguration(url, index, key);
     }
 }

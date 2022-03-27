@@ -1,14 +1,14 @@
 version: '2.3'
 services:
     meili1:
-        image: getmeili/meilisearch
+        image: getmeili/meilisearch:latest
         restart: always
         command: ./meilisearch
         ports:
             - ${MEILI_EXTERNAL_PORT}:${MEILI_INTERNAL_PORT}
 
     meili_secure:
-        image: getmeili/meilisearch
+        image: getmeili/meilisearch:latest
         restart: always
         command: ./meilisearch --master-key="password"
         ports:
