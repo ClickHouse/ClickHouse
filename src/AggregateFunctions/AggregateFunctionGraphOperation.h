@@ -33,11 +33,13 @@ struct BidirectionalGraphGenericData : DirectionalGraphGenericData {
     size_t componentsCount() const;
 };
 
-template<typename Data, typename OpType>
+template<typename Data, typename OpType, bool ExpectsFromTo = false>
 class GraphOperationGeneral
-    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType>>
+    : public IAggregateFunctionDataHelper<Data, GraphOperationGeneral<Data, OpType, ExpectsFromTo>>
 {
 public:
+    static constexpr bool ExpectsFromToInput = ExpectsFromTo;
+
     GraphOperationGeneral(const DataTypePtr & data_type_, const Array & parameters_)
         : IAggregateFunctionDataHelper<BidirectionalGraphGenericData, GraphOperationGeneral>(
             {data_type_}, parameters_) {
@@ -63,6 +65,11 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const final
     {
         this->data(place).deserialize(buf, arena);
+    }
+
+    StringRef serializeFieldToArena(const Field& field, Arena* arena) const {
+        const char* begin = nullptr;
+        return this->argument_types[0]->createColumnConst(1, field)->serializeValueIntoArena(0, *arena, begin);
     }
 
     decltype(auto) calculateOperation(ConstAggregateDataPtr __restrict place, Arena* arena) const {

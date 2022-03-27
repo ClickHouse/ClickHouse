@@ -4,8 +4,9 @@
 namespace DB
 {
 
-namespace ErrorCodes {
-  extern const int UNSUPPORTED_PARAMETER;
+namespace ErrorCodes 
+{
+extern const int UNSUPPORTED_PARAMETER;
 }
 
 class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>
