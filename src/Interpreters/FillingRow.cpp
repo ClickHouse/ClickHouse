@@ -19,24 +19,17 @@ bool equals(const Field & lhs, const Field & rhs)
 }
 
 
-FillingRow::FillingRow(const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_)
+FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
-    , interpolate_description(interpolate_description_)
 {
-    std::unordered_set<std::string> col_set;
-    for (const auto & col : sort_description)
-        col_set.insert(col.column_name);
-    if (interpolate_description)
-        for (const auto & name : interpolate_description->columns_full_set)
-            col_set.insert(name);
-    row.resize(col_set.size());
+    row.resize(sort_description.size());
 }
 
 bool FillingRow::operator<(const FillingRow & other) const
 {
     for (size_t i = 0; i < sort_description.size(); ++i)
     {
-        if (row[i].isNull() || other.row[i].isNull() || equals(row[i], other.row[i]))
+        if ((*this)[i].isNull() || other.row[i].isNull() || equals(row[i], other.row[i]))
             continue;
         return less(row[i], other.row[i], getDirection(i));
     }
@@ -114,39 +107,8 @@ void FillingRow::initFromDefaults(size_t from_pos)
         row[i] = getFillDescription(i).fill_from;
 }
 
-void FillingRow::interpolate()
-{
-    if (!interpolate_description)
-        return;
-
-    Block block;
-    if (interpolate_description->input_map.size())
-    {
-        for (const auto & [row_pos, name_type] : interpolate_description->input_map)
-        {
-            if (row[row_pos].isNull())
-                return;
-            block.insert({name_type.type->createColumnConst(1, row[row_pos]), name_type.type, name_type.name});
-        }
-    }
-    else /// INTERPOLATE contains only constants
-    {
-        /// dirty hack - we need at least one column with one row to execute actions on block
-        DataTypePtr dt = std::make_shared<DataTypeUInt64>();
-        block.insert({dt->createColumnConst(1, dt->getDefault()), dt, "dummy"});
-    }
-
-    interpolate_description->actions->execute(block);
-
-    for (auto [col_pos, row_pos] : interpolate_description->output_map)
-        block.getByPosition(col_pos).column->get(0, row[row_pos]);
-
-    for (const auto & [row_pos, col_type] : interpolate_description->reset_map)
-        row[row_pos] = col_type->getDefault();
-}
-
-
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & other_columns, const FillingRow & filling_row)
+void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
+    const FillingRow & filling_row, const Block & interpolate_block)
 {
     for (size_t i = 0; i < filling_columns.size(); ++i)
     {
@@ -155,6 +117,16 @@ void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & oth
         else
             filling_columns[i]->insert(filling_row[i]);
     }
+
+    if(size_t size = interpolate_block.columns())
+    {
+        Columns columns = interpolate_block.getColumns();
+        for (size_t i = 0; i < size; ++i)
+            interpolate_columns[i]->insertFrom(*columns[i], 0);
+    }
+    else
+        for (const auto & interpolate_column : interpolate_columns)
+            interpolate_column->insertDefault();
 
     for (const auto & other_column : other_columns)
         other_column->insertDefault();

@@ -763,9 +763,11 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
-static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, DataTypePtr type, ContextPtr context)
 {
     FillColumnDescription descr;
+    descr.type = type;
+
     if (order_by_elem.fill_from)
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
@@ -809,7 +811,7 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     return descr;
 }
 
-static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context)
+static SortDescription getSortDescription(const ASTSelectQuery & query, Block block, ContextPtr context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -824,7 +826,8 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
 
         if (order_by_elem.with_fill)
         {
-            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+            FillColumnDescription fill_desc =
+                getWithFillDescription(order_by_elem, block.getByName(order_by_elem.children.front()->getColumnName()).type, context);
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
@@ -1398,7 +1401,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool has_withfill = false;
             if (query.orderBy())
             {
-                SortDescription order_descr = getSortDescription(query, context);
+                SortDescription order_descr = getSortDescription(query, source_header, context);
                 for (auto & desc : order_descr)
                     if (desc.with_fill)
                     {
@@ -1990,7 +1993,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         // TODO Do we need a projection variant for this field?
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, context),
+                        getSortDescription(query, source_header, context),
                         query_info.syntax_analyzer_result);
                 }
                 else
@@ -1998,7 +2001,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, context),
+                        getSortDescription(query, source_header, context),
                         query_info.syntax_analyzer_result);
                 }
             }
@@ -2387,7 +2390,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription output_order_descr = getSortDescription(query, context);
+    SortDescription output_order_descr = getSortDescription(query, source_header, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     if (input_sorting_info)
@@ -2425,7 +2428,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const std::string & description)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
+    SortDescription order_descr = getSortDescription(query, source_header,context);
     UInt64 limit = getLimitForSorting(query, context);
 
     executeMergeSorted(query_plan, order_descr, limit, description);
@@ -2529,7 +2532,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, context);
+        SortDescription order_descr = getSortDescription(query, source_header, context);
         SortDescription fill_descr;
         for (auto & desc : order_descr)
         {
@@ -2579,7 +2582,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         {
             if (!query.orderBy())
                 throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, context);
+            order_descr = getSortDescription(query, source_header, context);
         }
 
         auto limit = std::make_unique<LimitStep>(
