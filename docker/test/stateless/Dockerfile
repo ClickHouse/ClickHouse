@@ -72,4 +72,5 @@ ENV EXPORT_S3_STORAGE_POLICIES=1
 
 COPY run.sh /
 COPY setup_minio.sh /
+COPY setup_hdfs_minicluster.sh /
 CMD ["/bin/bash", "/run.sh"]
