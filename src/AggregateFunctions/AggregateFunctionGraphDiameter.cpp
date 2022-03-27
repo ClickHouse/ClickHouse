@@ -1,22 +1,29 @@
 #include "AggregateFunctionGraphOperation.h"
+#include "base/types.h"
 
 namespace DB
 {
+
+namespace ErrorCodes {
+  extern const int UNSUPPORTED_PARAMETER;
+}
 
 class GraphDiameterGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>
 {
 public:
     using GraphOperationGeneral<BidirectionalGraphGenericData, GraphDiameterGeneral>::GraphOperationGeneral;
 
-    static constexpr const char* name = "graphDiameter";
+    static constexpr const char* name = "treeDiameter";
 
-    std::pair<UInt64, StringRef> calculateDiameter(const StringRef& vertex, const StringRef& parent, const HashMap<StringRef, std::vector<StringRef>>& graph) const {
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
+
+    std::pair<UInt64, StringRef> calculateDiameter(ConstAggregateDataPtr __restrict place, StringRef vertex, StringRef parent) const {
         std::pair<UInt64, StringRef> answer = {0, vertex};
-        for (const auto& next : graph.at(vertex)) {
+        for (StringRef next : this->data(place).graph.at(vertex)) {
             if (next == parent) {
                 continue;
             }
-            auto cur_answer = calculateDiameter(next, vertex, graph);
+            auto cur_answer = calculateDiameter(place, next, vertex);
             cur_answer.first += 1;
             if (cur_answer.first > answer.first) {
                 answer = cur_answer;
@@ -25,14 +32,16 @@ public:
         return answer;
     }
 
-    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, [[maybe_unused]] Arena* arena) const {
+    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena*) const {
+        if (!this->data(place).isTree()) {
+          throw Exception("Graph must have structure of tree", ErrorCodes::UNSUPPORTED_PARAMETER); 
+        }
         const auto& graph = this->data(place).graph;
         if (graph.size() < 2) {
             return 0;
         }
-        auto cur = calculateDiameter(graph.begin()->getKey(), graph.begin()->getKey(), graph);
-        auto answer = calculateDiameter(cur.second, cur.second, graph);
-        return answer.first;
+        StringRef first_leaf = calculateDiameter(place, graph.begin()->getKey(), graph.begin()->getKey()).second;
+        return calculateDiameter(place, first_leaf, first_leaf).first;
     }
 };
 
