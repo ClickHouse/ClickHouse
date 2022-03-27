@@ -55,6 +55,12 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     {
         return freed_momory >= required_memory || cancelation_state == QueryCancelationState::NONE;
     });
+
+    // If query cancelation is still running, it's possible that other queries will reach
+    // hard limit and end up on waiting on condition variable.
+    // If so we need to specify that some part of freed memory is acquired at this moment.
+    if (!timeout && cancelation_state == QueryCancelationState::RUNNING)
+        freed_momory -= amount;
     if (timeout)
         LOG_DEBUG(getLogger(), "Need to stop query because reached waiting timeout");
     else
