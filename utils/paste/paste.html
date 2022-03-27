@@ -1,5 +1,51 @@
 <!DOCTYPE html>
 <html>
+
+<!--
+
+# Paste Service On Top Of ClickHouse
+
+## About
+
+This service is developed to demonstrate some features of ClickHouse
+like asynchronous INSERTs, direct querying from HTML page, EPHEMERAL columns,
+custom HTTP handlers, quotas and user access control, etc.
+in a toy service similar to "pastebin" or "gist".
+
+Features:
+- data is instantly saved in ClickHouse after pasting or editing - single page with no "save" button;
+- after data is saved or loaded, you see the check mark in the bottom right corner;
+- just copy the link from the address bar - it is a permanent link to the data;
+- you can host Markdown pages - just add .md to the URL and share it;
+- you can host HTML pages - just add .html to the URL and share it;
+- browser history is used while editing for easy undo;
+- edit history is also saved in database: after you load the data,
+  previous version of the data is available by clicking the "back" button in bottom right corner;
+
+## Terms Of Use
+
+This service can be used for helping ClickHouse development.
+No other usages permitted.
+
+## Warranty
+
+No warranties or conditions of any kind, either express or implied.
+The data can be removed or lost at any moment of time.
+
+## Security And Privacy
+
+This service may not provide any security or privacy.
+
+## Cookie Policy
+
+This service does not use cookies.
+
+## Report Abuse
+
+To report abuse, write to feedback@clickhouse.com
+
+-->
+
 <head>
     <meta charset="UTF-8">
     <title>Paste</title>
@@ -12,8 +58,6 @@
         }
 
         body {
-            color: black;
-            background: white;
             font-family: sans-serif;
         }
 
@@ -25,7 +69,7 @@
             height: calc(100% - 1em);
         }
 
-        span, a {
+        .status {
             position: absolute;
             right: 1em;
             bottom: 0.5em;
@@ -45,7 +89,7 @@
         }
 
         @keyframes spin {
-            100% { transform:rotate(360deg); }
+            100% { transform: rotate(360deg); }
         }
 
         #back {
@@ -56,13 +100,19 @@
         a:hover {
             color: #00b3ee;
         }
+
+        .markdown {
+            margin: 1em;
+            width: calc(100% - 2em);
+            height: auto;
+        }
     </style>
 </head>
 <body>
-<span id="hourglass">⧗</span>
-<span id="check-mark">✔</span>
-<span id="error">❌</span>
-<a id="back">⎌</a>
+<span class="status" id="hourglass">⧗</span>
+<span class="status" id="check-mark">✔</span>
+<span class="status" id="error">❌</span>
+<a class="status" id="back">⎌</a>
 <textarea id="data" autofocus></textarea>
 <script type="text/javascript">
 
@@ -158,12 +208,12 @@ function show(what) {
 
 const clickhouse_url = "http://localhost:8123/?add_http_cors_header=1&async_insert=1";
 
-async function load(fingerprint, hash) {
+async function load(fingerprint, hash, type) {
     show(wait);
 
     const response = await fetch(
         clickhouse_url,
-        { method: "POST", body: `SELECT content, lower(hex(reinterpretAsFixedString(prev_hash))) AS prev_hash, lower(hex(reinterpretAsFixedString(prev_fingerprint))) AS prev_fingerprint FROM paste WHERE fingerprint = reinterpretAsUInt32(unhex('${fingerprint}')) AND hash = reinterpretAsUInt128(unhex('${hash}')) LIMIT 1 FORMAT JSON` });
+        { method: "POST", body: `SELECT content, lower(hex(reinterpretAsFixedString(prev_hash))) AS prev_hash, lower(hex(reinterpretAsFixedString(prev_fingerprint))) AS prev_fingerprint FROM paste WHERE fingerprint = reinterpretAsUInt32(unhex('${fingerprint}')) AND hash = reinterpretAsUInt128(unhex('${hash}')) ORDER BY time LIMIT 1 FORMAT JSON` });
 
     function onError() {
         show(error);
@@ -183,12 +233,22 @@ async function load(fingerprint, hash) {
     curr_hash = hash;
     curr_fingerprint = fingerprint;
 
-    document.getElementById('data').value = content;
-
-    if (prev_hash == '00000000000000000000000000000000') {
-        hide();
+    if (type === '.html' || type == '.htm') {
+        document.open();
+        document.write(content);
+        document.close();
+    } else if (type === '.md' || type === '.markdown') {
+        await loadMarkdownRenderer();
+        document.body.className = 'markdown';
+        document.body.innerHTML = marked.parse(content);
     } else {
-        show(back);
+        document.getElementById('data').value = content;
+
+        if (prev_hash == '00000000000000000000000000000000') {
+            hide();
+        } else {
+            show(back);
+        }
     }
 }
 
@@ -222,6 +282,31 @@ async function save(text) {
     }
 }
 
+/// Huge JS libraries should be loaded only if needed.
+function loadJS(src, integrity) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        if (integrity) {
+            script.crossOrigin = 'anonymous';
+            script.integrity = integrity;
+        } else {
+            console.warn('no integrity for', src)
+        }
+        script.addEventListener('load', function() { marked.setOptions({ gfm: true, breaks: true }); resolve(true); });
+        document.head.appendChild(script);
+    });
+}
+
+let load_markdown_promise;
+function loadMarkdownRenderer() {
+    if (load_markdown_promise) { return load_markdown_promise; }
+
+    return loadJS('https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js',
+        'sha512-hzyXu3u+VDu/7vpPjRKFp9w33Idx7pWWNazPm+aCMRu26yZXFCby1gn1JxevVv3LDwnSbyKrvLo3JNdi4Qx1ww==');
+}
+
+
 document.getElementById('data').addEventListener('input', (event) => {
 
     prev_fingerprint = curr_fingerprint;
@@ -241,8 +326,8 @@ back.addEventListener('click', (event) => {
 });
 
 function restore() {
-    const components = window.location.search.match(/^\?([0-9a-f]{8})\/([0-9a-f]{32})/);
-    if (components) load(components[1], components[2]);
+    const components = window.location.search.match(/^\?([0-9a-f]{8})\/([0-9a-f]{32})(\.md|\.html?)?/);
+    if (components) load(components[1], components[2], components[3]);
 }
 
 window.onpopstate = function(event) {
@@ -263,7 +348,7 @@ CREATE TABLE paste
     content String,
 
     size UInt32 MATERIALIZED length(content),
-    time DateTime MATERIALIZED now(),
+    time DateTime64 MATERIALIZED now64(),
     query_id String MATERIALIZED queryID(),
 
     fingerprint_hex String EPHEMERAL '',
@@ -276,7 +361,7 @@ CREATE TABLE paste
 
     PRIMARY KEY (fingerprint, hash)
 )
-ENGINE = ReplacingMergeTree
+ENGINE = MergeTree
 
 */
 
