@@ -124,7 +124,7 @@ function sipHash128(m) {
 }
 
 function getFingerprint(text) {
-    return text.substr(0, 100000).split('\n').map(line => line.match(/\p{L}{4,100}/gu)).flat().
+    return text.match(/\p{L}{4,100}/gu).
         map((elem, idx, arr) => idx + 2 < arr.length ? [elem, arr[idx + 1], arr[idx + 2]] : []).
         filter(elem => elem.length === 3).map(elem => elem.join()).
         filter((elem, idx, arr) => arr.indexOf(elem) === idx).
