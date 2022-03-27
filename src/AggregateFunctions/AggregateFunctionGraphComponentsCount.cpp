@@ -3,10 +3,6 @@
 namespace DB
 {
 
-namespace ErrorCodes {
-  extern const int UNSUPPORTED_PARAMETER;
-}
-
 class GraphComponentsCountGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphComponentsCountGeneral>
 {
 public:

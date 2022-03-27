@@ -4,10 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes {
-  extern const int UNSUPPORTED_PARAMETER;
-}
-
 class GraphIsTreeGeneral final : public GraphOperationGeneral<BidirectionalGraphGenericData, GraphIsTreeGeneral>
 {
 public:
