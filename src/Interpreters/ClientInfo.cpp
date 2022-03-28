@@ -37,6 +37,9 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 
     writeBinary(UInt8(interface), out);
 
+    if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_IS_SECURE)
+        writeBinary(static_cast<UInt8>(is_secure), out);
+
     if (interface == Interface::TCP)
     {
         writeBinary(os_user, out);
@@ -69,8 +72,6 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             writeVarUInt(client_version_patch, out);
     }
-
-    writeBinary(static_cast<UInt8>(is_secure), out);
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
@@ -129,6 +130,13 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
     readBinary(read_interface, in);
     interface = Interface(read_interface);
 
+    if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_IS_SECURE)
+    {
+        UInt8 value;
+        readBinary(value, in);
+        is_secure = value;
+    }
+
     if (interface == Interface::TCP)
     {
         readBinary(os_user, in);
@@ -167,11 +175,6 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
             client_version_patch = client_tcp_protocol_version;
     }
 
-    {
-        UInt8 value;
-        readBinary(value, in);
-        is_secure = value;
-    }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
