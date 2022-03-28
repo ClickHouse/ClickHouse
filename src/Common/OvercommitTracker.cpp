@@ -11,7 +11,7 @@ constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     : max_wait_time(ZERO_MICROSEC)
     , picked_tracker(nullptr)
-    , cancelation_state(QueryCancelationState::NONE)
+    , cancellation_state(QueryCancellationState::NONE)
     , global_mutex(global_mutex_)
     , freed_momory(0)
     , required_memory(0)
@@ -38,14 +38,14 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
         return true;
 
     pickQueryToExclude();
-    assert(cancelation_state == QueryCancelationState::RUNNING);
+    assert(cancellation_state == QueryCancellationState::RUNNING);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
     // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
-        cancelation_state = QueryCancelationState::NONE;
+        cancellation_state = QueryCancellationState::NONE;
         return true;
     }
     if (picked_tracker == tracker)
@@ -53,13 +53,13 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     required_memory += amount;
     bool timeout = !cv.wait_for(lk, max_wait_time, [this]()
     {
-        return freed_momory >= required_memory || cancelation_state == QueryCancelationState::NONE;
+        return freed_momory >= required_memory || cancellation_state == QueryCancellationState::NONE;
     });
 
-    // If query cancelation is still running, it's possible that other queries will reach
+    // If query cancellation is still running, it's possible that other queries will reach
     // hard limit and end up on waiting on condition variable.
     // If so we need to specify that some part of freed memory is acquired at this moment.
-    if (!timeout && cancelation_state == QueryCancelationState::RUNNING)
+    if (!timeout && cancellation_state == QueryCancellationState::RUNNING)
         freed_momory -= amount;
     if (timeout)
         LOG_DEBUG(getLogger(), "Need to stop query because reached waiting timeout");
@@ -72,7 +72,7 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
 {
     std::lock_guard guard(overcommit_m);
-    if (cancelation_state != QueryCancelationState::NONE)
+    if (cancellation_state != QueryCancellationState::NONE)
     {
         freed_momory += amount;
         if (freed_momory >= required_memory)
@@ -88,7 +88,7 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
         LOG_DEBUG(getLogger(), "Picked query stopped");
 
         picked_tracker = nullptr;
-        cancelation_state = QueryCancelationState::NONE;
+        cancellation_state = QueryCancellationState::NONE;
         freed_momory = 0;
         cv.notify_all();
     }

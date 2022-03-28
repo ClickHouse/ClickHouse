@@ -65,18 +65,11 @@ protected:
 
     std::chrono::microseconds max_wait_time;
 
-    enum class QueryCancelationState
-    {
-        NONE,
-        RUNNING,
-    };
-
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
     // This case is represented as picked tracker pointer is set to nullptr and
     // overcommit tracker is in RUNNING state.
     MemoryTracker * picked_tracker;
-    QueryCancelationState cancelation_state;
 
     virtual Poco::Logger * getLogger() = 0;
 
@@ -84,12 +77,20 @@ private:
 
     void pickQueryToExclude()
     {
-        if (cancelation_state != QueryCancelationState::RUNNING)
+        if (cancellation_state != QueryCancellationState::RUNNING)
         {
             pickQueryToExcludeImpl();
-            cancelation_state = QueryCancelationState::RUNNING;
+            cancellation_state = QueryCancellationState::RUNNING;
         }
     }
+
+    enum class QueryCancellationState
+    {
+        NONE,
+        RUNNING,
+    };
+
+    QueryCancellationState cancellation_state;
 
     // Global mutex which is used in ProcessList to synchronize
     // insertion and deletion of queries.
