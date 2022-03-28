@@ -9,10 +9,6 @@ homepage: "https://clickhouse.com"
 license: "Apache"
 section: "database"
 priority: "optional"
-
-conflicts:
-- clickhouse-server
-
 maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
 description: |
   debugging symbols for clickhouse-keeper
