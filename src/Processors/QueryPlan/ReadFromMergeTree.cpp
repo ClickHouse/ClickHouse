@@ -114,6 +114,9 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
+
+    /// Add explicit description.
+    setStepDescription(data.getStorageID().getFullNameNotQuoted());
 }
 
 Pipe ReadFromMergeTree::readFromPool(
