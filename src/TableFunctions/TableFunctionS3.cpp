@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, const ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
 {
     if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
     {
@@ -45,6 +45,9 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, const AST
     {
         if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         /// Size -> argument indexes
         static auto size_to_args = std::map<size_t, std::map<String, size_t>>
@@ -127,7 +130,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTs & args = args_func.at(0)->children;
+    auto & args = args_func.at(0)->children;
 
     parseArgumentsImpl(message, args, context, configuration);
 }
