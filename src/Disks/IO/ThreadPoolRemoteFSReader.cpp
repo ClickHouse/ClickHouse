@@ -1,6 +1,5 @@
 #include "ThreadPoolRemoteFSReader.h"
 
-#include <base/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>

@@ -411,11 +411,8 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock, bool allow_non_strict_checking)
 {
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
-    bool download_can_continue = !is_last_holder
-        && download_state != State::DOWNLOADED
-        && download_state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
-    if (!download_can_continue
+    if (is_last_holder
         && (download_state == State::PARTIALLY_DOWNLOADED || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
         size_t current_downloaded_size = getDownloadedSize(segment_lock);
@@ -518,7 +515,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
     {
-        auto current_file_segment_it = file_segment_it++;
+        auto current_file_segment_it = file_segment_it;
         auto & file_segment = *current_file_segment_it;
 
         if (!cache)
@@ -532,14 +529,14 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
             file_segment->complete(cache_lock);
 
-            file_segments.erase(current_file_segment_it);
+            file_segment_it = file_segments.erase(current_file_segment_it);
         }
         catch (...)
         {
-#ifndef NDEBUG
-            throw;
-#else
+#ifdef NDEBUG
             tryLogCurrentException(__PRETTY_FUNCTION__);
+#else
+            throw;
 #endif
         }
     }
