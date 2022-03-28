@@ -23,6 +23,7 @@ namespace DB
     class SensitiveDataMasker;
 }
 
+bool log_format_json = false;
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -182,7 +183,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
-
+    
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
@@ -201,7 +202,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }
-
+    
+    if(config.has("logger.format.json"))
+    {
+        log_format_json = true;
+    }
+    
     split->open();
     logger.close();
     logger.setChannel(split);

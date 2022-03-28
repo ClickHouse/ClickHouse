@@ -10,14 +10,16 @@
 #ifdef WITH_TEXT_LOG
 namespace DB
 {
-    class TextLog;
+class TextLog;
 }
 #endif
 
 namespace Poco::Util
 {
-    class AbstractConfiguration;
+class AbstractConfiguration;
 }
+
+extern bool log_format_json;
 
 class Loggers
 {
@@ -28,7 +30,6 @@ public:
 
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
-
 #ifdef WITH_TEXT_LOG
     void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
 #endif

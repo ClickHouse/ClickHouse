@@ -60,6 +60,18 @@
           </logger>
         </levels>
         -->
+        <!-- Structured log formatting:
+        
+        You can specify log format (for now, JSON only). In that case, the console log will be printed
+        in JSON format.
+        For example, like this below:
+        {"datetime":"2022.03.28 12:17:54.827035","thread_id":"790151","query_id":"2441139","priority":"Debug","source":"KeeperTCPHandler","message":"Received close event with xid 2147483647 for session id #7"}  
+        To enable JSON logging support, just uncomment <format> tag and add <json> tag. 
+        Having the <json> tag will make it work. For better understanding/visibility, you can add "true" or "1".
+        -->
+        <format>
+            <json>true</json>
+        </format>
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->

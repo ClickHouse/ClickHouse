@@ -1,6 +1,6 @@
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
-
+#include "Loggers.h"
 
 namespace DB
 {
@@ -12,7 +12,15 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
         if (pFormatter)
         {
             std::string text;
-            pFormatter->formatExtended(msg, text);
+            if(log_format_json)
+            {
+                pFormatter->formatExtendedJSON(msg, text);
+            }
+            else
+            {
+                pFormatter->formatExtended(msg, text);
+            }
+            
             pChannel->log(Poco::Message(msg.base, text));
         }
         else
