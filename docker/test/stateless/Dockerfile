@@ -33,7 +33,6 @@ RUN apt-get update -y \
             postgresql-client \
             sqlite3 \
             awscli \
-            # Ah shit, here we go again
             openjdk-11-jre-headless
 
 

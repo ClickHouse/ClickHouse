@@ -19,7 +19,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh
-./setup_hdfs_minicluster.sh
+sudo -E -u clickhouse ./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
