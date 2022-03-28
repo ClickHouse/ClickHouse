@@ -42,7 +42,6 @@ function restart_replicas_loop()
 export -f rename_thread_1
 export -f rename_thread_2
 export -f restart_replicas_loop
-export -f restart_replicas_loop
 
 TIMEOUT=10
 
