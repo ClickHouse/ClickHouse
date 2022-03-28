@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_flatten_tuple;
 DROP TABLE IF EXISTS t_flatten_object;
 
