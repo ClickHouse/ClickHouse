@@ -68,7 +68,7 @@ protected:
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
     // This case is represented as picked tracker pointer is set to nullptr and
-    // overcommit tracker is in RUNNING state.
+    // overcommit tracker is in SELECTED state.
     MemoryTracker * picked_tracker;
 
     virtual Poco::Logger * getLogger() = 0;
@@ -77,17 +77,25 @@ private:
 
     void pickQueryToExclude()
     {
-        if (cancellation_state != QueryCancellationState::RUNNING)
+        if (cancellation_state == QueryCancellationState::NONE)
         {
             pickQueryToExcludeImpl();
-            cancellation_state = QueryCancellationState::RUNNING;
+            cancellation_state = QueryCancellationState::SELECTED;
         }
+    }
+
+    void reset() noexcept
+    {
+        picked_tracker = nullptr;
+        cancellation_state = QueryCancellationState::NONE;
+        freed_momory = 0;
     }
 
     enum class QueryCancellationState
     {
-        NONE,
-        RUNNING,
+        NONE,      // Hard limit is not reached, there is no selected query to kill.
+        SELECTED,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
+        RUNNING,   // Hard limit is reached, selected query has started the proccess of cancellation.
     };
 
     QueryCancellationState cancellation_state;

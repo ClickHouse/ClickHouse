@@ -28,7 +28,7 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     // NOTE: Do not change the order of locks
     //
     // global_mutex must be acquired before overcommit_m, because
-    // method OvercommitTracker::unsubscribe(MemoryTracker *) is
+    // method OvercommitTracker::onQueryStop(MemoryTracker *) is
     // always called with already acquired global_mutex in
     // ProcessListEntry::~ProcessListEntry().
     std::unique_lock<std::mutex> global_lock(global_mutex);
@@ -38,34 +38,41 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
         return true;
 
     pickQueryToExclude();
-    assert(cancellation_state == QueryCancellationState::RUNNING);
+    assert(cancellation_state != QueryCancellationState::NONE);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
     // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
+        assert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return true;
     }
     if (picked_tracker == tracker)
+    {
+        assert(cancellation_state == QueryCancellationState::SELECTED);
+        cancellation_state = QueryCancellationState::RUNNING;
         return true;
+    }
     required_memory += amount;
     bool timeout = !cv.wait_for(lk, max_wait_time, [this]()
     {
         return freed_momory >= required_memory || cancellation_state == QueryCancellationState::NONE;
     });
+    LOG_DEBUG(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
     // If query cancellation is still running, it's possible that other queries will reach
     // hard limit and end up on waiting on condition variable.
     // If so we need to specify that some part of freed memory is acquired at this moment.
-    if (!timeout && cancellation_state == QueryCancellationState::RUNNING)
+    if (!timeout && cancellation_state != QueryCancellationState::NONE)
         freed_momory -= amount;
-    if (timeout)
-        LOG_DEBUG(getLogger(), "Need to stop query because reached waiting timeout");
-    else
-        LOG_DEBUG(getLogger(), "Memory freed within timeout");
+
     required_memory -= amount;
+    // All required amount of memory is free now and selected query to stop doesn't know about it.
+    // As we don't need to free memory, we can continue execution of the selected query.
+    if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
+        reset();
     return timeout;
 }
 
@@ -87,9 +94,7 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
     {
         LOG_DEBUG(getLogger(), "Picked query stopped");
 
-        picked_tracker = nullptr;
-        cancellation_state = QueryCancellationState::NONE;
-        freed_momory = 0;
+        reset();
         cv.notify_all();
     }
 }
