@@ -1375,13 +1375,3 @@ def test_insert_select_schema_inference(started_cluster):
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native')"
     )
     assert int(result) == 1
-
-
-def test_virtual_columns(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
-    name = "test_table"
-
-    instance.query("insert into table function s3(s3_parquet, format='Parquet') select 1, 'kek' settings s3_truncate_on_insert=1")
-    result = instance.query("SELECT _path FROM s3(s3_parquet, format='Parquet')")
-    assert result.strip() == "root/test_parquet"
