@@ -31,7 +31,6 @@ static ITransformingStep::Traits getTraits(size_t limit)
 SortingStep::SortingStep(
     const DataStream & input_stream,
     const SortDescription & description_,
-    bool compile_sort_description_,
     size_t max_block_size_,
     UInt64 limit_,
     SizeLimits size_limits_,
@@ -43,7 +42,6 @@ SortingStep::SortingStep(
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
     , result_description(description_)
-    , compile_sort_description(compile_sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
     , size_limits(size_limits_)
@@ -61,14 +59,12 @@ SortingStep::SortingStep(
     const DataStream & input_stream_,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    bool compile_sort_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
-    , compile_sort_description(compile_sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
@@ -80,13 +76,11 @@ SortingStep::SortingStep(
 SortingStep::SortingStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
-    bool compile_sort_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
-    , compile_sort_description(compile_sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
@@ -130,7 +124,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     prefix_description,
-                    compile_sort_description,
                     max_block_size,
                     limit_for_merging);
 
@@ -151,7 +144,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
-                    header, prefix_description, result_description, compile_sort_description, max_block_size, limit);
+                    header, prefix_description, result_description, max_block_size, limit);
             });
         }
     }
@@ -184,7 +177,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 return nullptr;
 
             return std::make_shared<MergeSortingTransform>(
-                    header, result_description, compile_sort_description, max_block_size, limit,
+                    header, result_description, max_block_size, limit,
                     max_bytes_before_remerge / pipeline.getNumStreams(),
                     remerge_lowered_memory_bytes_ratio,
                     max_bytes_before_external_sort,
@@ -200,7 +193,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     result_description,
-                    compile_sort_description,
                     max_block_size,
                     limit);
 
@@ -216,7 +208,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     result_description,
-                    compile_sort_description,
                     max_block_size,
                     limit);
 

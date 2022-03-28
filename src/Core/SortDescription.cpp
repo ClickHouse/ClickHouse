@@ -85,7 +85,7 @@ static Poco::Logger * getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & description_types)
 {
-    if (description_types.empty())
+    if (!description.compile_sort_description || description_types.empty())
         return;
 
     for (const auto & type : description_types)
