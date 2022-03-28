@@ -115,7 +115,7 @@ public:
 
     HDFSSource(
         StorageHDFSPtr storage_,
-        const Block & block_for_foramt_,
+        const Block & block_for_format_,
         const std::vector<NameAndTypePair> & requested_virtual_columns_,
         ContextPtr context_,
         UInt64 max_block_size_,

@@ -866,7 +866,6 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
                     "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                     arg_name);
         }
-        std::cerr << "\n\n\nkssenii: " << configuration.url << "\n\n\n\n\n";
     }
     else
     {

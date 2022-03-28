@@ -39,7 +39,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             else if (arg_name == "secret_access_key")
                 s3_configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "filename")
-                s3_configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
+                s3_configuration.url = std::filesystem::path(s3_configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
         }
