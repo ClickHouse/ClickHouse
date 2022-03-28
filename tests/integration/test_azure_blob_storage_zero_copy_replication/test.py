@@ -14,6 +14,7 @@ CLUSTER_NAME = "test_cluster"
 
 drop_table_statement = f"DROP TABLE {TABLE_NAME} ON CLUSTER {CLUSTER_NAME} SYNC"
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -58,6 +59,7 @@ def create_table(node, table_name, replica, **additional_settings):
 
     node.query(create_table_statement)
     assert node.query(f"SELECT COUNT(*) FROM {table_name} FORMAT Values") == "(0)"
+
 
 def get_large_objects_count(blob_container_client, large_size_threshold=100):
     return sum(
