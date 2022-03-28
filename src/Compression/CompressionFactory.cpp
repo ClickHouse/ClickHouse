@@ -168,7 +168,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
 
 
-/// Keeper use only general-purpose codes, so we don't need these special codecs
+/// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
 #ifndef KEEPER_STANDALONE_BUILD
 
