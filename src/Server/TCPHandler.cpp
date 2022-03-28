@@ -81,13 +81,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, bool is_secure_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , is_secure(is_secure_)
     , server_display_name(std::move(server_display_name_))
 {
 }
@@ -111,7 +110,7 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, is_secure);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
     extractConnectionSettingsFromContext(server.context());
 
     socket().setReceiveTimeout(receive_timeout);
