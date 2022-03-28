@@ -281,4 +281,3 @@ def test_HDFS(start_cluster):
 def test_schema_inference(start_cluster):
     error = node7.query_and_get_error("desc url('http://test.com`, 'TSVRaw'')")
     assert(error.find('ReadWriteBufferFromHTTPBase') == -1)
-
