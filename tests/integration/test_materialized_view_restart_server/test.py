@@ -16,7 +16,9 @@ def start_cluster():
 
 def test_materialized_view_with_subquery(start_cluster):
     node.query("create table test (x UInt32) engine=TineLog()")
-    node.query("create materialized view mv engine = TinyLog() as with subquery as (select * from test) select * from subquery")
+    node.query(
+        "create materialized view mv engine = TinyLog() as with subquery as (select * from test) select * from subquery"
+    )
     node.restart_clickhouse(kill=True)
     node.query("insert into test select 1")
     result = node.query("select * from mv")
