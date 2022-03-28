@@ -31,16 +31,12 @@ public:
     bool isWritingFile() const override;
 
     /// Supported compression methods.
-    enum class CompressionMethod
-    {
-        /// See mz.h
-        kStore = 0,
-        kDeflate = 8,
-        kBzip2 = 12,
-        kLzma = 14,
-        kZstd = 93,
-        kXz = 95,
-    };
+    static constexpr const char kStore[] = "store";
+    static constexpr const char kDeflate[] = "deflate";
+    static constexpr const char kBzip2[] = "bzip2";
+    static constexpr const char kLzma[] = "lzma";
+    static constexpr const char kZstd[] = "zstd";
+    static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
     enum class CompressionLevels
@@ -53,7 +49,7 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    void setCompression(int compression_method_, int compression_level_) override;
+    void setCompression(const String & compression_method_, int compression_level_) override;
 
     /// Sets password. Only contents of the files are encrypted,
     /// names of files are not encrypted.
@@ -61,8 +57,9 @@ public:
     void setPassword(const String & password_) override;
 
     /// Utility functions.
-    static CompressionMethod parseCompressionMethod(const String & str);
-    static void checkCompressionMethodIsEnabled(CompressionMethod method);
+    static int compressionMethodToInt(const String & compression_method_);
+    static String intToCompressionMethod(int compression_method_);
+    static void checkCompressionMethodIsEnabled(int compression_method_);
     static void checkEncryptionIsEnabled();
 
 private:
@@ -85,7 +82,7 @@ private:
     [[noreturn]] void showError(const String & message) const;
 
     const String path_to_archive;
-    int compression_method = static_cast<int>(CompressionMethod::kDeflate);
+    int compression_method; /// By default the compression method is "deflate".
     int compression_level = kDefaultCompressionLevel;
     String password;
     RawHandle handle = nullptr;

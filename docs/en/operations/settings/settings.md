@@ -4220,10 +4220,36 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
 
-Default value: 0.
+Default value: `0`.
 
 ## shutdown_wait_unfinished
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
-Default Value: 5.
+Default Value: `5`.
+
+## max_guaranteed_memory_usage
+
+Maximum guaranteed memory usage for processing of single query.
+It represents soft limit in case when hard limit is reached on user level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
+
+## max_guaranteed_memory_usage_for_user
+
+Maximum guaranteed memory usage for processing all concurrently running queries for the user.
+It represents soft limit in case when hard limit is reached on global level.
+Zero means unlimited.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `0`.
