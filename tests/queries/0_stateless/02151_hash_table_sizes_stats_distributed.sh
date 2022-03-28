@@ -46,6 +46,7 @@ run_query() {
     SET max_block_size = $((table_size / 10));
     SET merge_tree_min_rows_for_concurrent_read = 1;
     SET max_untracked_memory = 0;
+    SET prefer_localhost_replica = 1;
     $query"
 }
 
