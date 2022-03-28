@@ -245,7 +245,7 @@ def parse_env_variables(
         result.append(f"AUTHOR='{author}'")
 
     if official:
-        cmake_flags.append("-DYANDEX_OFFICIAL_BUILD=1")
+        cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
 
     result.append('CMAKE_FLAGS="' + " ".join(cmake_flags) + '"')
 
