@@ -15,7 +15,6 @@ public:
     SortingStep(
         const DataStream & input_stream,
         const SortDescription & description_,
-        bool compile_sort_description_,
         size_t max_block_size_,
         UInt64 limit_,
         SizeLimits size_limits_,
@@ -30,7 +29,6 @@ public:
         const DataStream & input_stream_,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        bool compile_sort_description_,
         size_t max_block_size_,
         UInt64 limit_);
 
@@ -38,7 +36,6 @@ public:
     SortingStep(
         const DataStream & input_stream,
         SortDescription sort_description_,
-        bool compile_sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0);
 
@@ -70,7 +67,6 @@ private:
 
     SortDescription prefix_description;
     SortDescription result_description;
-    bool compile_sort_description;
     size_t max_block_size;
     UInt64 limit;
     SizeLimits size_limits;

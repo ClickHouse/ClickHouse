@@ -130,13 +130,11 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
 SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,
-    bool compile_sort_description_,
     size_t max_merged_block_size_,
     UInt64 limit_)
     : IProcessor({header}, {header})
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
-    , compile_sort_description(compile_sort_description_)
     , limit(limit_)
 {
     const auto & sample = inputs.front().getHeader();
@@ -177,8 +175,7 @@ SortingTransform::SortingTransform(
 
     description.swap(description_without_constants);
 
-    if (compile_sort_description)
-        compileSortDescriptionIfNeeded(description, sort_description_types);
+    compileSortDescriptionIfNeeded(description, sort_description_types);
 }
 
 SortingTransform::~SortingTransform() = default;

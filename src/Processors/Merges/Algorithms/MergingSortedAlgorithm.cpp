@@ -14,7 +14,6 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     Block header_,
     size_t num_inputs,
     SortDescription description_,
-    bool compile_sort_descriptor,
     size_t max_block_size,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
@@ -37,8 +36,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
     }
 
-    if (compile_sort_descriptor)
-        compileSortDescriptionIfNeeded(description, sort_description_types);
+    compileSortDescriptionIfNeeded(description, sort_description_types);
 }
 
 void MergingSortedAlgorithm::addInput()

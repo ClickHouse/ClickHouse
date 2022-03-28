@@ -98,6 +98,8 @@ class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
     void * compiled_sort_description = nullptr;
+    bool compile_sort_description = false;
+    size_t min_count_to_compile_sort_description = 3;
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
 };
 
