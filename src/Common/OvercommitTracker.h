@@ -95,7 +95,7 @@ private:
     {
         NONE,      // Hard limit is not reached, there is no selected query to kill.
         SELECTED,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
-        RUNNING,   // Hard limit is reached, selected query has started the proccess of cancellation.
+        RUNNING,   // Hard limit is reached, selected query has started the process of cancellation.
     };
 
     QueryCancellationState cancellation_state;
