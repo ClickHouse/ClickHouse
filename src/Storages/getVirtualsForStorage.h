@@ -1,5 +1,5 @@
+#pragma once
 #include <Core/NamesAndTypes.h>
-
 
 namespace DB
 {
