@@ -133,7 +133,7 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, bool is_secure_ = false);
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -146,8 +146,6 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
-
-    bool is_secure = false;
 
     String client_name;
     UInt64 client_version_major = 0;
