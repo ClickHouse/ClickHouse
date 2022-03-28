@@ -407,7 +407,10 @@ def main():
         pr_info = PRInfo(need_changed_files=True)
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
-    logging.info("Has changed images %s", ", ".join([im.path for im in changed_images]))
+    if changed_images:
+        logging.info(
+            "Has changed images: %s", ", ".join([im.path for im in changed_images])
+        )
 
     image_versions, result_version = gen_versions(pr_info, args.suffix)
 
