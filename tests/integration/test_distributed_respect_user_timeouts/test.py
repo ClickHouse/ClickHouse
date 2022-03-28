@@ -103,7 +103,6 @@ def started_cluster(request):
         main_configs += [os.path.join(request.param, "server.key")]
         main_configs += [os.path.join(request.param, "dhparam.pem")]
         main_configs += [os.path.join(request.param, "config.d/ssl_conf.xml")]
-
     user_configs = [os.path.join(request.param, "users.d/set_distributed_defaults.xml")]
     for name in NODES:
         NODES[name] = cluster.add_instance(
