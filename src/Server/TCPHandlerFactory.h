@@ -19,6 +19,7 @@ private:
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
     std::string server_display_name;
+    bool is_secure = false;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -35,6 +36,7 @@ public:
     TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_)
         : server(server_), parse_proxy_protocol(parse_proxy_protocol_)
         , log(&Poco::Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
+        , is_secure(secure_)
     {
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
@@ -45,7 +47,7 @@ public:
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
 
-            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name);
+            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name, is_secure);
         }
         catch (const Poco::Net::NetException &)
         {
