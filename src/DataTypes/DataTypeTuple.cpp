@@ -206,7 +206,7 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
         return false;
 
     for (size_t i = 0; i < size; ++i)
-        if (!elems[i]->equals(*rhs_tuple.elems[i]))
+        if (!elems[i]->equals(*rhs_tuple.elems[i]) || names[i] != rhs_tuple.names[i])
             return false;
 
     return true;
