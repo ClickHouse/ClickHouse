@@ -11,3 +11,7 @@ SELECT '---------NOT trigger fuse--------';
 SELECT sum(a), avg(b) from fuse_tbl;
 EXPLAIN SYNTAX SELECT sum(a), avg(b) from fuse_tbl;
 DROP TABLE fuse_tbl;
+
+SELECT '--------Decimal test case--------';
+SELECT sum(x), count(x), avg(x) FROM (SELECT number::Decimal32(0) AS x FROM numbers(0)) SETTINGS optimize_syntax_fuse_functions = 1, optimize_fuse_sum_count_avg = 1;
+EXPLAIN SYNTAX SELECT sum(x), count(x), avg(x) FROM (SELECT number::Decimal32(0) AS x FROM numbers(0)) SETTINGS optimize_syntax_fuse_functions = 1, optimize_fuse_sum_count_avg = 1;

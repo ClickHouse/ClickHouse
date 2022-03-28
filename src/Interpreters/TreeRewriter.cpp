@@ -333,23 +333,16 @@ void replaceWithSumCount(String column_name, ASTFunction & func)
 {
     auto func_base = makeASTFunction("sumCount", std::make_shared<ASTIdentifier>(column_name));
     auto exp_list = std::make_shared<ASTExpressionList>();
-    if (func.name == "sum" || func.name == "count")
+    UInt8 idx = 1;
+    if (func.name == "count" || func.name == "avg")
     {
-        /// Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
-        UInt8 idx = (func.name == "sum" ? 1 : 2);
-        func.name = "tupleElement";
-        exp_list->children.push_back(func_base);
-        exp_list->children.push_back(std::make_shared<ASTLiteral>(idx));
+        /// Rewrite "count" to sumCount().2, rewrite "avg" to sumCount().3
+        idx = (func.name == "count" ? 2 : 3);
     }
-    else
-    {
-        /// Rewrite "avg" to sumCount().1 / sumCount().2
-        auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
-        auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
-        func.name = "divide";
-        exp_list->children.push_back(new_arg1);
-        exp_list->children.push_back(new_arg2);
-    }
+    func.name = "tupleElement";
+    exp_list->children.push_back(func_base);
+    exp_list->children.push_back(std::make_shared<ASTLiteral>(idx));
+
     func.arguments = exp_list;
     func.children.push_back(func.arguments);
 }

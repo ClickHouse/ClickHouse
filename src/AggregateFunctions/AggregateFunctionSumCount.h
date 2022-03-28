@@ -19,7 +19,10 @@ public:
     DataTypePtr getReturnType() const override
     {
         auto second_elem = std::make_shared<DataTypeUInt64>();
-        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(), std::move(second_elem)});
+        return std::make_shared<DataTypeTuple>(DataTypes{
+            getReturnTypeFirstElement(),
+            std::move(second_elem),
+            std::make_shared<DataTypeNumber<Float64>>()});
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final
@@ -29,6 +32,13 @@ public:
 
         assert_cast<ColumnUInt64 &>((assert_cast<ColumnTuple &>(to)).getColumn(1)).getData().push_back(
             this->data(place).denominator);
+
+        if constexpr (is_decimal<T>)
+            assert_cast<ColumnVector<Float64> &>((assert_cast<ColumnTuple &>(to)).getColumn(2)).getData().push_back(
+                this->data(place).divideIfAnyDecimal(scale, 0));
+        else
+            assert_cast<ColumnVector<Float64> &>((assert_cast<ColumnTuple &>(to)).getColumn(2)).getData().push_back(
+                this->data(place).divide());
     }
 
     String getName() const final { return "sumCount"; }

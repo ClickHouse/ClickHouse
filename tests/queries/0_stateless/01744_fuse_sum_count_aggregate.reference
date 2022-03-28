@@ -10,3 +10,15 @@ SELECT
     sum(a),
     avg(b)
 FROM fuse_tbl
+--------Decimal test case--------
+0	0	nan
+SELECT
+    sumCount(x).1,
+    sumCount(x).2,
+    sumCount(x).3
+FROM
+(
+    SELECT CAST(number, \'Decimal32(0)\') AS x
+    FROM numbers(0)
+)
+SETTINGS optimize_syntax_fuse_functions = 1, optimize_fuse_sum_count_avg = 1
