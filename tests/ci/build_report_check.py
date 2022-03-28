@@ -151,7 +151,11 @@ if __name__ == "__main__":
     some_builds_are_missing = len(build_reports_map) < len(reports_order)
 
     if some_builds_are_missing:
-        logging.info("Expected to get %s build results, got %s", len(reports_order), len(build_reports_map))
+        logging.info(
+            "Expected to get %s build results, got %s",
+            len(reports_order),
+            len(build_reports_map),
+        )
     else:
         logging.info("Got exactly %s builds", len(build_reports_map))
 
