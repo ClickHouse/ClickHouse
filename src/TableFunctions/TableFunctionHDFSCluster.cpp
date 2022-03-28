@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_GET;
 }
 
 
@@ -63,7 +64,7 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
     cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (!context->tryGetCluster(cluster_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot get {} cluster", cluster_name);
+        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
 
      /// Just cut the first arg (cluster_name) and try to parse other table function arguments as is
     args.erase(args.begin());
