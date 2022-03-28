@@ -1,3 +1,5 @@
+#pragma once
+
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
