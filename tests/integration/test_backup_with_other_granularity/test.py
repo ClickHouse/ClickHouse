@@ -199,6 +199,7 @@ def test_backup_from_old_version_config(started_cluster):
     node3.query("DROP TABLE source_table")
     node3.query("DROP TABLE dest_table")
 
+
 def test_backup_and_alter(started_cluster):
     node4.query(
         "CREATE DATABASE test ENGINE=Ordinary"
