@@ -15,6 +15,8 @@
 
 #include <Parsers/IAST.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -227,14 +229,17 @@ void validateArraySizes(const Block & block)
 }
 
 
-std::unordered_set<String> getAllTableNames(const Block & block)
+std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case)
 {
     std::unordered_set<String> nested_table_names;
-    for (auto & name : block.getNames())
+    for (const auto & name : block.getNames())
     {
         auto nested_table_name = Nested::extractTableName(name);
+        if (to_lower_case)
+            boost::to_lower(nested_table_name);
+
         if (!nested_table_name.empty())
-            nested_table_names.insert(nested_table_name);
+            nested_table_names.insert(std::move(nested_table_name));
     }
     return nested_table_names;
 }
