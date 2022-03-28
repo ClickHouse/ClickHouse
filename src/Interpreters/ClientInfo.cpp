@@ -70,6 +70,8 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
             writeVarUInt(client_version_patch, out);
     }
 
+    writeBinary(static_cast<UInt8>(is_secure), out);
+
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
         if (client_trace_context.trace_id != UUID())
@@ -163,6 +165,12 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
             readVarUInt(client_version_patch, in);
         else
             client_version_patch = client_tcp_protocol_version;
+    }
+
+    {
+        UInt8 value;
+        readBinary(value, in);
+        is_secure = value;
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
