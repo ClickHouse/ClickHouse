@@ -763,10 +763,9 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
-static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, DataTypePtr type, ContextPtr context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
 {
     FillColumnDescription descr;
-    descr.type = type;
 
     if (order_by_elem.fill_from)
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
@@ -811,7 +810,7 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     return descr;
 }
 
-static SortDescription getSortDescription(const ASTSelectQuery & query, Block block, ContextPtr context)
+static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -823,11 +822,9 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, Block bl
         std::shared_ptr<Collator> collator;
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
-
         if (order_by_elem.with_fill)
         {
-            FillColumnDescription fill_desc =
-                getWithFillDescription(order_by_elem, block.getByName(order_by_elem.children.front()->getColumnName()).type, context);
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
@@ -837,34 +834,23 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, Block bl
     return order_descr;
 }
 
-static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery & query, Block block, ContextPtr context)
+static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery & query, Block block, const Aliases & aliases, ContextPtr context)
 {
     InterpolateDescriptionPtr interpolate_descr;
     if (query.interpolate())
     {
-        std::map<size_t, std::pair<ColumnWithTypeAndName, ASTPtr>> position_map;
-        for (const auto & elem : query.interpolate()->children)
-        {
-            auto interpolate = elem->as<ASTInterpolateElement &>();
-            ColumnWithTypeAndName *block_column = block.findByName(interpolate.column->getColumnName());
-            if (!block_column)
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Missing column '{}' as an INTERPOLATE expression target", interpolate.column->getColumnName());
-
-            size_t position = block.getPositionByName(interpolate.column->getColumnName());
-            position_map[position] = {
-                ColumnWithTypeAndName(block_column->type, block_column->name),
-                interpolate.expr->clone()
-            };
-
-        }
-
         ColumnsWithTypeAndName columns;
         ASTPtr exprs = std::make_shared<ASTExpressionList>();
-        for (auto & p : position_map)
+        for (const auto & elem : query.interpolate()->children)
         {
-            columns.emplace_back(std::move(p.second.first));
-            exprs->children.emplace_back(std::move(p.second.second));
+            const auto & interpolate = elem->as<ASTInterpolateElement &>();
+            ColumnWithTypeAndName *block_column = block.findByName(interpolate.column);
+            if (!block_column)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+
+            columns.emplace_back(block_column->type, block_column->name);
+            exprs->children.emplace_back(interpolate.expr->clone());
         }
 
         auto syntax_result = TreeRewriter(context).analyze(exprs, block.getNamesAndTypesList());
@@ -874,7 +860,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(const ASTSelectQuery 
             columns, ActionsDAG::MatchColumnsMode::Position, true);
         ActionsDAGPtr mergeDAG = ActionsDAG::merge(std::move(*actions->getActionsDAG().clone()), std::move(*convDAG));
 
-        interpolate_descr = std::make_shared<InterpolateDescription>(std::make_shared<ExpressionActions>(mergeDAG));
+        interpolate_descr = std::make_shared<InterpolateDescription>(std::make_shared<ExpressionActions>(mergeDAG), aliases);
     }
 
     return interpolate_descr;
@@ -1401,7 +1387,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool has_withfill = false;
             if (query.orderBy())
             {
-                SortDescription order_descr = getSortDescription(query, source_header, context);
+                SortDescription order_descr = getSortDescription(query, context);
                 for (auto & desc : order_descr)
                     if (desc.with_fill)
                     {
@@ -1993,7 +1979,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         // TODO Do we need a projection variant for this field?
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, source_header, context),
+                        getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
                 }
                 else
@@ -2001,7 +1987,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, source_header, context),
+                        getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
                 }
             }
@@ -2390,7 +2376,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription output_order_descr = getSortDescription(query, source_header, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     if (input_sorting_info)
@@ -2428,7 +2414,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const std::string & description)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, source_header,context);
+    SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     executeMergeSorted(query_plan, order_descr, limit, description);
@@ -2532,7 +2518,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, source_header, context);
+        SortDescription order_descr = getSortDescription(query, context);
         SortDescription fill_descr;
         for (auto & desc : order_descr)
         {
@@ -2543,7 +2529,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         if (fill_descr.empty())
             return;
 
-        InterpolateDescriptionPtr interpolate_descr = getInterpolateDescription(query, source_header, context);
+        InterpolateDescriptionPtr interpolate_descr = getInterpolateDescription(query, result_header, syntax_analyzer_result->aliases, context);
         auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }
@@ -2582,7 +2568,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         {
             if (!query.orderBy())
                 throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, source_header, context);
+            order_descr = getSortDescription(query, context);
         }
 
         auto limit = std::make_unique<LimitStep>(

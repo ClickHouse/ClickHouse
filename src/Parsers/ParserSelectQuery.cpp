@@ -13,6 +13,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -265,7 +266,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 {
                     std::unordered_map<std::string, ASTPtr> columns;
                     for (const auto & elem : select_expression_list->children)
-                        columns[elem->getColumnName()] = elem;
+                    {
+                        std::string alias = elem->tryGetAlias();
+                        columns[alias.empty() ? elem->getColumnName() : alias] = elem;
+                    }
+
                     for (const auto & elem : order_expression_list->children)
                         if (elem->as<ASTOrderByElement>()->with_fill)
                             columns.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
@@ -273,8 +278,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     for (const auto & [column, ast] : columns)
                     {
                         auto elem = std::make_shared<ASTInterpolateElement>();
-                        elem->column = ast;
-                        elem->expr = ast;
+                        elem->column = column;
+                        elem->expr = std::make_shared<ASTIdentifier>(column);
                         interpolate_expression_list->children.push_back(elem);
                     }
                 }

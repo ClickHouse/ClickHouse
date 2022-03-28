@@ -2335,7 +2335,7 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         expr = ident;
 
     auto elem = std::make_shared<ASTInterpolateElement>();
-    elem->column = ident;
+    elem->column = ident->getColumnName();
     elem->expr = expr;
 
     node = elem;

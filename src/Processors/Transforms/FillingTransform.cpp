@@ -188,7 +188,7 @@ FillingTransform::FillingTransform(
         if (interpolate_description)
             if (const auto & p = interpolate_description->required_columns_map.find(column.name);
                 p != interpolate_description->required_columns_map.end())
-                    interpolate_description->input_positions.emplace_back(idx, NameAndTypePair(column.name, p->second));
+                    interpolate_description->input_positions.emplace_back(idx, p->second);
 
         if (!is_fill_column[idx])
         {
@@ -250,7 +250,8 @@ void FillingTransform::transform(Chunk & chunk)
 
     Block interpolate_block;
 
-    auto interpolate = [&]() {
+    auto interpolate = [&]()
+    {
         if (interpolate_description)
         {
             interpolate_block.clear();
@@ -267,7 +268,7 @@ void FillingTransform::transform(Chunk & chunk)
                         if (last_row.size() > col_pos && last_row[col_pos]->size())
                             column->insertFrom(*last_row[col_pos], 0);
                         else
-                        column->insertDefault();
+                            column->insertDefault();
                     }
                     else
                         column->insertFrom(*(*res_columns)[pos], size - 1);

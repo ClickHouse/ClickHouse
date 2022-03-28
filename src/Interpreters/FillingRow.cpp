@@ -118,7 +118,7 @@ void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & int
             filling_columns[i]->insert(filling_row[i]);
     }
 
-    if(size_t size = interpolate_block.columns())
+    if (size_t size = interpolate_block.columns())
     {
         Columns columns = interpolate_block.getColumns();
         for (size_t i = 0; i < size; ++i)
