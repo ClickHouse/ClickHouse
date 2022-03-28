@@ -10,9 +10,8 @@ export JAVA_HOME=/usr
 
 bin/mapred minicluster -format -nomr -nnport 12222 &
 
-while ! curl -v --silent http://localhost:12222 2>&1 | grep 404
-do
-  echo "Trying to connect to local hdfs"
+
+while ! nc -z localhost 12222; do   
   sleep 1
 done
 
