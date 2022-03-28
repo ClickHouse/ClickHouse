@@ -116,7 +116,8 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_formats", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
+        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"is_secure", std::make_shared<DataTypeUInt8>()}
     };
 
 }
@@ -291,5 +292,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(client_info.quota_key);
     columns[i++]->insert(client_info.distributed_depth);
+
+    columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
 }
 }
