@@ -41,4 +41,7 @@ timeout $TIMEOUT bash -c show_processes_func &
 
 wait
 
+# otherwise it can be alive after test
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='SELECT * FROM numbers(600000000) FORMAT Null SETTINGS max_threads = 1'" 2> /dev/null 1> /dev/null
+
 echo "Test OK"
