@@ -8,29 +8,15 @@ from get_robot_token import get_parameter_from_ssm
 
 
 class ClickHouseHelper:
-    def __init__(self, url=None, user=None, password=None):
-        self.url2 = None
-        self.auth2 = None
-
+    def __init__(self, url=None):
         if url is None:
-            url = get_parameter_from_ssm("clickhouse-test-stat-url")
-            self.url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            self.auth2 = {
+            self.url = get_parameter_from_ssm("clickhouse-test-stat-url2")
+            self.auth = {
                 "X-ClickHouse-User": get_parameter_from_ssm(
                     "clickhouse-test-stat-login2"
                 ),
                 "X-ClickHouse-Key": "",
             }
-
-        self.url = url
-        self.auth = {
-            "X-ClickHouse-User": user
-            if user is not None
-            else get_parameter_from_ssm("clickhouse-test-stat-login"),
-            "X-ClickHouse-Key": password
-            if password is not None
-            else get_parameter_from_ssm("clickhouse-test-stat-password"),
-        }
 
     @staticmethod
     def _insert_json_str_info_impl(url, auth, db, table, json_str):
@@ -78,8 +64,6 @@ class ClickHouseHelper:
 
     def _insert_json_str_info(self, db, table, json_str):
         self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
-        if self.url2:
-            self._insert_json_str_info_impl(self.url2, self.auth2, db, table, json_str)
 
     def insert_event_into(self, db, table, event):
         event_str = json.dumps(event)
