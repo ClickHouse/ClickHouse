@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-parallel
 
 DROP TABLE IF EXISTS merge_tree_pk;
 
