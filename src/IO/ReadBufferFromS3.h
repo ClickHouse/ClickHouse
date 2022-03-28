@@ -63,7 +63,7 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    Range getRemainingReadRange() const override { return Range{.left = static_cast<size_t>(offset), .right = read_until_position - 1}; }
+    Range getRemainingReadRange() const override;
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 

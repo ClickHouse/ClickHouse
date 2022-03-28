@@ -34,7 +34,7 @@ public:
 
         Range range{from, to};
         from = to;
-        return std::move(range);
+        return range;
     }
 
 private:
