@@ -307,7 +307,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     const bool object_too_small = object_size < download_thread_num * download_buffer_size;
     if (!use_parallel_download || object_too_small)
     {
-        LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading object of size {} from S3 in single thread", object_size);
+        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
         return std::make_unique<ReadBufferFromS3>(client, bucket, key, max_single_read_retries, getContext()->getReadSettings());
     }
 
@@ -315,29 +315,20 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
 
     if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
     {
-        LOG_WARNING(
-            &Poco::Logger::get("StorageS3Source"),
-            "Downloading buffer {} bytes too small, set at least {} bytes",
-            download_buffer_size,
-            DBMS_DEFAULT_BUFFER_SIZE);
+        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
         download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
         client, bucket, key, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
     LOG_TRACE(
-        &Poco::Logger::get("StorageS3Source"),
-        "Downloading from S3 in {} threads. Object size: {}, Range size: {}.",
-        download_thread_num,
-        object_size,
-        download_buffer_size);
+        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
 
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
         ? CurrentThread::get().getThreadGroup()
         : MainThreadStatus::getInstance().getThreadGroup();
 
-    ContextPtr query_context
-        = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+    ContextPtr query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
 
     auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
     {

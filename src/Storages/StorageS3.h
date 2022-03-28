@@ -107,6 +107,8 @@ private:
     std::shared_ptr<IteratorWrapper> file_iterator;
     size_t download_thread_num = 1;
 
+    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
+
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
 
