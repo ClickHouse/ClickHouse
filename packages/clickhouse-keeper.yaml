@@ -14,6 +14,8 @@ conflicts:
 - clickhouse-server
 depends:
 - adduser
+suggests:
+- clickhouse-keeper-dbg
 
 maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
 description: |
