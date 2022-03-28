@@ -962,18 +962,29 @@ public:
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                const auto & column = *block.getByPosition(right_indexes[j]).column;
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get()); nullable_col && !column.isNullable())
-                    nullable_col->insertFromNotNullable(column, row_num);
+                auto column_from_block = block.getByPosition(right_indexes[j]);
+                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                {
+                    JoinCommon::changeLowCardinalityInplace(column_from_block);
+                }
+
+                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get());
+                    nullable_col && !column_from_block.column->isNullable())
+                    nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
                 else
-                    columns[j]->insertFrom(column, row_num);
+                    columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
         else
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+                auto column_from_block = block.getByPosition(right_indexes[j]);
+                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                {
+                    JoinCommon::changeLowCardinalityInplace(column_from_block);
+                }
+                columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
     }
@@ -1013,6 +1024,7 @@ private:
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
+
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);

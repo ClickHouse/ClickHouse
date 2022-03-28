@@ -238,7 +238,7 @@ def _update_dockerfile(repo_path: str, version: ClickHouseVersion):
 def update_version_local(repo_path, version, version_type="testing"):
     update_contributors()
     version.with_description(version_type)
-    update_cmake_version(version, version_type)
+    update_cmake_version(version)
     _update_changelog(repo_path, version)
     _update_dockerfile(repo_path, version)
 
