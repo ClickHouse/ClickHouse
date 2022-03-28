@@ -10,6 +10,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Interpreters/Aliases.h>
 
 
 namespace DB
@@ -18,10 +19,11 @@ namespace DB
 /// Interpolate description
 struct InterpolateDescription
 {
-    explicit InterpolateDescription(ExpressionActionsPtr actions);
+    explicit InterpolateDescription(ExpressionActionsPtr actions, const Aliases & aliases);
 
     ExpressionActionsPtr actions;
-    std::unordered_map<std::string, DataTypePtr> required_columns_map; /// input columns
+
+    std::unordered_map<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
     std::unordered_set<std::string> result_columns_map; /// result block columns
 
     /// filled externally in transform

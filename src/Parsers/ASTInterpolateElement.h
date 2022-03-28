@@ -9,7 +9,7 @@ namespace DB
 class ASTInterpolateElement : public IAST
 {
 public:
-    ASTPtr column;
+    String column;
     ASTPtr expr;
 
     String getID(char) const override { return "InterpolateElement"; }

@@ -25,8 +25,6 @@ class Block;
 
 struct FillColumnDescription
 {
-    DataTypePtr type;
-
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
