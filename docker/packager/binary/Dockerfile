@@ -67,6 +67,7 @@ RUN apt-get install \
         build-essential \
         libc6 \
         libc6-dev \
+        bsd-compat-headers \
         --yes
 
 # This symlink required by gcc to find lld compiler
