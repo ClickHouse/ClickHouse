@@ -1,13 +1,12 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsConversion.h>
-#include <Functions/FunctionsLogical.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
-#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -26,7 +25,7 @@ namespace
 // A helper function to simplify comparisons of valid YYYY-MM-DD values for <,>,=
 inline constexpr Int64 YearMonthDayToSingleInt(Int64 year, Int64 month, Int64 day)
 {
-    return year*512 + month*32 + day;
+    return year * 512 + month * 32 + day;
 }
 
 // Common implementation for makeDate, makeDate32
@@ -67,9 +66,9 @@ public:
         for (size_t i = 0; i < argument_names.size(); ++i)
         {
             DataTypePtr argument_type = arguments[i];
-            if (!isNumber(argument_type) && !isStringOrFixedString(argument_type))
-                throw Exception("Argument '" + std::string(argument_names[i]) + "' for function " + getName() + " must be number",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (!isNumber(argument_type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
         }
 
         return std::make_shared<typename Traits::ReturnDataType>();
@@ -77,36 +76,27 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat64>();
+        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
         Columns converted_arguments;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        converted_arguments.reserve(arguments.size());
+        for (const auto & argument : arguments)
         {
-            const auto & argument_type = arguments[i].type;
-            ColumnPtr argument_column = arguments[i].column->convertToFullColumnIfConst();
-
-            if (converted_argument_type->equals(*argument_type))
-                converted_arguments.push_back(argument_column);
-            else if (isNumber(argument_type))
-                converted_arguments.push_back(convert_to_number_func.executeImpl(
-                    {ColumnWithTypeAndName(argument_column, argument_type, "")}, converted_argument_type, input_rows_count));
-            else if (isStringOrFixedString(argument_type))
-                converted_arguments.push_back(parse_number_func.executeImpl(
-                    {ColumnWithTypeAndName(argument_column, argument_type, "")}, converted_argument_type, input_rows_count));
-            else
-                throw Exception("Argument '" + std::string(argument_names[i]) + "' for function " + getName() + " must be number",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            ColumnPtr argument_column = castColumn(argument, converted_argument_type);
+            argument_column = argument_column->convertToFullColumnIfConst();
+            converted_arguments.push_back(argument_column);
         }
 
         auto res_column = Traits::ReturnColumnType::create(input_rows_count);
         auto & result_data = res_column->getData();
 
-        const auto & year_data = typeid_cast<const ColumnFloat64 &>(*converted_arguments[0]).getData();
-        const auto & month_data = typeid_cast<const ColumnFloat64 &>(*converted_arguments[1]).getData();
-        const auto & day_data = typeid_cast<const ColumnFloat64 &>(*converted_arguments[2]).getData();
+        const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
+        const auto & month_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
+        const auto & day_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[2]).getData();
 
         const auto & date_lut = DateLUT::instance();
 
-        for (size_t i = 0; i < input_rows_count; ++i) {
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
             const auto year = year_data[i];
             const auto month = month_data[i];
             const auto day = day_data[i];
@@ -115,8 +105,8 @@ public:
 
             if (year >= Traits::MIN_YEAR &&
                 year <= Traits::MAX_YEAR &&
-                month <= 12 &&
-                day <= 31 &&
+                month >= 1 && month <= 12 &&
+                day >= 1 && day <= 31 &&
                 YearMonthDayToSingleInt(year, month, day) <= Traits::MAX_DATE)
             {
                 day_num = date_lut.makeDayNum(year, month, day);
@@ -127,11 +117,6 @@ public:
 
         return res_column;
     }
-
-private:
-    FunctionToFloat64 convert_to_number_func;
-    FunctionToFloat64OrZero parse_number_func;
-    FunctionOr or_func;
 };
 
 // makeDate(year, month, day)
