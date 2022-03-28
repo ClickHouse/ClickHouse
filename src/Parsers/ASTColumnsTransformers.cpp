@@ -1,19 +1,22 @@
+#include <Parsers/ASTColumnsTransformers.h>
+
 #include <map>
-#include "ASTColumnsTransformers.h"
+#include <stack>
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/SipHash.h>
-#include <Common/quoteString.h>
-#include <IO/Operators.h>
 #include <re2/re2.h>
-#include <stack>
+#include <Common/SipHash.h>
+#include <Common/format.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -21,25 +24,14 @@ namespace ErrorCodes
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 {
-    if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
-    {
-        apply->transform(nodes);
-    }
-    else if (const auto * except = transformer->as<ASTColumnsExceptTransformer>())
-    {
-        except->transform(nodes);
-    }
-    else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
-    {
-        replace->transform(nodes);
-    }
+    dynamic_cast<IASTColumnsTransformer &>(*transformer).transform(nodes);
 }
 
 void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
 
-    if (!column_name_prefix.empty())
+    if (column_name_prefix)
         settings.ostr << "(";
 
     if (lambda)
@@ -54,8 +46,8 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
             parameters->formatImpl(settings, state, frame);
     }
 
-    if (!column_name_prefix.empty())
-        settings.ostr << ", '" << column_name_prefix << "')";
+    if (column_name_prefix)
+        settings.ostr << ", '" << *column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
@@ -100,14 +92,15 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             function->parameters = parameters;
             column = function;
         }
-        if (!column_name_prefix.empty())
-            column->setAlias(column_name_prefix + name);
+        if (column_name_prefix)
+            column->setAlias(*column_name_prefix + name);
     }
 }
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ")
+                  << (settings.hilite ? hilite_none : "");
 
     if (children.size() > 1)
         settings.ostr << "(";
@@ -170,12 +163,10 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (is_strict && !expected_columns.empty())
     {
         String expected_columns_str;
-        std::for_each(expected_columns.begin(), expected_columns.end(),
-            [&](String x) { expected_columns_str += (" " + x) ; });
+        std::for_each(expected_columns.begin(), expected_columns.end(), [&](String x) { expected_columns_str += (" " + x); });
 
         throw Exception(
-            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 }
 
@@ -203,7 +194,8 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ")
+                  << (settings.hilite ? hilite_none : "");
 
     if (children.size() > 1)
         settings.ostr << "(";
@@ -278,17 +270,52 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     if (is_strict && !replace_map.empty())
     {
         String expected_columns;
-        for (auto & elem: replace_map)
+        for (auto & elem : replace_map)
         {
             if (!expected_columns.empty())
                 expected_columns += ", ";
             expected_columns += elem.first;
         }
         throw Exception(
-            "Columns transformer REPLACE expects following column(s) : " + expected_columns,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            "Columns transformer REPLACE expects following column(s) : " + expected_columns, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
+}
 
+void ASTColumnsRenameTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME"
+                  << " " << (settings.hilite ? hilite_none : "");
+    settings.ostr << quoteString(rename_format);
+}
+
+void ASTColumnsRenameTransformer::transform(ASTs & nodes) const
+{
+    if (rename_format.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns transformer RENAME expects non-empty rename format");
+
+    Format::IndexPositions index_positions;
+    std::vector<String> substrings;
+    Format::init(rename_format, 2, {}, index_positions, substrings);
+    std::vector<String> column_names;
+    size_t idx = 0;
+    size_t num_pos = index_positions.size();
+    for (auto & node : nodes)
+    {
+        String name;
+        if (const auto * id = node->as<ASTIdentifier>())
+            name = id->shortName();
+        else
+            name = node->getColumnName();
+        std::vector<String> args = {name, std::to_string(idx++)};
+        WriteBufferFromOwnString out;
+        writeString(substrings.front(), out);
+        for (auto i = 0ul; i < num_pos; ++i)
+        {
+            writeString(args[index_positions[i]], out);
+            writeString(substrings[i + 1], out);
+        }
+        node->setAlias(out.str());
+    }
 }
 
 }

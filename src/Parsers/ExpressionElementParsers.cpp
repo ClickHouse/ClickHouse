@@ -1824,6 +1824,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword apply("APPLY");
     ParserKeyword except("EXCEPT");
     ParserKeyword replace("REPLACE");
+    ParserKeyword rename("RENAME");
     ParserKeyword as("AS");
     ParserKeyword strict("STRICT");
 
@@ -1886,7 +1887,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             }
         }
 
-        String column_name_prefix;
+        std::optional<String> column_name_prefix;
         if (with_open_round_bracket && pos->type == TokenType::Comma)
         {
             ++pos;
@@ -2015,6 +2016,22 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto res = std::make_shared<ASTColumnsReplaceTransformer>();
         res->children = std::move(replacements);
         res->is_strict = is_strict;
+        node = std::move(res);
+        return true;
+    }
+    else if (allowed_transformers.isSet(ColumnTransformer::RENAME) && rename.ignore(pos, expected))
+    {
+        /// RENAME is a terminal column transformer
+        allowed_transformers = {};
+
+        ParserStringLiteral parser_string_literal;
+        ASTPtr ast_rename_format;
+        if (!parser_string_literal.parse(pos, ast_rename_format, expected))
+            return false;
+
+        String column_rename_format = ast_rename_format->as<ASTLiteral &>().value.get<const String &>();
+        auto res = std::make_shared<ASTColumnsRenameTransformer>();
+        res->rename_format = std::move(column_rename_format);
         node = std::move(res);
         return true;
     }

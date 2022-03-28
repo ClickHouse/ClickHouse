@@ -90,3 +90,27 @@ SELECT
     quantiles(0.5)(j),
     quantiles(0.5)(k)
 FROM columns_transformers
+SELECT
+    sum(i) AS i,
+    sum(j) AS j,
+    sum(k) AS k
+FROM columns_transformers
+SELECT
+    sum(i) AS sum_i,
+    sum(j) AS sum_j,
+    sum(k) AS sum_k
+FROM columns_transformers
+SELECT
+    (sum(i) AS i) - 1 AS `sum_minus(sum(i), 1)_minus_one`,
+    (sum(j) AS j) - 1 AS `sum_minus(sum(j), 1)_minus_one`,
+    (sum(k) AS k) - 1 AS `sum_minus(sum(k), 1)_minus_one`
+FROM columns_transformers
+SELECT
+    (sum(i) AS i) - 1 AS `sum_minus(sum(i), 1)_minus_one`,
+    (sum(j) AS j) - 1 AS `sum_minus(sum(j), 1)_minus_one`,
+    (sum(k) AS k) - 1 AS `sum_minus(sum(k), 1)_minus_one`
+FROM columns_transformers
+SELECT
+    i AS col_i_0,
+    k AS col_k_1
+FROM columns_transformers

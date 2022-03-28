@@ -82,9 +82,11 @@ public:
         APPLY,
         EXCEPT,
         REPLACE,
+        RENAME,
     };
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
+    static constexpr auto AllTransformers
+        = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE, ColumnTransformer::RENAME};
 
     explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)

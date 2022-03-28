@@ -172,12 +172,12 @@ You can use the following modifiers in `SELECT` queries.
 
 ### APPLY {#apply-modifier}
 
-Allows you to invoke some function for each row returned by an outer table expression of a query.
+Allows you to invoke some function for each row returned by an outer table expression of a query. An optional string argument can be used to change the output names of each column. The result name is a concatenation of the input string and the original column name before applying the function.
 
 **Syntax:**
 
 ``` sql
-SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+SELECT <expr> APPLY( <func>[, <string_literal>] ) FROM [db.]table_name
 ```
 
 **Example:**
@@ -192,6 +192,16 @@ SELECT * APPLY(sum) FROM columns_transformers;
 ┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
 │    220 │     18 │    347 │
 └────────┴────────┴────────┘
+```
+
+``` sql
+SELECT * APPLY(sum, '') FROM columns_transformers;
+```
+
+```
+┌───i─┬──j─┬───k─┐
+│ 220 │ 18 │ 347 │
+└─────┴────┴─────┘
 ```
 
 ### EXCEPT {#except-modifier}
@@ -242,9 +252,32 @@ SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 └─────┴────┴─────┘
 ```
 
+### RENAME {#rename-modifier}
+
+Specifies the names of all columns using a string of format pattern, in which `{0}` denotes the original column name, while `{1}` denotes the ordinal index of each column.
+
+**Syntax:**
+
+``` sql
+SELECT <expr> RENAME <string_literal> FROM [db.]table_name
+```
+
+**Example:**
+
+``` sql
+SELECT * EXCEPT (i) RENAME '{0}_col_{1}' from columns_transformers;
+```
+
+```
+┌─j_col_0─┬─k_col_1─┐
+│      10 │     324 │
+│       8 │      23 │
+└─────────┴─────────┘
+```
+
 ### Modifier Combinations {#modifier-combinations}
 
-You can use each modifier separately or combine them.
+You can use each modifier separately or combine them. The RENAME modifier can only be specified at last.
 
 **Examples:**
 

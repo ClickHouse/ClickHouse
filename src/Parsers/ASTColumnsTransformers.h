@@ -39,7 +39,7 @@ public:
     ASTPtr lambda;
     String lambda_arg;
 
-    String column_name_prefix;
+    std::optional<String> column_name_prefix;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -104,6 +104,23 @@ protected:
 
 private:
     static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);
+};
+
+class ASTColumnsRenameTransformer : public IASTColumnsTransformer
+{
+public:
+    String getID(char) const override { return "ColumnsRenameTransformer"; }
+    ASTPtr clone() const override
+    {
+        auto clone = std::make_shared<ASTColumnsRenameTransformer>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+    void transform(ASTs & nodes) const override;
+
+    String rename_format;
+protected:
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }
