@@ -182,7 +182,6 @@ struct RewriteTablesVisitorData
     }
 };
 
-template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -233,8 +232,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
-    if (num_using && version <= 1)
-        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     if (num_array_join)
         throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
@@ -605,7 +602,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
-    if (!needRewrite<2>(select, table_expressions))
+    if (!needRewrite(select, table_expressions))
         return;
 
     auto & src_tables = select.tables()->children;
