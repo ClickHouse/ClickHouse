@@ -20,13 +20,13 @@ Features:
 - you can host Markdown pages - just add .md to the URL and share it;
 - you can host HTML pages - just add .html to the URL and share it;
 - browser history is used while editing for easy undo;
-- edit history is also saved in database: after you load the data,
+- edit history is also saved in the database: after you load the data,
   previous version of the data is available by clicking the "back" button in bottom right corner;
 
 ## Motivation
 
 ClickHouse is analytical database, and the usage scenario of this service
-is definitely not the most natural use case for ClickHouse.
+is definitely not the most natural for ClickHouse.
 Nevertheless, it is always important to test the system in corner cases
 and unusual scenarios to find potential flaws and to explore new possibilities.
 
@@ -51,6 +51,37 @@ This service does not use cookies.
 ## Report Abuse
 
 To report abuse, write to feedback@clickhouse.com
+DMCA violations should be reported as well.
+
+## Installation
+
+```
+CREATE TABLE paste
+(
+    fingerprint UInt32 DEFAULT reinterpretAsUInt32(unhex(fingerprint_hex)),
+    hash UInt128 DEFAULT reinterpretAsUInt128(unhex(hash_hex)),
+    prev_fingerprint UInt32 DEFAULT reinterpretAsUInt32(unhex(prev_fingerprint_hex)),
+    prev_hash UInt128 DEFAULT reinterpretAsUInt128(unhex(prev_hash_hex)),
+    content String,
+
+    size UInt32 MATERIALIZED length(content),
+    time DateTime64 MATERIALIZED now64(),
+    query_id String MATERIALIZED queryID(),
+
+    fingerprint_hex String EPHEMERAL '',
+    hash_hex String EPHEMERAL '',
+    prev_fingerprint_hex String EPHEMERAL '',
+    prev_hash_hex String EPHEMERAL '',
+
+    CONSTRAINT length CHECK length(content) < 10 * 1024 * 1024,
+    CONSTRAINT hash_is_correct CHECK sipHash128(content) = reinterpretAsFixedString(hash),
+    CONSTRAINT not_uniform_random CHECK length(content) < 10000 OR arrayReduce('entropy', extractAll(content, '.')) < 7
+    CONSTRAINT not_constant CHECK length(content) < 10000 OR arrayReduce('uniqUpTo(1)', extractAll(content, '.')) > 1
+
+    PRIMARY KEY (fingerprint, hash)
+)
+ENGINE = MergeTree
+```
 
 -->
 
@@ -334,7 +365,7 @@ back.addEventListener('click', (event) => {
 });
 
 function restore() {
-    const components = window.location.search.match(/^\?([0-9a-f]{8})\/([0-9a-f]{32})(\.md|\.html?)?/);
+    const components = window.location.search.match(/^\?([0-9a-f]{8})\/([0-9a-f]{32})(\.md|\.markdown|\.html?)?/);
     if (components) load(components[1], components[2], components[3]);
 }
 
@@ -343,35 +374,6 @@ window.onpopstate = function(event) {
 };
 
 restore();
-
-
-/*
-
-CREATE TABLE paste
-(
-    fingerprint UInt32 DEFAULT reinterpretAsUInt32(unhex(fingerprint_hex)),
-    hash UInt128 DEFAULT reinterpretAsUInt128(unhex(hash_hex)),
-    prev_fingerprint UInt32 DEFAULT reinterpretAsUInt32(unhex(prev_fingerprint_hex)),
-    prev_hash UInt128 DEFAULT reinterpretAsUInt128(unhex(prev_hash_hex)),
-    content String,
-
-    size UInt32 MATERIALIZED length(content),
-    time DateTime64 MATERIALIZED now64(),
-    query_id String MATERIALIZED queryID(),
-
-    fingerprint_hex String EPHEMERAL '',
-    hash_hex String EPHEMERAL '',
-    prev_fingerprint_hex String EPHEMERAL '',
-    prev_hash_hex String EPHEMERAL '',
-
-    CONSTRAINT length CHECK length(content) < 10 * 1024 * 1024,
-    CONSTRAINT hash_is_correct CHECK sipHash128(content) = reinterpretAsFixedString(hash),
-
-    PRIMARY KEY (fingerprint, hash)
-)
-ENGINE = MergeTree
-
-*/
 
 </script>
 </body>
