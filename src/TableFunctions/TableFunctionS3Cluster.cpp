@@ -32,7 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
 }
 
 
@@ -68,7 +68,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     configuration.cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (!context->tryGetCluster(configuration.cluster_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot get {} cluster", configuration.cluster_name);
+        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", configuration.cluster_name);
 
     /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
     ASTs clipped_args;
