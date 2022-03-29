@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: Replicated
+sidebar_position: 30
+sidebar_label: Replicated
 ---
 
 # [experimental] Replicated {#replicated}
