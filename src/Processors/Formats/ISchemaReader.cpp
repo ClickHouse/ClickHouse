@@ -130,7 +130,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
                 type = new_type;
             /// If the new type and the previous type for this column are different,
             /// we will use default type if we have it or throw an exception.
-            else if (new_type && type->getName() != new_type->getName())
+            else if (new_type && type->equals(*new_type))
             {
                 /// Check if we have Bool and Number and if allow_bools_as_numbers
                 /// is true make the result type Number
