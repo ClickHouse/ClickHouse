@@ -244,3 +244,6 @@ if __name__ == "__main__":
         state=summary_status,
         target_url=url,
     )
+
+    if summary_status == "error":
+        sys.exit(1)
