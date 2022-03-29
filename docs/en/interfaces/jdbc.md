@@ -1,6 +1,6 @@
 ---
-toc_priority: 22
-toc_title: JDBC Driver
+sidebar_position: 22
+sidebar_label: JDBC Driver
 ---
 
 # JDBC Driver {#jdbc-driver}
