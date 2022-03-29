@@ -282,7 +282,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
     , subquery_for_sets(std::make_shared<SubqueriesForSets>(std::move(subquery_for_sets_)))
-    , prepared_sets(prepared_sets_)
+    , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
 
@@ -551,7 +551,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::make_shared<SubqueriesForSets>(std::move(query_analyzer->getSubqueriesForSets()));
-        prepared_sets = query_analyzer->getPreparedSets();
+        prepared_sets = std::move(query_analyzer->getPreparedSets());
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
