@@ -1,7 +1,7 @@
 position: 100 
-label: 'Development'
+label: 'Building ClickHouse'
 collapsible: true 
 collapsed: true 
 link:
   type: generated-index
-  title: Reference
+  title: Building ClickHouse

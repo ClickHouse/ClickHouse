@@ -1,6 +1,5 @@
 ---
-toc_priority: 16
-toc_title: Recipes Dataset
+sidebar_label: Recipes Dataset
 ---
 
 # Recipes Dataset

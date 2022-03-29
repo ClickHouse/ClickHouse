@@ -1,9 +1,11 @@
 ---
-toc_priority: 16
-toc_title: Star Schema Benchmark
+sidebar_label: Star Schema Benchmark
+description:  "Dataset based on the TPC-H dbgen source. The coding style and architecture
+follows the TPCH dbgen."
 ---
 
-# Star Schema Benchmark {#star-schema-benchmark}
+# Star Schema Benchmark 
+
 
 Compiling dbgen:
 

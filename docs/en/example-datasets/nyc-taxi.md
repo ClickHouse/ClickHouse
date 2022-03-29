@@ -1,9 +1,9 @@
 ---
-toc_priority: 20
-toc_title: New York Taxi Data
+sidebar_label: New York Taxi Data
+description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
 ---
 
-# New York Taxi Data {#new-york-taxi-data}
+# New York Taxi Data 
 
 This dataset can be obtained in two ways:
 

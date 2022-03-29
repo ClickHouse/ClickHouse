@@ -1,9 +1,9 @@
 ---
-toc_priority: 15
-toc_title: Web Analytics Data
+sidebar_label: Web Analytics Data
+description: Dataset consists of two tables containing anonymized web analytics data with hits and visits
 ---
 
-# Anonymized Web Analytics Data {#anonymized-web-analytics-data}
+# Anonymized Web Analytics Data
 
 Dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
 

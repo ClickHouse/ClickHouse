@@ -188,18 +188,29 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay). These builds are not recommended for use in production environments because they are less thoroughly tested, and they also only contain a subset of ClickHouse features available.
 
--   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
-After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
+-   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
+     ```bash
+     curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
+     ```
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) 
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
+    ```
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) 
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
+    ```
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) 
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
+    ```
 
-Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed configuration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
+Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
 
-These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
+Use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 
 ### From Sources {#from-sources}
 
