@@ -206,3 +206,6 @@ echo "> Expression should be divided into two subexpressions and only one of the
 $CLICKHOUSE_CLIENT -q "
     explain select sipHash64(number) from numbers(100) order by number + 1 limit 5" |
     sed 's/ //g' | grep -o "^ *\(Expression\|Limit\|Sorting\)"
+echo "> this query should be executed without throwing an exception"
+$CLICKHOUSE_CLIENT -q "
+    select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1"

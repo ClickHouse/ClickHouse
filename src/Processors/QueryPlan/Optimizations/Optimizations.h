@@ -44,8 +44,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// Move ExpressionStep up if possible.
-/// May split ExpressionStep and lift up only part of it.
+/// Move ExpressionStep after SortingStep if possible.
+/// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
