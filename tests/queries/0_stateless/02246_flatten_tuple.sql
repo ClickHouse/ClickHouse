@@ -18,7 +18,7 @@ INSERT INTO t_flatten_object VALUES ('{"id": 1, "obj": {"k1": 1, "k2": {"k3": 2,
 INSERT INTO t_flatten_object VALUES ('{"id": 2, "obj": {"k2": {"k3": "str", "k4": [{"k6": 55}]}, "some": 42}, "s": "bar"}');
 
 SELECT toTypeName(data), toTypeName(flattenTuple(data)) FROM t_flatten_object LIMIT 1;
-SELECT untuple(flattenTuple(data)) FROM t_flatten_object;
+SELECT untuple(flattenTuple(data)) FROM t_flatten_object ORDER BY data.id;
 
 DROP TABLE IF EXISTS t_flatten_tuple;
 DROP TABLE IF EXISTS t_flatten_object;
