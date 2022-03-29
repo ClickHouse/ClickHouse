@@ -381,6 +381,9 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
+    virtual void ensureOwnership() {}
+
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
 
@@ -410,7 +413,7 @@ public:
 
     /// Returns ration of values in column, that equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
-    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0;
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;

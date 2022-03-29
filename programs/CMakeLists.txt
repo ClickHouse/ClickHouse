@@ -447,8 +447,11 @@ else ()
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
-        add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        if (NOT BUILD_STANDALONE_KEEPER)
+            add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
+            install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        endif()
+
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
@@ -456,10 +459,6 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
     endif ()
-
-    if (NOT BUILD_STRIPPED_BINARIES_PREFIX)
-        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-    endif()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
@@ -471,12 +470,13 @@ else ()
         add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
     endif()
 
-    if (BUILD_STRIPPED_BINARIES_PREFIX)
-        clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${BUILD_STRIPPED_BINARIES_PREFIX} BINARY_PATH clickhouse)
+    if (INSTALL_STRIPPED_BINARIES)
+        clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT} BINARY_PATH clickhouse)
+    else()
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT})
+        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()
-
-
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

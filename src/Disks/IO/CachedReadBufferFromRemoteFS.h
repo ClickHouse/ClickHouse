@@ -48,6 +48,8 @@ private:
 
     void predownload(FileSegmentPtr & file_segment);
 
+    bool nextImplStep();
+
     enum class ReadType
     {
         CACHED,
@@ -94,6 +96,7 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
+        __builtin_unreachable();
     }
     size_t first_offset = 0;
 };

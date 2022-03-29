@@ -103,7 +103,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
         {
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
 
-            if (remote_file_reader)
+            if (remote_file_reader && remote_file_reader->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end)
                 return remote_file_reader;
 
             remote_file_reader = remote_file_reader_creator();
@@ -167,6 +167,24 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             }
             case FileSegment::State::DOWNLOADING:
             {
+                size_t download_offset = file_segment->getDownloadOffset();
+                bool can_start_from_cache = download_offset > file_offset_of_buffer_end;
+
+                /// If file segment is being downloaded but we can already read from already downloaded part, do that.
+                if (can_start_from_cache)
+                {
+                    ///                      segment{k} state: DOWNLOADING
+                    /// cache:           [______|___________
+                    ///                         ^
+                    ///                         download_offset (in progress)
+                    /// requested_range:    [__________]
+                    ///                     ^
+                    ///                     file_offset_of_buffer_end
+
+                    read_type = ReadType::CACHED;
+                    return getCacheReadBuffer(range.left);
+                }
+
                 if (wait_download_tries++ < wait_download_max_tries)
                 {
                     download_state = file_segment->wait();
@@ -407,12 +425,34 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
             }
             else
             {
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                /// We were predownloading:
+                ///                   segment{1}
+                /// cache:         [_____|___________
+                ///                      ^
+                ///                      download_offset
+                /// requested_range:          [__________]
+                ///                           ^
+                ///                           file_offset_of_buffer_end
+                /// But space reservation failed.
+                /// So get working and internal buffer from predownload buffer, get new download buffer,
+                /// return buffer back, seek to actual position.
+                /// We could reuse predownload buffer and just seek to needed position, but for now
+                /// seek is only allowed once for ReadBufferForS3 - before call to nextImpl.
+                /// TODO: allow seek more than once with seek avoiding.
+
                 bytes_to_predownload = 0;
+                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                file_segment->completeBatchAndResetDownloader();
+
+                swap(*implementation_buffer);
+                working_buffer.resize(0);
+                position() = working_buffer.end();
+
                 implementation_buffer = getRemoteFSReadBuffer(file_segment, read_type);
+
+                swap(*implementation_buffer);
+
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
 
                 LOG_TEST(
@@ -454,6 +494,7 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
         auto download_offset = file_segment->getDownloadOffset();
         if (download_offset == file_offset_of_buffer_end)
         {
+            /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
             implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
             return true;
@@ -484,6 +525,19 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
 }
 
 bool CachedReadBufferFromRemoteFS::nextImpl()
+{
+    try
+    {
+        return nextImplStep();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Cache info: {}", getInfoForLog());
+        throw;
+    }
+}
+
+bool CachedReadBufferFromRemoteFS::nextImplStep()
 {
     if (IFileCache::shouldBypassCache())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Using cache when not allowed");
