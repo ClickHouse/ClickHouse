@@ -966,6 +966,36 @@ int Server::main(const std::vector<std::string> & /*args*/)
         fs::create_directories(path / "metadata_dropped/");
     }
 
+#if USE_ROCKSDB
+    /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
+    {
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
+        try
+        {
+            LOG_DEBUG(
+                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+#endif
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
