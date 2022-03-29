@@ -774,7 +774,7 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
 
 void CachedReadBufferFromRemoteFS::assertCacheAllowed() const
 {
-    if (IFileCache::isReadOnly() && !settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
+    if (IFileCache::shouldBypassCache() && !settings.remote_fs_read_from_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache used when not allowed");
 }
 
