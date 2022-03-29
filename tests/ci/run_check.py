@@ -8,7 +8,7 @@ from github import Github
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit, post_labels
+from commit_status_helper import get_commit, post_labels, remove_labels
 
 NAME = "Run Check (actions)"
 
@@ -235,13 +235,19 @@ if __name__ == "__main__":
 
     description_report, category = check_pr_description(pr_info)
     pr_labels = []
-    if category in MAP_CATEGORY_TO_LABEL:
+    if (
+        category in MAP_CATEGORY_TO_LABEL
+        and MAP_CATEGORY_TO_LABEL[category] not in pr_info.labels
+    ):
         pr_labels.append(MAP_CATEGORY_TO_LABEL[category])
 
     if pr_info.has_changes_in_submodules():
         pr_labels.append(SUBMODULE_CHANGED_LABEL)
+    elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
+        remove_labels(gh, pr_info, [SUBMODULE_CHANGED_LABEL])
 
-    post_labels(gh, pr_info, pr_labels)
+    if pr_labels:
+        post_labels(gh, pr_info, pr_labels)
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
         logging.info(
