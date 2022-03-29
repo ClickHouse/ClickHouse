@@ -102,4 +102,4 @@ if __name__ == "__main__":
     post_commit_status(gh, pr_info.sha, NAME, description, status, report_url)
 
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, lines, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)

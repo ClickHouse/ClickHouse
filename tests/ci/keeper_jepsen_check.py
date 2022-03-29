@@ -211,5 +211,5 @@ if __name__ == "__main__":
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_result, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, CHECK_NAME)
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
     clear_autoscaling_group()
