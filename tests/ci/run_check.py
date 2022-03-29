@@ -8,7 +8,7 @@ from github import Github
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit, post_label
+from commit_status_helper import get_commit, post_labels
 
 NAME = "Run Check (actions)"
 
@@ -22,6 +22,7 @@ OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
 FORCE_TESTS_LABEL = "force tests"
+SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
@@ -227,15 +228,20 @@ def check_pr_description(pr_info):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True)
+    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
     description_report, category = check_pr_description(pr_info)
+    pr_labels = []
     if category in MAP_CATEGORY_TO_LABEL:
-        post_label(gh, pr_info, MAP_CATEGORY_TO_LABEL[category])
+        pr_labels.append(MAP_CATEGORY_TO_LABEL[category])
 
+    if pr_info.has_changes_in_submodules():
+        pr_labels.append(SUBMODULE_CHANGED_LABEL)
+
+    post_labels(gh, pr_info, pr_labels)
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
         logging.info(

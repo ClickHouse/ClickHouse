@@ -61,7 +61,8 @@ def post_commit_status_to_file(file_path, description, state, report_url):
         out.writerow([state, report_url, description])
 
 
-def post_label(gh, pr_info, label_name):
+def post_labels(gh, pr_info, labels_names):
     repo = gh.get_repo(GITHUB_REPOSITORY)
     pull_request = repo.get_pull(pr_info.number)
-    pull_request.add_to_labels(label_name)
+    for label in labels_names:
+        pull_request.add_to_labels(label)
