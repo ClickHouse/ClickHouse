@@ -8,7 +8,7 @@ from get_robot_token import get_parameter_from_ssm
 
 
 class ClickHouseHelper:
-    def __init__(self, url=None):
+    def __init__(self, url=None, user=None, password=None):
         if url is None:
             self.url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
