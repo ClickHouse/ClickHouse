@@ -8,21 +8,13 @@ from get_robot_token import get_parameter_from_ssm
 
 class ClickHouseHelper:
     def __init__(self, url=None, user=None, password=None):
-        self.url2 = None
-        self.auth2 = None
-
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
-            self.url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            self.auth2 = {
-                'X-ClickHouse-User': get_parameter_from_ssm("clickhouse-test-stat-login2"),
-                'X-ClickHouse-Key': ''
-            }
 
         self.url = url
         self.auth = {
-            'X-ClickHouse-User': user if user is not None else get_parameter_from_ssm("clickhouse-test-stat-login"),
-            'X-ClickHouse-Key': password if password is not None else get_parameter_from_ssm("clickhouse-test-stat-password")
+            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
+            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password")
         }
 
     @staticmethod
@@ -166,9 +158,9 @@ def mark_flaky_tests(clickhouse_helper, check_name, test_results):
             AND pull_request_number = 0
         """.format(check_name=check_name)
 
-        tests_data = clickhouse_helper.select_json_each_row('gh-data', query)
-        master_failed_tests = {row['test_name'] for row in tests_data}
-        logging.info("Found flaky tests: %s", ', '.join(master_failed_tests))
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
+        master_failed_tests = {row["test_name"] for row in tests_data}
+        logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
         for test_result in test_results:
             if test_result[1] == 'FAIL' and test_result[0] in master_failed_tests:
