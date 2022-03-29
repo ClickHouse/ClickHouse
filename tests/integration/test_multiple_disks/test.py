@@ -846,9 +846,10 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize(
-    "name,engine",
+    "name,engine,use_metadata_cache",
     [
-        pytest.param("altering_mt", "MergeTree()", id="mt"),
+        pytest.param("altering_mt", "MergeTree()", "false", id="mt"),
+        pytest.param("altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
         # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
         # SYSTEM STOP MERGES doesn't disable merges assignments
     ],
@@ -1126,26 +1127,13 @@ def produce_alter_move(node, name):
 
 
 @pytest.mark.parametrize(
-    "name,engine,use_metadata_cache",
+    "name,engine",
     [
-        pytest.param("concurrently_altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param(
-            "concurrently_altering_mt",
-            "MergeTree()",
-            "true",
-            id="mt_use_metadata_cache",
-        ),
+        pytest.param("concurrently_altering_mt", "MergeTree()", id="mt"),
         pytest.param(
             "concurrently_altering_replicated_mt",
             "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",
-            "false",
             id="replicated",
-        ),
-        pytest.param(
-            "concurrently_altering_replicated_mt",
-            "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",
-            "true",
-            id="replicated_use_metadata_cache",
         ),
     ],
 )
