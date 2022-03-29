@@ -326,17 +326,19 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /// function arguments
             auto exp_list = std::make_shared<ASTExpressionList>();
 
-            ASTPtr elem;
             SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
-            if (allow_any_all_operators && ParserKeyword("ANY").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ANY;
-            else if (allow_any_all_operators && ParserKeyword("ALL").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ALL;
-            else if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
-                return false;
+            if (ParserKeyword("ANY").ignore(pos, expected))
+                 subquery_function_type = SubqueryFunctionType::ANY;
+            else if (ParserKeyword("ALL").ignore(pos, expected))
+                 subquery_function_type = SubqueryFunctionType::ALL;
 
-            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
-                return false;
+            ASTPtr elem;
+            if (!ParserSubquery().parse(pos, elem, expected))
+            {
+                subquery_function_type = SubqueryFunctionType::NONE;
+                if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+                    return false;
+            }
 
             /// the first argument of the function is the previous element, the second is the next one
             function->name = it[1];
@@ -346,7 +348,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
 
-            if (allow_any_all_operators && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
+            if (subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
                 return false;
 
             /** special exception for the access operator to the element of the array `x[y]`, which
