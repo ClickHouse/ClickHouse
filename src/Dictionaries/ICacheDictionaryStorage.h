@@ -22,7 +22,7 @@ struct KeyState
         , fetched_column_index(fetched_column_index_)
     {}
 
-    KeyState(State state_)
+    KeyState(State state_) /// NOLINT
         : state(state_)
     {}
 
